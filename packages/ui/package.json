@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "exports": {
+    "./components": "./src/components/index.ts",
     "./components/*": "./src/components/*.tsx",
     "./tokens": "./src/tokens/index.ts",
     "./icons": "./src/icons/index.ts"
@@ -22,6 +23,9 @@
     "react": "^19.0.0"
   },
   "dependencies": {
-    "lucide-react": "^1.16.0"
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.16.0",
+    "tailwind-merge": "^3.6.0"
   }
 }

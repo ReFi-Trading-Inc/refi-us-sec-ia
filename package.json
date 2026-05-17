@@ -2,6 +2,7 @@
   "name": "refi-us-sec-ia",
   "private": true,
   "version": "0.0.0",
+  "type": "module",
   "scripts": {
     "build": "turbo build",
     "dev": "turbo dev",
@@ -27,7 +28,8 @@
   },
   "packageManager": "pnpm@11.1.2",
   "lint-staged": {
-    "*.{ts,tsx}": ["eslint --fix --max-warnings=0"],
-    "*.{ts,tsx,json,md}": ["prettier --write"]
+    "*.{ts,tsx,json,md,yaml,yml}": [
+      "prettier --write"
+    ]
   }
 }

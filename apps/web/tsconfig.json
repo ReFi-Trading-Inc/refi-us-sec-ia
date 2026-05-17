@@ -1,0 +1,14 @@
+{
+  "extends": "../../packages/config/tsconfig/nextjs.json",
+  "compilerOptions": {
+    "ignoreDeprecations": "6.0",
+    "baseUrl": ".",
+    "paths": {
+      "@ui/*": ["../../packages/ui/src/*"],
+      "@api/*": ["../../packages/api-clients/src/*"],
+      "@lib/*": ["./src/lib/*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules"]
+}

@@ -1,0 +1,31 @@
+{
+  "name": "@refi/api-clients",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    "./hooks/*": "./src/hooks/*.ts",
+    "./mocks": "./src/mocks/index.ts",
+    "./generated/*": "./src/generated/*.ts"
+  },
+  "scripts": {
+    "generate": "openapi-typescript openapi/*.yaml --output src/generated/",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --max-warnings=0"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.13.0"
+  },
+  "devDependencies": {
+    "@refi/config": "workspace:*",
+    "@tanstack/react-query": "^5.0.0",
+    "msw": "^2.0.0",
+    "openapi-typescript": "^7.0.0",
+    "react": "^19.0.0",
+    "@types/react": "^19.0.0",
+    "typescript": "^6.0.0"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.0.0",
+    "react": "^19.0.0"
+  }
+}

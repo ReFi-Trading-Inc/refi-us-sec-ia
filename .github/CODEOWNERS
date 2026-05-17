@@ -1,0 +1,21 @@
+# Global fallback
+* @ReFi-Trading-Inc/engineering
+
+# UI app
+apps/web/** @ReFi-Trading-Inc/engineering
+
+# Design system
+packages/ui/** @ReFi-Trading-Inc/engineering
+
+# API client layer — sync with backend team on OpenAPI changes
+packages/api-clients/** @ReFi-Trading-Inc/engineering
+
+# Shared config — changes affect all packages
+packages/config/** @ReFi-Trading-Inc/engineering
+
+# Compliance-sensitive copy rules
+packages/config/blocked-terms.ts @ReFi-Trading-Inc/engineering @ReFi-Trading-Inc/compliance
+apps/web/app/us/_content/** @ReFi-Trading-Inc/engineering @ReFi-Trading-Inc/compliance
+
+# Infrastructure
+infra/** @ReFi-Trading-Inc/engineering

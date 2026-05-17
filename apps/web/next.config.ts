@@ -2,9 +2,7 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   transpilePackages: ['@refi/ui', '@refi/api-clients'],
-  experimental: {
-    typedRoutes: true,
-  },
+  typedRoutes: true,
   headers: async () => [
     {
       source: '/(.*)',

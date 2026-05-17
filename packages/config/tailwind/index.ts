@@ -38,8 +38,8 @@ export const brandTokens = {
     },
   },
   fontFamily: {
-    sans: ['Inter', 'system-ui', 'sans-serif'],
-    mono: ['JetBrains Mono', 'Menlo', 'monospace'],
+    sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+    mono: ['var(--font-jetbrains-mono)', 'Menlo', 'monospace'],
   },
 } satisfies Partial<Config['theme']>;
 

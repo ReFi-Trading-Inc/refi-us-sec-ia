@@ -26,7 +26,7 @@ export { RadioGroup } from "./Radio";
 export type { RadioGroupProps, RadioOption } from "./Radio";
 
 export { Select } from "./Select";
-export type { SelectProps } from "./Select";
+export type { SelectProps, SelectOption } from "./Select";
 
 export { Skeleton, SkeletonText, SkeletonCard } from "./Skeleton";
 export type { SkeletonProps } from "./Skeleton";

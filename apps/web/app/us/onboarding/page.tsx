@@ -1,3 +1,5 @@
-export default function Page() {
-  return <p className="p-8 text-charcoal-400 font-mono text-sm">/us/onboarding — placeholder</p>;
+import { redirect } from "next/navigation";
+
+export default function OnboardingIndexPage() {
+  redirect("/us/onboarding/profile");
 }

@@ -1,0 +1,6 @@
+terraform {
+  backend "gcs" {
+    bucket = "refi-us-tfstate"
+    prefix = "terraform/state"
+  }
+}

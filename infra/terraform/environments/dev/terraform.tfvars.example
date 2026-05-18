@@ -1,0 +1,8 @@
+project_id               = "refi-trading-dev"
+region                   = "us-central1"
+github_repo              = "ReFi-Trading-Inc/refi-us-sec-ia"
+web_image                = "us-central1-docker.pkg.dev/refi-trading-dev/refi-us-dev/web:latest"
+api_base_url             = "http://localhost:3000"
+walletconnect_project_id = "REPLACE_ME"
+posthog_key              = ""
+sentry_dsn               = ""

@@ -19,7 +19,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "viem": "^2.49.3",
-    "wagmi": "^2.19.5"
+    "wagmi": "^2.19.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@refi/config": "workspace:*",

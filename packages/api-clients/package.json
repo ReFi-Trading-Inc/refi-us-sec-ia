@@ -3,12 +3,13 @@
   "version": "0.0.0",
   "private": true,
   "exports": {
+    ".": "./src/index.ts",
     "./hooks/*": "./src/hooks/*.ts",
     "./mocks": "./src/mocks/index.ts",
     "./generated/*": "./src/generated/*.ts"
   },
   "scripts": {
-    "generate": "openapi-typescript openapi/*.yaml --output src/generated/",
+    "generate": "openapi-typescript openapi/refi-api.yaml -o src/generated/api.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings=0"
   },
@@ -18,10 +19,11 @@
   "devDependencies": {
     "@refi/config": "workspace:*",
     "@tanstack/react-query": "^5.0.0",
-    "msw": "^2.0.0",
+    "msw": "^2.10.0",
     "openapi-typescript": "^7.0.0",
     "react": "^19.0.0",
     "@types/react": "^19.0.0",
+    "tsx": "^4.0.0",
     "typescript": "^6.0.0"
   },
   "peerDependencies": {

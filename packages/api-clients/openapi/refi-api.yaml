@@ -1,0 +1,469 @@
+openapi: 3.1.0
+info:
+  title: ReFi Trading US API
+  version: 0.1.0
+  description: |
+    Hand-written skeleton API contract for the SEC-registered investment adviser app.
+    Replaced by Daniel's published OpenAPI in a later milestone.
+servers:
+  - url: https://api-staging.refi.trading
+paths:
+  /auth/session:
+    get:
+      operationId: getAuthSession
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+  /siwe/nonce:
+    post:
+      operationId: siweNonce
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [nonce]
+                properties:
+                  nonce: { type: string }
+  /siwe/verify:
+    post:
+      operationId: siweVerify
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, signature]
+              properties:
+                message: { type: string }
+                signature: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OkResult" }
+  /auth/refresh:
+    post:
+      operationId: authRefresh
+      responses:
+        "200":
+          {
+            description: ok,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/OkResult" } },
+              },
+          }
+  /auth/revoke-all:
+    post:
+      operationId: authRevokeAll
+      responses:
+        "200":
+          {
+            description: ok,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/OkResult" } },
+              },
+          }
+  /ccid/status:
+    get:
+      operationId: getCcidStatus
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KycStatus" }
+  /ccid/start:
+    post:
+      operationId: startCcid
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [provider_url]
+                properties:
+                  provider_url: { type: string, format: uri }
+  /v1/brokers/supported:
+    get:
+      operationId: getSupportedBrokers
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/BrokerInfo" }
+  /v1/brokers/connection:
+    get:
+      operationId: getBrokerConnection
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/BrokerConnection" }
+                  - { type: "null" }
+  /v1/brokers/connect/start:
+    post:
+      operationId: startBrokerConnect
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [broker_id]
+              properties:
+                broker_id: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [oauth_url]
+                properties:
+                  oauth_url: { type: string }
+  /v1/brokers/disconnect:
+    post:
+      operationId: disconnectBroker
+      responses:
+        "200":
+          {
+            description: ok,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/OkResult" } },
+              },
+          }
+  /v1/brokers/account:
+    get:
+      operationId: getBrokerAccount
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrokerAccount" }
+  /v1/brokers/positions:
+    get:
+      operationId: getBrokerPositions
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Position" }
+  /v1/brokers/orders:
+    get:
+      operationId: getBrokerOrders
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Order" }
+  /orders/preview:
+    post:
+      operationId: previewOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderPreviewResult" }
+  /orders:
+    get:
+      operationId: listOrders
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Order" }
+    post:
+      operationId: submitOrder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OrderRequest" }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Order" }
+  /orders/{id}:
+    delete:
+      operationId: cancelOrder
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          {
+            description: ok,
+            content:
+              {
+                application/json:
+                  { schema: { $ref: "#/components/schemas/OkResult" } },
+              },
+          }
+  /v1/recommendations:
+    get:
+      operationId: listRecommendations
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Recommendation" }
+  /v1/recommendations/{id}:
+    get:
+      operationId: getRecommendation
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Recommendation" }
+  /v1/activity:
+    get:
+      operationId: listActivity
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ActivityEvent" }
+  /v1/us/eligibility:
+    post:
+      operationId: postEligibility
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state, isUsPerson, dob]
+              properties:
+                state: { type: string }
+                isUsPerson: { type: boolean }
+                dob: { type: string, format: date }
+      responses:
+        "200":
+          description: ok
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EligibilityDecision" }
+components:
+  schemas:
+    OkResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+    AuthSession:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [authenticated, unauthenticated] }
+        account_id: { type: string }
+        wallet_id: { type: string }
+        roles:
+          type: array
+          items: { type: string }
+        kyc_status:
+          {
+            type: string,
+            enum: [pending, incomplete, approved, denied, under_review],
+          }
+    KycStatus:
+      type: object
+      required: [status]
+      properties:
+        status:
+          {
+            type: string,
+            enum: [pending, incomplete, approved, denied, under_review],
+          }
+        provider: { type: string }
+        last_updated: { type: string, format: date-time }
+    BrokerInfo:
+      type: object
+      required: [id, name, supported]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        supported: { type: boolean }
+        regions:
+          type: array
+          items: { type: string }
+    BrokerConnection:
+      type: object
+      required: [broker_id, broker_name, status]
+      properties:
+        broker_id: { type: string }
+        broker_name: { type: string }
+        status: { type: string, enum: [connected, disconnected, pending] }
+        connected_at: { type: string, format: date-time }
+    BrokerAccount:
+      type: object
+      required: [account_number, equity, buying_power, cash, currency]
+      properties:
+        account_number: { type: string }
+        equity: { type: number }
+        buying_power: { type: number }
+        cash: { type: number }
+        currency: { type: string }
+    Position:
+      type: object
+      required:
+        [
+          symbol,
+          qty,
+          market_value,
+          unrealized_pl,
+          unrealized_plpc,
+          current_price,
+          avg_entry_price,
+          side,
+        ]
+      properties:
+        symbol: { type: string }
+        qty: { type: number }
+        market_value: { type: number }
+        unrealized_pl: { type: number }
+        unrealized_plpc: { type: number }
+        current_price: { type: number }
+        avg_entry_price: { type: number }
+        side: { type: string, enum: [long, short] }
+    OrderRequest:
+      type: object
+      required: [symbol, qty, side, type]
+      properties:
+        symbol: { type: string }
+        qty: { type: number }
+        side: { type: string, enum: [buy, sell] }
+        type: { type: string, enum: [market, limit] }
+        limit_price: { type: number }
+        time_in_force: { type: string, enum: [day, gtc] }
+    Order:
+      type: object
+      required: [id, symbol, qty, side, type, status, created_at]
+      properties:
+        id: { type: string }
+        symbol: { type: string }
+        qty: { type: number }
+        side: { type: string, enum: [buy, sell] }
+        type: { type: string, enum: [market, limit] }
+        status:
+          {
+            type: string,
+            enum:
+              [accepted, filled, partially_filled, canceled, rejected, pending],
+          }
+        limit_price: { type: number }
+        filled_qty: { type: number }
+        filled_avg_price: { type: number }
+        created_at: { type: string, format: date-time }
+    OrderPreviewResult:
+      type: object
+      required: [status, reasons, source]
+      properties:
+        status: { type: string, enum: [ALLOW, REVIEW, DENY] }
+        reasons:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string }
+              message: { type: string }
+        source: { type: string, enum: [cache, fresh] }
+    Recommendation:
+      type: object
+      required:
+        [
+          id,
+          symbol,
+          action,
+          rationale,
+          confidence,
+          created_at,
+          status,
+          expires_at,
+        ]
+      properties:
+        id: { type: string }
+        symbol: { type: string }
+        action: { type: string, enum: [buy, sell, hold] }
+        rationale: { type: string }
+        confidence: { type: number }
+        created_at: { type: string, format: date-time }
+        status: { type: string, enum: [pending, accepted, rejected, expired] }
+        expires_at: { type: string, format: date-time }
+    ActivityEvent:
+      type: object
+      required: [id, type, description, created_at]
+      properties:
+        id: { type: string }
+        type:
+          {
+            type: string,
+            enum: [recommendation, order, compliance, eligibility],
+          }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+        metadata:
+          type: object
+          additionalProperties: true
+    EligibilityDecision:
+      type: object
+      required: [result, state, ruleId]
+      properties:
+        result: { type: string, enum: [eligible, waitlist, ineligible] }
+        state: { type: string }
+        ruleId: { type: string }

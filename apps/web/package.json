@@ -15,6 +15,7 @@
     "@refi/api-clients": "workspace:*",
     "@refi/ui": "workspace:*",
     "@tanstack/react-query": "^5.100.10",
+    "msw": "^2.14.6",
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -33,5 +34,10 @@
     "postcss": "^8.4.0",
     "tailwindcss": "^3.4.0",
     "typescript": "^6.0.0"
+  },
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
   }
 }

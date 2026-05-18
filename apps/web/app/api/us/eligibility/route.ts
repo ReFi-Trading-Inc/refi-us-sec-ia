@@ -5,11 +5,14 @@ import { createHmac } from "node:crypto";
 import { SignJWT } from "jose";
 import { z } from "zod";
 import { getServerEnv } from "@lib/config/env";
+import { createRateLimiter } from "@app/_lib/rateLimit";
 import {
   eligibilityRules,
   RULE_VERSION,
   type EligibilityResult,
 } from "./rules";
+
+const limiter = createRateLimiter({ windowMs: 15 * 60_000, max: 5 });
 
 const bodySchema = z.object({
   state: z
@@ -41,6 +44,18 @@ function hmac(secret: string, input: string): string {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const ip =
+    request.headers.get("x-real-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "unknown";
+  const { allowed } = limiter(ip);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please wait before trying again." },
+      { status: 429 },
+    );
+  }
+
   const env = getServerEnv();
 
   const json = await request.json().catch(() => null);
@@ -63,7 +78,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
   const result: EligibilityResult = rule.result;
 
-  const ip = request.headers.get("x-real-ip") ?? "";
   const ua = request.headers.get("user-agent") ?? "";
   const ip_hash = hmac(env.IP_HASH_SECRET, ip);
   const ua_hash = hmac(env.IP_HASH_SECRET, ua);

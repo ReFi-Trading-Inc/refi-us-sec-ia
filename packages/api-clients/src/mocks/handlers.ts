@@ -163,4 +163,60 @@ export const handlers = [
     };
     return HttpResponse.json(decision);
   }),
+
+  // Onboarding: advisory profile, strategy, activation (MIG-P2-04)
+  http.get(url("/v1/profile"), () =>
+    HttpResponse.json({
+      account_id: "acct_maya_001",
+      goal: "Long-term growth",
+      timeHorizon: "5–10 years",
+      incomeBand: "$100,000–$250,000",
+      liquidNetWorth: "$200,000–$500,000",
+      riskTolerance: "Moderate",
+      investmentExperience: "Some",
+      accountPurpose: "Personal",
+      updated_at: "2026-05-12T10:00:00Z",
+    }),
+  ),
+  http.post(url("/v1/profile"), async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as Record<
+      string,
+      unknown
+    >;
+    return HttpResponse.json({
+      account_id: "acct_maya_001",
+      ...body,
+      updated_at: new Date().toISOString(),
+    });
+  }),
+  http.get(url("/v1/strategies/current"), () =>
+    HttpResponse.json({
+      strategyName: "ReFi Signal — Balanced Growth",
+      rationale:
+        "Allocation tilts toward broad index exposure with a growth bias consistent with your stated horizon and risk tolerance.",
+      targetAllocation:
+        "60% equities (broad index + growth tilt), 30% fixed income, 10% cash",
+      assetUniverse: "US-listed equities and ETFs only",
+      riskGuardrails:
+        "Per-position cap 8%; daily turnover cap 10%; sector concentration cap 30%",
+      expectedTurnover: "Moderate — 15–25% annual",
+      exclusions: "No leverage, options, crypto, or non-US securities",
+      costsAndFees:
+        "Advisory: 0.50% AUM annual. Broker execution fees pass-through.",
+      modelVersion: "signal-1.4.0",
+    }),
+  ),
+  http.get(url("/v1/account/activation"), () =>
+    HttpResponse.json({
+      eligibility: true,
+      wallet: true,
+      kyc: true,
+      profile: true,
+      broker: true,
+      disclosures: false,
+    }),
+  ),
+  http.post(url("/v1/account/activate"), () =>
+    HttpResponse.json({ ok: true, activated_at: new Date().toISOString() }),
+  ),
 ];

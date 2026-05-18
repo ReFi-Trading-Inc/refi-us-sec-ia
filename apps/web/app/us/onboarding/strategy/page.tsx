@@ -1,23 +1,15 @@
+"use client";
+
 import Link from "next/link";
 import { Card, CardContent, StatusBanner } from "@ui/components";
+import { useStrategy } from "@refi/api-clients";
 import { onboardingCopy } from "../../_content/onboarding";
 
 const { strategy } = onboardingCopy;
 
-// Strategy data loads from API in MIG-P1-06; skeleton shown until then.
-const stubStrategy = {
-  strategyName: "—",
-  rationale: "—",
-  targetAllocation: "—",
-  assetUniverse: "—",
-  riskGuardrails: "—",
-  expectedTurnover: "—",
-  exclusions: "—",
-  costsAndFees: "—",
-  modelVersion: "—",
-};
-
 export default function OnboardingStrategyPage() {
+  const { data, isLoading, isError } = useStrategy();
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -27,18 +19,33 @@ export default function OnboardingStrategyPage() {
         <p className="text-sm text-charcoal-400">{strategy.subheading}</p>
       </div>
 
+      {isError && (
+        <StatusBanner variant="error">
+          Could not load strategy. Please try again.
+        </StatusBanner>
+      )}
+
       <Card>
         <CardContent className="pt-5 flex flex-col gap-4">
-          {Object.entries(strategy.fields).map(([key, label]) => (
-            <div key={key} className="flex flex-col gap-1">
-              <p className="text-xs font-medium uppercase tracking-wider text-charcoal-500">
-                {label}
-              </p>
-              <p className="text-sm text-charcoal-300">
-                {stubStrategy[key as keyof typeof stubStrategy]}
-              </p>
-            </div>
-          ))}
+          {isLoading || !data
+            ? Object.values(strategy.fields).map((label) => (
+                <div key={label} className="flex flex-col gap-1">
+                  <p className="text-xs font-medium uppercase tracking-wider text-charcoal-500">
+                    {label}
+                  </p>
+                  <p className="text-sm text-charcoal-500">—</p>
+                </div>
+              ))
+            : Object.entries(strategy.fields).map(([key, label]) => (
+                <div key={key} className="flex flex-col gap-1">
+                  <p className="text-xs font-medium uppercase tracking-wider text-charcoal-500">
+                    {label}
+                  </p>
+                  <p className="text-sm text-charcoal-300">
+                    {data[key as keyof typeof data]}
+                  </p>
+                </div>
+              ))}
         </CardContent>
       </Card>
 

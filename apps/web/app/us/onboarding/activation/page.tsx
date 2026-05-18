@@ -1,21 +1,39 @@
+"use client";
+
+import { useRouter } from "next/navigation";
 import { Button, Card, CardContent, StatusBanner, Badge } from "@ui/components";
+import {
+  useActivateAccount,
+  useActivationStatus,
+  type AccountActivationStatus,
+} from "@refi/api-clients";
 import { onboardingCopy } from "../../_content/onboarding";
 
 const { activation } = onboardingCopy;
 
-// Checklist states are stubbed; real values come from session + broker + KYC status (MIG-P1-06)
-const stubChecked: Record<string, boolean> = {
-  eligibility: true,
+const FALLBACK: AccountActivationStatus = {
+  eligibility: false,
   wallet: false,
   kyc: false,
-  profile: true,
+  profile: false,
   broker: false,
   disclosures: false,
 };
 
-const allDone = Object.values(stubChecked).every(Boolean);
-
 export default function OnboardingActivationPage() {
+  const router = useRouter();
+  const { data, isLoading } = useActivationStatus();
+  const activate = useActivateAccount();
+  const status = data ?? FALLBACK;
+
+  const allDone = Object.values(status).every(Boolean);
+
+  function handleActivate() {
+    activate.mutate(undefined, {
+      onSuccess: () => router.push("/us/app/home"),
+    });
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -28,7 +46,7 @@ export default function OnboardingActivationPage() {
       <Card>
         <CardContent className="pt-5 flex flex-col gap-3">
           {activation.checklist.map((item) => {
-            const checked = stubChecked[item.key] ?? false;
+            const checked = status[item.key as keyof AccountActivationStatus];
             return (
               <div
                 key={item.key}
@@ -62,8 +80,13 @@ export default function OnboardingActivationPage() {
         {activation.warningDisclosure}
       </StatusBanner>
 
+      {activate.isError && (
+        <StatusBanner variant="error">{activate.error.message}</StatusBanner>
+      )}
+
       <Button
-        disabled={!allDone}
+        disabled={!allDone || activate.isPending || isLoading}
+        onClick={handleActivate}
         title={allDone ? undefined : activation.pendingLabel}
       >
         {allDone ? activation.activateLabel : activation.pendingLabel}

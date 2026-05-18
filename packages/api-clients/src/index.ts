@@ -40,3 +40,11 @@ export {
 } from "./hooks/orders";
 export { useRecommendations, useRecommendation } from "./hooks/recommendations";
 export { useActivity } from "./hooks/activity";
+export {
+  useAdvisoryProfile,
+  useSaveAdvisoryProfile,
+  useStrategy,
+  useBrokerConnectStart,
+  useActivationStatus,
+  useActivateAccount,
+} from "./hooks/onboarding";

@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Select, StatusBanner } from "@ui/components";
 import type { SelectOption } from "@ui/components";
+import { useAdvisoryProfile, useSaveAdvisoryProfile } from "@refi/api-clients";
 import { onboardingCopy } from "../../_content/onboarding";
 
 const { profile } = onboardingCopy;
@@ -33,25 +34,47 @@ const fieldDefs: { key: FieldKey; label: string; options: SelectOption[] }[] = (
   options: [...field.options].map((o) => ({ value: o, label: o })),
 }));
 
+const EMPTY: Record<FieldKey, string> = {
+  goal: "",
+  timeHorizon: "",
+  incomeBand: "",
+  liquidNetWorth: "",
+  riskTolerance: "",
+  investmentExperience: "",
+  accountPurpose: "",
+};
+
 export default function OnboardingProfilePage() {
   const router = useRouter();
-  const [fields, setFields] = useState<Record<FieldKey, string>>({
-    goal: "",
-    timeHorizon: "",
-    incomeBand: "",
-    liquidNetWorth: "",
-    riskTolerance: "",
-    investmentExperience: "",
-    accountPurpose: "",
-  });
+  const { data: existing } = useAdvisoryProfile();
+  const save = useSaveAdvisoryProfile();
+  const [fields, setFields] = useState<Record<FieldKey, string>>(EMPTY);
+  const [error, setError] = useState<string | null>(null);
+
+  // Hydrate from the server-side record so a returning user resumes mid-wizard.
+  useEffect(() => {
+    if (!existing) return;
+    setFields({
+      goal: existing.goal,
+      timeHorizon: existing.timeHorizon,
+      incomeBand: existing.incomeBand,
+      liquidNetWorth: existing.liquidNetWorth,
+      riskTolerance: existing.riskTolerance,
+      investmentExperience: existing.investmentExperience,
+      accountPurpose: existing.accountPurpose,
+    });
+  }, [existing]);
 
   const valid = Object.values(fields).every((v) => v !== "");
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!valid) return;
-    // Profile saved to backend in MIG-P1-08
-    void router.push("/us/onboarding/broker");
+    setError(null);
+    save.mutate(fields, {
+      onSuccess: () => router.push("/us/onboarding/broker"),
+      onError: (err) => setError(err.message),
+    });
   }
 
   return (
@@ -82,7 +105,13 @@ export default function OnboardingProfilePage() {
           {profile.disclaimer}
         </StatusBanner>
 
-        <Button type="submit" disabled={!valid} className="mt-2">
+        {error && <StatusBanner variant="error">{error}</StatusBanner>}
+
+        <Button
+          type="submit"
+          disabled={!valid || save.isPending}
+          className="mt-2"
+        >
           {profile.cta}
         </Button>
       </form>

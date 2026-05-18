@@ -10,6 +10,9 @@ const projectId =
 export const wagmiConfig: Config = getDefaultConfig({
   appName: "ReFi.Trading USA",
   projectId,
-  chains: [mainnet, ...(process.env["REFI_ENV"] !== "prod" ? [sepolia] : [])],
+  chains: [
+    mainnet,
+    ...(process.env["NEXT_PUBLIC_REFI_ENV"] !== "prod" ? [sepolia] : []),
+  ],
   ssr: true,
 });

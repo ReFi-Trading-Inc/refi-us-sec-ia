@@ -1,7 +1,7 @@
 "use client";
 
-import { WalletProvider } from "./wallet/WalletProvider";
+import { ToastProvider } from "@refi/ui/components";
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  return <WalletProvider>{children}</WalletProvider>;
+  return <ToastProvider>{children}</ToastProvider>;
 }

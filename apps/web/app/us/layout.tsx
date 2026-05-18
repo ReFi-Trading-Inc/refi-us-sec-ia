@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { usBrand } from "./_content/brand";
+import { WalletProvider } from "../_providers/wallet/WalletProvider";
 
 export const metadata: Metadata = {
   title: {
@@ -10,5 +11,5 @@ export const metadata: Metadata = {
 };
 
 export default function UsLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  return <WalletProvider>{children}</WalletProvider>;
 }

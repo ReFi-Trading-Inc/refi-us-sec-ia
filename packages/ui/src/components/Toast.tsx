@@ -90,15 +90,21 @@ function ToastViewport({
   toasts: Toast[];
   onDismiss: (id: string) => void;
 }) {
+  const errors = toasts.filter((t) => t.variant === "error");
+  const others = toasts.filter((t) => t.variant !== "error");
+
   return (
-    <div
-      aria-live="polite"
-      aria-atomic="false"
-      className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-full max-w-sm pointer-events-none"
-    >
-      {toasts.map((t) => (
-        <ToastItem key={t.id} toast={t} onDismiss={onDismiss} />
-      ))}
+    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 w-full max-w-sm pointer-events-none">
+      <div aria-live="assertive" aria-atomic="false">
+        {errors.map((t) => (
+          <ToastItem key={t.id} toast={t} onDismiss={onDismiss} />
+        ))}
+      </div>
+      <div aria-live="polite" aria-atomic="false">
+        {others.map((t) => (
+          <ToastItem key={t.id} toast={t} onDismiss={onDismiss} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -155,7 +161,7 @@ function ToastItem({
 
   return (
     <div
-      role="status"
+      role={toast.variant === "error" ? "alert" : "status"}
       className={cn(toastVariants({ variant: toast.variant }))}
     >
       <Icon

@@ -2,112 +2,109 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
+import { z } from "zod";
 import {
   Badge,
   Button,
   Card,
   CardContent,
+  Input,
+  RadioGroup,
   Select,
-  Checkbox,
   StatusBanner,
 } from "@ui/components";
 import type { SelectOption } from "@ui/components";
 import { eligibilityCopy } from "../_content/eligibility";
 import { usBrand } from "../_content/brand";
-
-const US_STATES = [
-  "Alabama",
-  "Alaska",
-  "Arizona",
-  "Arkansas",
-  "California",
-  "Colorado",
-  "Connecticut",
-  "Delaware",
-  "District of Columbia",
-  "Florida",
-  "Georgia",
-  "Hawaii",
-  "Idaho",
-  "Illinois",
-  "Indiana",
-  "Iowa",
-  "Kansas",
-  "Kentucky",
-  "Louisiana",
-  "Maine",
-  "Maryland",
-  "Massachusetts",
-  "Michigan",
-  "Minnesota",
-  "Mississippi",
-  "Missouri",
-  "Montana",
-  "Nebraska",
-  "Nevada",
-  "New Hampshire",
-  "New Jersey",
-  "New Mexico",
-  "New York",
-  "North Carolina",
-  "North Dakota",
-  "Ohio",
-  "Oklahoma",
-  "Oregon",
-  "Pennsylvania",
-  "Rhode Island",
-  "South Carolina",
-  "South Dakota",
-  "Tennessee",
-  "Texas",
-  "Utah",
-  "Vermont",
-  "Virginia",
-  "Washington",
-  "West Virginia",
-  "Wisconsin",
-  "Wyoming",
-];
+import { US_STATES } from "../_content/us-states";
 
 const stateOptions: SelectOption[] = US_STATES.map((s) => ({
-  value: s,
-  label: s,
+  value: s.code,
+  label: s.name,
 }));
-const purposeOptions: SelectOption[] =
-  eligibilityCopy.fields.accountPurpose.options.map((o) => ({
-    value: o,
-    label: o,
-  }));
 
-const WAITLIST_STATES = new Set(["Alaska", "Hawaii", "New York"]);
+const eligibilitySchema = z
+  .object({
+    state: z.string().length(2, "Please select your state"),
+    isUsPerson: z.enum(["yes", "no"], {
+      message: "Please select an option",
+    }),
+    dob: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Enter a valid date of birth"),
+  })
+  .refine(
+    (data) => {
+      const [y, m, d] = data.dob.split("-").map((n) => Number(n));
+      if (!y || !m || !d) return false;
+      const birth = new Date(Date.UTC(y, m - 1, d));
+      const now = new Date();
+      let age = now.getUTCFullYear() - birth.getUTCFullYear();
+      const beforeBirthday =
+        now.getUTCMonth() < birth.getUTCMonth() ||
+        (now.getUTCMonth() === birth.getUTCMonth() &&
+          now.getUTCDate() < birth.getUTCDate());
+      if (beforeBirthday) age -= 1;
+      return age >= 18;
+    },
+    { message: "You must be at least 18 years old", path: ["dob"] },
+  );
 
-type Decision = "eligible" | "waitlist" | "unsupported" | null;
+type FormValues = z.infer<typeof eligibilitySchema>;
+
+type Decision = {
+  result: "eligible" | "waitlist" | "ineligible";
+  state: string;
+  ruleId: string;
+};
 
 export default function EligibilityPage() {
-  const [state, setState] = useState("");
-  const [ageConfirmed, setAgeConfirmed] = useState(false);
-  const [usPersonConfirmed, setUsPersonConfirmed] = useState(false);
-  const [accountPurpose, setAccountPurpose] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [decision, setDecision] = useState<Decision>(null);
-  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  const [decision, setDecision] = useState<Decision | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
-  const valid =
-    state !== "" && ageConfirmed && usPersonConfirmed && accountPurpose !== "";
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<FormValues>({
+    resolver: standardSchemaResolver(eligibilitySchema),
+    defaultValues: { state: "", isUsPerson: undefined, dob: "" },
+  });
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!valid) return;
-    setSubmitting(true);
-    setError(null);
+  const stateValue = watch("state");
+  const usPersonValue = watch("isUsPerson");
+
+  async function onSubmit(values: FormValues): Promise<void> {
+    setSubmitError(null);
     try {
-      // Phase 1: client-side rule. Server-side route handler in MIG-P1-08.
-      await new Promise((r) => setTimeout(r, 600));
-      setDecision(WAITLIST_STATES.has(state) ? "waitlist" : "eligible");
-    } catch {
-      setError("Something went wrong. Please try again.");
-    } finally {
-      setSubmitting(false);
+      const response = await fetch("/api/us/eligibility", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          state: values.state,
+          isUsPerson: values.isUsPerson === "yes",
+          dob: values.dob,
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`Request failed (${response.status})`);
+      }
+      const body = (await response.json()) as Decision;
+      setDecision(body);
+      if (body.result === "eligible") {
+        // Pre-warm the next route; the user clicks the CTA to navigate.
+        router.prefetch("/us/auth/connect");
+      }
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again.",
+      );
     }
   }
 
@@ -129,7 +126,7 @@ export default function EligibilityPage() {
 
         {decision === null ? (
           <form
-            onSubmit={handleSubmit}
+            onSubmit={handleSubmit(onSubmit)}
             className="flex flex-col gap-6"
             noValidate
           >
@@ -137,33 +134,36 @@ export default function EligibilityPage() {
               label={eligibilityCopy.fields.state.label}
               placeholder={eligibilityCopy.fields.state.placeholder}
               options={stateOptions}
-              value={state}
-              onChange={(e) => setState(e.target.value)}
+              value={stateValue}
+              onChange={(e) => setValue("state", e.target.value)}
+              error={errors.state?.message}
               required
             />
 
-            <Select
-              label={eligibilityCopy.fields.accountPurpose.label}
-              placeholder="Select…"
-              options={purposeOptions}
-              value={accountPurpose}
-              onChange={(e) => setAccountPurpose(e.target.value)}
-              required
+            <RadioGroup
+              name="isUsPerson"
+              label={eligibilityCopy.fields.usPerson.label}
+              options={[
+                { value: "yes", label: eligibilityCopy.fields.yes },
+                { value: "no", label: eligibilityCopy.fields.no },
+              ]}
+              value={usPersonValue}
+              onChange={(v) =>
+                setValue("isUsPerson", v as FormValues["isUsPerson"])
+              }
+              error={errors.isUsPerson?.message}
             />
 
-            <Checkbox
-              label={eligibilityCopy.fields.ageConfirmation.label}
-              checked={ageConfirmed}
-              onChange={(e) => setAgeConfirmed(e.target.checked)}
+            <Input
+              label={eligibilityCopy.fields.dob.label}
+              type="date"
+              error={errors.dob?.message}
+              {...register("dob")}
             />
 
-            <Checkbox
-              label={eligibilityCopy.fields.usPersonConfirmation.label}
-              checked={usPersonConfirmed}
-              onChange={(e) => setUsPersonConfirmed(e.target.checked)}
-            />
-
-            {error && <StatusBanner variant="error">{error}</StatusBanner>}
+            {submitError && (
+              <StatusBanner variant="error">{submitError}</StatusBanner>
+            )}
 
             <p className="text-xs text-charcoal-500">
               {eligibilityCopy.disclaimer}
@@ -171,40 +171,36 @@ export default function EligibilityPage() {
 
             <Button
               type="submit"
-              disabled={!valid || submitting}
-              loading={submitting}
+              disabled={isSubmitting}
+              loading={isSubmitting}
             >
-              Check eligibility
+              {eligibilityCopy.submit}
             </Button>
           </form>
         ) : (
-          <EligibilityResult decision={decision} state={state} />
+          <EligibilityResult decision={decision} />
         )}
       </main>
     </div>
   );
 }
 
-function EligibilityResult({
-  decision,
-  state,
-}: {
-  decision: NonNullable<Decision>;
-  state: string;
-}) {
-  const copy = eligibilityCopy.results[decision];
+function EligibilityResult({ decision }: { decision: Decision }) {
+  const [email, setEmail] = useState("");
+  const [notified, setNotified] = useState(false);
+  const copy = eligibilityCopy.results[decision.result];
 
   const variantMap = {
     eligible: "active",
     waitlist: "warning",
-    unsupported: "neutral",
+    ineligible: "neutral",
   } as const;
 
   return (
     <Card>
       <CardContent className="pt-6 flex flex-col gap-4">
         <Badge
-          variant={variantMap[decision]}
+          variant={variantMap[decision.result]}
           aria-label={`Eligibility result: ${copy.badge}`}
         >
           {copy.badge}
@@ -213,14 +209,43 @@ function EligibilityResult({
           {copy.heading}
         </h2>
         <p className="text-sm text-charcoal-400">{copy.body}</p>
-        <p className="text-xs text-charcoal-600">State: {state}</p>
-        {"cta" in copy && copy.cta && (
+        <p className="text-xs text-charcoal-600">State: {decision.state}</p>
+
+        {decision.result === "eligible" && (
           <Link
-            href={decision === "eligible" ? "/us/auth/connect" : "/us"}
+            href="/us/auth/connect"
             className="inline-flex items-center justify-center rounded-md bg-mint-400 px-4 py-2 text-sm font-medium text-charcoal-950 hover:bg-mint-300 transition-colors"
           >
-            {copy.cta}
+            {eligibilityCopy.results.eligible.cta}
           </Link>
+        )}
+
+        {decision.result === "waitlist" && !notified && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              setNotified(true);
+            }}
+            className="flex flex-col gap-3"
+          >
+            <Input
+              type="email"
+              label={eligibilityCopy.emailCapture.label}
+              placeholder={eligibilityCopy.emailCapture.placeholder}
+              hint={eligibilityCopy.emailCapture.helper}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+            <Button type="submit" disabled={email.length === 0}>
+              {eligibilityCopy.emailCapture.submit}
+            </Button>
+          </form>
+        )}
+
+        {decision.result === "waitlist" && notified && (
+          <StatusBanner variant="success">
+            Thanks — we&apos;ll be in touch.
+          </StatusBanner>
         )}
       </CardContent>
     </Card>

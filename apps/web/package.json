@@ -11,14 +11,17 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
     "@rainbow-me/rainbowkit": "^2.2.11",
     "@refi/api-clients": "workspace:*",
     "@refi/ui": "workspace:*",
     "@tanstack/react-query": "^5.100.10",
+    "jose": "^6.2.3",
     "msw": "^2.14.6",
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-hook-form": "^7.76.0",
     "recharts": "^3.8.1",
     "viem": "^2.49.3",
     "wagmi": "^2.19.5",

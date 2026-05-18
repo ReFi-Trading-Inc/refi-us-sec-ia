@@ -87,6 +87,9 @@ export const handlers = [
   http.post(url("/v1/brokers/connect/start"), () =>
     HttpResponse.json({ oauth_url: "https://broker.example/oauth/mock" }),
   ),
+  http.post(url("/v1/brokers/connect/keys"), () =>
+    HttpResponse.json({ ok: true, connection: mayaBrokerConnection }),
+  ),
   http.post(url("/v1/brokers/disconnect"), () =>
     HttpResponse.json({ ok: true }),
   ),

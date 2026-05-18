@@ -45,6 +45,7 @@ export {
   useSaveAdvisoryProfile,
   useStrategy,
   useBrokerConnectStart,
+  useBrokerConnectApiKey,
   useActivationStatus,
   useActivateAccount,
 } from "./hooks/onboarding";

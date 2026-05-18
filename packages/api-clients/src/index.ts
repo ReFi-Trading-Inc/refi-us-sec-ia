@@ -23,6 +23,7 @@ export {
   useKycStart,
   useKycSimulateWebhook,
   useComplianceInvalidateCache,
+  isKycTerminal,
 } from "./hooks/kyc";
 export {
   useBrokerSupported,

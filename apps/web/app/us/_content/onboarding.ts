@@ -1,4 +1,5 @@
 export const onboardingSteps = [
+  { key: "kyc", label: "Identity", path: "/us/onboarding/kyc" },
   { key: "profile", label: "Profile", path: "/us/onboarding/profile" },
   { key: "broker", label: "Broker", path: "/us/onboarding/broker" },
   {

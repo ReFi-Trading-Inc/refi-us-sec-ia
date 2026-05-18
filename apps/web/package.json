@@ -12,13 +12,18 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
+    "@opentelemetry/auto-instrumentations-node": "^0.57.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
+    "@opentelemetry/sdk-node": "^0.57.0",
     "@rainbow-me/rainbowkit": "^2.2.11",
     "@refi/api-clients": "workspace:*",
     "@refi/ui": "workspace:*",
+    "@sentry/nextjs": "^9.0.0",
     "@tanstack/react-query": "^5.100.10",
     "jose": "^6.2.3",
     "msw": "^2.14.6",
     "next": "^16.0.0",
+    "posthog-js": "^1.240.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-hook-form": "^7.76.0",
@@ -28,6 +33,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.50.0",
     "@refi/config": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",

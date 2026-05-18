@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ToastProvider } from "@refi/ui/components";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initMsw } from "../_msw/init";
+import { PostHogProvider } from "./analytics/PostHogProvider";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -29,15 +30,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // Render children immediately; gating only blocks query execution until MSW
-  // is ready in dev/mock mode by deferring mount of the QueryClientProvider.
   if (!mswReady) {
-    return <ToastProvider>{children}</ToastProvider>;
+    return (
+      <PostHogProvider>
+        <ToastProvider>{children}</ToastProvider>
+      </PostHogProvider>
+    );
   }
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ToastProvider>{children}</ToastProvider>
-    </QueryClientProvider>
+    <PostHogProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToastProvider>{children}</ToastProvider>
+      </QueryClientProvider>
+    </PostHogProvider>
   );
 }

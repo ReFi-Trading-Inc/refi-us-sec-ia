@@ -21,6 +21,7 @@ import {
   useBrokerSupported,
 } from "@refi/api-clients";
 import { onboardingCopy } from "../../_content/onboarding";
+import { useAnalytics, AnalyticsEvent } from "../../../_lib/analytics";
 
 const { broker, brokerApiKey } = onboardingCopy;
 
@@ -76,6 +77,7 @@ export default function OnboardingBrokerPage() {
   const { data: connection } = useBrokerConnection();
   const connectKey = useBrokerConnectApiKey();
 
+  const { track } = useAnalytics();
   const [activeBrokerId, setActiveBrokerId] = useState<string | null>(null);
   const [showSecret, setShowSecret] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -162,6 +164,10 @@ export default function OnboardingBrokerPage() {
       setShowSecret(false);
       setConnected(true);
       setActiveBrokerId(null);
+      track(AnalyticsEvent.ONBOARDING_BROKER_CONNECTED, {
+        broker_id: activeBrokerId,
+        environment: values.environment,
+      });
     } catch (err) {
       // Clear the secret on error too — the user will retype if they retry.
       reset({

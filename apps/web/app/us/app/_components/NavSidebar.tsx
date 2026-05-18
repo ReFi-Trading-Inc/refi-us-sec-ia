@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@ui/lib/utils";
 import { navItems } from "../../_content/app-copy";
 import { usBrand } from "../../_content/brand";
+import { WalletButton } from "./WalletButton";
 
 export function NavSidebar() {
   const pathname = usePathname();
@@ -19,6 +20,7 @@ export function NavSidebar() {
           {usBrand.productSurface}
         </span>
       </div>
+
       {navItems.map((item) => {
         const active =
           pathname === item.href || pathname.startsWith(item.href + "/");
@@ -38,6 +40,10 @@ export function NavSidebar() {
           </Link>
         );
       })}
+
+      <div className="mt-auto pt-4 border-t border-charcoal-800">
+        <WalletButton />
+      </div>
     </nav>
   );
 }

@@ -11,11 +11,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@rainbow-me/rainbowkit": "^2.2.11",
     "@refi/api-clients": "workspace:*",
     "@refi/ui": "workspace:*",
+    "@tanstack/react-query": "^5.100.10",
     "next": "^16.0.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "viem": "^2.49.3",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@refi/config": "workspace:*",

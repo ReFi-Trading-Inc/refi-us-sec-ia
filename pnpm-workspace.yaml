@@ -2,8 +2,16 @@ packages:
   - "apps/*"
   - "packages/*"
 
+allowBuilds:
+  bufferutil: true
+  keccak: true
+  utf-8-validate: true
+
 onlyBuiltDependencies:
+  - bufferutil
   - esbuild
+  - keccak
   - msw
   - sharp
   - unrs-resolver
+  - utf-8-validate

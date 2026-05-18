@@ -1,0 +1,90 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image tag (git SHA) to deploy. Defaults to latest staging build."
+        required: false
+        type: string
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  REGION: ${{ vars.GCP_REGION || 'us-central1' }}
+  PROJECT_ID: ${{ vars.GCP_PROJECT_ID_PROD }}
+  SERVICE: refi-us-web
+
+jobs:
+  deploy-canary:
+    name: Deploy canary (10% traffic)
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image: ${{ steps.resolve.outputs.image }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER_PROD }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_PROD }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Resolve image tag
+        id: resolve
+        run: |
+          TAG="${{ inputs.image_tag || github.sha }}"
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/refi-us/web:${TAG}"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE }}
+          region: ${{ env.REGION }}
+          image: ${{ steps.resolve.outputs.image }}
+          tag: canary
+          no_traffic: true
+          env_vars: |
+            NEXT_PUBLIC_REFI_ENV=prod
+            NEXT_PUBLIC_API_BASE_URL=${{ vars.API_BASE_URL_PROD }}
+            NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=${{ secrets.WALLETCONNECT_PROJECT_ID }}
+            NEXT_PUBLIC_POSTHOG_KEY=${{ secrets.POSTHOG_KEY }}
+            NEXT_PUBLIC_POSTHOG_HOST=https://app.posthog.com
+            NEXT_PUBLIC_SENTRY_DSN=${{ secrets.SENTRY_DSN }}
+
+      - name: Route 10% traffic to canary
+        run: |
+          gcloud run services update-traffic ${{ env.SERVICE }} \
+            --region=${{ env.REGION }} \
+            --to-tags=canary=10
+
+  promote-prod:
+    name: Promote to 100% traffic
+    runs-on: ubuntu-latest
+    environment: production
+    needs: deploy-canary
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER_PROD }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_PROD }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Promote canary to 100%
+        run: |
+          gcloud run services update-traffic ${{ env.SERVICE }} \
+            --region=${{ env.REGION }} \
+            --to-tags=canary=100

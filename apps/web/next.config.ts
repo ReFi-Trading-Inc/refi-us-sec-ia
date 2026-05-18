@@ -1,18 +1,21 @@
-import type { NextConfig } from 'next';
+import path from "node:path";
+import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  transpilePackages: ['@refi/ui', '@refi/api-clients'],
+  output: "standalone",
+  outputFileTracingRoot: path.join(__dirname, "../../"),
+  transpilePackages: ["@refi/ui", "@refi/api-clients"],
   typedRoutes: true,
   headers: async () => [
     {
-      source: '/(.*)',
+      source: "/(.*)",
       headers: [
-        { key: 'X-Content-Type-Options', value: 'nosniff' },
-        { key: 'X-Frame-Options', value: 'DENY' },
-        { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+        { key: "X-Content-Type-Options", value: "nosniff" },
+        { key: "X-Frame-Options", value: "DENY" },
+        { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         {
-          key: 'Permissions-Policy',
-          value: 'camera=(), microphone=(), geolocation=()',
+          key: "Permissions-Policy",
+          value: "camera=(), microphone=(), geolocation=()",
         },
       ],
     },

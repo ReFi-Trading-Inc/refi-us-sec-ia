@@ -9,7 +9,21 @@ export {
 export type { ApiRequestInit } from "./client";
 
 export { useSession } from "./hooks/session";
-export { useKycStatus } from "./hooks/kyc";
+export {
+  buildSiweMessage,
+  siweErrorCode,
+  useSiweNonce,
+  useSiweVerify,
+  useSessionRefresh,
+  useSignOut,
+} from "./hooks/auth";
+export type { SiweMessageInput } from "./hooks/auth";
+export {
+  useKycStatus,
+  useKycStart,
+  useKycSimulateWebhook,
+  useComplianceInvalidateCache,
+} from "./hooks/kyc";
 export {
   useBrokerSupported,
   useBrokerConnection,

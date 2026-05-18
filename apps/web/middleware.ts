@@ -46,8 +46,23 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Session gate placeholder (real SIWE check in MIG-P2-01).
-  if (pathname.startsWith("/us/app/") && !request.cookies.get(SESSION_COOKIE)) {
+  // SIWE session gate. Applies to /us/app/* and /us/onboarding/* (except
+  // /us/onboarding itself, which is the post-connect landing/redirect target).
+  const needsSession =
+    pathname.startsWith("/us/app/") ||
+    (pathname.startsWith("/us/onboarding/") && pathname !== "/us/onboarding");
+
+  if (needsSession && !request.cookies.get(SESSION_COOKIE)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/us/auth/connect";
+    return NextResponse.redirect(url);
+  }
+
+  // RBAC for /admin/*. The session cookie carries the encoded role claim in
+  // production; for now we gate purely on session presence and let the page
+  // verify the role server-side. This middleware step exists so unauthenticated
+  // admin requests don't leak the existence of the admin tree.
+  if (pathname.startsWith("/admin") && !request.cookies.get(SESSION_COOKIE)) {
     const url = request.nextUrl.clone();
     url.pathname = "/us/auth/connect";
     return NextResponse.redirect(url);

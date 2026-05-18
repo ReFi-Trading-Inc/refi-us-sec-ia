@@ -31,6 +31,7 @@ export {
   useBrokerAccount,
   useBrokerPositions,
   useBrokerOrders,
+  useBrokerDisconnect,
 } from "./hooks/broker";
 export {
   useOrders,

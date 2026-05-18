@@ -1,9 +1,16 @@
-import { useQuery, type UseQueryResult } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationResult,
+  type UseQueryResult,
+} from "@tanstack/react-query";
 import { apiFetch } from "../client";
 import type {
   BrokerAccount,
   BrokerConnection,
   BrokerInfo,
+  OkResult,
   Order,
   Position,
 } from "../generated/api";
@@ -45,5 +52,22 @@ export function useBrokerOrders(): UseQueryResult<Order[]> {
     queryKey: ["brokers", "orders"],
     queryFn: () => apiFetch<Order[]>("/v1/brokers/orders"),
     staleTime: 15_000,
+  });
+}
+
+export function useBrokerDisconnect(): UseMutationResult<
+  OkResult,
+  Error,
+  void
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiFetch<OkResult>("/v1/brokers/disconnect", { method: "POST" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["brokers", "connection"] });
+      void qc.invalidateQueries({ queryKey: ["brokers", "account"] });
+      void qc.invalidateQueries({ queryKey: ["account", "activation"] });
+    },
   });
 }

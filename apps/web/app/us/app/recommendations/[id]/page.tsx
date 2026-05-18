@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { Badge, Button, Card, CardContent, StatusBanner } from "@ui/components";
 import {
@@ -22,6 +22,7 @@ export default function RecommendationDetailPage({
   const { id } = use(params);
   const { data, isLoading, isError } = useRecommendation(id);
   const submitOrder = useSubmitOrder();
+  const [qty, setQty] = useState(1);
 
   if (isLoading) {
     return <p className="text-sm text-charcoal-500">Loading…</p>;
@@ -32,15 +33,12 @@ export default function RecommendationDetailPage({
     );
   }
 
-  // Recommendations carry an action (buy/sell/hold). For preview purposes,
-  // construct a placeholder order with qty=1 market — actual execution sizing
-  // is handled by the managed execution engine.
   const previewOrder: OrderRequest | null =
     data.action === "hold"
       ? null
       : {
           symbol: data.symbol,
-          qty: 1,
+          qty,
           side: data.action,
           type: "market",
         };
@@ -87,17 +85,45 @@ export default function RecommendationDetailPage({
       </Card>
 
       {previewOrder && (
-        <CompliancePreview
-          order={previewOrder}
-          renderSubmit={(canSubmit) => (
-            <Button
-              disabled={!canSubmit || submitOrder.isPending}
-              onClick={() => submitOrder.mutate(previewOrder)}
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <label
+              htmlFor="order-qty"
+              className="text-sm font-medium text-charcoal-200"
             >
-              {recommendations.detail.approveAction}
-            </Button>
-          )}
-        />
+              Quantity
+            </label>
+            <input
+              id="order-qty"
+              type="number"
+              min={1}
+              max={10000}
+              value={qty}
+              onChange={(e) => {
+                const v = Math.max(1, Math.min(10000, Number(e.target.value)));
+                setQty(Number.isNaN(v) ? 1 : v);
+              }}
+              className="w-32 rounded-md border border-charcoal-700 bg-charcoal-800 px-3 py-2 text-sm text-charcoal-100 focus:outline-none focus:ring-2 focus:ring-mint-400 tabular-nums"
+              aria-label="Order quantity"
+            />
+            <p className="text-xs text-charcoal-500">
+              Shares to {data.action}. The managed execution engine may adjust
+              this for position sizing.
+            </p>
+          </div>
+
+          <CompliancePreview
+            order={previewOrder}
+            renderSubmit={(canSubmit) => (
+              <Button
+                disabled={!canSubmit || submitOrder.isPending}
+                onClick={() => submitOrder.mutate(previewOrder)}
+              >
+                {recommendations.detail.approveAction}
+              </Button>
+            )}
+          />
+        </div>
       )}
     </div>
   );

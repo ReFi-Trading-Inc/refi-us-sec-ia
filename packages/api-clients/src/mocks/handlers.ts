@@ -158,6 +158,13 @@ export const handlers = [
 
   http.get(url("/v1/activity"), () => HttpResponse.json(mayaActivity)),
 
+  http.post(url("/v1/documents/acknowledge"), () =>
+    HttpResponse.json({ ok: true }),
+  ),
+  http.post(url("/v1/support/ticket"), () =>
+    HttpResponse.json({ ok: true, ticket_id: `tkt_${Date.now()}` }),
+  ),
+
   http.post(url("/v1/us/eligibility"), () => {
     const decision: EligibilityDecision = {
       result: "eligible",

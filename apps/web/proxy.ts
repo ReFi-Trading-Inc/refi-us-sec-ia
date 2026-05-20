@@ -81,10 +81,12 @@ export function proxy(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (pathname.startsWith("/admin") && !request.cookies.get(SESSION_COOKIE)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/us/auth/connect";
-    return NextResponse.redirect(url);
+  // Admin surfaces do not exist in this investor app. Operator commands live
+  // exclusively in the upstream admin service (see docs/admin-investor-boundary.md).
+  // Any request to /admin/* gets a hard 404 so we don't accidentally proxy or
+  // hint at admin functionality from the investor app.
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    return new NextResponse(null, { status: 404 });
   }
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });

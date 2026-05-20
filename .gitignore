@@ -17,6 +17,11 @@ dist
 # generated
 packages/api-clients/src/generated/
 
+# BFF prototype storage (dev-only, not a compliance system of record;
+# see docs/bff-prototype-state-contract.md)
+.refi-prototype-store/
+apps/web/.refi-prototype-store/
+
 # misc
 .DS_Store
 *.log

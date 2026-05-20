@@ -10,6 +10,8 @@
     "typecheck": "turbo typecheck",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore",
     "scan-copy": "tsx scripts/scan-copy.ts",
+    "tripwire": "tsx scripts/tripwire-investor-boundary.ts",
+    "contract-test": "tsx scripts/contract-assertions.ts",
     "prepare": "husky"
   },
   "devDependencies": {

@@ -33,6 +33,10 @@ jobs:
         run: pnpm typecheck
       - name: Lint
         run: pnpm lint
+      - name: Investor-boundary tripwire (admin commands, forbidden actions, labels)
+        run: pnpm tripwire
+      - name: Contract assertions (taxonomy, receipts-vs-access-log, immutability)
+        run: pnpm contract-test
       - name: Scan copy for blocked terms
         run: pnpm scan-copy
         env:

@@ -1,6 +1,6 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiFetch } from "../client";
-import type { ActivityEvent } from "../generated/api";
+import type { ActivityEvent } from "../compat";
 
 export function useActivity(): UseQueryResult<ActivityEvent[]> {
   return useQuery({

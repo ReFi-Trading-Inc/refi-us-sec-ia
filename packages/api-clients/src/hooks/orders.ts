@@ -11,7 +11,7 @@ import type {
   OrderPreviewResult,
   OrderRequest,
   OkResult,
-} from "../generated/api";
+} from "../compat";
 
 export function useOrders(): UseQueryResult<Order[]> {
   return useQuery({

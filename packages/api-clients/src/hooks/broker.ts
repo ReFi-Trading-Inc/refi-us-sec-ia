@@ -13,7 +13,7 @@ import type {
   OkResult,
   Order,
   Position,
-} from "../generated/api";
+} from "../compat";
 
 export function useBrokerSupported(): UseQueryResult<BrokerInfo[]> {
   return useQuery({

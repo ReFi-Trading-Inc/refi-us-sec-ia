@@ -39,6 +39,8 @@ jobs:
         run: pnpm tripwire
       - name: Contract assertions (taxonomy, receipts-vs-access-log, immutability)
         run: pnpm contract-test
+      - name: Unit tests (@refi/api-clients)
+        run: pnpm --filter @refi/api-clients test
       - name: Scan copy for blocked terms
         run: pnpm scan-copy
         env:

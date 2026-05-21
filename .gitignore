@@ -14,14 +14,18 @@ dist
 .env.*.local
 !.env.example
 
-# generated — raw openapi-typescript output is ephemeral; the hand-maintained
-# api.ts re-export/shim layer is tracked.
-packages/api-clients/src/generated/_openapi.gen.ts
+# generated — raw openapi-typescript output is ephemeral. The hand-maintained
+# compatibility / shim layer lives at packages/api-clients/src/compat.ts.
+packages/api-clients/src/generated/
 
 # BFF prototype storage (dev-only, not a compliance system of record;
 # see docs/bff-prototype-state-contract.md)
 .refi-prototype-store/
 apps/web/.refi-prototype-store/
+
+# playwright
+apps/web/playwright-report/
+apps/web/test-results/
 
 # misc
 .DS_Store

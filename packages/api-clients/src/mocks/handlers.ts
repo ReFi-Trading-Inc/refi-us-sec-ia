@@ -7,7 +7,7 @@ import type {
   Order,
   OrderPreviewResult,
   OrderRequest,
-} from "../generated/api";
+} from "../compat";
 import {
   mayaActivity,
   mayaBrokerAccount,

@@ -10,7 +10,7 @@ import type {
   Order,
   Position,
   Recommendation,
-} from "../../generated/api";
+} from "../../compat";
 
 export const mayaSession: AuthSession = {
   status: "authenticated",

@@ -8,7 +8,7 @@ import type {
   Order,
   Position,
   Recommendation,
-} from "../../generated/api";
+} from "../../compat";
 
 export const davidSession: AuthSession = {
   status: "authenticated",

@@ -1,6 +1,6 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiFetch } from "../client";
-import type { AuthSession } from "../generated/api";
+import type { AuthSession } from "../compat";
 
 export function useSession(): UseQueryResult<AuthSession> {
   return useQuery({

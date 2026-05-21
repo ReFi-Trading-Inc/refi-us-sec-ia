@@ -1,5 +1,5 @@
 // Public surface for the @refi/api-clients package.
-export * from "./generated/api";
+export * from "./compat";
 export {
   apiFetch,
   ApiError,

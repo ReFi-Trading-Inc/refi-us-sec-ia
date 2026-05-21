@@ -1,6 +1,6 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiFetch } from "../client";
-import type { Recommendation } from "../generated/api";
+import type { Recommendation } from "../compat";
 
 export function useRecommendations(): UseQueryResult<Recommendation[]> {
   return useQuery({

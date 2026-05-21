@@ -11,7 +11,7 @@ import type {
   KycStatus,
   KycStatusValue,
   OkResult,
-} from "../generated/api";
+} from "../compat";
 
 const TERMINAL: ReadonlySet<KycStatus["status"]> = new Set([
   "approved",

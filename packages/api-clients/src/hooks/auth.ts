@@ -13,7 +13,7 @@ import type {
   SiweErrorCode,
   SiweNonceResponse,
   SiweVerifyRequest,
-} from "../generated/api";
+} from "../compat";
 
 export type SiweMessageInput = {
   domain: string;

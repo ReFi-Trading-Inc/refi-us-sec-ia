@@ -15,7 +15,7 @@ import type {
   BrokerConnectKeyResponse,
   BrokerConnectStartResponse,
   StrategyDescriptor,
-} from "../generated/api";
+} from "../compat";
 
 export function useAdvisoryProfile(): UseQueryResult<AdvisoryProfileResponse | null> {
   return useQuery({

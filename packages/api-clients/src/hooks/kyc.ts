@@ -6,7 +6,12 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { apiFetch } from "../client";
-import type { KycStartResponse, KycStatus, OkResult } from "../generated/api";
+import type {
+  KycStartResponse,
+  KycStatus,
+  KycStatusValue,
+  OkResult,
+} from "../generated/api";
 
 const TERMINAL: ReadonlySet<KycStatus["status"]> = new Set([
   "approved",
@@ -81,6 +86,6 @@ export function useComplianceInvalidateCache(): UseMutationResult<
   });
 }
 
-export function isKycTerminal(status: KycStatus["status"]): boolean {
-  return TERMINAL.has(status);
+export function isKycTerminal(status: KycStatusValue): boolean {
+  return TERMINAL.has(status as KycStatus["status"]);
 }

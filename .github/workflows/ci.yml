@@ -29,6 +29,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Generate OpenAPI client
+        run: pnpm --filter @refi/api-clients build
       - name: Typecheck
         run: pnpm typecheck
       - name: Lint
@@ -63,6 +65,8 @@ jobs:
           cache: pnpm
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Generate OpenAPI client
+        run: pnpm --filter @refi/api-clients build
       - name: Build
         run: pnpm --filter @refi/web build
       - name: Report bundle size

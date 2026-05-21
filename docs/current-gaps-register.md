@@ -118,6 +118,23 @@ Frontend-owned rows (BFF scaffolding, UI surfaces, tripwires, copy, tests) are u
 
 ---
 
+## Phase 1.5 — Baseline Stabilization (2026-05-21)
+
+Resolved on `phase2-ui-bff`:
+
+- **B-001 (resolved).** `packages/api-clients/src/generated/api.ts` was missing on `e2930b9`. Codegen never ran from install/build/turbo. Fix: openapi-typescript now outputs to `src/generated/_openapi.gen.ts`; the file `src/generated/api.ts` is hand-maintained and re-exports the OpenAPI output plus flat type aliases plus narrow compatibility shims for backend semantics not yet in `openapi/refi-api.yaml`. `pnpm --filter @refi/api-clients build` runs `generate`. CI runs it before typecheck/build.
+- **B-002 (resolved).** Six type imports drifted from `@refi/api-clients`. Three (`Position`, `OrderRequest`, `AuthSession`) are now flat aliases of `components.schemas`. Three (`SiweErrorCode`, `KycStatusValue`, `AccountActivationStatus`) plus seven cousins (`SiweNonceResponse`, `SiweVerifyRequest`, `KycStartResponse`, `AccountActivationResponse`, `AdvisoryProfile`/`Response`, `StrategyDescriptor`, `BrokerConnectStartResponse`, `BrokerConnectKeyResponse`, `BrokerApiKeyConnectRequest`) are compatibility shims declared in `src/generated/api.ts` — frontend-only types pending OpenAPI alignment. Each is commented with its purpose. `OrderPreviewResult.latency_ms` is a documented extension.
+- **B-003 (resolved).** Badge / Button variant drift in `account/page.tsx` and `documents/page.tsx`: `"success"` → `"active"` / `"approved"`, `"error"` → `"rejected"`, `"destructive"` → `"danger"`.
+- **B-004 (resolved).** `pnpm-workspace.yaml` `allowBuilds` was missing seven of the ten packages in `onlyBuiltDependencies`. Recursive commands needed `--config.verify-deps-before-run=false` to run. Fix: `allowBuilds` now includes bufferutil, esbuild, keccak, msw, sharp, unrs-resolver, utf-8-validate (all required native build steps, none arbitrary).
+- **B-005 (open, deferred).** No unit-test runner (Vitest) configured. Root `pnpm test` now runs `contract-test` + `tripwire` so the script exists. Adding Vitest is deferred to a follow-up because work on `packages/api-clients/vitest.config.ts` and `mocks/__tests__/` is already in flight on `main` (other authors' WIP). Phase 2 should pick up vitest once that lands.
+- **B-006 (open).** Playwright is installed (`apps/web/playwright.config.ts`, five existing spec files) but was unscripted. Root `pnpm e2e` now runs it. Not executed in CI yet; webServer needs `SESSION_SECRET`/`ELIGIBILITY_JWT_SECRET` and the config already provides test values. Phase 2 should add a CI lane.
+
+Baseline gates green on `phase2-ui-bff`: `pnpm install` (no ignored-builds error) · `pnpm --filter @refi/web typecheck` · `pnpm tripwire` · `pnpm contract-test` · `pnpm test` · `pnpm --filter @refi/web build`.
+
+Out of Phase 1.5 scope (intentionally untouched): no new UI surfaces, no new BFF routes, no `/admin` / `/explorer` / `/landing` restoration, no per-trade Accept, no SEC 203A-2(e) boundary changes.
+
+---
+
 ## Open Product Decisions (Need Zeshan / Counsel)
 
 These are not gaps to fix — they are decisions that gate the gap work:

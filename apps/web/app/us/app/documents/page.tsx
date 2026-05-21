@@ -51,7 +51,7 @@ export default function DocumentsPage() {
                   </p>
                   {doc.required ? (
                     <Badge
-                      variant="error"
+                      variant="rejected"
                       aria-label={`${doc.name}: required document`}
                     >
                       Required

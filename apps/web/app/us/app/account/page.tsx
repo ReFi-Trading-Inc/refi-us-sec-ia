@@ -61,9 +61,9 @@ export default function AccountPage() {
   const kycStatus = kyc?.status ?? "not_started";
   const kycBadgeVariant =
     kycStatus === "approved"
-      ? ("success" as const)
+      ? ("approved" as const)
       : kycStatus === "denied"
-        ? ("error" as const)
+        ? ("rejected" as const)
         : kycStatus === "under_review" || kycStatus === "pending"
           ? ("warning" as const)
           : ("neutral" as const);
@@ -97,7 +97,7 @@ export default function AccountPage() {
                 <p className="text-sm font-mono text-charcoal-200">
                   {truncateAddress(auth.wallet_id)}
                 </p>
-                <Badge variant="success">Connected</Badge>
+                <Badge variant="active">Connected</Badge>
               </div>
               <p className="text-xs text-charcoal-500">
                 Ethereum mainnet · SIWE session
@@ -169,7 +169,7 @@ export default function AccountPage() {
                     </p>
                   )}
                 </div>
-                <Badge variant="success">Connected</Badge>
+                <Badge variant="active">Connected</Badge>
               </div>
 
               {disconnectError && (
@@ -185,7 +185,7 @@ export default function AccountPage() {
                   <div className="flex gap-2">
                     <Button
                       size="sm"
-                      variant="destructive"
+                      variant="danger"
                       disabled={disconnect.isPending}
                       onClick={() => void handleDisconnect()}
                     >
@@ -277,7 +277,7 @@ export default function AccountPage() {
           </p>
           <Button
             size="sm"
-            variant="destructive"
+            variant="danger"
             onClick={() => void auth.signOut()}
           >
             Sign out all devices

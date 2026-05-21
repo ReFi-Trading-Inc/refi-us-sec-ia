@@ -14,8 +14,9 @@ dist
 .env.*.local
 !.env.example
 
-# generated
-packages/api-clients/src/generated/
+# generated — raw openapi-typescript output is ephemeral; the hand-maintained
+# api.ts re-export/shim layer is tracked.
+packages/api-clients/src/generated/_openapi.gen.ts
 
 # BFF prototype storage (dev-only, not a compliance system of record;
 # see docs/bff-prototype-state-contract.md)

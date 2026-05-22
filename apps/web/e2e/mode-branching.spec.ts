@@ -144,15 +144,15 @@ test.describe("Managed mode boundary path", () => {
 
     // Detail page boundary check: regardless of whether the recommendation
     // data resolves (the detail endpoint is MSW-backed in dev, and live MSW
-    // is disabled for e2e), the Managed posture must never render a
-    // per-trade order-entry block. If the rec loads, the managed banner
-    // shows; if it errors, the order-entry block is absent for a different
-    // reason. The assertion that survives both cases is "no signal order
-    // entry in Managed mode".
+    // is disabled for e2e), the page must never render any order-submit or
+    // per-trade execution control — neither in Managed (boundary) nor in
+    // Signal (which is informational only). The signal-manual-panel is the
+    // only Signal-side affordance and is read-only.
     await page.goto("/us/app/recommendations/rec-managed-msft", {
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByTestId("signal-order-entry")).toHaveCount(0);
     await expect(page.getByTestId("signal-place-order-button")).toHaveCount(0);
+    await expect(page.getByTestId("signal-manual-panel")).toHaveCount(0);
   });
 });

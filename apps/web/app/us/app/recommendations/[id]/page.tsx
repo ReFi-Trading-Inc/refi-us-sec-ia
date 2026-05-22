@@ -1,23 +1,16 @@
 "use client";
 
-import { use, useState } from "react";
+import { use } from "react";
 import Link from "next/link";
 import {
   Badge,
-  Button,
   Card,
   CardContent,
   ModeBadge,
   StatusBanner,
 } from "@ui/components";
-import {
-  useRecommendation,
-  useSubmitOrder,
-  useSubscriptionMode,
-  type OrderRequest,
-} from "@refi/api-clients";
+import { useRecommendation, useSubscriptionMode } from "@refi/api-clients";
 import { appCopy } from "../../../_content/app-copy";
-import { CompliancePreview } from "../../_components/CompliancePreview";
 
 const { recommendations } = appCopy;
 
@@ -29,12 +22,10 @@ export default function RecommendationDetailPage({
 }) {
   const { id } = use(params);
   const { data, isLoading, isError } = useRecommendation(id);
-  const submitOrder = useSubmitOrder();
   const { data: modeState } = useSubscriptionMode();
   const mode = modeState?.mode ?? null;
   const modeKey: "signal" | "managed" | "unset" =
     mode === "signal" ? "signal" : mode === "managed" ? "managed" : "unset";
-  const [qty, setQty] = useState(1);
 
   if (isLoading) {
     return <p className="text-sm text-charcoal-500">Loading…</p>;
@@ -45,15 +36,7 @@ export default function RecommendationDetailPage({
     );
   }
 
-  const previewOrder: OrderRequest | null =
-    data.action === "hold"
-      ? null
-      : {
-          symbol: data.symbol,
-          qty,
-          side: data.action,
-          type: "market",
-        };
+  const actionable = data.action !== "hold";
 
   const tone =
     data.action === "buy"
@@ -97,7 +80,7 @@ export default function RecommendationDetailPage({
         </CardContent>
       </Card>
 
-      {previewOrder && modeKey === "managed" && (
+      {actionable && modeKey === "managed" && (
         <StatusBanner
           variant="info"
           title="Managed execution active"
@@ -116,47 +99,25 @@ export default function RecommendationDetailPage({
         </StatusBanner>
       )}
 
-      {previewOrder && modeKey !== "managed" && (
-        <div className="flex flex-col gap-4" data-testid="signal-order-entry">
-          <div className="flex flex-col gap-1">
-            <label
-              htmlFor="order-qty"
-              className="text-sm font-medium text-charcoal-200"
-            >
-              Quantity
-            </label>
-            <input
-              id="order-qty"
-              type="number"
-              min={1}
-              max={10000}
-              value={qty}
-              onChange={(e) => {
-                const v = Math.max(1, Math.min(10000, Number(e.target.value)));
-                setQty(Number.isNaN(v) ? 1 : v);
-              }}
-              className="w-32 rounded-md border border-charcoal-700 bg-charcoal-800 px-3 py-2 text-sm text-charcoal-100 focus:outline-none focus:ring-2 focus:ring-mint-400 tabular-nums"
-              aria-label="Order quantity"
-            />
-            <p className="text-xs text-charcoal-500">
-              Shares to {data.action}. You place this order yourself through
-              your connected broker.
+      {actionable && modeKey !== "managed" && (
+        <Card data-testid="signal-manual-panel">
+          <CardContent className="pt-5 pb-5 flex flex-col gap-3">
+            <p className="text-sm font-semibold text-charcoal-50">
+              {recommendations.detail.manualAction}
             </p>
-          </div>
-
-          <CompliancePreview
-            order={previewOrder}
-            renderSubmit={(canSubmit) => (
-              <Button
-                disabled={!canSubmit || submitOrder.isPending}
-                onClick={() => submitOrder.mutate(previewOrder)}
-                data-testid="signal-place-order-button"
-              >
-                {recommendations.detail.manualAction}
-              </Button>
-            )}
-          />
-        </div>
+            <p className="text-sm text-charcoal-300">
+              {recommendations.signalManual.body}
+            </p>
+            <ol className="list-decimal list-inside text-sm text-charcoal-300 flex flex-col gap-1">
+              {recommendations.signalManual.steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+            <p className="text-xs text-charcoal-500">
+              {recommendations.signalManual.title}
+            </p>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

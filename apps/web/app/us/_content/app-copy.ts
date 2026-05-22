@@ -77,9 +77,20 @@ export const appCopy = {
       executionPolicy: "Execution policy",
       complianceStatus: "Compliance status",
       reviewAction: "Review exception",
-      // Signal-only action label. Managed mode hides the order entry control
-      // entirely; managed execution is handled by the active policy.
-      manualAction: "Place order manually",
+      // Signal-only label. ReFi Signal never submits orders. The CTA points
+      // the investor to act on this recommendation through their own broker
+      // outside of ReFi. Managed mode hides this block entirely.
+      manualAction: "View manual action steps",
+    },
+    signalManual: {
+      title: "Use this outside ReFi",
+      body: "ReFi Signal is advisory only. We do not place this order for you. To act on this recommendation, open your connected broker and submit the order yourself. ReFi records that the recommendation was delivered to you; it does not record execution.",
+      steps: [
+        "Open your broker app or web platform.",
+        "Search for the symbol shown above.",
+        "Place the order at the size and price you choose. ReFi does not adjust the size.",
+        "Return here later to view further recommendations and your activity history.",
+      ],
     },
     signal: {
       review: "Review details",

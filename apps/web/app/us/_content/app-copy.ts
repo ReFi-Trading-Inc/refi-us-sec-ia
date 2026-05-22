@@ -8,6 +8,38 @@ export const navItems = [
   { href: "/us/app/support", label: "Support" },
 ] as const;
 
+export const modeCopy = {
+  signal: {
+    badgeLabel: "ReFi Signal",
+    homeStrip: {
+      title: "You are on ReFi Signal",
+      body: "We send software-generated recommendations. You decide whether to act on them and place orders through your broker. Activate ReFi Managed in your account to automate execution under a policy.",
+    },
+  },
+  managed: {
+    badgeLabel: "ReFi Managed",
+    homeStrip: {
+      title: "ReFi Managed is active",
+      body: "Recommendations are executed automatically under your active execution policy. Pause, edit the policy, or open an exception any time. ReFi never executes off-policy without you.",
+    },
+  },
+  unset: {
+    badgeLabel: "Mode not set",
+    homeStrip: {
+      title: "Choose how ReFi works for you",
+      body: "You can stay on ReFi Signal (recommendations only) or activate ReFi Managed (recommendations executed automatically under your policy). Set this from your account.",
+    },
+  },
+} as const;
+
+export const exceptionsCopy = {
+  heading: "Exception Review",
+  subheading:
+    "Recommendations that need your attention before ReFi Managed can act on them. Each item carries a reason: profile changed, broker disconnected, disclosure pending, or stale data.",
+  placeholder:
+    "Exception Review will live here. The list will populate once Surface 6 lands. Until then, expect to see policy guardrail blocks routed to this page.",
+} as const;
+
 export const appCopy = {
   home: {
     heading: "Home",
@@ -45,7 +77,31 @@ export const appCopy = {
       executionPolicy: "Execution policy",
       complianceStatus: "Compliance status",
       reviewAction: "Review exception",
-      approveAction: "Approve for execution",
+      // Signal-only action label. Managed mode hides the order entry control
+      // entirely; managed execution is handled by the active policy.
+      manualAction: "Place order manually",
+    },
+    signal: {
+      review: "Review details",
+      save: "Save",
+      dismiss: "Dismiss",
+      actManually: "Act manually",
+      upgradeCta: "Activate ReFi Managed",
+      upgradeHelp:
+        "ReFi Managed executes recommendations automatically under your active policy. You stay in control of policy, pauses, and exceptions.",
+    },
+    managed: {
+      banner:
+        "ReFi Managed is active. Recommendations are executed automatically under your active policy. You stay in control of policy, pauses, and exceptions.",
+      statusLabels: {
+        open: "Pending policy check",
+        executing: "Submitted to broker",
+        delivered: "Executed",
+        dismissed: "Skipped by policy",
+        saved: "Held for review",
+        blocked: "Blocked by guardrail",
+      },
+      reviewCta: "Open in Exception Review",
     },
   },
   activity: {

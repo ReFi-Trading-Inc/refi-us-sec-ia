@@ -148,3 +148,51 @@ export type BrokerConnectKeyResponse = {
   connected: boolean;
   broker_id: string;
 };
+
+// ---------- Subscription mode (Phase 2 surface 1) ----------
+
+// TODO(openapi): model subscription mode in refi-api.yaml. Mirrors the
+// prototype-store entity at apps/web/src/lib/prototype-store/entities/
+// subscription-mode.ts. The string union is load-bearing — adding a value
+// requires updating mode-branching UI in every consuming surface.
+export type SubscriptionMode = "signal" | "managed";
+
+export interface SubscriptionModeState {
+  accountId: string;
+  mode: SubscriptionMode;
+  selectedAt: string;
+}
+
+// ---------- Investor recommendations (BFF projection) ----------
+
+// TODO(openapi): model recommendation projection in refi-api.yaml. Mirrors
+// apps/web/src/lib/prototype-store/entities/recommendation-projection.ts.
+// The "review-required" frontend state is derived (a recommendation gated by
+// a pending ExceptionReview), not stored as a projection status.
+export type RecommendationProjectionStatus =
+  | "open"
+  | "executing"
+  | "delivered"
+  | "dismissed"
+  | "saved"
+  | "blocked";
+
+export interface RecommendationProjection {
+  accountId: string;
+  recommendationId: string;
+  intentId?: string;
+  symbol: string;
+  action: "buy" | "sell" | "hold" | "rebalance";
+  rationale: string;
+  confidence: string;
+  expectedAllocation?: string;
+  status: RecommendationProjectionStatus;
+  generatedAt: string;
+  expiresAt?: string;
+  decisionRecordId?: string;
+}
+
+export interface InvestorRecommendationsResponse {
+  items: RecommendationProjection[];
+  mode: SubscriptionMode | null;
+}

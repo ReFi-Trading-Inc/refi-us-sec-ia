@@ -20,7 +20,7 @@ export interface AuthContext {
   source: "prototype-bff" | "backend";
 }
 
-function devFallback(req: NextRequest): AuthContext | null {
+async function devFallback(req: NextRequest): Promise<AuthContext | null> {
   // In non-production environments without a real signed session, allow a
   // deterministic dev identity derived from the eligibility cookie if present.
   // This keeps the BFF testable end-to-end without a live SIWE backend.
@@ -32,7 +32,10 @@ function devFallback(req: NextRequest): AuthContext | null {
   // Hash the eligibility token to a stable id; safe because it never leaves
   // the BFF process and is never claimed as evidence.
   const authId = `dev-${hash(eligibility).slice(0, 16)}`;
-  return { authId, source: "prototype-bff" };
+  const link = await getAuthSessionLink(authId);
+  const ctx: AuthContext = { authId, source: "prototype-bff" };
+  if (link?.accountId) ctx.accountId = link.accountId;
+  return ctx;
 }
 
 function hash(input: string): string {
@@ -72,5 +75,5 @@ export async function getAuthContext(
       }
     }
   }
-  return devFallback(req);
+  return await devFallback(req);
 }

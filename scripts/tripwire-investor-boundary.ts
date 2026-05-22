@@ -74,6 +74,12 @@ const FORBIDDEN_ACTION_IDS: ReadonlyArray<string> = [
   "founderApproveRecommendation",
   "editRecommendation",
   "triggerRebalance",
+  // Phase 2 surface 1: block per-trade Accept components/actions. No
+  // per-trade Accept is permitted in Managed mode; these names capture
+  // variants we have seen drift in across the codebase.
+  "AcceptButton",
+  "accept_trade",
+  "investor-accept",
 ];
 
 /**
@@ -99,6 +105,9 @@ const FORBIDDEN_LABELS: ReadonlyArray<string> = [
   "staff review",
   "operator approval",
   "operator review",
+  // Phase 2 surface 1: explicit per-trade Accept-and-execute phrases.
+  "approve for execution",
+  "accept and execute",
 ];
 
 // ─── Scan targets ────────────────────────────────────────────────────────────
@@ -132,6 +141,8 @@ const SKIP_DIRS = new Set([
   "dist",
   "coverage",
   ".refi-prototype-store",
+  "playwright-report",
+  "test-results",
 ]);
 
 // ─── Violation type ──────────────────────────────────────────────────────────

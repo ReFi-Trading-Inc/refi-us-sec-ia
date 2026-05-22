@@ -40,6 +40,10 @@ export {
   useCancelOrder,
 } from "./hooks/orders";
 export { useRecommendations, useRecommendation } from "./hooks/recommendations";
+export {
+  useSubscriptionMode,
+  useInvestorRecommendations,
+} from "./hooks/subscription-mode";
 export { useActivity } from "./hooks/activity";
 export {
   useAdvisoryProfile,

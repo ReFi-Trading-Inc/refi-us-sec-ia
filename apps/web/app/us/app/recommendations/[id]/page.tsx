@@ -2,10 +2,18 @@
 
 import { use, useState } from "react";
 import Link from "next/link";
-import { Badge, Button, Card, CardContent, StatusBanner } from "@ui/components";
+import {
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  ModeBadge,
+  StatusBanner,
+} from "@ui/components";
 import {
   useRecommendation,
   useSubmitOrder,
+  useSubscriptionMode,
   type OrderRequest,
 } from "@refi/api-clients";
 import { appCopy } from "../../../_content/app-copy";
@@ -22,6 +30,10 @@ export default function RecommendationDetailPage({
   const { id } = use(params);
   const { data, isLoading, isError } = useRecommendation(id);
   const submitOrder = useSubmitOrder();
+  const { data: modeState } = useSubscriptionMode();
+  const mode = modeState?.mode ?? null;
+  const modeKey: "signal" | "managed" | "unset" =
+    mode === "signal" ? "signal" : mode === "managed" ? "managed" : "unset";
   const [qty, setQty] = useState(1);
 
   if (isLoading) {
@@ -69,6 +81,7 @@ export default function RecommendationDetailPage({
         <span className="text-xs text-charcoal-500 font-mono">
           {(data.confidence * 100).toFixed(0)}% confidence
         </span>
+        <ModeBadge mode={modeKey} data-testid="recommendation-detail-mode" />
       </div>
 
       <Card>
@@ -84,8 +97,27 @@ export default function RecommendationDetailPage({
         </CardContent>
       </Card>
 
-      {previewOrder && (
-        <div className="flex flex-col gap-4">
+      {previewOrder && modeKey === "managed" && (
+        <StatusBanner
+          variant="info"
+          title="Managed execution active"
+          data-testid="managed-detail-banner"
+        >
+          {recommendations.managed.banner}
+          <div className="mt-2">
+            <Link
+              href="/us/app/exceptions"
+              className="text-mint-400 hover:text-mint-300 text-sm"
+              data-testid="managed-detail-exception-link"
+            >
+              {recommendations.managed.reviewCta} →
+            </Link>
+          </div>
+        </StatusBanner>
+      )}
+
+      {previewOrder && modeKey !== "managed" && (
+        <div className="flex flex-col gap-4" data-testid="signal-order-entry">
           <div className="flex flex-col gap-1">
             <label
               htmlFor="order-qty"
@@ -107,8 +139,8 @@ export default function RecommendationDetailPage({
               aria-label="Order quantity"
             />
             <p className="text-xs text-charcoal-500">
-              Shares to {data.action}. The managed execution engine may adjust
-              this for position sizing.
+              Shares to {data.action}. You place this order yourself through
+              your connected broker.
             </p>
           </div>
 
@@ -118,8 +150,9 @@ export default function RecommendationDetailPage({
               <Button
                 disabled={!canSubmit || submitOrder.isPending}
                 onClick={() => submitOrder.mutate(previewOrder)}
+                data-testid="signal-place-order-button"
               >
-                {recommendations.detail.approveAction}
+                {recommendations.detail.manualAction}
               </Button>
             )}
           />

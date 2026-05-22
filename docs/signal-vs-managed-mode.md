@@ -114,6 +114,41 @@ The investor activates the digital advisory program: profile, disclosures, broke
 - Managed activation screen exhaustively shows preconditions and their status; activation is a single, deliberate moment.
 - Signal mode never shows execution status, broker order detail, or fills tied to the investor's recommendations.
 
+## Implementation status — Surface 1 (Phase 2, 2026-05-22)
+
+Surface 1 lands the **read-only mode foundation**. It does not include the switching UI, acknowledgments, guardrail confirmation, or the activate-managed flow — those belong to Surface 3 (ReFi Managed Activation).
+
+What ships in Surface 1:
+
+- `useSubscriptionMode()` and `useInvestorRecommendations()` in `@refi/api-clients` read the BFF routes `/api/v1/investor/subscription-mode` and `/api/v1/investor/recommendations` and unwrap the BFF envelope.
+- `<ModeBadge>` in `@refi/ui` shows `ReFi Signal | ReFi Managed | Mode not set` with stable `data-mode` attribute.
+- `<ModeStatusStrip>` on `/us/app/home` shows the current mode with an explainer.
+- `/us/app/recommendations` branches per mode:
+  - **Signal:** upgrade CTA, plus per-card affordances `Review details · Save · Dismiss · Act manually` (Save and Dismiss are visually present but disabled until Surface 5 wires them).
+  - **Managed:** posture banner, posture labels per card (`Pending policy check · Submitted to broker · Executed · Skipped by policy · Held for review · Blocked by guardrail`), and an `Open in Exception Review` CTA on review-required items.
+- `/us/app/recommendations/[id]` hides the Signal order-entry block in Managed mode and surfaces a managed-execution banner that links to Exception Review. Signal mode keeps the order-entry block, with the prior `"Approve for execution"` button renamed to `"Place order manually"`.
+- `/us/app/exceptions` is a placeholder route so Managed CTAs resolve; Surface 6 will populate it.
+
+Boundary enforcement (new in Surface 1):
+
+- Tripwire blocks per-trade Accept variants: `AcceptButton`, `accept_trade`, `investor-accept` (action IDs) and `"approve for execution"`, `"accept and execute"` (labels). Existing `acceptRecommendation`/`approveRecommendation` etc. unchanged.
+- Tripwire skip-dirs now include `playwright-report` and `test-results` so per-run artifacts don't trigger false positives.
+
+BFF dev-fallback (new in Surface 1):
+
+- `apps/web/src/lib/bff/auth.ts` `devFallback` now resolves `accountId` from `AuthSessionLink` when present. Without this, dev/test users that never go through SIWE could not exercise account-scoped BFF routes. Symmetric with the JWT path that already did the link lookup.
+
+E2E (new in Surface 1):
+
+- `apps/web/e2e/global-setup.ts` seeds two test users (Signal and Managed) into a pinned `.refi-prototype-store-e2e` directory. Each user gets an `AuthSessionLink`, a `SubscriptionMode`, and recommendation projections. Cookie hash (FNV-1a) matches the dev-fallback in `auth.ts`.
+- `apps/web/e2e/mode-branching.spec.ts` runs two specs against `data-testid` selectors only; no legal/compliance copy regex.
+- E2E disables browser MSW (`NEXT_PUBLIC_REFI_DATA_ADAPTER=live` in webServer.env) so the QueryClient provider mounts immediately without waiting for service-worker registration in headless Chromium.
+
+Known surface-1 limitations:
+
+- The detail page recommendation lookup is still on the MSW path (`/v1/recommendations/[id]`). With browser MSW disabled in e2e, the Managed-detail banner is not asserted directly; the spec instead asserts the _absence_ of the Signal order-entry block on the detail page (the actual boundary check). Surface 5 will migrate the detail page to a BFF projection.
+- Surface 1 e2e leaves the 16 other stale specs untouched; they remain documented as B-006 in `current-gaps-register.md` and will be realigned surface-by-surface.
+
 ## Test implication
 
 - **Vitest:** BFF rejects any execution-bound call (e.g. `POST /api/v1/execution-policy/activate`, `pause`, `resume`) when `mode === "signal"`.

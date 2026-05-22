@@ -22,6 +22,7 @@ packages/api-clients/src/generated/
 # see docs/bff-prototype-state-contract.md)
 .refi-prototype-store/
 apps/web/.refi-prototype-store/
+apps/web/.refi-prototype-store-e2e/
 
 # playwright
 apps/web/playwright-report/

@@ -31,6 +31,9 @@ export type { SelectProps, SelectOption } from "./Select";
 export { Skeleton, SkeletonText, SkeletonCard } from "./Skeleton";
 export type { SkeletonProps } from "./Skeleton";
 
+export { ModeBadge } from "./ModeBadge";
+export type { ModeBadgeProps, ModeBadgeValue } from "./ModeBadge";
+
 export { StatusBanner } from "./StatusBanner";
 export type { StatusBannerProps } from "./StatusBanner";
 

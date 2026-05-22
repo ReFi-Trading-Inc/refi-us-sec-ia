@@ -20,13 +20,12 @@ export function setCorrelationId(id: string): void {
   currentCorrelationId = id;
 }
 
-declare const process: { env: Record<string, string | undefined> } | undefined;
-
 function getBaseUrl(): string {
-  const url =
-    (typeof process !== "undefined" &&
-      process?.env?.["NEXT_PUBLIC_API_BASE_URL"]) ||
-    "";
+  // Bracket access is required by the workspace tsconfig
+  // (noPropertyAccessFromIndexSignature). Turbopack and Webpack both inline
+  // `process.env["NEXT_PUBLIC_*"]` when accessed this way on a non-shadowed
+  // global `process`.
+  const url = process.env["NEXT_PUBLIC_API_BASE_URL"] ?? "";
   if (!url) {
     throw new Error("NEXT_PUBLIC_API_BASE_URL is not defined");
   }

@@ -51,6 +51,9 @@ export {
   useManagedExecutionState,
   usePauseManaged,
   useResumeManaged,
+  useActivateExecutionPolicy,
+  useDisclosureRegistry,
+  useInvestorStatus,
 } from "./hooks/execution-policy";
 export type {
   ExecutionPolicySummary,
@@ -60,6 +63,10 @@ export type {
   ManagedExecutionStatus,
   StaleBrokerDataDuration,
   StaleProfileDuration,
+  ActivateExecutionPolicyInput,
+  ActivateExecutionPolicyResult,
+  DisclosureRegistryDto,
+  InvestorStatusDto,
 } from "./hooks/execution-policy";
 export { useActivity } from "./hooks/activity";
 export {

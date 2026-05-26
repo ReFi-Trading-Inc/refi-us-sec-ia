@@ -29,6 +29,28 @@ async function bffMutate<TReq, TRes>(
   return env.data;
 }
 
+export interface ActivateExecutionPolicyInput {
+  acknowledgedDisclosures: { docId: string; version: string }[];
+  advisoryAgreementVersion: string;
+  clientAttestation: true;
+  deviceFingerprint: string;
+}
+
+export interface ActivateExecutionPolicyResult {
+  policy: {
+    policyId: string;
+    policyVersion: number;
+    accountId: string;
+    strategyId: string;
+    signedAt: string;
+  };
+  managedExecutionState: {
+    status: string;
+    executionPolicyVersion: number | null;
+  };
+  subscriptionModeFlipped: boolean;
+}
+
 // ─── Types (UI-facing shapes; server is source of truth) ────────────────────
 
 export type StaleBrokerDataDuration =
@@ -168,6 +190,70 @@ export function usePauseManaged(): UseMutationResult<
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
     },
+  });
+}
+
+export function useActivateExecutionPolicy(): UseMutationResult<
+  ActivateExecutionPolicyResult,
+  Error,
+  ActivateExecutionPolicyInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) =>
+      bffMutate<ActivateExecutionPolicyInput, ActivateExecutionPolicyResult>(
+        "/api/v1/investor/execution-policy/activate",
+        "POST",
+        input,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["execution-policy"] });
+      qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
+      qc.invalidateQueries({ queryKey: ["subscription-mode"] });
+    },
+  });
+}
+
+export interface DisclosureRegistryDto {
+  documents: Array<{
+    docId: string;
+    version: string;
+    kind: string;
+    displayStatus: string;
+    effectiveAt: string | null;
+  }>;
+  userAcks: Array<{
+    docId: string;
+    version: string;
+    ackedAt: string;
+  }>;
+}
+
+export function useDisclosureRegistry(): UseQueryResult<DisclosureRegistryDto | null> {
+  return useQuery({
+    queryKey: ["disclosure-registry"],
+    queryFn: () =>
+      bffFetch<DisclosureRegistryDto | null>("/api/v1/investor/disclosures"),
+    staleTime: 30_000,
+  });
+}
+
+export interface InvestorStatusDto {
+  authId: string;
+  accountId: string | null;
+  subscriptionMode: { mode: string } | null;
+  managedExecutionState: { status: string } | null;
+  executionPolicyVersion: number | null;
+  latestProfileVersion: number | null;
+  brokerageStatus: string | null;
+}
+
+export function useInvestorStatus(): UseQueryResult<InvestorStatusDto | null> {
+  return useQuery({
+    queryKey: ["investor-status"],
+    queryFn: () =>
+      bffFetch<InvestorStatusDto | null>("/api/v1/investor/status"),
+    staleTime: 15_000,
   });
 }
 

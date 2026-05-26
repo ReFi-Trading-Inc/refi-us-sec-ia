@@ -115,6 +115,10 @@ test.describe("Managed activation — ready user (all prereqs green)", () => {
   });
 });
 
+// The two idempotency tests both write ExecutionPolicy versions against the
+// same dedicated account; running them in parallel can race on the
+// `appendExecutionPolicy` putIfAbsent guard. Serial keeps them deterministic.
+test.describe.configure({ mode: "serial" });
 test.describe("Managed activation — idempotency", () => {
   test("Idempotency-Key header replay returns idempotentReplay:true and does not create a new policy version", async ({
     page,

@@ -44,6 +44,12 @@ export const E2E_USERS = {
   // Dedicated account for idempotency tests so they cannot race against the
   // UI activation test that targets `ready` in parallel.
   idempotency: { eligibilityCookie: "e2e-idempotency-user" },
+  // Managed users seeded with specific ManagedExecutionState statuses so the
+  // pause / resume spec can assert each branch in isolation without mutating
+  // the shared `managed` user (whose status the Surface-1 spec depends on).
+  pausableActive: { eligibilityCookie: "e2e-pausable-active-user" },
+  resumablePaused: { eligibilityCookie: "e2e-resumable-paused-user" },
+  systemPaused: { eligibilityCookie: "e2e-system-paused-user" },
 } as const;
 
 export const ACTIVATION_DISCLOSURE = {
@@ -178,9 +184,74 @@ async function seedReadyActivationFor(authId: string, accountId: string) {
   );
 }
 
+type ManagedSeedStatus =
+  | "active"
+  | "paused_by_user"
+  | "paused_by_system"
+  | "review_required"
+  | "setup_incomplete";
+
+async function seedManagedAccount(args: {
+  accountId: string;
+  authId: string;
+  correlationId: string;
+  status: ManagedSeedStatus;
+  reasonCode?: string;
+}) {
+  const root = storeRoot();
+  const signedAt = new Date().toISOString();
+  await writeJson(
+    join(
+      root,
+      "execution-policies",
+      `${safeKey(`${args.accountId}__v000001`)}.json`,
+    ),
+    {
+      accountId: args.accountId,
+      policyId: `${args.accountId}-policy-v1`,
+      policyVersion: 1,
+      strategyId: "core-balanced",
+      accountScope: "primary",
+      assetUniverse: ["US_LARGE_CAP_EQUITY"],
+      riskGuardrailHash: "sha256-seed-guardrails",
+      restrictionsHash: "sha256-seed-restrictions",
+      pauseRules: ["disclosure_superseded", "profile_superseded"],
+      notificationPreferences: ["email"],
+      advisoryProfileVersion: 1,
+      disclosureVersions: [{ docId: "form-adv-2a", version: "v2026-01" }],
+      advisoryAgreementVersion: "v2026-01",
+      signedAt,
+      signedByAuthId: args.authId,
+      signedIpHash: "sha256-seed-ip",
+      signedDeviceFingerprintHash: "sha256-seed-device",
+      correlationId: args.correlationId,
+      meta: meta(args.correlationId),
+    },
+  );
+  await writeJson(
+    join(root, "managed-execution-states", `${safeKey(args.accountId)}.json`),
+    {
+      accountId: args.accountId,
+      executionPolicyVersion: 1,
+      status: args.status,
+      ...(args.reasonCode ? { reasonCode: args.reasonCode } : {}),
+      lastChangedAt: signedAt,
+      lastChangedBy: args.status === "paused_by_system" ? "system" : "user",
+      meta: meta(args.correlationId),
+    },
+  );
+}
+
 async function seedUser(opts: {
   cookieValue: string;
-  mode: "signal" | "managed" | "ready" | "idempotency";
+  mode:
+    | "signal"
+    | "managed"
+    | "ready"
+    | "idempotency"
+    | "pausableActive"
+    | "resumablePaused"
+    | "systemPaused";
 }) {
   const root = storeRoot();
   const authId = authIdFor(opts.cookieValue);
@@ -203,27 +274,31 @@ async function seedUser(opts: {
     },
   );
 
-  // 2) Subscription mode. `ready` and `idempotency` users are seeded as
-  //    Signal so the activation flow exercises the Signal→Managed transition.
+  // 2) Subscription mode.
+  //    - `ready` / `idempotency` are Signal so activation flow exercises the
+  //      Signal→Managed transition.
+  //    - `pausableActive` / `resumablePaused` / `systemPaused` are Managed so
+  //      the pause/resume controls render.
+  const seededMode: "signal" | "managed" =
+    opts.mode === "ready" ||
+    opts.mode === "idempotency" ||
+    opts.mode === "signal"
+      ? "signal"
+      : "managed";
   await writeJson(
     join(root, "subscription-modes", `${safeKey(accountId)}.json`),
     {
       accountId,
-      mode:
-        opts.mode === "ready" || opts.mode === "idempotency"
-          ? "signal"
-          : opts.mode,
+      mode: seededMode,
       selectedAt: new Date().toISOString(),
       meta: meta(correlationId),
     },
   );
 
-  // 3) Recommendation projections. Signal: one open. Managed: three covering
-  //    informational + review-required postures so the spec can assert both.
+  // 3) Recommendation projections. Signal-shaped accounts get one open card;
+  //    Managed-shaped accounts get the informational + review-required pair.
   const projections =
-    opts.mode === "signal" ||
-    opts.mode === "ready" ||
-    opts.mode === "idempotency"
+    seededMode === "signal"
       ? [
           {
             recommendationId: `rec-${opts.mode}-aapl`,
@@ -272,52 +347,27 @@ async function seedUser(opts: {
     );
   }
 
-  // 4) For managed users, seed an active ExecutionPolicy v1 + a
-  //    ManagedExecutionState in `active`. Surface 2 needs these so the
-  //    "active policy stays in force" banner has something to anchor to.
-  //    No draft is seeded — the draft route's default-initialize path
-  //    should populate the form from defaults.
-  if (opts.mode === "managed") {
-    const signedAt = new Date().toISOString();
-    await writeJson(
-      join(
-        root,
-        "execution-policies",
-        `${safeKey(`${accountId}__v000001`)}.json`,
-      ),
-      {
-        accountId,
-        policyId: `${accountId}-policy-v1`,
-        policyVersion: 1,
-        strategyId: "core-balanced",
-        accountScope: "primary",
-        assetUniverse: ["US_LARGE_CAP_EQUITY"],
-        riskGuardrailHash: "sha256-seed-guardrails",
-        restrictionsHash: "sha256-seed-restrictions",
-        pauseRules: ["disclosure_superseded", "profile_superseded"],
-        notificationPreferences: ["email"],
-        advisoryProfileVersion: 1,
-        disclosureVersions: [{ docId: "form-adv-2a", version: "v2026-01" }],
-        advisoryAgreementVersion: "v2026-01",
-        signedAt,
-        signedByAuthId: authId,
-        signedIpHash: "sha256-seed-ip",
-        signedDeviceFingerprintHash: "sha256-seed-device",
-        correlationId,
-        meta: meta(correlationId),
-      },
-    );
-    await writeJson(
-      join(root, "managed-execution-states", `${safeKey(accountId)}.json`),
-      {
-        accountId,
-        executionPolicyVersion: 1,
-        status: "active",
-        lastChangedAt: signedAt,
-        lastChangedBy: "user",
-        meta: meta(correlationId),
-      },
-    );
+  // 4) Managed-shaped users get a signed ExecutionPolicy v1 + a
+  //    ManagedExecutionState seeded to a specific status. Surface 2 + the
+  //    pause/resume spec drive different branches off the same shape.
+  const managedSeedStatus: ManagedSeedStatus | null =
+    opts.mode === "managed" || opts.mode === "pausableActive"
+      ? "active"
+      : opts.mode === "resumablePaused"
+        ? "paused_by_user"
+        : opts.mode === "systemPaused"
+          ? "paused_by_system"
+          : null;
+  if (managedSeedStatus !== null) {
+    await seedManagedAccount({
+      accountId,
+      authId,
+      correlationId,
+      status: managedSeedStatus,
+      ...(managedSeedStatus === "paused_by_system"
+        ? { reasonCode: "broker_disconnected" }
+        : {}),
+    });
   }
 
   // 5) `ready` and `idempotency` users get every activation prerequisite
@@ -366,5 +416,17 @@ export default async function globalSetup() {
   await seedUser({
     cookieValue: E2E_USERS.idempotency.eligibilityCookie,
     mode: "idempotency",
+  });
+  await seedUser({
+    cookieValue: E2E_USERS.pausableActive.eligibilityCookie,
+    mode: "pausableActive",
+  });
+  await seedUser({
+    cookieValue: E2E_USERS.resumablePaused.eligibilityCookie,
+    mode: "resumablePaused",
+  });
+  await seedUser({
+    cookieValue: E2E_USERS.systemPaused.eligibilityCookie,
+    mode: "systemPaused",
   });
 }

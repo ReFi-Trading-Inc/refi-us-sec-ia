@@ -28,8 +28,11 @@ import {
   useExecutionPolicyDraft,
   useSaveExecutionPolicyDraft,
   useManagedExecutionState,
+  usePauseManaged,
+  useResumeManaged,
   useSubscriptionMode,
   type ExecutionPolicyDraftDto,
+  type ManagedExecutionStatus,
   type SaveExecutionPolicyDraftInput,
   type StaleBrokerDataDuration,
   type StaleProfileDuration,
@@ -113,18 +116,164 @@ function csvToArray(s: string): string[] {
     .filter((x) => x.length > 0);
 }
 
+/**
+ * Pause / Resume controls. Behavior matches the BFF route guards in
+ * apps/web/app/api/v1/investor/managed/{pause,resume}/route.ts:
+ *   - active            → Pause button visible
+ *   - paused_by_user    → Resume button visible
+ *   - paused_by_system  → read-only banner; resume must clear upstream
+ *   - review_required   → read-only banner; resolve exceptions first
+ *   - setup_incomplete  → read-only banner; complete setup first
+ *   - inactive / null   → controls suppressed (never activated)
+ * Signal users see nothing — only Managed accounts can pause/resume.
+ */
+function PauseResumeCard(props: {
+  mode: string;
+  status: ManagedExecutionStatus | null;
+  reasonCode?: string;
+  onPause: () => void;
+  onResume: () => void;
+  pausePending: boolean;
+  resumePending: boolean;
+  error: string | null;
+}) {
+  const { mode, status } = props;
+  if (mode !== "managed" || status === null || status === "inactive") {
+    return null;
+  }
+
+  const variant =
+    status === "active"
+      ? "success"
+      : status === "paused_by_user"
+        ? "warning"
+        : "info";
+
+  const title =
+    status === "active"
+      ? "Automated execution is on"
+      : status === "paused_by_user"
+        ? "You paused automated execution"
+        : status === "paused_by_system"
+          ? "Automation paused by the system"
+          : status === "review_required"
+            ? "Review required before automation can resume"
+            : "Setup must be completed before automation can run";
+
+  const description =
+    status === "active"
+      ? "ReFi is executing trades automatically under your active Execution Policy. Pause any time — your active policy stays signed and unchanged."
+      : status === "paused_by_user"
+        ? "Automated execution is held. Your active Execution Policy is unchanged. Resume any time to let ReFi continue."
+        : status === "paused_by_system"
+          ? "Automation is held because an upstream prerequisite is stale (broker, profile, or disclosure). The pause clears automatically when the prerequisite is restored — you cannot resume it directly."
+          : status === "review_required"
+            ? "An exception needs your attention before automation can continue. Open Exception Review to resolve it; automation will not run until then."
+            : "An onboarding step is incomplete. Finish setup before automation can begin.";
+
+  return (
+    <Card data-testid="managed-controls">
+      <CardHeader>
+        <CardTitle>Managed execution</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3 pb-5">
+        <StatusBanner
+          variant={variant}
+          title={title}
+          data-testid="managed-controls-banner"
+          data-status={status}
+        >
+          {description}
+          {props.reasonCode && (
+            <span
+              className="block mt-1 text-xs opacity-80"
+              data-testid="managed-controls-reason-code"
+            >
+              reason: {props.reasonCode}
+            </span>
+          )}
+        </StatusBanner>
+        <div className="flex flex-wrap gap-3">
+          {status === "active" && (
+            <Button
+              data-testid="managed-pause-button"
+              variant="secondary"
+              onClick={props.onPause}
+              loading={props.pausePending}
+            >
+              Pause automation
+            </Button>
+          )}
+          {status === "paused_by_user" && (
+            <Button
+              data-testid="managed-resume-button"
+              onClick={props.onResume}
+              loading={props.resumePending}
+            >
+              Resume automation
+            </Button>
+          )}
+          {(status === "paused_by_system" ||
+            status === "review_required" ||
+            status === "setup_incomplete") && (
+            <p
+              className="text-xs text-charcoal-400"
+              data-testid="managed-controls-readonly-note"
+            >
+              Resume is not available from here while this state is in effect.
+            </p>
+          )}
+        </div>
+        {props.error && (
+          <p
+            className="text-xs text-status-rejected"
+            data-testid="managed-controls-error"
+          >
+            {props.error}
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function AutomationCenterPage() {
   const modeQ = useSubscriptionMode();
   const policyQ = useExecutionPolicy();
   const draftQ = useExecutionPolicyDraft();
   const mesQ = useManagedExecutionState();
   const saveMut = useSaveExecutionPolicyDraft();
+  const pauseMut = usePauseManaged();
+  const resumeMut = useResumeManaged();
 
   const [form, setForm] = useState<DraftForm | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saveState, setSaveState] = useState<"idle" | "saved" | "error">(
     "idle",
   );
+  const [pauseError, setPauseError] = useState<string | null>(null);
+
+  const onPause = useCallback(async () => {
+    setPauseError(null);
+    try {
+      await pauseMut.mutateAsync();
+    } catch (e) {
+      setPauseError(
+        e instanceof Error ? e.message : "Could not pause automation.",
+      );
+    }
+  }, [pauseMut]);
+
+  const onResume = useCallback(async () => {
+    setPauseError(null);
+    try {
+      await resumeMut.mutateAsync();
+    } catch (e) {
+      setPauseError(
+        e instanceof Error ? e.message : "Could not resume automation.",
+      );
+    }
+  }, [resumeMut]);
 
   // Hydrate the form once the draft loads. We do not re-hydrate on subsequent
   // refetches — that would clobber unsaved edits.
@@ -326,6 +475,18 @@ export default function AutomationCenterPage() {
           and activate the new version.
         </StatusBanner>
       )}
+
+      {/* Managed execution controls (pause / resume) */}
+      <PauseResumeCard
+        mode={mode}
+        status={mes?.status ?? null}
+        reasonCode={mes?.reasonCode}
+        onPause={onPause}
+        onResume={onResume}
+        pausePending={pauseMut.isPending}
+        resumePending={resumeMut.isPending}
+        error={pauseError}
+      />
 
       {/* 3. Draft policy builder */}
       <Card data-testid="automation-draft-builder">

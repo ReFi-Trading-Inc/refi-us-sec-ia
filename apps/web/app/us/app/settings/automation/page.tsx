@@ -10,6 +10,7 @@
  * version. See memory/handoff_phase2_surface2.md.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { z } from "zod";
 import {
   Badge,
@@ -24,6 +25,7 @@ import {
   StatusBanner,
 } from "@ui/components";
 import {
+  useDisclosureReacknowledgement,
   useExecutionPolicy,
   useExecutionPolicyDraft,
   useSaveExecutionPolicyDraft,
@@ -245,6 +247,7 @@ export default function AutomationCenterPage() {
   const saveMut = useSaveExecutionPolicyDraft();
   const pauseMut = usePauseManaged();
   const resumeMut = useResumeManaged();
+  const reackQ = useDisclosureReacknowledgement();
 
   const [form, setForm] = useState<DraftForm | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -463,6 +466,27 @@ export default function AutomationCenterPage() {
           )}
         </CardContent>
       </Card>
+
+      {mode === "managed" && reackQ.data?.requiresReacknowledgement && (
+        <StatusBanner
+          variant="warning"
+          title="Updated disclosures need your acknowledgement"
+          data-testid="disclosure-reack-blocked-banner"
+        >
+          <p className="mb-2">
+            Updated disclosures require your acknowledgement before managed
+            execution continues. Your active Execution Policy stays signed and
+            unchanged — only the disclosure documents need to be re-reviewed.
+          </p>
+          <Link
+            href="/us/app/settings/automation/disclosures"
+            data-testid="disclosure-reack-cta"
+            className="inline-flex items-center text-sm font-medium underline underline-offset-2"
+          >
+            Review updated disclosures
+          </Link>
+        </StatusBanner>
+      )}
 
       {isManagedActive && (
         <StatusBanner

@@ -53,6 +53,8 @@ export {
   useResumeManaged,
   useActivateExecutionPolicy,
   useDisclosureRegistry,
+  useDisclosureReacknowledgement,
+  useReacknowledgeDisclosure,
   useInvestorStatus,
 } from "./hooks/execution-policy";
 export type {
@@ -66,6 +68,10 @@ export type {
   ActivateExecutionPolicyInput,
   ActivateExecutionPolicyResult,
   DisclosureRegistryDto,
+  DisclosureReacknowledgementView,
+  StaleDisclosureDto,
+  ReacknowledgeDisclosureInput,
+  ReacknowledgeDisclosureResult,
   InvestorStatusDto,
 } from "./hooks/execution-policy";
 export { useActivity } from "./hooks/activity";

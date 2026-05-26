@@ -139,7 +139,7 @@ test.describe("Managed activation — idempotency", () => {
       "idempotency-key": `e2e-activate-key-${Date.now()}-${Math.random()}`,
     };
     const body = {
-      acknowledgedDisclosures: [{ docId: "form-adv-2a", version: "v2026-01" }],
+      acknowledgedDisclosures: [{ docId: "form-adv-2a", version: "v2026-06" }],
       advisoryAgreementVersion: "advisory-agreement-header-test",
       clientAttestation: true,
       deviceFingerprint: "e2e-device-stable",
@@ -184,7 +184,7 @@ test.describe("Managed activation — idempotency", () => {
       "x-correlation-id": "e2e-idempotency-derived-1",
     };
     const body = {
-      acknowledgedDisclosures: [{ docId: "form-adv-2a", version: "v2026-01" }],
+      acknowledgedDisclosures: [{ docId: "form-adv-2a", version: "v2026-06" }],
       advisoryAgreementVersion: "advisory-agreement-derived-test",
       clientAttestation: true,
       deviceFingerprint: "e2e-device-stable",

@@ -229,6 +229,70 @@ export interface DisclosureRegistryDto {
   }>;
 }
 
+export interface StaleDisclosureDto {
+  docId: string;
+  previousVersion: string;
+  currentVersion: string;
+  kind: string;
+  effectiveAt: string | null;
+  alreadyAcknowledged: boolean;
+}
+
+export interface DisclosureReacknowledgementView {
+  activePolicyVersion: number | null;
+  requiresReacknowledgement: boolean;
+  staleDisclosures: StaleDisclosureDto[];
+}
+
+export interface ReacknowledgeDisclosureInput {
+  docId: string;
+  version: string;
+}
+
+export interface ReacknowledgeDisclosureResult {
+  ok: boolean;
+  created: boolean;
+  ack: { docId: string; version: string; ackedAt: string };
+  previousVersion: string;
+  currentVersion: string;
+  activePolicyVersion: number;
+  managedExecutionStatusBefore: string | null;
+  managedExecutionStatusAfter: string | null;
+  reasonCodeCleared: string | null;
+}
+
+export function useDisclosureReacknowledgement(): UseQueryResult<DisclosureReacknowledgementView | null> {
+  return useQuery({
+    queryKey: ["disclosure-reacknowledgement"],
+    queryFn: () =>
+      bffFetch<DisclosureReacknowledgementView | null>(
+        "/api/v1/investor/disclosures/reacknowledgement",
+      ),
+    staleTime: 15_000,
+  });
+}
+
+export function useReacknowledgeDisclosure(): UseMutationResult<
+  ReacknowledgeDisclosureResult,
+  Error,
+  ReacknowledgeDisclosureInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) =>
+      bffMutate<ReacknowledgeDisclosureInput, ReacknowledgeDisclosureResult>(
+        "/api/v1/investor/disclosures/reacknowledge",
+        "POST",
+        input,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["disclosure-reacknowledgement"] });
+      qc.invalidateQueries({ queryKey: ["disclosure-registry"] });
+      qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
+    },
+  });
+}
+
 export function useDisclosureRegistry(): UseQueryResult<DisclosureRegistryDto | null> {
   return useQuery({
     queryKey: ["disclosure-registry"],

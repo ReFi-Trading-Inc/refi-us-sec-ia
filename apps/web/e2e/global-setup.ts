@@ -50,6 +50,17 @@ export const E2E_USERS = {
   pausableActive: { eligibilityCookie: "e2e-pausable-active-user" },
   resumablePaused: { eligibilityCookie: "e2e-resumable-paused-user" },
   systemPaused: { eligibilityCookie: "e2e-system-paused-user" },
+  // Surface 5: Managed users with disclosure versions on the active policy
+  // that are no longer the latest available in the registry.
+  staleDisclosure: { eligibilityCookie: "e2e-stale-disclosure-user" },
+  staleDisclosurePaused: {
+    eligibilityCookie: "e2e-stale-disclosure-paused-user",
+  },
+} as const;
+
+export const ACTIVATION_DISCLOSURE_V2 = {
+  docId: "form-adv-2a",
+  version: "v2026-06",
 } as const;
 
 export const ACTIVATION_DISCLOSURE = {
@@ -86,6 +97,9 @@ function meta(correlationId: string) {
 
 async function seedDisclosureRegistry() {
   const root = storeRoot();
+  // v1 (the version pinned in pre-Surface-5 seeded ExecutionPolicies). Now
+  // marked `superseded` so the eligibility view treats v2 as the latest
+  // required acknowledgement.
   await writeJson(
     join(
       root,
@@ -96,10 +110,28 @@ async function seedDisclosureRegistry() {
       docId: ACTIVATION_DISCLOSURE.docId,
       version: ACTIVATION_DISCLOSURE.version,
       kind: "adv_2a",
-      effectiveAt: new Date().toISOString(),
-      contentHash: "sha256-seed-adv2a",
-      displayStatus: "available",
+      effectiveAt: "2026-01-15T00:00:00Z",
+      contentHash: "sha256-seed-adv2a-v1",
+      displayStatus: "superseded",
       meta: meta("e2e-seed-disclosure"),
+    },
+  );
+  // v2: superseding version, available for re-acknowledgement.
+  await writeJson(
+    join(
+      root,
+      "disclosure-documents",
+      `${safeKey(`${ACTIVATION_DISCLOSURE_V2.docId}__${ACTIVATION_DISCLOSURE_V2.version}`)}.json`,
+    ),
+    {
+      docId: ACTIVATION_DISCLOSURE_V2.docId,
+      version: ACTIVATION_DISCLOSURE_V2.version,
+      kind: "adv_2a",
+      effectiveAt: "2026-06-01T00:00:00Z",
+      contentHash: "sha256-seed-adv2a-v2",
+      displayStatus: "available",
+      supersedesVersion: ACTIVATION_DISCLOSURE.version,
+      meta: meta("e2e-seed-disclosure-v2"),
     },
   );
 }
@@ -164,17 +196,18 @@ async function seedReadyActivationFor(authId: string, accountId: string) {
     },
   );
 
-  // Disclosure acknowledgement.
+  // Disclosure acknowledgement. The ready / idempotency users ack the
+  // CURRENT available version (v2) so activation can proceed cleanly.
   await writeJson(
     join(
       root,
       "disclosure-acks",
-      `${safeKey(`${authId}__${ACTIVATION_DISCLOSURE.docId}__${ACTIVATION_DISCLOSURE.version}`)}.json`,
+      `${safeKey(`${authId}__${ACTIVATION_DISCLOSURE_V2.docId}__${ACTIVATION_DISCLOSURE_V2.version}`)}.json`,
     ),
     {
       userId: authId,
-      docId: ACTIVATION_DISCLOSURE.docId,
-      version: ACTIVATION_DISCLOSURE.version,
+      docId: ACTIVATION_DISCLOSURE_V2.docId,
+      version: ACTIVATION_DISCLOSURE_V2.version,
       ackedAt: new Date().toISOString(),
       acceptanceSource: "web",
       ipHash: "sha256-seed-ip",
@@ -251,7 +284,9 @@ async function seedUser(opts: {
     | "idempotency"
     | "pausableActive"
     | "resumablePaused"
-    | "systemPaused";
+    | "systemPaused"
+    | "staleDisclosure"
+    | "staleDisclosurePaused";
 }) {
   const root = storeRoot();
   const authId = authIdFor(opts.cookieValue);
@@ -349,24 +384,31 @@ async function seedUser(opts: {
 
   // 4) Managed-shaped users get a signed ExecutionPolicy v1 + a
   //    ManagedExecutionState seeded to a specific status. Surface 2 + the
-  //    pause/resume spec drive different branches off the same shape.
+  //    pause/resume + disclosure-reack specs drive different branches off
+  //    the same shape.
   const managedSeedStatus: ManagedSeedStatus | null =
-    opts.mode === "managed" || opts.mode === "pausableActive"
+    opts.mode === "managed" ||
+    opts.mode === "pausableActive" ||
+    opts.mode === "staleDisclosure"
       ? "active"
       : opts.mode === "resumablePaused"
         ? "paused_by_user"
-        : opts.mode === "systemPaused"
+        : opts.mode === "systemPaused" || opts.mode === "staleDisclosurePaused"
           ? "paused_by_system"
           : null;
   if (managedSeedStatus !== null) {
+    const reasonCode =
+      opts.mode === "systemPaused"
+        ? "broker_disconnected"
+        : opts.mode === "staleDisclosurePaused"
+          ? "stale_disclosure_form-adv-2a"
+          : undefined;
     await seedManagedAccount({
       accountId,
       authId,
       correlationId,
       status: managedSeedStatus,
-      ...(managedSeedStatus === "paused_by_system"
-        ? { reasonCode: "broker_disconnected" }
-        : {}),
+      ...(reasonCode ? { reasonCode } : {}),
     });
   }
 
@@ -428,5 +470,13 @@ export default async function globalSetup() {
   await seedUser({
     cookieValue: E2E_USERS.systemPaused.eligibilityCookie,
     mode: "systemPaused",
+  });
+  await seedUser({
+    cookieValue: E2E_USERS.staleDisclosure.eligibilityCookie,
+    mode: "staleDisclosure",
+  });
+  await seedUser({
+    cookieValue: E2E_USERS.staleDisclosurePaused.eligibilityCookie,
+    mode: "staleDisclosurePaused",
   });
 }

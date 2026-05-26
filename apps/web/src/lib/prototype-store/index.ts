@@ -37,3 +37,4 @@ export * from "./entities/receipt";
 export * from "./entities/record-access-log";
 export * from "./entities/auth-link";
 export * from "./entities/lifecycle";
+export * from "./entities/activation-idempotency";

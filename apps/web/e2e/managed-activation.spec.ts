@@ -115,6 +115,105 @@ test.describe("Managed activation — ready user (all prereqs green)", () => {
   });
 });
 
+test.describe("Managed activation — idempotency", () => {
+  test("Idempotency-Key header replay returns idempotentReplay:true and does not create a new policy version", async ({
+    page,
+    context,
+  }) => {
+    await seedCookies(context, E2E_USERS.idempotency.eligibilityCookie);
+    // Warm cookies through a normal page navigation so the BFF dev-fallback
+    // resolves the auth context the same way it does for UI requests.
+    await page.goto("/us/app/settings/automation", {
+      waitUntil: "domcontentloaded",
+    });
+
+    // Use a unique agreement version so the derived key cannot collide with
+    // the UI activation test that runs in parallel against the same account.
+    const headers = {
+      "content-type": "application/json",
+      "x-correlation-id": "e2e-idempotency-1",
+      "idempotency-key": `e2e-activate-key-${Date.now()}-${Math.random()}`,
+    };
+    const body = {
+      acknowledgedDisclosures: [{ docId: "form-adv-2a", version: "v2026-01" }],
+      advisoryAgreementVersion: "advisory-agreement-header-test",
+      clientAttestation: true,
+      deviceFingerprint: "e2e-device-stable",
+    };
+
+    const first = await page.request.post(
+      "/api/v1/investor/execution-policy/activate",
+      { headers, data: body },
+    );
+    expect(first.status()).toBe(201);
+    const firstJson = await first.json();
+    expect(firstJson.data.idempotentReplay).toBe(false);
+    const firstVersion = firstJson.data.policy.policyVersion;
+    expect(typeof firstVersion).toBe("number");
+
+    const second = await page.request.post(
+      "/api/v1/investor/execution-policy/activate",
+      { headers, data: body },
+    );
+    expect(second.status()).toBe(200);
+    const secondJson = await second.json();
+    expect(secondJson.data.idempotentReplay).toBe(true);
+    expect(secondJson.data.subscriptionModeFlipped).toBe(false);
+    expect(secondJson.data.policy.policyVersion).toBe(firstVersion);
+  });
+
+  test("Derived-key replay (no header) on second activation attempt returns idempotentReplay:true", async ({
+    page,
+    context,
+  }) => {
+    await seedCookies(context, E2E_USERS.idempotency.eligibilityCookie);
+    await page.goto("/us/app/settings/automation", {
+      waitUntil: "domcontentloaded",
+    });
+
+    // No Idempotency-Key header → server derives the key from accountId +
+    // draft.updatedAt + ack set + agreementVersion. Same inputs = same key.
+    // Unique agreement version isolates from the UI activation test that
+    // also runs against the ready user in parallel.
+    const headers = {
+      "content-type": "application/json",
+      "x-correlation-id": "e2e-idempotency-derived-1",
+    };
+    const body = {
+      acknowledgedDisclosures: [{ docId: "form-adv-2a", version: "v2026-01" }],
+      advisoryAgreementVersion: "advisory-agreement-derived-test",
+      clientAttestation: true,
+      deviceFingerprint: "e2e-device-stable",
+    };
+
+    const first = await page.request.post(
+      "/api/v1/investor/execution-policy/activate",
+      { headers, data: body },
+    );
+    expect(first.status()).toBe(201);
+    const firstJson = await first.json();
+    const firstVersion = firstJson.data.policy.policyVersion;
+    expect(firstJson.data.idempotentReplay).toBe(false);
+
+    // Even a different deviceFingerprint must still collapse to the same
+    // key — device is intentionally NOT in the derivation.
+    const second = await page.request.post(
+      "/api/v1/investor/execution-policy/activate",
+      {
+        headers: {
+          ...headers,
+          "x-correlation-id": "e2e-idempotency-derived-2",
+        },
+        data: { ...body, deviceFingerprint: "e2e-device-rotated" },
+      },
+    );
+    expect(second.status()).toBe(200);
+    const secondJson = await second.json();
+    expect(secondJson.data.idempotentReplay).toBe(true);
+    expect(secondJson.data.policy.policyVersion).toBe(firstVersion);
+  });
+});
+
 test.describe("Managed activation — blocked checklist (signal user)", () => {
   test.beforeEach(async ({ context }) => {
     await seedCookies(context, E2E_USERS.signal.eligibilityCookie);

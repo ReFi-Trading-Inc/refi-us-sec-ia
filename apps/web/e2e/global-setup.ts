@@ -41,6 +41,9 @@ export const E2E_USERS = {
   // Surface 3 spec can drive a real activation. Distinct from `signal` so
   // the blocked-checklist assertions remain stable.
   ready: { eligibilityCookie: "e2e-ready-user" },
+  // Dedicated account for idempotency tests so they cannot race against the
+  // UI activation test that targets `ready` in parallel.
+  idempotency: { eligibilityCookie: "e2e-idempotency-user" },
 } as const;
 
 export const ACTIVATION_DISCLOSURE = {
@@ -177,7 +180,7 @@ async function seedReadyActivationFor(authId: string, accountId: string) {
 
 async function seedUser(opts: {
   cookieValue: string;
-  mode: "signal" | "managed" | "ready";
+  mode: "signal" | "managed" | "ready" | "idempotency";
 }) {
   const root = storeRoot();
   const authId = authIdFor(opts.cookieValue);
@@ -200,13 +203,16 @@ async function seedUser(opts: {
     },
   );
 
-  // 2) Subscription mode. `ready` is seeded as a Signal user so the
-  //    activation flow exercises the Signal→Managed transition.
+  // 2) Subscription mode. `ready` and `idempotency` users are seeded as
+  //    Signal so the activation flow exercises the Signal→Managed transition.
   await writeJson(
     join(root, "subscription-modes", `${safeKey(accountId)}.json`),
     {
       accountId,
-      mode: opts.mode === "ready" ? "signal" : opts.mode,
+      mode:
+        opts.mode === "ready" || opts.mode === "idempotency"
+          ? "signal"
+          : opts.mode,
       selectedAt: new Date().toISOString(),
       meta: meta(correlationId),
     },
@@ -215,7 +221,9 @@ async function seedUser(opts: {
   // 3) Recommendation projections. Signal: one open. Managed: three covering
   //    informational + review-required postures so the spec can assert both.
   const projections =
-    opts.mode === "signal" || opts.mode === "ready"
+    opts.mode === "signal" ||
+    opts.mode === "ready" ||
+    opts.mode === "idempotency"
       ? [
           {
             recommendationId: `rec-${opts.mode}-aapl`,
@@ -312,8 +320,9 @@ async function seedUser(opts: {
     );
   }
 
-  // 5) The `ready` user gets every activation prerequisite pre-seeded.
-  if (opts.mode === "ready") {
+  // 5) `ready` and `idempotency` users get every activation prerequisite
+  //    pre-seeded so the activation flow runs end-to-end.
+  if (opts.mode === "ready" || opts.mode === "idempotency") {
     await seedReadyActivationFor(authId, accountId);
   }
 }
@@ -334,6 +343,7 @@ export default async function globalSetup() {
     "disclosure-documents",
     "disclosure-acks",
     "lifecycle-states",
+    "activation-idempotency",
   ]) {
     const path = join(root, dir);
     if (existsSync(path)) await rm(path, { recursive: true, force: true });
@@ -352,5 +362,9 @@ export default async function globalSetup() {
   await seedUser({
     cookieValue: E2E_USERS.ready.eligibilityCookie,
     mode: "ready",
+  });
+  await seedUser({
+    cookieValue: E2E_USERS.idempotency.eligibilityCookie,
+    mode: "idempotency",
   });
 }

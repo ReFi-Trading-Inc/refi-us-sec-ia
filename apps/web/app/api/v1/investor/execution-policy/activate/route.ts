@@ -19,12 +19,16 @@ import { createHash, createHmac } from "node:crypto";
 import { bffMutate } from "@lib/bff/handler";
 import {
   appendExecutionPolicy,
+  getActivationByIdempotencyKey,
+  getExecutionPolicy,
   getExecutionPolicyDraft,
   getLatestProfileSnapshot,
+  getManagedExecutionState,
   getSubscriptionMode,
   setSubscriptionMode,
   getBrokerageConnection,
   isExecutionReady,
+  recordActivationIdempotency,
   setManagedExecutionState,
   transitionLifecycle,
   getDisclosureDocument,
@@ -56,6 +60,40 @@ function safeHash(input: string | null | undefined): string {
 function stableHash(payload: Record<string, unknown>): string {
   return createHash("sha256")
     .update(JSON.stringify(payload, Object.keys(payload).sort()))
+    .digest("hex");
+}
+
+/**
+ * Derive a deterministic idempotency key when the client did not supply an
+ * `Idempotency-Key` header. The key binds the activation attempt to: the
+ * exact draft snapshot (via updatedAt), the exact disclosure ack set, the
+ * advisory agreement version, and the account. Network replays, double
+ * clicks, refreshes, and React Query retries all collapse to the same key
+ * until any one of those inputs changes.
+ *
+ * Device fingerprint is intentionally NOT in the key — a browser refresh
+ * may rotate the userAgent fingerprint slightly and we still want the
+ * replay to deduplicate.
+ */
+function deriveIdempotencyKey(args: {
+  accountId: string;
+  draftUpdatedAt: string;
+  acknowledgedDisclosures: Array<{ docId: string; version: string }>;
+  advisoryAgreementVersion: string;
+}): string {
+  const acks = [...args.acknowledgedDisclosures]
+    .map((d) => `${d.docId}@${d.version}`)
+    .sort();
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        scope: "activateExecutionPolicy",
+        accountId: args.accountId,
+        draftUpdatedAt: args.draftUpdatedAt,
+        acks,
+        advisoryAgreementVersion: args.advisoryAgreementVersion,
+      }),
+    )
     .digest("hex");
 }
 
@@ -159,6 +197,48 @@ export const POST = bffMutate<ActivateBody>({
       }
     }
 
+    // Idempotency guard. Runs AFTER fail-closed preconditions so any
+    // material change to broker, profile, or disclosure state still blocks.
+    // If the same activation attempt (same draft snapshot + same ack set +
+    // same agreement version) already produced a signed policy, return that
+    // result without appending a new ExecutionPolicy version or duplicate
+    // evidence. Header-supplied keys take precedence so clients can supply
+    // their own dedup scope when needed.
+    const explicitKey = ctx.req.headers.get("idempotency-key")?.trim();
+    const idempotencyKey =
+      explicitKey && explicitKey.length > 0
+        ? `header:${explicitKey}:${accountId}`
+        : `derived:${deriveIdempotencyKey({
+            accountId,
+            draftUpdatedAt: draft.updatedAt,
+            acknowledgedDisclosures: ctx.input.acknowledgedDisclosures,
+            advisoryAgreementVersion: ctx.input.advisoryAgreementVersion,
+          })}`;
+
+    const existing = await getActivationByIdempotencyKey(idempotencyKey);
+    if (existing && existing.accountId === accountId) {
+      const [existingPolicy, existingMes] = await Promise.all([
+        getExecutionPolicy(accountId, existing.policyVersion),
+        getManagedExecutionState(accountId),
+      ]);
+      return {
+        data: {
+          policy: existingPolicy,
+          managedExecutionState: existingMes,
+          subscriptionModeFlipped: false,
+          idempotentReplay: true,
+          idempotencyKey,
+        },
+        references: [
+          `execution-policy:${existing.policyId}/v${existing.policyVersion}`,
+          `activation-idempotency:${idempotencyKey}`,
+        ],
+        reasonCode: "idempotent_replay",
+        // Stable 200 on replay (the original 201 belongs to the first attempt).
+        status: 200,
+      };
+    }
+
     // Derive evidence hashes server-side from the draft. The draft is the
     // single source of truth; the client cannot smuggle different policy
     // contents through the activation body.
@@ -235,12 +315,24 @@ export const POST = bffMutate<ActivateBody>({
       });
     }
 
+    // Persist the idempotency record AFTER all state writes so a partial
+    // failure leaves no claim that this key already activated.
+    await recordActivationIdempotency({
+      idempotencyKey,
+      accountId,
+      policyId: policy.policyId,
+      policyVersion: policy.policyVersion,
+      correlationId: ctx.correlationId,
+    });
+
     return {
       data: {
         policy,
         lifecycle,
         managedExecutionState: mes,
         subscriptionModeFlipped: modeChanged,
+        idempotentReplay: false,
+        idempotencyKey,
       },
       references: [
         `execution-policy:${policy.policyId}/v${policy.policyVersion}`,
@@ -249,6 +341,7 @@ export const POST = bffMutate<ActivateBody>({
         `lifecycle:${accountId}`,
         `managed-execution-state:${accountId}`,
         `subscription-mode:${accountId}`,
+        `activation-idempotency:${idempotencyKey}`,
         ...ctx.input.acknowledgedDisclosures.map(
           (d) => `disclosure-ack:${d.docId}/${d.version}`,
         ),

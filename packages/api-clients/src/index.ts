@@ -44,6 +44,23 @@ export {
   useSubscriptionMode,
   useInvestorRecommendations,
 } from "./hooks/subscription-mode";
+export {
+  useExecutionPolicy,
+  useExecutionPolicyDraft,
+  useSaveExecutionPolicyDraft,
+  useManagedExecutionState,
+  usePauseManaged,
+  useResumeManaged,
+} from "./hooks/execution-policy";
+export type {
+  ExecutionPolicySummary,
+  ExecutionPolicyDraftDto,
+  SaveExecutionPolicyDraftInput,
+  ManagedExecutionStateDto,
+  ManagedExecutionStatus,
+  StaleBrokerDataDuration,
+  StaleProfileDuration,
+} from "./hooks/execution-policy";
 export { useActivity } from "./hooks/activity";
 export {
   useAdvisoryProfile,

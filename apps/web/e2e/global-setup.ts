@@ -152,6 +152,54 @@ async function seedUser(opts: {
       },
     );
   }
+
+  // 4) For managed users, seed an active ExecutionPolicy v1 + a
+  //    ManagedExecutionState in `active`. Surface 2 needs these so the
+  //    "active policy stays in force" banner has something to anchor to.
+  //    No draft is seeded — the draft route's default-initialize path
+  //    should populate the form from defaults.
+  if (opts.mode === "managed") {
+    const signedAt = new Date().toISOString();
+    await writeJson(
+      join(
+        root,
+        "execution-policies",
+        `${safeKey(`${accountId}__v000001`)}.json`,
+      ),
+      {
+        accountId,
+        policyId: `${accountId}-policy-v1`,
+        policyVersion: 1,
+        strategyId: "core-balanced",
+        accountScope: "primary",
+        assetUniverse: ["US_LARGE_CAP_EQUITY"],
+        riskGuardrailHash: "sha256-seed-guardrails",
+        restrictionsHash: "sha256-seed-restrictions",
+        pauseRules: ["disclosure_superseded", "profile_superseded"],
+        notificationPreferences: ["email"],
+        advisoryProfileVersion: 1,
+        disclosureVersions: [{ docId: "form-adv-2a", version: "v2026-01" }],
+        advisoryAgreementVersion: "v2026-01",
+        signedAt,
+        signedByAuthId: authId,
+        signedIpHash: "sha256-seed-ip",
+        signedDeviceFingerprintHash: "sha256-seed-device",
+        correlationId,
+        meta: meta(correlationId),
+      },
+    );
+    await writeJson(
+      join(root, "managed-execution-states", `${safeKey(accountId)}.json`),
+      {
+        accountId,
+        executionPolicyVersion: 1,
+        status: "active",
+        lastChangedAt: signedAt,
+        lastChangedBy: "user",
+        meta: meta(correlationId),
+      },
+    );
+  }
 }
 
 export default async function globalSetup() {
@@ -162,6 +210,9 @@ export default async function globalSetup() {
     "auth-session-links",
     "subscription-modes",
     "recommendation-projections",
+    "execution-policies",
+    "execution-policy-drafts",
+    "managed-execution-states",
   ]) {
     const path = join(root, dir);
     if (existsSync(path)) await rm(path, { recursive: true, force: true });

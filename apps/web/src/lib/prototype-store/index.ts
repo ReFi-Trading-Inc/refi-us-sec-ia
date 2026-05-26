@@ -28,6 +28,7 @@ export * from "./entities/disclosure-acknowledgement";
 export * from "./entities/brokerage-connection";
 export * from "./entities/subscription-mode";
 export * from "./entities/execution-policy";
+export * from "./entities/execution-policy-draft";
 export * from "./entities/managed-execution-state";
 export * from "./entities/recommendation-projection";
 export * from "./entities/exception-review";

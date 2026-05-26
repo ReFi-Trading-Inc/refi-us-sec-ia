@@ -25,6 +25,7 @@
 export const InvestorActions = [
   "activateExecutionPolicy",
   "updateExecutionPolicy",
+  "saveExecutionPolicyDraft",
   "pauseManaged",
   "resumeManaged",
   "updateAccountPrefs",

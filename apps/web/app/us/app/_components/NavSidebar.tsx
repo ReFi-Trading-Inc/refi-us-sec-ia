@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { Logo } from "@ui/components";
 import { cn } from "@ui/lib/utils";
 import { navItems } from "../../_content/app-copy";
-import { usBrand } from "../../_content/brand";
 import { WalletButton } from "./WalletButton";
 
 export function NavSidebar() {
@@ -15,10 +15,8 @@ export function NavSidebar() {
       className="flex flex-col w-56 shrink-0 border-r border-charcoal-700 bg-charcoal-900 min-h-screen p-4 gap-1"
       aria-label="Main navigation"
     >
-      <div className="mb-6 px-2">
-        <span className="text-sm font-semibold text-charcoal-100 tracking-tight">
-          {usBrand.productSurface}
-        </span>
+      <div className="mb-6 px-2 text-charcoal-100">
+        <Logo size={22} wordmarkSuffix="USA" className="text-sm" />
       </div>
 
       {navItems.map((item) => {

@@ -20,9 +20,7 @@ export default function OnboardingStrategyPage() {
       </div>
 
       {isError && (
-        <StatusBanner variant="error">
-          Could not load strategy. Please try again.
-        </StatusBanner>
+        <StatusBanner variant="error">{strategy.loadError}</StatusBanner>
       )}
 
       <Card>

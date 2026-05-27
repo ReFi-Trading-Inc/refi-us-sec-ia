@@ -1,67 +1,90 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Button, Select, StatusBanner } from "@ui/components";
 import type { SelectOption } from "@ui/components";
 import { useMutation } from "@tanstack/react-query";
-import { apiFetch } from "@refi/api-clients";
+import { apiFetch, getCorrelationId } from "@refi/api-clients";
 import {
-  supportBoundaryCopy,
-  blockedPromptPatterns,
-} from "../../_content/support-boundary";
+  CATEGORY_LABELS,
+  SELECTABLE_CATEGORIES,
+  classify,
+  type Classification,
+  type SelectableSupportCategory,
+} from "../../_lib/support-boundary";
+import { supportBoundaryCopy } from "../../_content/support-boundary";
 import { appCopy } from "../../_content/app-copy";
 
 const { support } = appCopy;
 
-const categoryOptions: SelectOption[] = supportBoundaryCopy.categories.map(
-  (c) => ({
-    value: c,
-    label: c,
-  }),
-);
+const categoryOptions: SelectOption[] = SELECTABLE_CATEGORIES.map((c) => ({
+  value: c,
+  label: CATEGORY_LABELS[c],
+}));
 
-type SupportTicket = {
+// Server-bound payload. Only fields here ever reach the network; the
+// classifier's matched_patterns + boundary_rule_id travel through, but the
+// raw message also goes (categorized intake needs the text). Analytics
+// strips message text — see the onSuccess handler.
+type SupportTicketPayload = {
   subject: string;
-  category: string;
+  category: Classification["category"];
   message: string;
+  classification: {
+    confidence: number;
+    matched_patterns: string[];
+  };
+  blocked: boolean;
+  boundary_rule_id: string | null;
+  correlation_id: string;
 };
 
 export default function SupportPage() {
-  const [category, setCategory] = useState("");
+  const [category, setCategory] = useState<SelectableSupportCategory | "">("");
   const [message, setMessage] = useState("");
-  const [blocked, setBlocked] = useState(false);
+
+  const classification: Classification = useMemo(
+    () => classify(category, message),
+    [category, message],
+  );
 
   const submit = useMutation({
-    mutationFn: (body: SupportTicket) =>
+    mutationFn: (body: SupportTicketPayload) =>
       apiFetch<{ ok: boolean; ticket_id: string }>("/v1/support/ticket", {
         method: "POST",
         body,
       }),
     onSuccess: () => {
+      // Analytics never receives the prompt text — only category +
+      // boundary_rule_id per the MIG-P2.5-23 contract.
+      // (Wire to PostHog: track('support_ticket_submitted', { category, blocked, boundary_rule_id }))
       setCategory("");
       setMessage("");
-      setBlocked(false);
     },
   });
-
-  function handleMessageChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const val = e.target.value;
-    setMessage(val);
-    setBlocked(blockedPromptPatterns.some((p) => p.test(val)));
-  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
     submit.mutate({
-      subject: category,
-      category,
+      subject: category || "complaint",
+      category: classification.category,
       message: message.trim(),
+      classification: {
+        confidence: classification.confidence,
+        matched_patterns: classification.matched_patterns,
+      },
+      blocked: classification.blocked,
+      boundary_rule_id: classification.boundary_rule_id,
+      correlation_id: getCorrelationId(),
     });
   }
 
   const canSubmit =
-    category !== "" && message.trim() !== "" && !blocked && !submit.isPending;
+    category !== "" &&
+    message.trim().length >= 10 &&
+    !classification.blocked &&
+    !submit.isPending;
 
   return (
     <div className="flex flex-col gap-6 max-w-2xl">
@@ -85,7 +108,7 @@ export default function SupportPage() {
 
       {submit.isError && (
         <StatusBanner variant="error">
-          Submission failed. Please try again or email support directly.
+          Submission failed. Try again or open another ticket.
         </StatusBanner>
       )}
 
@@ -100,29 +123,42 @@ export default function SupportPage() {
             placeholder="Select…"
             options={categoryOptions}
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) =>
+              setCategory(e.target.value as SelectableSupportCategory | "")
+            }
             required
           />
 
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-charcoal-200">
+            <label
+              htmlFor="support-message"
+              className="text-sm font-medium text-charcoal-200"
+            >
               {support.messageLabel}
             </label>
             <textarea
+              id="support-message"
               className="rounded-md border border-charcoal-700 bg-charcoal-800 px-3 py-2 text-sm text-charcoal-100 placeholder:text-charcoal-600 focus:outline-none focus:ring-2 focus:ring-mint-400 min-h-[120px] resize-y"
               placeholder={support.placeholder}
               value={message}
-              onChange={handleMessageChange}
+              onChange={(e) => setMessage(e.target.value)}
               required
               disabled={submit.isPending}
-              aria-describedby={blocked ? "support-blocked" : undefined}
-              aria-invalid={blocked ? true : undefined}
+              aria-describedby={
+                classification.blocked ? "support-blocked" : undefined
+              }
+              aria-invalid={classification.blocked ? true : undefined}
             />
           </div>
 
-          {blocked && (
+          {classification.blocked && (
             <StatusBanner variant="warning" id="support-blocked">
               {supportBoundaryCopy.blockedPromptMessage}
+              {classification.boundary_rule_id ? (
+                <span className="block mt-1 text-[10px] font-mono opacity-70">
+                  rule: {classification.boundary_rule_id}
+                </span>
+              ) : null}
             </StatusBanner>
           )}
 

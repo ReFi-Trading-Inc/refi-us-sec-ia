@@ -13,10 +13,12 @@ import type {
   OkResult,
 } from "../compat";
 
+// Terminal states stop polling. `under_review` is intentionally NOT terminal:
+// per Daniel's CCID spec (CCID KYC.pdf:p5), review is an ops state that
+// resolves async to approved/denied — the UI should keep polling.
 const TERMINAL: ReadonlySet<KycStatus["status"]> = new Set([
   "approved",
   "denied",
-  "under_review",
 ]);
 
 export function useKycStatus(options?: {
@@ -80,7 +82,7 @@ export function useComplianceInvalidateCache(): UseMutationResult<
   return useMutation({
     mutationFn: ({ account_id }) =>
       apiFetch<OkResult>(
-        `/compliance/invalidate-cache?account_id=${encodeURIComponent(account_id)}`,
+        `/compliance/${encodeURIComponent(account_id)}/invalidate`,
         { method: "POST" },
       ),
   });

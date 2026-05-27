@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
+import { Logo } from "@ui/components";
 import { landingCopy } from "./_content/landing";
 import { usBrand } from "./_content/brand";
 
@@ -13,9 +14,11 @@ export default function UsLandingPage() {
   return (
     <div className="min-h-screen bg-charcoal-950 text-charcoal-100 font-sans">
       <header className="border-b border-charcoal-800 px-8 py-4 flex items-center justify-between">
-        <span className="text-sm font-semibold text-charcoal-200">
-          {usBrand.productSurface}
-        </span>
+        <Logo
+          size={24}
+          wordmarkSuffix="USA"
+          className="text-sm text-charcoal-200"
+        />
         <nav className="flex items-center gap-4 text-sm">
           <Link
             href="/us/disclosures"

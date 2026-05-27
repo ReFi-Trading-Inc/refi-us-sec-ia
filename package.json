@@ -8,8 +8,11 @@
     "dev": "turbo dev",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
+    "test": "turbo test",
     "format": "prettier --write \"**/*.{ts,tsx,md,json}\" --ignore-path .gitignore",
     "scan-copy": "tsx scripts/scan-copy.ts",
+    "scan-retired": "tsx scripts/scan-retired-routes.ts",
+    "check-drift": "tsx scripts/check-openapi-drift.ts",
     "tripwire": "tsx scripts/tripwire-investor-boundary.ts",
     "contract-test": "tsx scripts/contract-assertions.ts",
     "test": "pnpm contract-test && pnpm tripwire && pnpm --filter @refi/api-clients test",
@@ -34,6 +37,11 @@
   "lint-staged": {
     "*.{ts,tsx,json,md,yaml,yml}": [
       "prettier --write"
+    ]
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
     ]
   }
 }

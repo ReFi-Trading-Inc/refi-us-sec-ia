@@ -45,14 +45,35 @@ export function buildSiweMessage(input: SiweMessageInput): string {
   ].join("\n");
 }
 
+/**
+ * SIWE nonce request bindings. Per Daniel's spec (Wallet Sign-In (SIWE).pdf:p4),
+ * the server stores the nonce against `{domain, origin, uri, chainId}` so that
+ * verify can reject replay across origins or chains.
+ */
+export type SiweNonceParams = {
+  domain: string;
+  origin: string;
+  uri: string;
+  chainId: number;
+};
+
 export function useSiweNonce(): UseMutationResult<
   SiweNonceResponse,
   Error,
-  void
+  SiweNonceParams
 > {
   return useMutation({
-    mutationFn: () =>
-      apiFetch<SiweNonceResponse>("/siwe/nonce", { method: "POST" }),
+    mutationFn: (params) => {
+      const qs = new URLSearchParams({
+        domain: params.domain,
+        origin: params.origin,
+        uri: params.uri,
+        chainId: String(params.chainId),
+      });
+      return apiFetch<SiweNonceResponse>(`/siwe/nonce?${qs.toString()}`, {
+        method: "GET",
+      });
+    },
   });
 }
 
@@ -85,7 +106,10 @@ export function useSignOut(): UseMutationResult<OkResult, Error, void> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      apiFetch<OkResult>("/auth/revoke-all", { method: "POST" }),
+      // Daniel's spec name (SIWE.pdf:p8). Server-side this revokes the active
+      // refresh token; the "all devices" semantic is achieved via the
+      // account-wide refresh_jti rotation rule.
+      apiFetch<OkResult>("/auth/logout", { method: "POST" }),
     onSuccess: () => {
       qc.clear();
     },

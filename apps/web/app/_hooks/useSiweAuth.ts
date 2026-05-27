@@ -41,22 +41,28 @@ export function useSiweAuth() {
     }
     try {
       setState({ phase: "fetching_nonce" });
-      const { nonce } = await nonceMut.mutateAsync();
-
       const now = new Date();
       const expirationTime = new Date(now.getTime() + 10 * 60_000);
       const domain =
         typeof window !== "undefined" ? window.location.host : "refi.trading";
-      const uri =
+      const origin =
         typeof window !== "undefined"
           ? window.location.origin
           : "https://refi.trading";
+      const uri = origin;
+      const effectiveChainId = chainId || 1;
+      const { nonce } = await nonceMut.mutateAsync({
+        domain,
+        origin,
+        uri,
+        chainId: effectiveChainId,
+      });
 
       const message = buildSiweMessage({
         domain,
         address,
         uri,
-        chainId: chainId || 1,
+        chainId: effectiveChainId,
         nonce,
         issuedAt: now.toISOString(),
         expirationTime: expirationTime.toISOString(),

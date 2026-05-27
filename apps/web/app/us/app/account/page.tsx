@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Badge,
@@ -21,8 +20,13 @@ import {
 } from "@refi/api-clients";
 import { useAuth } from "../../../_providers/auth/AuthProvider";
 import { appCopy } from "../../_content/app-copy";
+import { SimulatedDataBadge } from "../_components/SimulatedDataBadge";
 
 const { account } = appCopy;
+const K = account.kycCard;
+const B = account.brokerCard;
+const P = account.profileCard;
+const S = account.securityCard;
 
 function truncateAddress(addr: string): string {
   if (addr.length <= 12) return addr;
@@ -54,7 +58,7 @@ export default function AccountPage() {
       await disconnect.mutateAsync();
       setConfirmDisconnect(false);
     } catch {
-      setDisconnectError("Disconnect failed. Please try again.");
+      setDisconnectError(B.disconnectErrorFallback);
     }
   }
 
@@ -67,15 +71,6 @@ export default function AccountPage() {
         : kycStatus === "under_review" || kycStatus === "pending"
           ? ("warning" as const)
           : ("neutral" as const);
-
-  const kycLabel: Record<typeof kycStatus, string> = {
-    not_started: "Not started",
-    pending: "Pending",
-    incomplete: "Incomplete",
-    under_review: "Under review",
-    approved: "Approved",
-    denied: "Denied",
-  };
 
   const isConnected = connection?.status === "connected";
 
@@ -97,10 +92,12 @@ export default function AccountPage() {
                 <p className="text-sm font-mono text-charcoal-200">
                   {truncateAddress(auth.wallet_id)}
                 </p>
-                <Badge variant="active">Connected</Badge>
+                <Badge variant="approved">
+                  {account.walletStatusConnected}
+                </Badge>
               </div>
               <p className="text-xs text-charcoal-500">
-                Ethereum mainnet · SIWE session
+                {account.walletNetwork}
               </p>
               <div className="flex gap-2 pt-1">
                 <Button
@@ -113,7 +110,7 @@ export default function AccountPage() {
               </div>
             </>
           ) : (
-            <p className="text-sm text-charcoal-500">No wallet connected.</p>
+            <p className="text-sm text-charcoal-500">{account.walletNone}</p>
           )}
         </CardContent>
       </Card>
@@ -121,27 +118,25 @@ export default function AccountPage() {
       {/* Identity Verification */}
       <Card>
         <CardHeader>
-          <CardTitle>Identity Verification</CardTitle>
+          <CardTitle>{K.title}</CardTitle>
         </CardHeader>
         <CardContent className="pb-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-charcoal-300">KYC status</p>
+              <p className="text-sm text-charcoal-300">{K.statusLabel}</p>
               {kyc?.provider && (
                 <p className="text-xs text-charcoal-600 mt-0.5">
-                  Provider: {kyc.provider}
+                  {K.providerLabel}: {kyc.provider}
                 </p>
               )}
             </div>
-            <Badge variant={kycBadgeVariant}>{kycLabel[kycStatus]}</Badge>
+            <Badge variant={kycBadgeVariant}>{K.statusLabels[kycStatus]}</Badge>
           </div>
           {kycStatus !== "approved" && (
             <div className="pt-1">
               <Link href="/us/onboarding/kyc">
                 <Button size="sm">
-                  {kycStatus === "not_started"
-                    ? "Start verification"
-                    : "Resume verification"}
+                  {kycStatus === "not_started" ? K.startCta : K.resumeCta}
                 </Button>
               </Link>
             </div>
@@ -163,13 +158,18 @@ export default function AccountPage() {
                     {connection.broker_name}
                   </p>
                   {brokerAccount && (
-                    <p className="text-xs text-charcoal-500 mt-0.5">
-                      Equity: {formatCurrency(brokerAccount.equity)} · Buying
-                      power: {formatCurrency(brokerAccount.buying_power)}
-                    </p>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <p className="text-xs text-charcoal-500">
+                        {B.equityLabel}:{" "}
+                        {formatCurrency(Number(brokerAccount.equity))} ·{" "}
+                        {B.buyingPowerLabel}:{" "}
+                        {formatCurrency(Number(brokerAccount.buying_power))}
+                      </p>
+                      <SimulatedDataBadge variant="inline" source="mock" />
+                    </div>
                   )}
                 </div>
-                <Badge variant="active">Connected</Badge>
+                <Badge variant="approved">{B.connectedLabel}</Badge>
               </div>
 
               {disconnectError && (
@@ -178,10 +178,7 @@ export default function AccountPage() {
 
               {confirmDisconnect ? (
                 <div className="flex flex-col gap-2 p-3 rounded-md border border-rose-800 bg-rose-950/30">
-                  <p className="text-xs text-charcoal-300">
-                    Disconnecting will stop managed execution. You can reconnect
-                    at any time.
-                  </p>
+                  <p className="text-xs text-charcoal-300">{B.confirmBody}</p>
                   <div className="flex gap-2">
                     <Button
                       size="sm"
@@ -189,16 +186,14 @@ export default function AccountPage() {
                       disabled={disconnect.isPending}
                       onClick={() => void handleDisconnect()}
                     >
-                      {disconnect.isPending
-                        ? "Disconnecting…"
-                        : "Confirm disconnect"}
+                      {disconnect.isPending ? B.disconnectingCta : B.confirmCta}
                     </Button>
                     <Button
                       size="sm"
                       variant="secondary"
                       onClick={() => setConfirmDisconnect(false)}
                     >
-                      Cancel
+                      {B.cancelCta}
                     </Button>
                   </div>
                 </div>
@@ -208,15 +203,15 @@ export default function AccountPage() {
                   variant="secondary"
                   onClick={() => setConfirmDisconnect(true)}
                 >
-                  Disconnect broker
+                  {B.disconnectCta}
                 </Button>
               )}
             </>
           ) : (
             <>
-              <p className="text-sm text-charcoal-500">No broker connected.</p>
+              <p className="text-sm text-charcoal-500">{B.noneConnected}</p>
               <Link href="/us/onboarding/broker">
-                <Button size="sm">Connect broker</Button>
+                <Button size="sm">{B.connectCta}</Button>
               </Link>
             </>
           )}
@@ -233,12 +228,18 @@ export default function AccountPage() {
             <>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
                 {[
-                  { label: "Goal", value: profile.goal },
-                  { label: "Time horizon", value: profile.timeHorizon },
-                  { label: "Risk tolerance", value: profile.riskTolerance },
-                  { label: "Experience", value: profile.investmentExperience },
-                  { label: "Income", value: profile.incomeBand },
-                  { label: "Net worth", value: profile.liquidNetWorth },
+                  { label: P.fields.goal, value: profile.goal },
+                  { label: P.fields.timeHorizon, value: profile.timeHorizon },
+                  {
+                    label: P.fields.riskTolerance,
+                    value: profile.riskTolerance,
+                  },
+                  {
+                    label: P.fields.experience,
+                    value: profile.investmentExperience,
+                  },
+                  { label: P.fields.income, value: profile.incomeBand },
+                  { label: P.fields.netWorth, value: profile.liquidNetWorth },
                 ].map(({ label, value }) => (
                   <div key={label}>
                     <dt className="text-xs text-charcoal-500">{label}</dt>
@@ -248,17 +249,15 @@ export default function AccountPage() {
               </dl>
               <Link href="/us/onboarding/profile">
                 <Button size="sm" variant="secondary">
-                  Update profile
+                  {P.updateCta}
                 </Button>
               </Link>
             </>
           ) : (
             <>
-              <p className="text-sm text-charcoal-500">
-                Profile available after onboarding.
-              </p>
+              <p className="text-sm text-charcoal-500">{P.none}</p>
               <Link href="/us/onboarding/profile">
-                <Button size="sm">Complete profile</Button>
+                <Button size="sm">{P.completeCta}</Button>
               </Link>
             </>
           )}
@@ -271,16 +270,13 @@ export default function AccountPage() {
           <CardTitle>{account.security}</CardTitle>
         </CardHeader>
         <CardContent className="pb-5 flex flex-col gap-3">
-          <p className="text-xs text-charcoal-400">
-            ReFi uses Sign-In With Ethereum (SIWE). There is no password. Your
-            session is tied to your wallet signature and expires automatically.
-          </p>
+          <p className="text-xs text-charcoal-400">{S.body}</p>
           <Button
             size="sm"
             variant="danger"
             onClick={() => void auth.signOut()}
           >
-            Sign out all devices
+            {S.signOutAllCta}
           </Button>
         </CardContent>
       </Card>

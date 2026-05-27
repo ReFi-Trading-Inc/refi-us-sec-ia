@@ -14,6 +14,24 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 import { apiFetch } from "../client";
+import type { Exception } from "../generated/api";
+
+/**
+ * Phase 2.5 stub — direct read of the backend `/v1/exceptions` endpoint
+ * returning the OpenAPI-typed `Exception[]`. Kept alongside the canonical
+ * Surface 7 hook (`useInvestorExceptions`) because the dashboard and
+ * recommendation-detail surfaces still consume the flat array shape.
+ *
+ * New code should prefer `useInvestorExceptions` (BFF-routed, enriched
+ * with `lastResolution` and other Surface-7 fields).
+ */
+export function useExceptions(): UseQueryResult<Exception[]> {
+  return useQuery({
+    queryKey: ["exceptions"],
+    queryFn: () => apiFetch<Exception[]>("/v1/exceptions"),
+    staleTime: 30_000,
+  });
+}
 
 interface BffEnvelope<T> {
   data: T;

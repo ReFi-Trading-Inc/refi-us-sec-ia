@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { NavSidebar } from "./_components/NavSidebar";
+import { PersonaSwitcher } from "./_components/PersonaSwitcher";
+import { ScenarioSwitcher } from "./_components/ScenarioSwitcher";
 import { SimulatedDataBadge } from "./_components/SimulatedDataBadge";
 
 export const metadata: Metadata = {
@@ -15,7 +17,9 @@ export default function AppShellLayout({
     <div className="flex min-h-screen bg-charcoal-950 text-charcoal-100 font-sans">
       <NavSidebar />
       <main className="flex-1 min-w-0 p-8">
-        <div className="mb-6 flex justify-end">
+        <div className="mb-6 flex justify-end items-center gap-3">
+          <ScenarioSwitcher />
+          <PersonaSwitcher />
           <SimulatedDataBadge />
         </div>
         {children}

@@ -12,6 +12,15 @@ export const onboardingSteps = [
 
 export type OnboardingStepKey = (typeof onboardingSteps)[number]["key"];
 
+// Banner shown above every /us/onboarding/* screen in dev/staging.
+// Hidden in prod. The platform-engagement model already prevents accidental
+// real activation (disclosures pending), but this banner removes any
+// ambiguity for testers and counsel reviewers walking the flow.
+export const onboardingSimulatedBanner = {
+  title: "Simulated onboarding",
+  body: "Identity verification, broker connection, and strategy data on these screens are sandbox-provided. Managed Execution Activation remains blocked until SEC registration and counsel sign-off complete.",
+} as const;
+
 export const onboardingCopy = {
   profile: {
     heading: "Your investment profile",
@@ -189,6 +198,8 @@ export const onboardingCopy = {
     cta: "Continue",
     disclaimer:
       "Strategy is software-generated. Past performance is not a guarantee of future results.",
+    loadError:
+      "Could not load strategy. Try again, or open a support ticket if it persists.",
   },
   activation: {
     heading: "Activation checklist",

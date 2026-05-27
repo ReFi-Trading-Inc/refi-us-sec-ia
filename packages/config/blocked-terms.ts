@@ -1,9 +1,17 @@
 /**
- * SEC-sensitive blocked terms for /us copy.
+ * SEC-sensitive + brand-voice-violating blocked terms for /us copy.
  * Scanned by scripts/scan-copy.ts on every CI run.
- * Opt-out: // allow-blocked-term: "term" reason: "..."
+ *
+ * Opt-out (per line):
+ *   // allow-blocked-term: "term" reason: "..."
+ *   // allow-placeholder: "..." reason: "..."
+ *
+ * Two source-of-truth docs feed this list:
+ *   1. SEC marketing/conduct rules (Rule 206(4)-1, Rule 203A-2(e), etc.)
+ *   2. refi-build-docs/spec-current/04-brand-voice.md §4 "Words we avoid"
  */
 export const blockedTerms: string[] = [
+  // --- SEC-sensitive trading terminology ---
   "AI trading bot",
   "autopilot",
   "autonomous trading",
@@ -22,6 +30,28 @@ export const blockedTerms: string[] = [
   "auto-profit",
   "robo-trading",
   "black-box AI",
+
+  // --- Brand-voice violations (04-brand-voice.md §4) ---
+  "best-in-class",
+  "best in class",
+  "top-rated",
+  "leading provider",
+  "powered by AI",
+  "AI-powered",
+  "AI-driven",
+  "personalized advice",
+  "expert advice",
+  "recommended by experts",
+  "your money grows",
+  "grow your money",
+  "limited time",
+  "exclusive offer",
+  "lightning fast",
+  "lightning-fast",
+  "game changing",
+  "game-changing",
+  "crush the market",
+  "effortless investing",
 
   // --- Admin-investor boundary (docs/admin-investor-boundary.md) ---
   // User-facing copy must never imply per-trade investor approval or operator

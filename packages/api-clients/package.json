@@ -9,11 +9,14 @@
     "./generated/*": "./src/generated/*.ts"
   },
   "scripts": {
-    "generate": "mkdir -p src/generated && openapi-typescript openapi/refi-api.yaml -o src/generated/_openapi.gen.ts",
+    "generate": "mkdir -p src/generated && openapi-typescript openapi/refi-api.yaml -o src/generated/api.gen.ts",
     "build": "pnpm generate",
+    "validate:openapi": "openapi-typescript openapi/refi-api.yaml -o /tmp/refi-api-validation.ts && rm /tmp/refi-api-validation.ts",
+    "check:openapi-drift": "tsx ../../scripts/check-openapi-drift.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings=0",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "openapi-fetch": "^0.13.0"
@@ -27,7 +30,7 @@
     "@types/react": "^19.0.0",
     "tsx": "^4.0.0",
     "typescript": "^6.0.0",
-    "vitest": "^3.0.0"
+    "vitest": "^2.1.0"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^5.0.0",

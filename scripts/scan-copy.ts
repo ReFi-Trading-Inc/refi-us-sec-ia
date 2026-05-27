@@ -63,6 +63,19 @@ function hasOptOut(line: string, term: string): boolean {
   );
 }
 
+/**
+ * Placeholder opt-out scan. Looks for `allow-placeholder` on the same line
+ * OR the immediately preceding line, with a `reason:` clause to force the
+ * author to justify each exception. Same-line is preferred for short
+ * literals; previous-line is for placeholders inside multi-line strings.
+ */
+function hasPlaceholderOptOut(line: string, prev: string | undefined): boolean {
+  const matches = (s: string) =>
+    s.toLowerCase().includes("allow-placeholder") &&
+    s.toLowerCase().includes("reason:");
+  return matches(line) || (prev !== undefined && matches(prev));
+}
+
 // ─── Scanner ──────────────────────────────────────────────────────────────────
 
 function scanFile(filePath: string): Violation[] {
@@ -111,7 +124,12 @@ function scanFile(filePath: string): Violation[] {
     const PLACEHOLDER_RE = /\[[A-Z][a-zA-Z\s—–-]{4,}\]/g;
     if ((IS_CI || !ALLOW_PLACEHOLDERS) && PLACEHOLDER_RE.test(line)) {
       const trimmed = line.trim();
-      if (!trimmed.startsWith("//") && !trimmed.startsWith("*")) {
+      const prev = i > 0 ? lines[i - 1] : undefined;
+      if (
+        !trimmed.startsWith("//") &&
+        !trimmed.startsWith("*") &&
+        !hasPlaceholderOptOut(line, prev)
+      ) {
         violations.push({
           file: filePath,
           line: lineNumber,

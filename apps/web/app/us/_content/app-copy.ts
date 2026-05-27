@@ -49,8 +49,94 @@ export const appCopy = {
     unrealizedPnl: "Unrealized P&L",
     openPositions: "Open positions",
     pendingReview: "Pending review",
+    topHoldings: "Top holdings",
     recentActivity: "Recent activity",
     viewAll: "View all",
+    cards: {
+      accountState: {
+        title: "Account state",
+        whatThisMeans:
+          "Where your account sits in the onboarding-to-active lifecycle.",
+        eligible: "Eligible",
+        onboarded: "Onboarded",
+        active: "Active",
+      },
+      managedExecution: {
+        title: "Managed execution",
+        whatThisMeans:
+          "When active, the platform executes eligible software-generated recommendations within the guardrails you authorized at activation.",
+        active: "Active",
+        notActivated: "Not activated — Signal mode",
+        blockedDisclosures: "Blocked — disclosures pending",
+        blockedOnboarding: "Blocked — onboarding incomplete",
+        paused: "Paused",
+      },
+      tier: {
+        title: "Tier",
+        whatThisMeans:
+          "Signal = advisory only. Managed = ReFi executes eligible recommendations within your guardrails. Admin = operator only.",
+        signal: "Signal",
+        managed: "Managed",
+        admin: "Admin",
+      },
+      disclosures: {
+        title: "Disclosure status",
+        whatThisMeans:
+          "Required regulatory documents you must acknowledge before activation.",
+        acknowledgedTemplate: "{ack} of {total} acknowledged",
+        cta: "Review disclosures",
+      },
+      broker: {
+        title: "Broker",
+        whatThisMeans:
+          "Your connected brokerage and the freshness of position data.",
+        connected: "Connected",
+        connectedFresh: "Connected — fresh",
+        connectedStale: "Connected — data stale",
+        disconnected: "Disconnected",
+        pending: "Pending handshake",
+        notConnected: "Not connected",
+        lastSyncLabel: "Last sync",
+        cta: "Manage broker",
+      },
+      compliance: {
+        title: "Compliance",
+        whatThisMeans: "Status of the platform's pre-trade compliance check.",
+        operational: "Operational",
+        degraded: "Degraded",
+        unavailable: "Unavailable",
+      },
+      nextAction: {
+        title: "Next action",
+        whatThisMeans: "The single most important thing for you to do next.",
+        none: "No action needed",
+        noneBody: "Your account is up to date. New activity will appear here.",
+        ackDisclosures: "Acknowledge regulatory disclosures",
+        ackDisclosuresBody:
+          "Activation is blocked until required disclosures are acknowledged.",
+        approveExceptions: "Approve pending exceptions",
+        approveExceptionsBodyTemplate:
+          "{n} recommendation{s} fell outside your guardrails and need your decision.",
+        upgradeToManaged: "Turn on Managed Execution",
+        upgradeToManagedBody:
+          "You're set up for Signal mode. Upgrade to Managed to let ReFi execute eligible recommendations automatically within your guardrails.",
+        completeOnboarding: "Complete onboarding",
+        completeOnboardingBody:
+          "Finish onboarding steps to unlock Managed Execution.",
+      },
+      exceptions: {
+        title: "Open exceptions",
+        whatThisMeans: "Recommendations or events flagged for manual review.",
+        countLabel: "open",
+        none: "None open",
+        cta: "View activity",
+      },
+      dataFreshness: {
+        label: "Last refresh",
+        sourcesLabel: "Sources",
+        sources: "broker, compliance, signals",
+      },
+    },
   },
   portfolio: {
     heading: "Portfolio",
@@ -70,9 +156,14 @@ export const appCopy = {
       "Software-generated investment recommendations based on your advisory profile.",
     statusLabel: "Status",
     generatedLabel: "Generated",
+    loadingLabel: "Loading recommendations…",
     emptyState:
       "No recommendations yet. They appear here once your profile and broker are connected.",
     detail: {
+      backLink: "← Recommendations",
+      loading: "Loading recommendation…",
+      unavailable: "Recommendation not available.",
+      confidenceSuffix: "% confidence",
       rationale: "Rationale",
       riskFactors: "Risk factors",
       executionPolicy: "Execution policy",
@@ -82,6 +173,66 @@ export const appCopy = {
       // the investor to act on this recommendation through their own broker
       // outside of ReFi. Managed mode hides this block entirely.
       manualAction: "View manual action steps",
+      // Deep-detail section labels (MIG-P2.5-19). The richer detail page
+      // (Phase 2.5) renders these inline under the summary block.
+      summary: "Summary",
+      whyNow: "Why now",
+      whyFits: "Why this fits your profile",
+      portfolioImpact: "Portfolio impact",
+      riskNotes: "Risk notes",
+      costNotes: "Costs and fees",
+      taxNotes: "Tax notes",
+      modelFactors: "Model factors",
+      modelFactorWeightLabel: "weight",
+      guardrails: "Guardrails",
+      guardrailLimitLabel: "limit",
+      guardrailCurrentLabel: "current",
+      automationEligibility: "Compliance preview",
+      automationEligibilityNoReasons: "All preconditions pass.",
+      automationCheckedAt: "Checked",
+      automationExpiresAt: "Valid until",
+      automationPolicyVersion: "Policy version",
+      automationSourceLabel: "Source",
+      decisionRecord: "Decision record",
+      recordIdLabel: "Record",
+      auditHashLabel: "Audit hash",
+      explorerPendingNote: "Audit explorer ships in Phase 3.",
+      explorerAvailableNote: "Verify on the audit explorer.",
+      advisoryContext: "Advisory context",
+      qtyLabel: "Quantity",
+      qtyHint:
+        "Shares to act on. The managed execution engine may adjust this for position sizing.",
+      orderLabel: "Order",
+      generatedLabel: "Generated",
+      expiresLabel: "Expires",
+      shallowFallbackNote:
+        "Deep recommendation detail not published for this id — showing summary view.",
+      // Tier-aware actions (Phase 2.5 — supersedes the per-rec Accept/Reject/Review,
+      // never reintroduces per-trade Accept on the investor surface).
+      tier: {
+        signal: {
+          title: "Signal mode",
+          body: "You receive recommendations for review. ReFi does not place trades for you.",
+          saveAction: "Save",
+          dismissAction: "Dismiss",
+          upgradeAction: "Upgrade to Managed Execution",
+          savedBody:
+            "Saved. You can find this in your records under saved recommendations.",
+          dismissedBody:
+            "Dismissed. This recommendation will no longer appear in your action list.",
+        },
+        managed: {
+          title: "Managed Execution active",
+          body: "You authorized ReFi to execute eligible software-generated recommendations within your guardrails. This recommendation does not require your approval.",
+          viewRecordAction: "View record",
+        },
+        managedException: {
+          title: "Resolve exception",
+          body: "This recommendation fell outside the guardrails you signed at activation. It will not execute until you resolve the exception.",
+          openAction: "Open Exception Review",
+        },
+        loading: "Loading…",
+      },
     },
     signalManual: {
       title: "Use this outside ReFi",
@@ -125,6 +276,7 @@ export const appCopy = {
     description: "Description",
     status: "Status",
     decisionRecord: "Decision record",
+    loadingLabel: "Loading activity…",
     emptyState: "No activity yet. Actions taken on your account appear here.",
   },
   documents: {
@@ -132,12 +284,33 @@ export const appCopy = {
     subheading: "Your regulatory disclosure package and advisory documents.",
     version: "Version",
     effectiveDate: "Effective date",
+    hash: "Hash",
     view: "View",
     download: "Download",
     acknowledge: "Acknowledge",
+    acknowledgeSelected: "Acknowledge selected",
     acknowledged: "Acknowledged",
+    pendingVersion: "Pending",
+    pendingDate: "Pending registration",
+    pendingHash: "Pending publication",
     pendingStatus: "Document in preparation",
     pendingNote: "Available after registration",
+    requiredLabel: "Required for activation",
+    recommendedLabel: "Recommended",
+    bannerTitle: "Regulatory disclosure package",
+    bannerBody:
+      "Document names are final. Versions and effective dates are pending SEC registration and counsel sign-off.",
+    progressTemplate: "{ack} of {total} required documents acknowledged",
+    activationGate:
+      "Managed Execution Activation unlocks once all required documents are acknowledged at their published versions.",
+    devCanAckNote:
+      "In dev/staging you may simulate acknowledgments against the placeholder version. Acks are scoped per browser.",
+    internalNoteLabel: "Internal · counsel context",
+    unlockCondition: {
+      "sec-registration": "Unlocks after SEC registration",
+      "counsel-approval": "Unlocks after counsel approval",
+      "agreement-terms": "Unlocks with agreement publication",
+    },
   },
   account: {
     heading: "Account",
@@ -147,6 +320,68 @@ export const appCopy = {
     security: "Security",
     wallet: "Connected wallet",
     disconnect: "Disconnect wallet",
+    walletStatusConnected: "Connected",
+    walletNetwork: "Ethereum mainnet · SIWE session",
+    walletNone: "No wallet connected.",
+    kycCard: {
+      title: "Identity verification",
+      statusLabel: "KYC status",
+      providerLabel: "Provider",
+      startCta: "Start verification",
+      resumeCta: "Resume verification",
+      statusLabels: {
+        not_started: "Not started",
+        pending: "Pending",
+        incomplete: "Incomplete",
+        under_review: "Under review",
+        approved: "Approved",
+        denied: "Denied",
+      },
+    },
+    brokerCard: {
+      equityLabel: "Equity",
+      buyingPowerLabel: "Buying power",
+      connectedLabel: "Connected",
+      noneConnected: "No broker connected.",
+      connectCta: "Connect broker",
+      disconnectCta: "Disconnect broker",
+      confirmBody:
+        "Disconnecting will stop managed execution. You can reconnect at any time.",
+      confirmCta: "Confirm disconnect",
+      disconnectingCta: "Disconnecting…",
+      cancelCta: "Cancel",
+      disconnectErrorFallback: "Disconnect failed. Try again.",
+    },
+    profileCard: {
+      fields: {
+        goal: "Goal",
+        timeHorizon: "Time horizon",
+        riskTolerance: "Risk tolerance",
+        experience: "Experience",
+        income: "Income",
+        netWorth: "Net worth",
+      },
+      updateCta: "Update profile",
+      none: "Profile available after onboarding.",
+      completeCta: "Complete profile",
+    },
+    securityCard: {
+      body: "ReFi uses Sign-In With Ethereum (SIWE). There is no password. Your session is tied to your wallet signature and expires automatically.",
+      signOutAllCta: "Sign out all devices",
+    },
+  },
+  brokerStatus: {
+    staleTitle: "Broker data is stale",
+    staleBody:
+      "Position data has not refreshed within the freshness window. Submissions will be blocked until the broker syncs again.",
+    staleLastSyncedLabel: "Last synced",
+    disconnectedTitle: "Broker is disconnected",
+    disconnectedBody:
+      "Reconnect your broker to resume position tracking and Managed Execution.",
+    pendingTitle: "Broker connection is pending",
+    pendingBody:
+      "Broker handshake is in progress. This usually takes under a minute.",
+    reconnectAction: "Reconnect broker",
   },
   support: {
     heading: "Support",

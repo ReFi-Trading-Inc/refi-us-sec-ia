@@ -47,6 +47,17 @@ export class ApiError extends Error {
   }
 }
 
+const CSRF_COOKIE_NAME = "csrf_v1";
+const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function readCsrfCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(
+    new RegExp(`(?:^|;\\s*)${CSRF_COOKIE_NAME}=([^;]+)`),
+  );
+  return match ? decodeURIComponent(match[1] ?? "") : null;
+}
+
 export async function apiFetch<T>(
   path: string,
   init: ApiRequestInit = {},
@@ -56,6 +67,11 @@ export async function apiFetch<T>(
   headers.set("x-correlation-id", getCorrelationId());
   if (init.body !== undefined && !headers.has("content-type")) {
     headers.set("content-type", "application/json");
+  }
+  const method = (init.method ?? "GET").toUpperCase();
+  if (WRITE_METHODS.has(method) && !headers.has("x-csrf-token")) {
+    const csrf = readCsrfCookie();
+    if (csrf) headers.set("x-csrf-token", csrf);
   }
 
   const response = await fetch(url, {

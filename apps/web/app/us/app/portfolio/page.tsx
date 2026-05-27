@@ -20,6 +20,8 @@ import {
 } from "recharts";
 import { appCopy } from "../../_content/app-copy";
 import { useSimulation } from "../../../_hooks/useSimulation";
+import { BrokerStatusBanner } from "../_components/BrokerStatusBanner";
+import { SimulatedDataBadge } from "../_components/SimulatedDataBadge";
 
 const { portfolio } = appCopy;
 
@@ -64,6 +66,14 @@ export default function PortfolioPage() {
           {portfolio.heading}
         </h1>
       </div>
+
+      <BrokerStatusBanner />
+
+      <SimulatedDataBadge
+        variant="card"
+        source="simulated"
+        note="Position prices drift every 5s; real broker quotes land at activation."
+      />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {cards.map((c) => (
@@ -120,6 +130,7 @@ export default function PortfolioPage() {
               </AreaChart>
             </ResponsiveContainer>
           </div>
+          <SimulatedDataBadge variant="chart" source="simulated" />
         </CardContent>
       </Card>
 

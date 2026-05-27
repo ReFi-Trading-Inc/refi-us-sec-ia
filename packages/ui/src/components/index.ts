@@ -19,6 +19,9 @@ export type { CheckboxProps } from "./Checkbox";
 export { Gauge } from "./Gauge";
 export type { GaugeProps } from "./Gauge";
 
+export { Logo } from "./Logo";
+export type { LogoProps } from "./Logo";
+
 export { Input } from "./Input";
 export type { InputProps } from "./Input";
 

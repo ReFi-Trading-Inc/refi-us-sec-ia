@@ -10,7 +10,7 @@
 // existing call sites already assumed. Each shim carries a TODO marker so it
 // can be deleted (or narrowed) once Daniel's OpenAPI catches up.
 
-import type { components } from "./generated/_openapi.gen";
+import type { components } from "./generated/api.gen";
 
 type Schemas = components["schemas"];
 
@@ -22,7 +22,10 @@ export type BrokerInfo = Schemas["BrokerInfo"];
 export type BrokerConnection = Schemas["BrokerConnection"];
 export type BrokerAccount = Schemas["BrokerAccount"];
 export type Position = Schemas["Position"];
-export type OrderRequest = Schemas["OrderRequest"];
+// Note: the Phase 2.5 OpenAPI YAML no longer exposes OrderRequest /
+// OrderPreviewResult; they live in the hand-typed `./generated/api.ts`.
+// Re-export from there so Phase 2 callers keep compiling.
+export type { OrderRequest } from "./generated/api";
 export type Order = Schemas["Order"];
 export type Recommendation = Schemas["Recommendation"];
 export type ActivityEvent = Schemas["ActivityEvent"];
@@ -32,7 +35,8 @@ export type EligibilityDecision = Schemas["EligibilityDecision"];
 
 // TODO(openapi): add `latency_ms` to OrderPreviewResult in refi-api.yaml.
 // Surfaced by /orders/preview for the CompliancePreview observability strip.
-export type OrderPreviewResult = Schemas["OrderPreviewResult"] & {
+import type { OrderPreviewResult as _OrderPreviewResultBase } from "./generated/api";
+export type OrderPreviewResult = _OrderPreviewResultBase & {
   latency_ms?: number;
 };
 

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardContent, StatusBanner, Badge } from "@ui/components";
 import {
@@ -8,6 +9,7 @@ import {
   type AccountActivationStatus,
 } from "@refi/api-clients";
 import { onboardingCopy } from "../../_content/onboarding";
+import { useDocumentAcks } from "../../_lib/document-acks";
 
 const { activation } = onboardingCopy;
 
@@ -24,7 +26,15 @@ export default function OnboardingActivationPage() {
   const router = useRouter();
   const { data, isLoading } = useActivationStatus();
   const activate = useActivateAccount();
-  const status = data ?? FALLBACK;
+  const acks = useDocumentAcks();
+  // Server returns the persona-fixture activation; we override `disclosures`
+  // with the client-side ack tracker since the Document Registry has not
+  // shipped yet (MIG-P2.5-06 / `06-backend-contract-map.md` §6).
+  const baseStatus = data ?? FALLBACK;
+  const status: AccountActivationStatus = {
+    ...baseStatus,
+    disclosures: acks.allRequiredAcked,
+  };
 
   const allDone = Object.values(status).every(Boolean);
 
@@ -47,12 +57,13 @@ export default function OnboardingActivationPage() {
         <CardContent className="pt-5 flex flex-col gap-3">
           {activation.checklist.map((item) => {
             const checked = status[item.key as keyof AccountActivationStatus];
+            const isDisclosuresRow = item.key === "disclosures";
             return (
               <div
                 key={item.key}
                 className="flex items-center justify-between gap-3 py-1"
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-1 min-w-0">
                   <span
                     className={
                       checked
@@ -64,12 +75,27 @@ export default function OnboardingActivationPage() {
                     {checked ? "✓" : "○"}
                   </span>
                   <p className="text-sm text-charcoal-200">{item.label}</p>
+                  {isDiscloresSubLabel(isDisclosuresRow, acks) ? (
+                    <span className="text-xs font-mono text-charcoal-500">
+                      · {acks.requiredAckedCount}/{acks.requiredTotal}
+                    </span>
+                  ) : null}
                 </div>
-                {item.auto && (
-                  <Badge variant="neutral" aria-label="Auto-checked">
-                    Auto
-                  </Badge>
-                )}
+                <div className="flex items-center gap-2">
+                  {isDisclosuresRow ? (
+                    <Link
+                      href="/us/app/documents"
+                      className="text-xs text-mint-400 hover:text-mint-300"
+                    >
+                      Review →
+                    </Link>
+                  ) : null}
+                  {item.auto && (
+                    <Badge variant="neutral" aria-label="Auto-checked">
+                      Auto
+                    </Badge>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -93,4 +119,11 @@ export default function OnboardingActivationPage() {
       </Button>
     </div>
   );
+}
+
+function isDiscloresSubLabel(
+  isRow: boolean,
+  acks: ReturnType<typeof useDocumentAcks>,
+): boolean {
+  return isRow && acks.isHydrated;
 }

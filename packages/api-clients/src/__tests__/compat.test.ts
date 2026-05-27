@@ -46,13 +46,15 @@ describe("KycStatusValue", () => {
     expect(all).toContain("not_started");
   });
 
-  test("isKycTerminal recognizes approved, denied, under_review as terminal", () => {
+  test("isKycTerminal recognizes approved, denied as terminal", () => {
     expect(isKycTerminal("approved")).toBe(true);
     expect(isKycTerminal("denied")).toBe(true);
-    expect(isKycTerminal("under_review")).toBe(true);
   });
 
-  test("isKycTerminal returns false for non-terminal and for not_started", () => {
+  test("isKycTerminal returns false for non-terminal states", () => {
+    // `under_review` is intentionally NOT terminal — the UI keeps polling
+    // until the provider returns approved or denied. See kyc.ts comment.
+    expect(isKycTerminal("under_review")).toBe(false);
     expect(isKycTerminal("not_started")).toBe(false);
     expect(isKycTerminal("pending")).toBe(false);
     expect(isKycTerminal("incomplete")).toBe(false);

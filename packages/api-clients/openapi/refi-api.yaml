@@ -1,336 +1,990 @@
 openapi: 3.1.0
 info:
-  title: ReFi Trading US API
-  version: 0.1.0
+  title: ReFi.Trading US — BFF API
+  version: 0.3.0
   description: |
-    Hand-written skeleton API contract for the SEC-registered investment adviser app.
-    Replaced by Daniel's published OpenAPI in a later milestone.
+    Frontend-owned BFF (Backend-for-Frontend) at `apps/web/app/api/v1/*`.
+    Translates investor intent into Spanner reads + Pub/Sub publishes
+    against Daniel's `refinity-dev-sp` project. See:
+      - `refi-build-docs/spec-current/06-backend-contract-map.md` — per-endpoint Daniel source
+      - `refi-build-docs/spec-current/09-daniel-answers-and-product-reframe.md` — tier model, accept semantics
+      - `refi-build-docs/spec-current/10-bff-architecture-decision.md` — host + auth ADR
+    All schemas cite Daniel's `docs/IOs/*` or `docs/architecture/*` where applicable.
+    UI-invented schemas are flagged in their `description` field.
 servers:
-  - url: https://api-staging.refi.trading
+  - url: https://refi.trading
+    description: Production (TBD between refi.trading/us and refitrading.com)
+  - url: https://staging.refi.trading
+    description: Staging (Cloud Run, `refinity-dev-sp`)
+  - url: http://localhost:3000
+    description: Local dev (MSW intercepts unless BFF_LIVE_DOMAINS set)
+
 paths:
-  /auth/session:
+  # ─── Auth / SIWE (BFF-owned until auth-siwe ships) ───────────────────────
+  /api/v1/session:
     get:
-      operationId: getAuthSession
+      operationId: getSession
+      tags: [auth]
+      description: BFF-decoded session from `us_session_v1` JWT cookie. Returns tier.
       responses:
         "200":
-          description: ok
+          description: Current session
           content:
             application/json:
               schema: { $ref: "#/components/schemas/AuthSession" }
-  /siwe/nonce:
-    post:
+
+  /api/v1/auth/siwe/nonce:
+    get:
       operationId: siweNonce
+      tags: [auth]
+      description: |
+        Per Daniel `SIWE.pdf:p4,p8`, nonce binds to `{domain, origin, uri, chainId}`
+        to reject replay. BFF stores in `BFFNonces` table until `auth-siwe` ships.
+      parameters:
+        - { name: domain, in: query, required: true, schema: { type: string } }
+        - { name: origin, in: query, required: true, schema: { type: string } }
+        - { name: uri, in: query, required: true, schema: { type: string } }
+        - {
+            name: chainId,
+            in: query,
+            required: true,
+            schema: { type: integer },
+          }
       responses:
         "200":
-          description: ok
+          description: Nonce
           content:
             application/json:
-              schema:
-                type: object
-                required: [nonce]
-                properties:
-                  nonce: { type: string }
-  /siwe/verify:
+              schema: { $ref: "#/components/schemas/SiweNonceResponse" }
+
+  /api/v1/auth/siwe/verify:
     post:
       operationId: siweVerify
+      tags: [auth]
+      description: |
+        SIWE verify is intentionally exempt from CSRF — the signed nonce is
+        the anti-forgery proof. BFF validates signature with `viem`.
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [message, signature]
-              properties:
-                message: { type: string }
-                signature: { type: string }
+            schema: { $ref: "#/components/schemas/SiweVerifyRequest" }
       responses:
         "200":
-          description: ok
+          description: Session established
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OkResult" }
-  /auth/refresh:
+        "401":
+          description: SIWE error envelope
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SiweErrorEnvelope" }
+
+  /api/v1/auth/refresh:
     post:
       operationId: authRefresh
+      tags: [auth]
       responses:
-        "200":
-          {
-            description: ok,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/OkResult" } },
-              },
-          }
-  /auth/revoke-all:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+
+  /api/v1/auth/logout:
     post:
-      operationId: authRevokeAll
+      operationId: authLogout
+      tags: [auth]
+      description: Daniel's spec name (SIWE.pdf:p8); was /auth/revoke-all pre-rescope.
       responses:
-        "200":
-          {
-            description: ok,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/OkResult" } },
-              },
-          }
-  /ccid/status:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+
+  # ─── KYC / CCID (BFF stub until identity-ccid ships) ────────────────────
+  /api/v1/ccid/status:
     get:
-      operationId: getCcidStatus
+      operationId: ccidStatus
+      tags: [ccid]
       responses:
         "200":
-          description: ok
+          description: KYC status
           content:
             application/json:
               schema: { $ref: "#/components/schemas/KycStatus" }
-  /ccid/start:
+
+  /api/v1/ccid/start:
     post:
-      operationId: startCcid
+      operationId: ccidStart
+      tags: [ccid]
+      description: Per Daniel `CCID.pdf:p4`, body carries `{kind, jurisdiction, entity_fields?}`.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KycStartRequest" }
       responses:
         "200":
-          description: ok
+          description: Provider session created
           content:
             application/json:
-              schema:
-                type: object
-                required: [provider_url]
-                properties:
-                  provider_url: { type: string, format: uri }
-  /v1/brokers/supported:
+              schema: { $ref: "#/components/schemas/KycStartResponse" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+
+  # ─── Risk / Compliance (read-only Spanner projection) ──────────────────
+  /api/v1/risk-snapshots/{account_intent_id}:
     get:
-      operationId: getSupportedBrokers
+      operationId: riskSnapshot
+      tags: [risk, compliance]
+      description: |
+        Reads `RiskSnapshots WHERE account_intent_id=...` per
+        `docs/IOs/risk-engine_IO_details.md:174-193`. The Daniel-canonical
+        verdict envelope.
+      parameters:
+        - {
+            name: account_intent_id,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
       responses:
         "200":
-          description: ok
+          description: Risk snapshot
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RiskSnapshot" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  # ─── Broker (Spanner + SnapTrade proxy) ────────────────────────────────
+  /api/v1/broker/supported:
+    get:
+      operationId: brokerSupported
+      tags: [broker]
+      description: Reads `BrokerApiConfigs` (admin-managed registry).
+      responses:
+        "200":
+          description: Supported brokers
           content:
             application/json:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/BrokerInfo" }
-  /v1/brokers/connection:
+
+  /api/v1/broker/connection:
     get:
-      operationId: getBrokerConnection
+      operationId: brokerConnection
+      tags: [broker]
+      description: |
+        Reads `AccountSettings.snaptrade_user_id/snaptrade_user_secret`
+        per `docs/IOs/trade-manager_IO_details.md:37`.
       responses:
         "200":
-          description: ok
+          description: Active connection
           content:
             application/json:
-              schema:
-                oneOf:
-                  - { $ref: "#/components/schemas/BrokerConnection" }
-                  - { type: "null" }
-  /v1/brokers/connect/start:
+              schema: { $ref: "#/components/schemas/BrokerConnection" }
+        "404":
+          description: No broker connected
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /api/v1/broker/connect:
     post:
-      operationId: startBrokerConnect
+      operationId: brokerConnect
+      tags: [broker]
+      description: |
+        SnapTrade `register_snap_trade_user` proxy. Writes `AccountSettings`.
+        Only SnapTrade implemented today.
       requestBody:
         required: true
         content:
           application/json:
-            schema:
-              type: object
-              required: [broker_id]
-              properties:
-                broker_id: { type: string }
+            schema: { $ref: "#/components/schemas/BrokerApiKeyConnectRequest" }
       responses:
         "200":
-          description: ok
+          description: Connection established
           content:
             application/json:
-              schema:
-                type: object
-                required: [oauth_url]
-                properties:
-                  oauth_url: { type: string }
-  /v1/brokers/disconnect:
-    post:
-      operationId: disconnectBroker
-      responses:
-        "200":
-          {
-            description: ok,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/OkResult" } },
-              },
-          }
-  /v1/brokers/account:
+              schema: { $ref: "#/components/schemas/BrokerConnectKeyResponse" }
+        "401": { $ref: "#/components/responses/UnauthorizedError" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+        "422": { $ref: "#/components/responses/UnprocessableError" }
+
+  /api/v1/broker/account:
     get:
-      operationId: getBrokerAccount
+      operationId: brokerAccount
+      tags: [broker]
+      description: Cached `AccountSnapshots`; live fetch on stale.
       responses:
         "200":
-          description: ok
+          description: Broker account snapshot
           content:
             application/json:
               schema: { $ref: "#/components/schemas/BrokerAccount" }
-  /v1/brokers/positions:
+
+  /api/v1/positions:
     get:
-      operationId: getBrokerPositions
+      operationId: positionsList
+      tags: [broker]
+      description: |
+        Reads `Positions` table + Redis `positions:{account_id}` TTL 180s
+        per `docs/IOs/trade-manager_IO_details.md:79`. String decimals.
       responses:
         "200":
-          description: ok
+          description: Positions
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Position" }
-  /v1/brokers/orders:
+              schema: { $ref: "#/components/schemas/PositionsResponse" }
+
+  # ─── Orders (Spanner read + Pub/Sub cancel only) ───────────────────────
+  /api/v1/orders:
     get:
-      operationId: getBrokerOrders
+      operationId: ordersList
+      tags: [orders]
+      description: Reads `Orders WHERE account_id=...`.
       responses:
         "200":
-          description: ok
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: "#/components/schemas/Order" }
-  /orders/preview:
-    post:
-      operationId: previewOrder
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/OrderRequest" }
-      responses:
-        "200":
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/OrderPreviewResult" }
-  /orders:
-    get:
-      operationId: listOrders
-      responses:
-        "200":
-          description: ok
+          description: Orders
           content:
             application/json:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Order" }
-    post:
-      operationId: submitOrder
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/OrderRequest" }
-      responses:
-        "200":
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Order" }
-  /orders/{id}:
-    delete:
-      operationId: cancelOrder
+
+  /api/v1/orders/{client_order_id}/lineage:
+    get:
+      operationId: orderLineage
+      tags: [orders, lineage]
+      description: |
+        5-table join: `Orders + OrderEvents + OrderIdMap + Fills +
+        BrokerOrderAttempts + ExecutionSagas`. The "Watch every broker
+        interaction" surface per `08 §12.4`.
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          {
-            description: ok,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/OkResult" } },
-              },
+        - {
+            name: client_order_id,
+            in: path,
+            required: true,
+            schema: { type: string },
           }
-  /v1/recommendations:
-    get:
-      operationId: listRecommendations
       responses:
         "200":
-          description: ok
+          description: Full order lineage
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderLineage" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /api/v1/orders/{client_order_id}/cancel:
+    post:
+      operationId: orderCancel
+      tags: [orders]
+      description: |
+        Publishes `dev-orders.cmd action=cancel` per admin-portal pattern at
+        `docs/as-built/v2/admin-portal_AS_BUILT.md:325-327`.
+      parameters:
+        - {
+            name: client_order_id,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+
+  # ─── Recommendations (UI projection over AccountIntents + RiskSnapshots) ─
+  /api/v1/recommendations:
+    get:
+      operationId: recommendationsList
+      tags: [recommendations]
+      description: |
+        UI projection of `AccountIntents JOIN portfolio_actions_history`
+        keyed by `account_id` ORDER BY ts DESC.
+      responses:
+        "200":
+          description: Recommendation list
           content:
             application/json:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Recommendation" }
-  /v1/recommendations/{id}:
+
+  /api/v1/recommendations/{intent_id}:
     get:
-      operationId: getRecommendation
+      operationId: recommendationDetail
+      tags: [recommendations]
+      description: |
+        Composite read: `AccountIntents + RiskSnapshots + ExecutionPlans +
+        portfolio_actions_history + TemplateTargets + Orders + Fills`
+        joined by `correlation_id` / `intent_id`. Full lineage (`08 §12.1`).
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
+        - {
+            name: intent_id,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
       responses:
         "200":
-          description: ok
+          description: Recommendation lineage detail
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/Recommendation" }
-  /v1/activity:
+              schema: { $ref: "#/components/schemas/RecommendationDetail" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  # ─── Activity / Audit projection ───────────────────────────────────────
+  /api/v1/activity:
     get:
-      operationId: listActivity
+      operationId: activityList
+      tags: [activity]
+      description: |
+        Projection over `OrderEvents + portfolio_actions_history +
+        AccountIntentHistory + ExecutionSagas` + `dev-audit.evt` (when
+        audit-writer ships). Each event carries correlation_id + ref_id +
+        digest per Daniel's audit envelope (`API and Event Contracts.pdf:p9`).
       responses:
         "200":
-          description: ok
+          description: Activity events
           content:
             application/json:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/ActivityEvent" }
-  /v1/us/eligibility:
+
+  # ─── Profile / Strategy / Activation ───────────────────────────────────
+  /api/v1/profile:
+    get:
+      operationId: profileGet
+      tags: [profile]
+      description: |
+        Reads `AccountPrefs + UserConsents + AccountConsents + AccountSettings`
+        joined by `account_id`.
+      responses:
+        "200":
+          description: Advisory profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvisoryProfileResponse" }
+        "404":
+          description: Not set
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    patch:
+      operationId: profileSave
+      tags: [profile]
+      description: Publishes `dev-account.admin action=update_prefs`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdvisoryProfile" }
+      responses:
+        "200":
+          description: Saved profile
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AdvisoryProfileResponse" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+
+  /api/v1/strategies/current:
+    get:
+      operationId: strategyCurrent
+      tags: [strategy]
+      description: |
+        Composite: `templates + selected_strategies + available_strategies +
+        TemplateTargets` (latest target for account).
+      responses:
+        "200":
+          description: Current strategy descriptor
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/StrategyDescriptor" }
+        "404":
+          description: No strategy assigned
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /api/v1/eligibility:
+    get:
+      operationId: eligibilityState
+      tags: [eligibility]
+      description: |
+        Gate-union read: `AccountConsents + UserConsents + AccountPrefs +
+        AccountSettings.snaptrade_user_id != null + AccountTemplates.active +
+        ActiveAssets + TradingControlStates`.
+      responses:
+        "200":
+          description: Activation gate state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountActivationStatus" }
+
+  /api/v1/execution-policy/activate:
     post:
-      operationId: postEligibility
+      operationId: executionPolicyActivate
+      tags: [execution-policy]
+      description: |
+        Publishes `client.execution_policy.activate` per
+        `09-daniel-answers-and-product-reframe.md §1 Q5`. This is THE canonical
+        investor accept moment under SEC Rule 203A-2(e). One-time per
+        policy version. Per-recommendation accept does not exist.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              required: [state, isUsPerson, dob]
-              properties:
-                state: { type: string }
-                isUsPerson: { type: boolean }
-                dob: { type: string, format: date }
+              { $ref: "#/components/schemas/ExecutionPolicyActivateRequest" }
       responses:
         "200":
-          description: ok
+          description: Policy activated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecutionPolicy" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+        "422":
+          description: Preconditions not met
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /api/v1/execution-policy/pause:
+    post:
+      operationId: executionPolicyPause
+      tags: [execution-policy]
+      description: Publishes `client.execution_policy.pause`. Investor-initiated halt.
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+
+  /api/v1/execution-policy/update:
+    post:
+      operationId: executionPolicyUpdate
+      tags: [execution-policy]
+      description: |
+        Publishes `client.execution_policy.update`. Creates a new policy version;
+        Managed remains active under the new version after re-signature.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              { $ref: "#/components/schemas/ExecutionPolicyActivateRequest" }
+      responses:
+        "200":
+          description: Policy updated
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecutionPolicy" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+
+  # ─── Exceptions (the ONLY per-decision investor approval surface) ──────
+  /api/v1/exceptions:
+    get:
+      operationId: exceptionsList
+      tags: [exceptions]
+      description: |
+        Projection of `RiskSnapshots WHERE decision='rejected' JOIN AccountIntents`
+        filtered by account and policy-exception reasons.
+      responses:
+        "200":
+          description: Exceptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Exception" }
+
+  /api/v1/exceptions/{exception_id}:
+    get:
+      operationId: exceptionGet
+      tags: [exceptions]
+      parameters:
+        - {
+            name: exception_id,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          description: Exception detail (with intent + risk snapshot)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExceptionDetail" }
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /api/v1/exceptions/{exception_id}/approve:
+    post:
+      operationId: exceptionApprove
+      tags: [exceptions]
+      description: |
+        Publishes `client.exception.approve` per `09 §1 Q5` payload spec.
+        The ONLY per-decision investor approval surface under Managed mode.
+      parameters:
+        - {
+            name: exception_id,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExceptionDecisionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+        "422":
+          description: Exception expired or already terminal
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
+  /api/v1/exceptions/{exception_id}/reject:
+    post:
+      operationId: exceptionReject
+      tags: [exceptions]
+      description: Publishes `client.exception.reject`. Default-reject on TTL expiry.
+      parameters:
+        - {
+            name: exception_id,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExceptionDecisionRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+
+  # ─── Documents (BFF-owned until Document Registry ships) ───────────────
+  /api/v1/disclosures:
+    get:
+      operationId: disclosuresList
+      tags: [documents]
+      description: |
+        BFF-owned `DocumentVersions(doc_id, version, hash, effective_at,
+        required_for_activation)`. Daniel has no Document Registry planned.
+      responses:
+        "200":
+          description: Disclosure documents + per-account ack state
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/DisclosureDocument" }
+
+  /api/v1/disclosures/{doc_id}/ack:
+    post:
+      operationId: disclosureAck
+      tags: [documents]
+      description: |
+        Writes BFF-owned `DocumentAcks(account_id, doc_id, version, acked_at,
+        signed_at_hash, ip_hash, device_fingerprint)`.
+      parameters:
+        - { name: doc_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/DisclosureAckRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+
+  # ─── Support (UI-invented; SEC Rule 203A-2(e)(3)) ──────────────────────
+  /api/v1/support/ticket:
+    post:
+      operationId: supportTicket
+      tags: [support]
+      description: |
+        Categorized intake. Server re-validates support-boundary classification
+        and 422s on `blocked: true`. Writes BFF-owned `SupportEvents`
+        (NEVER stores message text in analytics).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SupportTicketRequest" }
+      responses:
+        "200":
+          description: Ticket created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportTicketResponse" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+        "422":
+          description: Blocked by support-boundary classifier
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+        "429":
+          description: Rate-limited
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+          headers:
+            Retry-After:
+              schema: { type: string }
+
+  # ─── Dashboard composite ───────────────────────────────────────────────
+  /api/v1/dashboard:
+    get:
+      operationId: dashboardGet
+      tags: [dashboard]
+      description: |
+        Single round-trip for the 11-card home dashboard. Redis-cached 60s
+        mirroring admin-portal `admin:kpis:latest` pattern per
+        `docs/as-built/v2/admin-portal_AS_BUILT.md:141-145`.
+      responses:
+        "200":
+          description: Composite payload for all dashboard cards
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DashboardComposite" }
+
+  # ─── Records Center ────────────────────────────────────────────────────
+  /api/v1/records/recommendation/{intent_id}:
+    get:
+      operationId: recordRecommendation
+      tags: [records]
+      parameters:
+        - {
+            name: intent_id,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          description: Recommendation record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecommendationDetail" }
+
+  /api/v1/records/execution/{plan_id}:
+    get:
+      operationId: recordExecution
+      tags: [records]
+      description: |
+        `ExecutionPlans + Orders + OrderEvents + Fills + BrokerOrderAttempts +
+        ExecutionSagas` for a given plan_id.
+      parameters:
+        - { name: plan_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Execution record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExecutionRecord" }
+
+  /api/v1/records/broker/{attempt_id}:
+    get:
+      operationId: recordBroker
+      tags: [records]
+      description: |
+        `BrokerInteractionsLog + BrokerOrderAttempts`. Redacted request/response;
+        never raw secrets.
+      parameters:
+        - {
+            name: attempt_id,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          description: Broker interaction record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BrokerInteractionRecord" }
+
+  /api/v1/records/disclosure/{account_id}/{doc_id}:
+    get:
+      operationId: recordDisclosure
+      tags: [records]
+      parameters:
+        - {
+            name: account_id,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+        - { name: doc_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Disclosure ack record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DisclosureAckRecord" }
+
+  /api/v1/records/support/{ticket_id}:
+    get:
+      operationId: recordSupport
+      tags: [records]
+      parameters:
+        - {
+            name: ticket_id,
+            in: path,
+            required: true,
+            schema: { type: string },
+          }
+      responses:
+        "200":
+          description: Support event record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SupportEventRecord" }
+
+  /api/v1/records/export:
+    post:
+      operationId: recordsExport
+      tags: [records]
+      description: |
+        Composite manifest. On-chain anchor field placeholder until
+        `anchor-job` ships.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RecordsExportRequest" }
+      responses:
+        "200":
+          description: Signed manifest
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordsExportResponse" }
+        "403": { $ref: "#/components/responses/CsrfMissing" }
+
+  # ─── US Internet Adviser eligibility (Next route handler — already live) ─
+  /api/us/eligibility:
+    post:
+      operationId: usEligibility
+      tags: [eligibility]
+      description: |
+        Real Next route handler at `apps/web/app/api/us/eligibility/route.ts`.
+        HMAC-hashed IP/UA; signed JWT cookie `us_eligibility_v1`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EligibilityRequest" }
+      responses:
+        "200":
+          description: Eligibility decision
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EligibilityDecision" }
+
 components:
+  responses:
+    Ok:
+      description: ok
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/OkResult" }
+    CsrfMissing:
+      description: Missing x-csrf-token header
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    UnauthorizedError:
+      description: Invalid credentials
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+    UnprocessableError:
+      description: Validation / preconditions failed
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorEnvelope" }
+
   schemas:
+    # ─── Generic ────────────────────────────────────────────────────────
     OkResult:
       type: object
       required: [ok]
       properties:
         ok: { type: boolean }
+
+    ErrorEnvelope:
+      type: object
+      description: Mirrors Daniel's standard error shape (`API and Event Contracts.pdf:p9`).
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+        retryable: { type: boolean }
+        correlationId: { type: string }
+        details:
+          type: object
+          additionalProperties: true
+
+    SiweErrorEnvelope:
+      type: object
+      description: SIWE-specific error envelope per `SIWE.pdf:p9`.
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - NONCE_INVALID
+            - SIGNATURE_INVALID
+            - POLICY_VIOLATION
+            - CHAIN_DENIED
+            - ACCOUNT_BLOCKED
+            - REFRESH_REVOKED
+        message: { type: string }
+        retryable: { type: boolean }
+        correlationId: { type: string }
+        details:
+          type: object
+          additionalProperties: true
+
+    # ─── Auth / Tier ────────────────────────────────────────────────────
+    Tier:
+      type: string
+      description: |
+        Investor tier (P2.5R-16). Signal = advisory only. Managed = authorized
+        auto-execution within an ExecutionPolicy. Admin = operator only.
+      enum: [signal, managed, admin]
+
     AuthSession:
       type: object
       required: [status]
       properties:
-        status: { type: string, enum: [authenticated, unauthenticated] }
+        status:
+          type: string
+          enum: [authenticated, unauthenticated]
         account_id: { type: string }
         wallet_id: { type: string }
         roles:
           type: array
           items: { type: string }
-        kyc_status:
-          {
-            type: string,
-            enum: [pending, incomplete, approved, denied, under_review],
-          }
+        kyc_status: { $ref: "#/components/schemas/KycStatusValue" }
+        tier: { $ref: "#/components/schemas/Tier" }
+        expires_in_seconds: { type: integer }
+
+    SiweNonceResponse:
+      type: object
+      required: [nonce]
+      properties:
+        nonce: { type: string }
+
+    SiweVerifyRequest:
+      type: object
+      required: [message, signature]
+      properties:
+        message: { type: string }
+        signature: { type: string }
+
+    # ─── KYC / CCID ─────────────────────────────────────────────────────
+    KycStatusValue:
+      type: string
+      enum: [not_started, pending, incomplete, under_review, approved, denied]
+
     KycStatus:
       type: object
       required: [status]
       properties:
-        status:
-          {
-            type: string,
-            enum: [pending, incomplete, approved, denied, under_review],
-          }
+        status: { $ref: "#/components/schemas/KycStatusValue" }
         provider: { type: string }
         last_updated: { type: string, format: date-time }
+        provider_reference: { type: string }
+
+    KycStartRequest:
+      type: object
+      description: Per Daniel `CCID.pdf:p4`.
+      properties:
+        kind:
+          type: string
+          enum: [KYC, KYB]
+        jurisdiction: { type: string }
+        entity_fields:
+          type: object
+          additionalProperties: true
+
+    KycStartResponse:
+      type: object
+      required: [provider_url]
+      properties:
+        provider_url: { type: string }
+        provider_reference: { type: string }
+
+    # ─── Risk / Compliance verdict ──────────────────────────────────────
+    RiskDecision:
+      type: string
+      description: |
+        Daniel-canonical verdict per `docs/IOs/risk-engine_IO_details.md:174-193`.
+        Two states only — UI "review" tier maps to Exception Review queue,
+        not to a risk-engine state.
+      enum: [approved, rejected]
+
+    RiskMetrics:
+      type: object
+      properties:
+        equity: { type: string, description: String-decimal. }
+        positions_age_ms: { type: integer }
+        prices_age_ms_max: { type: integer }
+
+    RiskSnapshot:
+      type: object
+      description: |
+        Daniel-canonical compliance verdict. Persisted as `RiskSnapshots.snapshot`
+        JSON with `snapshot_hash` cryptographic proof.
+      required:
+        - decision
+        - intent_id
+        - account_id
+        - correlation_id
+        - ts
+        - snapshot_hash
+        - reasons
+      properties:
+        decision: { $ref: "#/components/schemas/RiskDecision" }
+        intent_id: { type: string }
+        account_id: { type: string }
+        correlation_id: { type: string }
+        ts: { type: string, format: date-time }
+        snapshot_hash: { type: string }
+        constraints:
+          type: array
+          items: { type: string }
+        reasons:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string }
+              message: { type: string }
+        metrics: { $ref: "#/components/schemas/RiskMetrics" }
+        retry_hint:
+          type: object
+          additionalProperties: true
+
+    # ─── Broker ─────────────────────────────────────────────────────────
     BrokerInfo:
       type: object
       required: [id, name, supported]
@@ -341,79 +995,441 @@ components:
         regions:
           type: array
           items: { type: string }
+
     BrokerConnection:
       type: object
       required: [broker_id, broker_name, status]
+      description: UI-invented at the wire level. `data_stale` is freshness flag.
       properties:
         broker_id: { type: string }
         broker_name: { type: string }
-        status: { type: string, enum: [connected, disconnected, pending] }
+        status:
+          type: string
+          enum: [connected, disconnected, pending]
         connected_at: { type: string, format: date-time }
+        data_stale: { type: boolean }
+        last_synced_at: { type: string, format: date-time }
+
     BrokerAccount:
       type: object
       required: [account_number, equity, buying_power, cash, currency]
       properties:
         account_number: { type: string }
-        equity: { type: number }
-        buying_power: { type: number }
-        cash: { type: number }
+        equity: { type: string, description: String-decimal. }
+        buying_power: { type: string, description: String-decimal. }
+        cash: { type: string, description: String-decimal. }
         currency: { type: string }
+
+    BrokerApiKeyConnectRequest:
+      type: object
+      required: [broker_id, environment]
+      properties:
+        broker_id:
+          type: string
+          enum: [snaptrade]
+        environment:
+          type: string
+          enum: [paper, live]
+
+    BrokerConnectKeyResponse:
+      type: object
+      required: [ok, connection]
+      properties:
+        ok: { type: boolean }
+        connection: { $ref: "#/components/schemas/BrokerConnection" }
+
     Position:
+      type: object
+      description: |
+        Per `docs/IOs/risk-engine_IO_details.md:86-103`. String decimals.
+        `asset_id` canonical; UI displays `symbol` via AssetMetadata mapping.
+      required: [asset_id, qty, avg_price, notional]
+      properties:
+        asset_id: { type: string }
+        symbol: { type: string }
+        qty: { type: string, description: String-decimal. }
+        avg_price: { type: string, description: String-decimal. }
+        notional: { type: string, description: String-decimal. }
+        side:
+          type: string
+          enum: [long, short]
+
+    PositionsResponse:
       type: object
       required:
         [
-          symbol,
-          qty,
-          market_value,
-          unrealized_pl,
-          unrealized_plpc,
-          current_price,
-          avg_entry_price,
-          side,
+          account_id,
+          as_of_ts,
+          base_currency,
+          cash,
+          equity,
+          buying_power,
+          positions,
         ]
       properties:
-        symbol: { type: string }
-        qty: { type: number }
-        market_value: { type: number }
-        unrealized_pl: { type: number }
-        unrealized_plpc: { type: number }
-        current_price: { type: number }
-        avg_entry_price: { type: number }
-        side: { type: string, enum: [long, short] }
-    OrderRequest:
-      type: object
-      required: [symbol, qty, side, type]
-      properties:
-        symbol: { type: string }
-        qty: { type: number }
-        side: { type: string, enum: [buy, sell] }
-        type: { type: string, enum: [market, limit] }
-        limit_price: { type: number }
-        time_in_force: { type: string, enum: [day, gtc] }
+        account_id: { type: string }
+        as_of_ts: { type: string, format: date-time }
+        last_orders_evt_ts: { type: string, format: date-time }
+        base_currency: { type: string }
+        cash: { type: string, description: String-decimal. }
+        equity: { type: string, description: String-decimal. }
+        buying_power: { type: string, description: String-decimal. }
+        positions:
+          type: array
+          items: { $ref: "#/components/schemas/Position" }
+
+    # ─── Orders (Daniel-aligned status enum) ────────────────────────────
+    OrderSide:
+      type: string
+      enum: [buy, sell, sell_short, buy_to_cover]
+
+    OrderType:
+      type: string
+      enum: [market, limit, stop, stop_limit]
+
+    OrderStatus:
+      type: string
+      description: |
+        Daniel-canonical per `apps/common/trade_lifecycle/states.py`.
+        American `canceled`. NO mined/reverted/acked.
+      enum:
+        - planned
+        - pending_submit
+        - blocked_by_conflict
+        - blocked_dependency
+        - submit_started
+        - submitted
+        - acknowledged
+        - working
+        - partially_filled
+        - filled
+        - canceled
+        - rejected
+        - expired
+        - replaced
+        - failed_retry
+        - unknown
+
     Order:
       type: object
-      required: [id, symbol, qty, side, type, status, created_at]
+      description: |
+        Per `docs/IOs/exec-gateway_IO_details.md:74`. Carries lineage via
+        `plan_id` + `intent_id` + `meta`.
+      required:
+        - order_id
+        - account_id
+        - asset
+        - side
+        - qty
+        - order_type
+        - status
+        - updated_at
       properties:
-        id: { type: string }
+        order_id: { type: string }
+        plan_id: { type: string }
+        client_order_id: { type: string }
+        account_id: { type: string }
+        intent_id: { type: string }
+        asset: { type: string }
         symbol: { type: string }
-        qty: { type: number }
-        side: { type: string, enum: [buy, sell] }
-        type: { type: string, enum: [market, limit] }
-        status:
-          {
-            type: string,
-            enum:
-              [accepted, filled, partially_filled, canceled, rejected, pending],
-          }
-        limit_price: { type: number }
-        filled_qty: { type: number }
-        filled_avg_price: { type: number }
-        created_at: { type: string, format: date-time }
-    OrderPreviewResult:
+        side: { $ref: "#/components/schemas/OrderSide" }
+        qty: { type: string, description: String-decimal. }
+        order_type: { $ref: "#/components/schemas/OrderType" }
+        limit_price: { type: string, description: String-decimal. }
+        stop_price: { type: string, description: String-decimal. }
+        tif:
+          type: string
+          enum: [day, gtc, ioc, fok]
+        venue: { type: string }
+        split_idx: { type: integer }
+        status: { $ref: "#/components/schemas/OrderStatus" }
+        filled_qty: { type: string, description: String-decimal. }
+        avg_fill_price: { type: string, description: String-decimal. }
+        updated_at: { type: string, format: date-time }
+        meta:
+          type: object
+          additionalProperties: true
+
+    OrderEvent:
       type: object
-      required: [status, reasons, source]
+      required: [event_id, order_id, event_type, ts]
       properties:
-        status: { type: string, enum: [ALLOW, REVIEW, DENY] }
+        event_id: { type: string }
+        order_id: { type: string }
+        event_type: { type: string }
+        prev_status: { $ref: "#/components/schemas/OrderStatus" }
+        new_status: { $ref: "#/components/schemas/OrderStatus" }
+        ts: { type: string, format: date-time }
+        meta:
+          type: object
+          additionalProperties: true
+
+    BrokerOrderAttempt:
+      type: object
+      required: [attempt_id, order_id, ts, http_status]
+      properties:
+        attempt_id: { type: string }
+        order_id: { type: string }
+        action:
+          type: string
+          enum: [submit, cancel, replace, poll, lookup]
+        broker_order_id: { type: string }
+        ts: { type: string, format: date-time }
+        latency_ms: { type: integer }
+        http_status: { type: integer }
+        error_code: { type: string }
+
+    Fill:
+      type: object
+      required: [fill_id, order_id, qty, price, ts]
+      properties:
+        fill_id: { type: string }
+        order_id: { type: string }
+        broker_execution_id: { type: string }
+        qty: { type: string, description: String-decimal. }
+        price: { type: string, description: String-decimal. }
+        ts: { type: string, format: date-time }
+        fees:
+          type: object
+          additionalProperties: true
+
+    ExecutionSagaMilestone:
+      type: object
+      required: [saga_id, milestone, ts]
+      properties:
+        saga_id: { type: string }
+        plan_id: { type: string }
+        milestone: { type: string }
+        ts: { type: string, format: date-time }
+        meta:
+          type: object
+          additionalProperties: true
+
+    OrderLineage:
+      type: object
+      required: [order, events, attempts, fills, sagas]
+      properties:
+        order: { $ref: "#/components/schemas/Order" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/OrderEvent" }
+        attempts:
+          type: array
+          items: { $ref: "#/components/schemas/BrokerOrderAttempt" }
+        fills:
+          type: array
+          items: { $ref: "#/components/schemas/Fill" }
+        sagas:
+          type: array
+          items: { $ref: "#/components/schemas/ExecutionSagaMilestone" }
+
+    # ─── ExecutionPlan + AccountIntent ──────────────────────────────────
+    ExecutionPlan:
+      type: object
+      description: Per `docs/IOs/exec-gateway_IO_details.md:91-145`.
+      required: [plan_id, intent_id, account_id, status, driver, created_at]
+      properties:
+        plan_id: { type: string }
+        intent_id: { type: string }
+        account_id: { type: string }
+        status:
+          type: string
+          enum:
+            - planned
+            - pending_submit
+            - waiting_on_cancels
+            - blocked_by_conflict
+            - in_flight
+            - reconciled
+            - terminal_failed
+        driver: { type: string }
+        created_at: { type: string, format: date-time }
+        meta:
+          type: object
+          additionalProperties: true
+
+    AccountIntentLeg:
+      type: object
+      required: [asset_id, target_weight, side]
+      properties:
+        asset_id: { type: string }
+        symbol: { type: string }
+        target_weight: { type: string }
+        direction:
+          type: string
+          enum: [increase, decrease, open, close]
+        target_notional: { type: string }
+        current_notional_est: { type: string }
+        delta_notional: { type: string }
+        delta_qty_est: { type: string }
+        side: { $ref: "#/components/schemas/OrderSide" }
+        price_est: { type: string }
+        rounding:
+          type: object
+          additionalProperties: true
+        constraints_hint:
+          type: object
+          additionalProperties: true
+        reason_codes:
+          type: array
+          items: { type: string }
+
+    AccountIntent:
+      type: object
+      description: |
+        Per `docs/IOs/account_intent_builder_IO_details.md:114-154`.
+        Per-account, multi-leg. Carries `legs_hash` + `correlation_id`.
+      required: [intent_id, account_id, ts, intent_kind, status, legs]
+      properties:
+        intent_id: { type: string }
+        action_id: { type: string }
+        intent_kind:
+          type: string
+          enum: [rebalance, signal_flip, init, exception_response]
+        template_id: { type: string }
+        template_version: { type: string }
+        account_id: { type: string }
+        ts: { type: string, format: date-time }
+        base_currency: { type: string }
+        equity_estimate:
+          type: object
+          additionalProperties: true
+        notional_summary:
+          type: object
+          properties:
+            gross_delta_notional: { type: string }
+            net_delta_notional: { type: string }
+            legs_dropped: { type: integer }
+            drop_reasons:
+              type: array
+              items: { type: string }
+        status:
+          type: string
+          enum: [ready, blocked, error]
+        blocked_reason: { type: string }
+        legs_hash: { type: string }
+        correlation_id: { type: string }
+        legs:
+          type: array
+          items: { $ref: "#/components/schemas/AccountIntentLeg" }
+
+    # ─── ExecutionPolicy + Exception (tier model) ───────────────────────
+    ExecutionPolicyStatus:
+      type: string
+      enum: [active, paused, revoked]
+
+    ExecutionPolicy:
+      type: object
+      description: |
+        The ONE thing a Managed investor signs (once per version). Full
+        Daniel payload per `09 §1 Q5`.
+      required:
+        - execution_policy_id
+        - execution_policy_version
+        - status
+        - strategy_id
+        - broker_connection_id
+        - investor_profile_version
+        - disclosure_version_set
+        - advisory_agreement_version
+        - activated_at
+        - signed_at_hash
+      properties:
+        execution_policy_id: { type: string }
+        execution_policy_version: { type: string }
+        status: { $ref: "#/components/schemas/ExecutionPolicyStatus" }
+        strategy_id: { type: string }
+        broker_connection_id: { type: string }
+        investor_profile_version: { type: string }
+        disclosure_version_set: { type: string }
+        advisory_agreement_version: { type: string }
+        activated_at: { type: string, format: date-time }
+        signed_at_hash: { type: string }
+        automation_scope:
+          oneOf:
+            - { type: string }
+            - { type: object, additionalProperties: true }
+        risk_guardrails:
+          oneOf:
+            - { type: string }
+            - { type: object, additionalProperties: true }
+        restrictions:
+          type: object
+          additionalProperties: true
+        pause_rules:
+          oneOf:
+            - { type: string }
+            - { type: object, additionalProperties: true }
+        notification_preferences:
+          type: object
+          additionalProperties: true
+
+    ExecutionPolicyActivateRequest:
+      type: object
+      description: |
+        `client.execution_policy.activate` payload per `09 §1 Q5`.
+        Hashed IP + device fingerprint computed server-side from request
+        context — do not send raw values in the body.
+      required:
+        - strategy_id
+        - investor_profile_version
+        - disclosure_version_set
+        - advisory_agreement_version
+        - execution_policy_id
+        - execution_policy_version
+        - broker_connection_id
+      properties:
+        strategy_id: { type: string }
+        investor_profile_version: { type: string }
+        disclosure_version_set: { type: string }
+        advisory_agreement_version: { type: string }
+        execution_policy_id: { type: string }
+        execution_policy_version: { type: string }
+        broker_connection_id: { type: string }
+        automation_scope:
+          oneOf:
+            - { type: string }
+            - { type: object, additionalProperties: true }
+        risk_guardrails:
+          oneOf:
+            - { type: string }
+            - { type: object, additionalProperties: true }
+        restrictions:
+          type: object
+          additionalProperties: true
+        pause_rules:
+          oneOf:
+            - { type: string }
+            - { type: object, additionalProperties: true }
+        notification_preferences:
+          type: object
+          additionalProperties: true
+
+    ExceptionStatus:
+      type: string
+      enum: [pending, approved, rejected, expired, auto_rejected]
+
+    Exception:
+      type: object
+      description: |
+        AccountIntent that fell outside the ExecutionPolicy. The ONLY
+        per-decision investor approval surface under Managed.
+        Projection of `RiskSnapshots WHERE decision='rejected' JOIN AccountIntents`.
+      required:
+        - exception_id
+        - account_intent_id
+        - status
+        - created_at
+        - expires_at
+        - reasons
+        - summary
+      properties:
+        exception_id: { type: string }
+        account_intent_id: { type: string }
+        recommendation_id: { type: string }
+        status: { $ref: "#/components/schemas/ExceptionStatus" }
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
         reasons:
           type: array
           items:
@@ -422,48 +1438,597 @@ components:
             properties:
               code: { type: string }
               message: { type: string }
-        source: { type: string, enum: [cache, fresh] }
+        summary: { type: string }
+
+    ExceptionDetail:
+      allOf:
+        - { $ref: "#/components/schemas/Exception" }
+        - type: object
+          properties:
+            intent: { $ref: "#/components/schemas/AccountIntent" }
+            risk_snapshot: { $ref: "#/components/schemas/RiskSnapshot" }
+
+    ExceptionDecisionRequest:
+      type: object
+      description: Optional `approved_changes` payload; empty body = accept-as-is or default-reject.
+      properties:
+        approved_changes:
+          type: object
+          additionalProperties: true
+        reason: { type: string }
+
+    # ─── Recommendation (UI projection) ─────────────────────────────────
+    RecommendationStatus:
+      type: string
+      description: UI projection over `AccountIntent.status` + `RiskSnapshot.decision`.
+      enum: [pending, accepted, rejected, expired, review, denied]
+
     Recommendation:
       type: object
+      description: Shallow list-page projection.
       required:
-        [
-          id,
-          symbol,
-          action,
-          rationale,
-          confidence,
-          created_at,
-          status,
-          expires_at,
-        ]
+        - id
+        - symbol
+        - action
+        - rationale
+        - confidence
+        - created_at
+        - status
+        - expires_at
       properties:
         id: { type: string }
         symbol: { type: string }
-        action: { type: string, enum: [buy, sell, hold] }
+        action:
+          type: string
+          enum: [buy, sell, hold]
         rationale: { type: string }
         confidence: { type: number }
         created_at: { type: string, format: date-time }
-        status: { type: string, enum: [pending, accepted, rejected, expired] }
+        status: { $ref: "#/components/schemas/RecommendationStatus" }
         expires_at: { type: string, format: date-time }
-    ActivityEvent:
+
+    RecommendationType:
+      type: string
+      enum: [buy, sell, rebalance, hold, risk_reduction, cash_deployment]
+
+    RecommendationDetailStatus:
+      type: string
+      enum:
+        [new, delivered, eligible, executed, review, denied, expired, dismissed]
+
+    AdvisoryContext:
       type: object
-      required: [id, type, description, created_at]
+      required:
+        - profile_version
+        - strategy_version
+        - model_version
+        - disclosure_version_set
+        - execution_policy_version
+      properties:
+        profile_version: { type: string }
+        strategy_version: { type: string }
+        model_version: { type: string }
+        disclosure_version_set: { type: string }
+        execution_policy_version: { type: string }
+
+    RecommendationOrder:
+      type: object
+      properties:
+        symbol: { type: string }
+        name: { type: string }
+        side:
+          type: string
+          enum: [buy, sell, hold]
+        quantity: { type: number }
+        notional_usd: { type: number }
+        order_type: { $ref: "#/components/schemas/OrderType" }
+        limit_price: { type: number }
+        time_in_force:
+          type: string
+          enum: [day, gtc]
+
+    RecommendationExplanation:
+      type: object
+      required:
+        - summary
+        - why_now
+        - why_this_fits_profile
+        - portfolio_impact
+        - risk_notes
+        - cost_notes
+        - tax_notes
+      properties:
+        summary: { type: string }
+        why_now: { type: string }
+        why_this_fits_profile: { type: string }
+        portfolio_impact: { type: string }
+        risk_notes:
+          type: array
+          items: { type: string }
+        cost_notes:
+          type: array
+          items: { type: string }
+        tax_notes:
+          type: array
+          items: { type: string }
+
+    ModelFactor:
+      type: object
+      required: [name, direction, weight, explanation]
+      properties:
+        name: { type: string }
+        direction:
+          type: string
+          enum: [positive, negative, neutral]
+        weight: { type: number }
+        explanation: { type: string }
+
+    GuardrailCheck:
+      type: object
+      required: [code, label, status, message]
+      properties:
+        code: { type: string }
+        label: { type: string }
+        status:
+          type: string
+          enum: [pass, warn, fail]
+        current_value: { type: number }
+        limit_value: { type: number }
+        message: { type: string }
+
+    AutomationEligibilityCheck:
+      type: object
+      description: Policy-engine pre-check projected from RiskSnapshot.
+      required:
+        [status, source, reasons, checked_at, expires_at, policy_version]
+      properties:
+        status:
+          type: string
+          enum: [ALLOW, REVIEW, DENY]
+        source:
+          type: string
+          enum: [cache, fresh, simulated, mock]
+        reasons:
+          type: array
+          items:
+            type: object
+            required: [code, message]
+            properties:
+              code: { type: string }
+              message: { type: string }
+        checked_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        policy_version: { type: string }
+
+    DecisionRecordPreview:
+      type: object
+      required: [record_id, audit_hash, explorer_status]
+      properties:
+        record_id: { type: string }
+        audit_hash: { type: string }
+        explorer_status:
+          type: string
+          enum: [pending_phase_3, available]
+
+    RecommendationDetail:
+      type: object
+      description: Deep, audit-grade recommendation. Composite per `08 §12.1`.
+      required:
+        - id
+        - account_id
+        - title
+        - recommendation_type
+        - status
+        - generated_at
+        - expires_at
+        - advisory_context
+        - recommendation
+        - explanation
+        - model_factors
+        - guardrails
+        - automation_eligibility
+        - record
       properties:
         id: { type: string }
-        type:
-          {
-            type: string,
-            enum: [recommendation, order, compliance, eligibility],
-          }
+        account_id: { type: string }
+        title: { type: string }
+        recommendation_type: { $ref: "#/components/schemas/RecommendationType" }
+        status: { $ref: "#/components/schemas/RecommendationDetailStatus" }
+        generated_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        advisory_context: { $ref: "#/components/schemas/AdvisoryContext" }
+        recommendation: { $ref: "#/components/schemas/RecommendationOrder" }
+        explanation: { $ref: "#/components/schemas/RecommendationExplanation" }
+        model_factors:
+          type: array
+          items: { $ref: "#/components/schemas/ModelFactor" }
+        guardrails:
+          type: array
+          items: { $ref: "#/components/schemas/GuardrailCheck" }
+        automation_eligibility:
+          { $ref: "#/components/schemas/AutomationEligibilityCheck" }
+        record: { $ref: "#/components/schemas/DecisionRecordPreview" }
+
+    # ─── Activity ───────────────────────────────────────────────────────
+    ActivityEvent:
+      type: object
+      description: |
+        Daniel envelope per `API and Event Contracts.pdf:p9`. UI-friendly
+        `description` projected from `kind` + per-row metadata.
+      required: [id, kind, ts]
+      properties:
+        id: { type: string }
+        kind:
+          type: string
+          enum:
+            - portfolio_action
+            - intent_built
+            - risk_decided
+            - plan_created
+            - order_submitted
+            - order_filled
+            - order_canceled
+            - broker_interaction
+            - control_state_changed
+            - exception_routed
+            - exception_decided
+        ref_id: { type: string }
+        correlation_id: { type: string }
+        ts: { type: string, format: date-time }
         description: { type: string }
-        created_at: { type: string, format: date-time }
+        redactions:
+          type: array
+          items: { type: string }
+        digest: { type: string }
         metadata:
           type: object
           additionalProperties: true
+
+    # ─── Profile / Strategy / Activation ────────────────────────────────
+    AdvisoryProfile:
+      type: object
+      required:
+        - goal
+        - timeHorizon
+        - incomeBand
+        - liquidNetWorth
+        - riskTolerance
+        - investmentExperience
+        - accountPurpose
+      properties:
+        goal: { type: string }
+        timeHorizon: { type: string }
+        incomeBand: { type: string }
+        liquidNetWorth: { type: string }
+        riskTolerance: { type: string }
+        investmentExperience: { type: string }
+        accountPurpose: { type: string }
+
+    AdvisoryProfileResponse:
+      allOf:
+        - { $ref: "#/components/schemas/AdvisoryProfile" }
+        - type: object
+          required: [account_id, updated_at]
+          properties:
+            account_id: { type: string }
+            updated_at: { type: string, format: date-time }
+
+    StrategyDescriptor:
+      type: object
+      required:
+        - strategyName
+        - rationale
+        - targetAllocation
+        - assetUniverse
+        - riskGuardrails
+        - expectedTurnover
+        - exclusions
+        - costsAndFees
+        - modelVersion
+      properties:
+        strategyName: { type: string }
+        rationale: { type: string }
+        targetAllocation: { type: string }
+        assetUniverse: { type: string }
+        riskGuardrails: { type: string }
+        expectedTurnover: { type: string }
+        exclusions: { type: string }
+        costsAndFees: { type: string }
+        modelVersion: { type: string }
+
+    AccountActivationStatus:
+      type: object
+      description: Gate-union per `09 §1 Q5` and `06 §4.8`.
+      required:
+        - eligibility
+        - wallet
+        - kyc
+        - profile
+        - broker
+        - disclosures
+      properties:
+        eligibility: { type: boolean }
+        wallet: { type: boolean }
+        kyc: { type: boolean }
+        profile: { type: boolean }
+        broker: { type: boolean }
+        disclosures: { type: boolean }
+
+    # ─── TradingControlStates ───────────────────────────────────────────
+    TradingControlState:
+      type: object
+      description: Per `trade_lifecycle_contract.md:107`. Halt/reduce-only/etc.
+      required: [state, scope, set_at]
+      properties:
+        state:
+          type: string
+          enum: [active, reduce_only, halt, broker_degraded, asset_halt]
+        scope:
+          type: string
+          enum: [global, account, asset, broker]
+        scope_id: { type: string }
+        reason: { type: string }
+        set_at: { type: string, format: date-time }
+        set_by: { type: string }
+
+    # ─── Dashboard composite ────────────────────────────────────────────
+    DashboardComposite:
+      type: object
+      description: 11-card home dashboard payload per `08 §13` + `09 §4`.
+      required:
+        - tier
+        - activation
+        - account_state
+        - managed_execution
+        - data_freshness
+      properties:
+        tier: { $ref: "#/components/schemas/Tier" }
+        account_state:
+          type: object
+          required: [state]
+          properties:
+            state:
+              type: string
+              enum: [eligible, onboarded, active]
+            eligible: { type: boolean }
+            onboarded: { type: boolean }
+            active: { type: boolean }
+        managed_execution:
+          type: object
+          properties:
+            execution_policy: { $ref: "#/components/schemas/ExecutionPolicy" }
+            status:
+              type: string
+              enum:
+                - active
+                - not_activated
+                - blocked_disclosures
+                - blocked_onboarding
+                - paused
+        activation: { $ref: "#/components/schemas/AccountActivationStatus" }
+        latest_portfolio_run:
+          type: object
+          properties:
+            action_id: { type: string }
+            ts: { type: string, format: date-time }
+        latest_recommendation: { $ref: "#/components/schemas/Recommendation" }
+        latest_risk_decision: { $ref: "#/components/schemas/RiskSnapshot" }
+        latest_execution_plan: { $ref: "#/components/schemas/ExecutionPlan" }
+        broker_freshness:
+          type: object
+          properties:
+            connected: { type: boolean }
+            data_stale: { type: boolean }
+            last_synced_at: { type: string, format: date-time }
+        open_exceptions_count: { type: integer }
+        records_complete: { type: boolean }
+        data_freshness:
+          type: object
+          required: [as_of_ts, sources]
+          properties:
+            as_of_ts: { type: string, format: date-time }
+            sources:
+              type: array
+              items: { type: string }
+        control_state: { $ref: "#/components/schemas/TradingControlState" }
+
+    # ─── Documents ──────────────────────────────────────────────────────
+    DocumentVersion:
+      type: object
+      required: [doc_id, version, hash, effective_at, required_for_activation]
+      properties:
+        doc_id: { type: string }
+        version: { type: string }
+        hash: { type: string }
+        effective_at: { type: string, format: date-time }
+        required_for_activation: { type: boolean }
+        title: { type: string }
+
+    DisclosureDocument:
+      type: object
+      required: [doc_id, latest_version, ack_state]
+      properties:
+        doc_id: { type: string }
+        latest_version: { $ref: "#/components/schemas/DocumentVersion" }
+        ack_state:
+          type: object
+          properties:
+            acked: { type: boolean }
+            acked_at: { type: string, format: date-time }
+            acked_version: { type: string }
+
+    DisclosureAckRequest:
+      type: object
+      required: [version]
+      properties:
+        version: { type: string }
+
+    DisclosureAckRecord:
+      type: object
+      required: [account_id, doc_id, version, acked_at]
+      properties:
+        account_id: { type: string }
+        doc_id: { type: string }
+        version: { type: string }
+        acked_at: { type: string, format: date-time }
+        signed_at_hash: { type: string }
+
+    # ─── Support ────────────────────────────────────────────────────────
+    SupportCategory:
+      type: string
+      enum:
+        - allowed_technical
+        - allowed_broker_connection
+        - allowed_document_explanation
+        - allowed_billing
+        - allowed_general_platform
+        - blocked_buy_sell_advice
+        - blocked_recommendation_approval
+        - blocked_portfolio_change
+        - blocked_custom_strategy
+        - blocked_model_override
+        - complaint
+
+    SupportTicketClassification:
+      type: object
+      required: [confidence, matched_patterns]
+      properties:
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        matched_patterns:
+          type: array
+          maxItems: 32
+          items: { type: string }
+
+    SupportTicketRequest:
+      type: object
+      required:
+        - subject
+        - category
+        - message
+        - classification
+        - blocked
+        - boundary_rule_id
+        - correlation_id
+      properties:
+        subject: { type: string, maxLength: 200 }
+        category: { $ref: "#/components/schemas/SupportCategory" }
+        message: { type: string, minLength: 10, maxLength: 4000 }
+        classification:
+          { $ref: "#/components/schemas/SupportTicketClassification" }
+        blocked: { type: boolean }
+        boundary_rule_id:
+          type: string
+          nullable: true
+        correlation_id: { type: string, maxLength: 128 }
+
+    SupportTicketResponse:
+      type: object
+      required: [ok, ticket_id]
+      properties:
+        ok: { type: boolean }
+        ticket_id: { type: string }
+
+    SupportEventRecord:
+      type: object
+      required: [ticket_id, account_id, category, blocked, created_at]
+      properties:
+        ticket_id: { type: string }
+        account_id: { type: string }
+        category: { $ref: "#/components/schemas/SupportCategory" }
+        blocked: { type: boolean }
+        boundary_rule_id:
+          type: string
+          nullable: true
+        correlation_id: { type: string }
+        created_at: { type: string, format: date-time }
+
+    # ─── Records Center ─────────────────────────────────────────────────
+    ExecutionRecord:
+      type: object
+      required: [plan, orders]
+      properties:
+        plan: { $ref: "#/components/schemas/ExecutionPlan" }
+        orders:
+          type: array
+          items: { $ref: "#/components/schemas/Order" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/OrderEvent" }
+        fills:
+          type: array
+          items: { $ref: "#/components/schemas/Fill" }
+        attempts:
+          type: array
+          items: { $ref: "#/components/schemas/BrokerOrderAttempt" }
+        sagas:
+          type: array
+          items: { $ref: "#/components/schemas/ExecutionSagaMilestone" }
+
+    BrokerInteractionRecord:
+      type: object
+      required: [attempt_id, order_id, action, ts, http_status]
+      properties:
+        attempt_id: { type: string }
+        order_id: { type: string }
+        action: { type: string }
+        request:
+          type: object
+          additionalProperties: true
+          description: Redacted; never raw secrets.
+        response:
+          type: object
+          additionalProperties: true
+        ts: { type: string, format: date-time }
+        http_status: { type: integer }
+        latency_ms: { type: integer }
+
+    RecordsExportRequest:
+      type: object
+      properties:
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+        include:
+          type: array
+          items:
+            type: string
+            enum: [recommendation, execution, broker, disclosure, support]
+
+    RecordsExportResponse:
+      type: object
+      required: [manifest_id, generated_at, items]
+      properties:
+        manifest_id: { type: string }
+        generated_at: { type: string, format: date-time }
+        signed_hash: { type: string }
+        explorer_status:
+          type: string
+          enum: [pending_phase_3, available]
+        items:
+          type: array
+          items:
+            type: object
+            required: [kind, ref_id]
+            properties:
+              kind:
+                type: string
+                enum: [recommendation, execution, broker, disclosure, support]
+              ref_id: { type: string }
+
+    # ─── Eligibility (US Internet Adviser overlay) ──────────────────────
+    EligibilityRequest:
+      type: object
+      required: [state, isUsPerson, dob]
+      properties:
+        state: { type: string }
+        isUsPerson: { type: boolean }
+        dob: { type: string, format: date }
+
     EligibilityDecision:
       type: object
       required: [result, state, ruleId]
       properties:
-        result: { type: string, enum: [eligible, waitlist, ineligible] }
+        result:
+          type: string
+          enum: [eligible, waitlist, ineligible]
         state: { type: string }
         ruleId: { type: string }

@@ -50,7 +50,7 @@ export default function ActivityPage() {
                 colSpan={5}
                 className="text-center text-charcoal-500 py-12 text-sm"
               >
-                Loading…
+                {activity.loadingLabel}
               </TableCell>
             </TableRow>
           ) : events.length === 0 ? (
@@ -65,9 +65,9 @@ export default function ActivityPage() {
           ) : (
             events.map((evt) => (
               <TableRow key={evt.id}>
-                <TableCell className="capitalize">{evt.type}</TableCell>
+                <TableCell className="capitalize">{evt.kind}</TableCell>
                 <TableCell className="font-mono tabular-nums text-charcoal-400">
-                  {formatTimestamp(evt.created_at)}
+                  {formatTimestamp(evt.ts)}
                 </TableCell>
                 <TableCell>{evt.description}</TableCell>
                 <TableCell className="text-charcoal-400">—</TableCell>

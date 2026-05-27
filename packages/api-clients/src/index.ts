@@ -55,6 +55,8 @@ export {
   useDisclosureRegistry,
   useDisclosureReacknowledgement,
   useReacknowledgeDisclosure,
+  useProfileReactivation,
+  useReconfirmProfile,
   useInvestorStatus,
 } from "./hooks/execution-policy";
 export type {
@@ -72,6 +74,10 @@ export type {
   StaleDisclosureDto,
   ReacknowledgeDisclosureInput,
   ReacknowledgeDisclosureResult,
+  ProfileReactivationView,
+  ProfileReactivationBlockerReason,
+  ReconfirmProfileInput,
+  ReconfirmProfileResult,
   InvestorStatusDto,
 } from "./hooks/execution-policy";
 export { useActivity } from "./hooks/activity";

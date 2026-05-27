@@ -261,6 +261,73 @@ export interface ReacknowledgeDisclosureResult {
   reasonCodeCleared: string | null;
 }
 
+export type ProfileReactivationBlockerReason =
+  | "stale_profile_aging"
+  | "stale_profile_changed"
+  | null;
+
+export interface ProfileReactivationView {
+  activePolicyVersion: number | null;
+  pinnedProfileVersion: number | null;
+  latestProfileVersion: number | null;
+  lastConfirmedVersion: number | null;
+  lastConfirmedAt: string | null;
+  staleProfile: boolean;
+  materialChange: boolean;
+  changedFields: string[];
+  blockerReason: ProfileReactivationBlockerReason;
+  managedExecutionStatus: string | null;
+  managedExecutionReasonCode: string | null;
+}
+
+export interface ReconfirmProfileInput {
+  profileVersion: number;
+  acknowledgeUnchanged: true;
+}
+
+export interface ReconfirmProfileResult {
+  ok: boolean;
+  created: boolean;
+  confirmedVersion: number;
+  previousConfirmedVersion: number | null;
+  activeExecutionPolicyVersion: number;
+  managedExecutionStatusBefore: string;
+  managedExecutionStatusAfter: string;
+  reasonCodeCleared: string | null;
+}
+
+export function useProfileReactivation(): UseQueryResult<ProfileReactivationView | null> {
+  return useQuery({
+    queryKey: ["profile-reactivation"],
+    queryFn: () =>
+      bffFetch<ProfileReactivationView | null>(
+        "/api/v1/investor/profile/reactivation",
+      ),
+    staleTime: 15_000,
+  });
+}
+
+export function useReconfirmProfile(): UseMutationResult<
+  ReconfirmProfileResult,
+  Error,
+  ReconfirmProfileInput
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input) =>
+      bffMutate<ReconfirmProfileInput, ReconfirmProfileResult>(
+        "/api/v1/investor/profile/reconfirm",
+        "POST",
+        input,
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["profile-reactivation"] });
+      qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
+      qc.invalidateQueries({ queryKey: ["investor-status"] });
+    },
+  });
+}
+
 export function useDisclosureReacknowledgement(): UseQueryResult<DisclosureReacknowledgementView | null> {
   return useQuery({
     queryKey: ["disclosure-reacknowledgement"],

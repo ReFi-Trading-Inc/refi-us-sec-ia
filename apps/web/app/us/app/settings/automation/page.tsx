@@ -26,6 +26,7 @@ import {
 } from "@ui/components";
 import {
   useDisclosureReacknowledgement,
+  useProfileReactivation,
   useExecutionPolicy,
   useExecutionPolicyDraft,
   useSaveExecutionPolicyDraft,
@@ -248,6 +249,7 @@ export default function AutomationCenterPage() {
   const pauseMut = usePauseManaged();
   const resumeMut = useResumeManaged();
   const reackQ = useDisclosureReacknowledgement();
+  const profileReactQ = useProfileReactivation();
 
   const [form, setForm] = useState<DraftForm | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
@@ -466,6 +468,28 @@ export default function AutomationCenterPage() {
           )}
         </CardContent>
       </Card>
+
+      {mode === "managed" && profileReactQ.data?.staleProfile && (
+        <StatusBanner
+          variant="warning"
+          title="Your profile needs review before managed execution continues"
+          data-testid="profile-react-blocked-banner"
+          data-blocker={profileReactQ.data.blockerReason ?? ""}
+        >
+          <p className="mb-2">
+            ReFi Managed uses your current profile to decide what is eligible
+            for automatic execution. Review your profile before managed
+            execution resumes.
+          </p>
+          <Link
+            href="/us/app/settings/automation/profile"
+            data-testid="profile-react-cta"
+            className="inline-flex items-center text-sm font-medium underline underline-offset-2"
+          >
+            Review profile
+          </Link>
+        </StatusBanner>
+      )}
 
       {mode === "managed" && reackQ.data?.requiresReacknowledgement && (
         <StatusBanner

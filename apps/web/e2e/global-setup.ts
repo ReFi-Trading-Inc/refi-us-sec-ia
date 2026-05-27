@@ -56,6 +56,25 @@ export const E2E_USERS = {
   staleDisclosurePaused: {
     eligibilityCookie: "e2e-stale-disclosure-paused-user",
   },
+  // Surface 6: Managed users whose advisory profile is flagged as stale.
+  // `staleProfilePaused` — system-paused with reasonCode=stale_profile_aging
+  //   and the latest profile snapshot matches the policy's pinned version.
+  //   The user only needs to re-confirm; MES auto-restores on confirm.
+  // `staleProfileMaterial` — system-paused with reasonCode=stale_profile_changed
+  //   AND a NEW profile snapshot exists with different fields. Reconfirm
+  //   must fail with material_change_requires_policy_review; the UI routes
+  //   to the activation page.
+  // `staleProfileWithDisclosure` — system-paused with reasonCode=
+  //   stale_profile_aging AND a stale disclosure also exists. Confirming
+  //   the profile records the confirmation but must NOT clear the pause
+  //   (the disclosure blocker remains).
+  staleProfilePaused: { eligibilityCookie: "e2e-stale-profile-paused-user" },
+  staleProfileMaterial: {
+    eligibilityCookie: "e2e-stale-profile-material-user",
+  },
+  staleProfileWithDisclosure: {
+    eligibilityCookie: "e2e-stale-profile-with-disclosure-user",
+  },
 } as const;
 
 export const ACTIVATION_DISCLOSURE_V2 = {
@@ -286,7 +305,10 @@ async function seedUser(opts: {
     | "resumablePaused"
     | "systemPaused"
     | "staleDisclosure"
-    | "staleDisclosurePaused";
+    | "staleDisclosurePaused"
+    | "staleProfilePaused"
+    | "staleProfileMaterial"
+    | "staleProfileWithDisclosure";
 }) {
   const root = storeRoot();
   const authId = authIdFor(opts.cookieValue);
@@ -393,7 +415,11 @@ async function seedUser(opts: {
       ? "active"
       : opts.mode === "resumablePaused"
         ? "paused_by_user"
-        : opts.mode === "systemPaused" || opts.mode === "staleDisclosurePaused"
+        : opts.mode === "systemPaused" ||
+            opts.mode === "staleDisclosurePaused" ||
+            opts.mode === "staleProfilePaused" ||
+            opts.mode === "staleProfileMaterial" ||
+            opts.mode === "staleProfileWithDisclosure"
           ? "paused_by_system"
           : null;
   if (managedSeedStatus !== null) {
@@ -402,7 +428,12 @@ async function seedUser(opts: {
         ? "broker_disconnected"
         : opts.mode === "staleDisclosurePaused"
           ? "stale_disclosure_form-adv-2a"
-          : undefined;
+          : opts.mode === "staleProfilePaused" ||
+              opts.mode === "staleProfileWithDisclosure"
+            ? "stale_profile_aging"
+            : opts.mode === "staleProfileMaterial"
+              ? "stale_profile_changed"
+              : undefined;
     await seedManagedAccount({
       accountId,
       authId,
@@ -416,6 +447,88 @@ async function seedUser(opts: {
   //    pre-seeded so the activation flow runs end-to-end.
   if (opts.mode === "ready" || opts.mode === "idempotency") {
     await seedReadyActivationFor(authId, accountId);
+  }
+
+  // 6) Stale-profile users need a profile-snapshot history seeded. The
+  //    seedManagedAccount call above pins `advisoryProfileVersion: 1` in the
+  //    ExecutionPolicy; here we seed the actual snapshots so the reactivation
+  //    eligibility route can compute the diff.
+  if (
+    opts.mode === "staleProfilePaused" ||
+    opts.mode === "staleProfileWithDisclosure" ||
+    opts.mode === "staleProfileMaterial"
+  ) {
+    const root = storeRoot();
+    const baseFields = {
+      goal: "retirement",
+      horizon: "10y_plus",
+      incomeBand: "100_250k",
+      liquidityNeed: "low",
+      riskTolerance: "moderate",
+      experience: "intermediate",
+      accountPurpose: "long_term_growth",
+    };
+    await writeJson(
+      join(
+        root,
+        "profile-snapshots",
+        `${safeKey(`${accountId}__v000001`)}.json`,
+      ),
+      {
+        accountId,
+        profileVersion: 1,
+        ...baseFields,
+        contentHash: "sha256-seed-profile-v1",
+        meta: meta(correlationId),
+      },
+    );
+    if (opts.mode === "staleProfileMaterial") {
+      // A NEW snapshot exists with different fields → material change.
+      await writeJson(
+        join(
+          root,
+          "profile-snapshots",
+          `${safeKey(`${accountId}__v000002`)}.json`,
+        ),
+        {
+          accountId,
+          profileVersion: 2,
+          ...baseFields,
+          // Risk tolerance materially increased.
+          riskTolerance: "aggressive",
+          incomeBand: "250_500k",
+          contentHash: "sha256-seed-profile-v2",
+          meta: meta(correlationId),
+        },
+      );
+    }
+
+    // staleProfilePaused and staleProfileMaterial pre-ack the latest
+    // disclosure version (v2026-06) so the ONLY outstanding blocker is the
+    // profile. staleProfileWithDisclosure intentionally leaves v2026-06
+    // unacked so the disclosure blocker remains after profile reconfirmation.
+    if (
+      opts.mode === "staleProfilePaused" ||
+      opts.mode === "staleProfileMaterial"
+    ) {
+      await writeJson(
+        join(
+          root,
+          "disclosure-acks",
+          `${safeKey(`${authId}__${ACTIVATION_DISCLOSURE_V2.docId}__${ACTIVATION_DISCLOSURE_V2.version}`)}.json`,
+        ),
+        {
+          userId: authId,
+          docId: ACTIVATION_DISCLOSURE_V2.docId,
+          version: ACTIVATION_DISCLOSURE_V2.version,
+          ackedAt: new Date().toISOString(),
+          acceptanceSource: "web",
+          ipHash: "sha256-seed-ip",
+          userAgentHash: "sha256-seed-ua",
+          meta: meta(correlationId),
+        },
+      );
+    }
   }
 }
 
@@ -436,6 +549,8 @@ export default async function globalSetup() {
     "disclosure-acks",
     "lifecycle-states",
     "activation-idempotency",
+    "profile-confirmations",
+    "profile-snapshots",
   ]) {
     const path = join(root, dir);
     if (existsSync(path)) await rm(path, { recursive: true, force: true });
@@ -478,5 +593,17 @@ export default async function globalSetup() {
   await seedUser({
     cookieValue: E2E_USERS.staleDisclosurePaused.eligibilityCookie,
     mode: "staleDisclosurePaused",
+  });
+  await seedUser({
+    cookieValue: E2E_USERS.staleProfilePaused.eligibilityCookie,
+    mode: "staleProfilePaused",
+  });
+  await seedUser({
+    cookieValue: E2E_USERS.staleProfileMaterial.eligibilityCookie,
+    mode: "staleProfileMaterial",
+  });
+  await seedUser({
+    cookieValue: E2E_USERS.staleProfileWithDisclosure.eligibilityCookie,
+    mode: "staleProfileWithDisclosure",
   });
 }

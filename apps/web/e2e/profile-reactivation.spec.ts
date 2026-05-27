@@ -81,9 +81,14 @@ test.describe("Profile reactivation — aging-only stale profile", () => {
 
     await page.getByTestId("profile-react-ack-checkbox").check();
     await page.getByTestId("profile-react-submit").click();
-    await expect(page.getByTestId("profile-react-confirmation")).toBeVisible({
-      timeout: 15_000,
-    });
+    // The successful reconfirm either keeps the aging panel briefly with a
+    // confirmation line, or — once the eligibility query refetches — flips
+    // the page to the "Up to date" panel. Either is a successful end state.
+    await expect(
+      page
+        .getByTestId("profile-react-confirmation")
+        .or(page.getByTestId("profile-react-current")),
+    ).toBeVisible({ timeout: 15_000 });
 
     // Active policy version is preserved by a reconfirmation.
     const afterStatus = await page.request.get("/api/v1/investor/status", {

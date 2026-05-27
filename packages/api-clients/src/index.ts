@@ -57,8 +57,15 @@ export {
   useReacknowledgeDisclosure,
   useProfileReactivation,
   useReconfirmProfile,
-  useInvestorStatus,
 } from "./hooks/execution-policy";
+export { useInvestorStatus } from "./hooks/execution-policy";
+export {
+  useInvestorExceptions,
+  useResolveException,
+  mapResolutionToBackend,
+  describeBackendResolution,
+  isDismissResolution,
+} from "./hooks/exceptions";
 export type {
   ExecutionPolicySummary,
   ExecutionPolicyDraftDto,
@@ -80,6 +87,16 @@ export type {
   ReconfirmProfileResult,
   InvestorStatusDto,
 } from "./hooks/execution-policy";
+export type {
+  InvestorExceptionItem,
+  InvestorExceptionsView,
+  ResolveExceptionInput,
+  ResolveExceptionResult,
+  UiResolution,
+  BackendResolution,
+  ExceptionKind,
+  ExceptionStatus,
+} from "./hooks/exceptions";
 export { useActivity } from "./hooks/activity";
 export {
   useAdvisoryProfile,

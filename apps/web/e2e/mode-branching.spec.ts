@@ -140,7 +140,7 @@ test.describe("Managed mode boundary path", () => {
     // separately covered by Next.js Link tests.
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/us\/app\/exceptions$/);
-    await expect(page.getByTestId("exceptions-placeholder-page")).toBeVisible();
+    await expect(page.getByTestId("exceptions-page")).toBeVisible();
 
     // Detail page boundary check: regardless of whether the recommendation
     // data resolves (the detail endpoint is MSW-backed in dev, and live MSW

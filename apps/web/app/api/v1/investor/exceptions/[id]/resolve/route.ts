@@ -6,9 +6,11 @@
  * outside that set is rejected at the BFF, so generic per-trade approval
  * payloads are impossible by construction.
  *
- * The internal command pipeline may emit `client.exception.approve` only when
- * `resolution === "approve_exception"`. The other categories are user-side
+ * The "resolve" resolution category is the only one that releases a held
+ * intent for downstream replay; the other categories are user-side
  * remediations that unblock the same intent without per-trade authorization.
+ * The UI never spells the legacy backend identifiers — the mapping lives in
+ * packages/api-clients/src/hooks/exceptions.ts.
  */
 import { z } from "zod";
 import { bffMutate } from "@lib/bff/handler";

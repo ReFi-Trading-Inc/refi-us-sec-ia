@@ -108,6 +108,18 @@ const FORBIDDEN_LABELS: ReadonlyArray<string> = [
   // Phase 2 surface 1: explicit per-trade Accept-and-execute phrases.
   "approve for execution",
   "accept and execute",
+  // Phase 2 surface 7: legacy backend resolution names must not surface in
+  // any user-facing context. The mapping in
+  // packages/api-clients/src/hooks/exceptions.ts uses the per-line
+  // `allow-investor-boundary` opt-out comments so the alias remains visible
+  // to maintainers but invisible to investors.
+  "approve_exception",
+  "reject_exception",
+  "approve exception",
+  "execute exception",
+  "override guardrail",
+  "override risk",
+  "investor accept",
 ];
 
 // ─── Scan targets ────────────────────────────────────────────────────────────

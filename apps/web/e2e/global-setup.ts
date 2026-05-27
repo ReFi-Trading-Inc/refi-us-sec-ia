@@ -75,6 +75,10 @@ export const E2E_USERS = {
   staleProfileWithDisclosure: {
     eligibilityCookie: "e2e-stale-profile-with-disclosure-user",
   },
+  // Surface 7: Managed user with a seeded set of open exceptions across the
+  // ExceptionKind union. Dedicated so the existing `managed` user's
+  // Surface-1 spec is not affected by resolution writes.
+  exceptionsUser: { eligibilityCookie: "e2e-exceptions-user" },
 } as const;
 
 export const ACTIVATION_DISCLOSURE_V2 = {
@@ -308,7 +312,8 @@ async function seedUser(opts: {
     | "staleDisclosurePaused"
     | "staleProfilePaused"
     | "staleProfileMaterial"
-    | "staleProfileWithDisclosure";
+    | "staleProfileWithDisclosure"
+    | "exceptionsUser";
 }) {
   const root = storeRoot();
   const authId = authIdFor(opts.cookieValue);
@@ -411,7 +416,8 @@ async function seedUser(opts: {
   const managedSeedStatus: ManagedSeedStatus | null =
     opts.mode === "managed" ||
     opts.mode === "pausableActive" ||
-    opts.mode === "staleDisclosure"
+    opts.mode === "staleDisclosure" ||
+    opts.mode === "exceptionsUser"
       ? "active"
       : opts.mode === "resumablePaused"
         ? "paused_by_user"
@@ -551,6 +557,9 @@ export default async function globalSetup() {
     "activation-idempotency",
     "profile-confirmations",
     "profile-snapshots",
+    "exception-reviews",
+    // exception-resolutions is an append-only jsonl, scrubbed via the
+    // file-level rm below.
   ]) {
     const path = join(root, dir);
     if (existsSync(path)) await rm(path, { recursive: true, force: true });
@@ -606,4 +615,67 @@ export default async function globalSetup() {
     cookieValue: E2E_USERS.staleProfileWithDisclosure.eligibilityCookie,
     mode: "staleProfileWithDisclosure",
   });
+  await seedUser({
+    cookieValue: E2E_USERS.exceptionsUser.eligibilityCookie,
+    mode: "exceptionsUser",
+  });
+
+  // Surface 7 exception seed for the dedicated exceptionsUser. Seeded as an
+  // append-only-style fixture (the resolution log is jsonl-backed so we wipe
+  // it via direct unlink to keep tests deterministic).
+  const excRoot = storeRoot();
+  await rm(join(excRoot, "exception-resolutions.jsonl"), {
+    force: true,
+  });
+  const excAccountId = `acct-${authIdFor(
+    E2E_USERS.exceptionsUser.eligibilityCookie,
+  )}`;
+  const now = new Date().toISOString();
+  const exceptions = [
+    {
+      exceptionId: "exc-profile-stale",
+      kind: "stale_profile" as const,
+      summary:
+        "Your profile snapshot is older than your freshness setting. Review it to keep automation eligible.",
+    },
+    {
+      exceptionId: "exc-disclosure-expired",
+      kind: "expired_disclosure" as const,
+      summary:
+        "A newer disclosure version supersedes the one your active policy was signed under.",
+      intentRef: "rec-managed-aapl",
+    },
+    {
+      exceptionId: "exc-broker-stale",
+      kind: "stale_broker_data" as const,
+      summary:
+        "Broker reported no fresh positions data within your policy's freshness window.",
+    },
+    {
+      exceptionId: "exc-out-of-policy",
+      kind: "out_of_policy_intent" as const,
+      summary:
+        "A recommended trade falls outside the guardrails you signed in your active policy.",
+      intentRef: "rec-managed-msft",
+    },
+  ];
+  for (const ex of exceptions) {
+    await writeJson(
+      join(
+        root,
+        "exception-reviews",
+        `${safeKey(`${excAccountId}__${ex.exceptionId}`)}.json`,
+      ),
+      {
+        accountId: excAccountId,
+        exceptionId: ex.exceptionId,
+        kind: ex.kind,
+        status: "open",
+        ...(ex.intentRef ? { intentRef: ex.intentRef } : {}),
+        summary: ex.summary,
+        openedAt: now,
+        meta: meta("e2e-seed-exceptions"),
+      },
+    );
+  }
 }

@@ -32,12 +32,18 @@
 import { test, expect, type Page } from "@playwright/test";
 
 test.describe.configure({ mode: "serial" });
+// TODO(replacement-e2e-backlog): see docs/phase2-5-replacement-e2e-backlog.md
+//   §A (structural fail-closed compliance test, file:
+//       apps/web/e2e/compliance-fail-closed-structural.spec.ts) and
+//   §B (compliance verdict visibility replacement, file:
+//       apps/web/e2e/compliance-verdict-visibility.spec.ts).
+// Delete this suite when those replacements land.
 test.skip(
   true,
   "Suspended pending Phase 2.5R-19 replacement gate. The Submit/Approve " +
     "button this suite bound to was removed when Managed mode dropped the " +
     "per-rec Approve affordance. Re-enable once a new test-id-stable " +
-    "compliance gate ships.",
+    "compliance gate ships — see docs/phase2-5-replacement-e2e-backlog.md.",
 );
 
 const authCookies = [

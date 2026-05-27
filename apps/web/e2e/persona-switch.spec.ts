@@ -35,11 +35,14 @@ async function setPersona(page: Page, persona: "maya" | "david" | "sarah") {
 }
 
 test.describe("Persona switching", () => {
-  // Suspended on 2026-05-27 by the Phase 2.5 rebase. The text bindings these
-  // cases rely on ("connected — fresh", "data is stale") live in the
-  // Phase-2.5 BrokerStatusBanner / Dashboard, which currently does not
-  // surface those exact strings against the seeded persona MSW responses.
-  // Pre-existing Phase 2.5 polish gap — not introduced by Surfaces 1–7.
+  // TODO(replacement-e2e-backlog): see docs/phase2-5-replacement-e2e-backlog.md §C
+  //   replacement: apps/web/e2e/persona-switch-stable.spec.ts case 1
+  //   ("Maya (default) — broker is connected and fresh", asserts
+  //    data-testid=broker-status-banner with data-status=connected,
+  //    data-freshness=fresh on the new BrokerStatusBanner).
+  // Suspended on 2026-05-27 by the Phase 2.5 rebase. The Phase 2.5
+  // BrokerStatusBanner / Dashboard does not surface those exact copy
+  // strings against the seeded persona MSW responses.
   test.skip("Maya (default) — dashboard shows broker connected fresh", async ({
     page,
   }) => {
@@ -51,6 +54,10 @@ test.describe("Persona switching", () => {
     });
   });
 
+  // TODO(replacement-e2e-backlog): see docs/phase2-5-replacement-e2e-backlog.md §C
+  //   replacement: apps/web/e2e/persona-switch-stable.spec.ts case 2
+  //   ("Sarah — broker stale", asserts data-status=stale OR
+  //    data-freshness=stale on BrokerStatusBanner).
   test.skip("Sarah — broker stale banner visible on home", async ({ page }) => {
     await setPersona(page, "sarah");
     await page.goto("/us/app/home");
@@ -75,12 +82,16 @@ test.describe("Persona switching", () => {
     ).toBeVisible({ timeout: 8_000 });
   });
 
-  // Suspended on 2026-05-27 by the Phase 2.5 rebase onto post-Surface-7
-  // origin/main. The CompliancePreview component this case bound to
-  // ("REVIEW_TAX_IMPACT" badge + "Approve for execution" button) was
-  // removed in P2.5R-19 and is now structurally absent (the tripwire blocks
-  // the label entirely). Re-enable once a replacement test-id-stable
-  // compliance verdict affordance lands on the detail page.
+  // TODO(replacement-e2e-backlog): see docs/phase2-5-replacement-e2e-backlog.md
+  //   §A + §B. Replacements:
+  //     - apps/web/e2e/compliance-fail-closed-structural.spec.ts case 4
+  //       ("Review-required recommendation routes to Exception Review only")
+  //     - apps/web/e2e/compliance-verdict-visibility.spec.ts case 2
+  //       ("REVIEW verdict produces non-executing UI", asserts
+  //        data-eligibility=review on recommendation detail).
+  // The CompliancePreview component this case bound to ("REVIEW_TAX_IMPACT"
+  // badge + "Approve for execution" button) was removed in P2.5R-19 and is
+  // now structurally absent (the tripwire blocks the label).
   test.skip("Sarah — recommendation rec_s_001 sits in compliance REVIEW", async ({
     page,
   }) => {
@@ -91,11 +102,10 @@ test.describe("Persona switching", () => {
     });
   });
 
-  // Suspended on 2026-05-27 by the Phase 2.5 rebase. The dashboard
-  // disclosure card is wired but the persona/MSW handler chain does not
-  // currently surface a "0 of 5 acknowledged" string for Maya's seed (the
-  // template renders but the count source needs investigation). Pre-existing
-  // Phase 2.5 issue — not introduced by the Surface 1–7 merge.
+  // TODO(replacement-e2e-backlog): see docs/phase2-5-replacement-e2e-backlog.md §C
+  //   replacement: apps/web/e2e/persona-switch-stable.spec.ts case 4
+  //   ("Maya — disclosure card 0 of 5", asserts data-ack-count="0" and
+  //    data-total-count="5" on data-testid=disclosure-ack-card).
   test.skip("Maya — disclosure card shows 0 of 5 (default ack state)", async ({
     page,
   }) => {
@@ -106,6 +116,11 @@ test.describe("Persona switching", () => {
     });
   });
 
+  // TODO(replacement-e2e-backlog): see docs/phase2-5-replacement-e2e-backlog.md §C
+  //   replacement: apps/web/e2e/persona-switch-stable.spec.ts case 4/5
+  //   (Next-action card surfaces disclosure routing via stable
+  //    data-testid=disclosure-ack-card data-ack-count attribute, not via
+  //    a copy regex).
   test.skip("Maya — Next action surfaces disclosure acknowledgment", async ({
     page,
   }) => {

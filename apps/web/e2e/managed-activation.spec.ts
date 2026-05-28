@@ -7,9 +7,9 @@ interface BffJsonBody {
     reason?: string;
     idempotentReplay?: boolean;
     subscriptionModeFlipped?: boolean;
-    policy?: { policyVersion?: number };
+    policy?: { policyVersion: number };
     executionPolicyVersion?: number | null;
-    managedExecutionState?: { status?: string };
+    managedExecutionState?: { status: string };
     managedExecutionStatusBefore?: string | null;
     managedExecutionStatusAfter?: string | null;
     reasonCodeCleared?: string | null;
@@ -170,7 +170,7 @@ test.describe("Managed activation — idempotency", () => {
     expect(first.status()).toBe(201);
     const firstJson = (await first.json()) as BffJsonBody;
     expect(firstJson.data.idempotentReplay).toBe(false);
-    const firstVersion = firstJson.data.policy.policyVersion;
+    const firstVersion = firstJson.data.policy?.policyVersion;
     expect(typeof firstVersion).toBe("number");
 
     const second = await page.request.post(
@@ -181,7 +181,7 @@ test.describe("Managed activation — idempotency", () => {
     const secondJson = (await second.json()) as BffJsonBody;
     expect(secondJson.data.idempotentReplay).toBe(true);
     expect(secondJson.data.subscriptionModeFlipped).toBe(false);
-    expect(secondJson.data.policy.policyVersion).toBe(firstVersion);
+    expect(secondJson.data.policy?.policyVersion).toBe(firstVersion);
   });
 
   test("Derived-key replay (no header) on second activation attempt returns idempotentReplay:true", async ({
@@ -214,7 +214,7 @@ test.describe("Managed activation — idempotency", () => {
     );
     expect(first.status()).toBe(201);
     const firstJson = (await first.json()) as BffJsonBody;
-    const firstVersion = firstJson.data.policy.policyVersion;
+    const firstVersion = firstJson.data.policy?.policyVersion;
     expect(firstJson.data.idempotentReplay).toBe(false);
 
     // Even a different deviceFingerprint must still collapse to the same
@@ -232,7 +232,7 @@ test.describe("Managed activation — idempotency", () => {
     expect(second.status()).toBe(200);
     const secondJson = (await second.json()) as BffJsonBody;
     expect(secondJson.data.idempotentReplay).toBe(true);
-    expect(secondJson.data.policy.policyVersion).toBe(firstVersion);
+    expect(secondJson.data.policy?.policyVersion).toBe(firstVersion);
   });
 });
 

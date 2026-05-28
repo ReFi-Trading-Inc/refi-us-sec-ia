@@ -189,7 +189,7 @@ function ExceptionCard(props: {
                 return (
                   <Link
                     key={res}
-                    href={route as never}
+                    href={route}
                     data-testid={`exception-card-${item.exceptionId}-route-${res}`}
                     className="inline-flex items-center justify-center gap-2 rounded-md font-medium border border-charcoal-600 bg-transparent text-charcoal-100 hover:bg-charcoal-800 h-8 px-3 text-sm transition-colors"
                   >
@@ -206,7 +206,9 @@ function ExceptionCard(props: {
                   }
                   size="sm"
                   loading={pendingResolution === res}
-                  onClick={() => onResolve(item, res)}
+                  onClick={() => {
+                    onResolve(item, res);
+                  }}
                 >
                   {RESOLUTION_LABEL[res]}
                 </Button>
@@ -345,7 +347,9 @@ export default function ExceptionsPage() {
               role="tab"
               aria-selected={active}
               data-testid={`exceptions-filter-${f}`}
-              onClick={() => setFilter(f)}
+              onClick={() => {
+                setFilter(f);
+              }}
               className={
                 "rounded-md px-3 py-1.5 text-sm transition-colors border " +
                 (active

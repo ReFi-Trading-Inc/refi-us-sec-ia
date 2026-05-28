@@ -261,7 +261,7 @@ export default function AutomationCenterPage() {
   const onPause = useCallback(async () => {
     setPauseError(null);
     try {
-      await pauseMut.mutateAsync();
+      await pauseMut.mutateAsync(undefined);
     } catch (e) {
       setPauseError(
         e instanceof Error ? e.message : "Could not pause automation.",
@@ -552,32 +552,36 @@ export default function AutomationCenterPage() {
                   data-testid="draft-strategyId"
                   value={form.strategyId}
                   error={errors.strategyId}
-                  onChange={(e) => update("strategyId", e.target.value)}
+                  onChange={(e) => {
+                    update("strategyId", e.target.value);
+                  }}
                 />
                 <Input
                   label="Account scope"
                   data-testid="draft-accountScope"
                   value={form.accountScope}
                   error={errors.accountScope}
-                  onChange={(e) => update("accountScope", e.target.value)}
+                  onChange={(e) => {
+                    update("accountScope", e.target.value);
+                  }}
                 />
                 <Input
                   label="Asset universe (comma-separated)"
                   data-testid="draft-assetUniverse"
                   value={form.assetUniverse.join(", ")}
                   error={errors.assetUniverse}
-                  onChange={(e) =>
-                    update("assetUniverse", csvToArray(e.target.value))
-                  }
+                  onChange={(e) => {
+                    update("assetUniverse", csvToArray(e.target.value));
+                  }}
                 />
                 <Input
                   label="Restricted sectors (comma-separated)"
                   data-testid="draft-restrictedSectors"
                   value={form.restrictedSectors.join(", ")}
                   error={errors.restrictedSectors}
-                  onChange={(e) =>
-                    update("restrictedSectors", csvToArray(e.target.value))
-                  }
+                  onChange={(e) => {
+                    update("restrictedSectors", csvToArray(e.target.value));
+                  }}
                 />
                 <Input
                   label="Max single order (USD)"
@@ -586,7 +590,9 @@ export default function AutomationCenterPage() {
                   value={form.maxSingleOrderUsd}
                   error={errors.maxSingleOrderUsd}
                   hint="25.00 to 25000.00"
-                  onChange={(e) => update("maxSingleOrderUsd", e.target.value)}
+                  onChange={(e) => {
+                    update("maxSingleOrderUsd", e.target.value);
+                  }}
                 />
                 <Input
                   label="Max position size (basis points)"
@@ -595,12 +601,12 @@ export default function AutomationCenterPage() {
                   value={form.maxPositionSizeBps}
                   error={errors.maxPositionSizeBps}
                   hint="100 to 2500"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "maxPositionSizeBps",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Input
                   label="Minimum cash reserve (basis points)"
@@ -609,12 +615,12 @@ export default function AutomationCenterPage() {
                   value={form.minimumCashReserveBps}
                   error={errors.minimumCashReserveBps}
                   hint="0 to 5000"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "minimumCashReserveBps",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Input
                   label="Daily order limit"
@@ -623,12 +629,12 @@ export default function AutomationCenterPage() {
                   value={form.dailyOrderLimit}
                   error={errors.dailyOrderLimit}
                   hint="1 to 25"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "dailyOrderLimit",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Input
                   label="Daily loss pause (basis points)"
@@ -637,12 +643,12 @@ export default function AutomationCenterPage() {
                   value={form.dailyLossPauseBps}
                   error={errors.dailyLossPauseBps}
                   hint="100 to 1000"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "dailyLossPauseBps",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Input
                   label="Drawdown pause (basis points)"
@@ -651,12 +657,12 @@ export default function AutomationCenterPage() {
                   value={form.drawdownPauseBps}
                   error={errors.drawdownPauseBps}
                   hint="300 to 3000"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "drawdownPauseBps",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Input
                   label="Max open orders"
@@ -665,36 +671,36 @@ export default function AutomationCenterPage() {
                   value={form.maxOpenOrders}
                   error={errors.maxOpenOrders}
                   hint="1 to 20"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "maxOpenOrders",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Select
                   label="Pause after stale broker data"
                   data-testid="draft-staleBrokerDataPauseAfter"
                   value={form.staleBrokerDataPauseAfter}
                   options={STALE_BROKER_OPTIONS}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "staleBrokerDataPauseAfter",
                       e.target.value as StaleBrokerDataDuration,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Select
                   label="Pause after stale profile"
                   data-testid="draft-staleProfilePauseAfter"
                   value={form.staleProfilePauseAfter}
                   options={STALE_PROFILE_OPTIONS}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "staleProfilePauseAfter",
                       e.target.value as StaleProfileDuration,
-                    )
-                  }
+                    );
+                  }}
                 />
               </div>
               <div className="flex flex-col gap-2 pt-1">
@@ -702,17 +708,17 @@ export default function AutomationCenterPage() {
                   label="Pause automation when a new disclosure version supersedes the active policy"
                   data-testid="draft-pauseOnDisclosureSuperseded"
                   checked={form.pauseOnDisclosureSuperseded}
-                  onChange={(e) =>
-                    update("pauseOnDisclosureSuperseded", e.target.checked)
-                  }
+                  onChange={(e) => {
+                    update("pauseOnDisclosureSuperseded", e.target.checked);
+                  }}
                 />
                 <Checkbox
                   label="Pause automation when the advisory profile is superseded"
                   data-testid="draft-pauseOnProfileSuperseded"
                   checked={form.pauseOnProfileSuperseded}
-                  onChange={(e) =>
-                    update("pauseOnProfileSuperseded", e.target.checked)
-                  }
+                  onChange={(e) => {
+                    update("pauseOnProfileSuperseded", e.target.checked);
+                  }}
                 />
               </div>
             </>

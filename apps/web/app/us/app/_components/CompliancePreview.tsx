@@ -190,13 +190,21 @@ function DevOverridePanel({
           key={k}
           size="sm"
           variant={value === k ? "primary" : "secondary"}
-          onClick={() => onChange(value === k ? null : k)}
+          onClick={() => {
+            onChange(value === k ? null : k);
+          }}
         >
           {k}
         </Button>
       ))}
       {value && (
-        <Button size="sm" variant="tertiary" onClick={() => onChange(null)}>
+        <Button
+          size="sm"
+          variant="tertiary"
+          onClick={() => {
+            onChange(null);
+          }}
+        >
           Clear
         </Button>
       )}

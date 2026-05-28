@@ -236,7 +236,9 @@ export default function OnboardingBrokerPage() {
                       disabled={
                         !isAvailable || isActive || connectKey.isPending
                       }
-                      onClick={() => startConnect(b.id)}
+                      onClick={() => {
+                        startConnect(b.id);
+                      }}
                     >
                       {isThisConnected
                         ? "Connected"
@@ -266,11 +268,11 @@ export default function OnboardingBrokerPage() {
                         name="environment"
                         label={brokerApiKey.environment.label}
                         value={environment}
-                        onChange={(v) =>
+                        onChange={(v) => {
                           setValue("environment", v as "paper" | "live", {
                             shouldValidate: true,
-                          })
-                        }
+                          });
+                        }}
                         options={[
                           {
                             value: brokerApiKey.environment.paper.value,
@@ -321,7 +323,9 @@ export default function OnboardingBrokerPage() {
                         />
                         <button
                           type="button"
-                          onClick={() => setShowSecret((s) => !s)}
+                          onClick={() => {
+                            setShowSecret((s) => !s);
+                          }}
                           className="mt-1 text-xs text-mint-400 hover:text-mint-300"
                         >
                           {showSecret
@@ -417,7 +421,11 @@ export default function OnboardingBrokerPage() {
       </div>
 
       {isAlreadyConnected && (
-        <Button onClick={() => router.push("/us/onboarding/strategy")}>
+        <Button
+          onClick={() => {
+            router.push("/us/onboarding/strategy");
+          }}
+        >
           {brokerApiKey.continueLabel}
         </Button>
       )}

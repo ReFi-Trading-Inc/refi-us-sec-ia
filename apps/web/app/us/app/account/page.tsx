@@ -196,7 +196,9 @@ export default function AccountPage() {
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={() => setConfirmDisconnect(false)}
+                      onClick={() => {
+                        setConfirmDisconnect(false);
+                      }}
                     >
                       Cancel
                     </Button>
@@ -206,7 +208,9 @@ export default function AccountPage() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => setConfirmDisconnect(true)}
+                  onClick={() => {
+                    setConfirmDisconnect(true);
+                  }}
                 >
                   Disconnect broker
                 </Button>

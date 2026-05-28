@@ -135,7 +135,9 @@ export default function EligibilityPage() {
               placeholder={eligibilityCopy.fields.state.placeholder}
               options={stateOptions}
               value={stateValue}
-              onChange={(e) => setValue("state", e.target.value)}
+              onChange={(e) => {
+                setValue("state", e.target.value);
+              }}
               error={errors.state?.message}
               required
             />
@@ -148,9 +150,9 @@ export default function EligibilityPage() {
                 { value: "no", label: eligibilityCopy.fields.no },
               ]}
               value={usPersonValue}
-              onChange={(v) =>
-                setValue("isUsPerson", v as FormValues["isUsPerson"])
-              }
+              onChange={(v) => {
+                setValue("isUsPerson", v as FormValues["isUsPerson"]);
+              }}
               error={errors.isUsPerson?.message}
             />
 
@@ -234,7 +236,9 @@ function EligibilityResult({ decision }: { decision: Decision }) {
               placeholder={eligibilityCopy.emailCapture.placeholder}
               hint={eligibilityCopy.emailCapture.helper}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+              }}
             />
             <Button type="submit" disabled={email.length === 0}>
               {eligibilityCopy.emailCapture.submit}

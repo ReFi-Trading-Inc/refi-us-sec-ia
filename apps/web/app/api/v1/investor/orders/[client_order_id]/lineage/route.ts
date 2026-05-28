@@ -13,7 +13,7 @@ import { bffReadWithAccessLog } from "@lib/bff/handler";
 function clientOrderIdFromUrl(url: string): string | null {
   const parts = new URL(url).pathname.split("/").filter(Boolean);
   const i = parts.indexOf("orders");
-  return i >= 0 && parts[i + 1] ? parts[i + 1]! : null;
+  return parts[i + 1] ?? null;
 }
 
 export const GET = bffReadWithAccessLog({
@@ -22,7 +22,7 @@ export const GET = bffReadWithAccessLog({
   upstreamGap: "G-001",
   recordRef: (ctx) =>
     `order-lineage:${clientOrderIdFromUrl(ctx.req.url) ?? "unknown"}`,
-  fetch: async (ctx) => {
+  fetch: (ctx) => {
     const id = clientOrderIdFromUrl(ctx.req.url);
     if (!id) return null;
     // Until backend wires, return a stub projection so the access log entry

@@ -56,7 +56,7 @@ export const PUT = bffMutate<UpdateBody>({
   source: "prototype-bff",
   upstreamGap: "G-006",
   parse: (body) => updateBody.parse(body),
-  apply: async (ctx) => {
+  apply: (ctx) => {
     return {
       data: {
         draftPreview: ctx.input,

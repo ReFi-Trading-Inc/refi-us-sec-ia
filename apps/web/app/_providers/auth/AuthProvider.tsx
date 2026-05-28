@@ -70,7 +70,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       void sessionQuery.refetch();
     };
     window.addEventListener("auth:unauthorized", handler);
-    return () => window.removeEventListener("auth:unauthorized", handler);
+    return () => {
+      window.removeEventListener("auth:unauthorized", handler);
+    };
   }, [sessionQuery]);
 
   const signOut = useCallback(async () => {

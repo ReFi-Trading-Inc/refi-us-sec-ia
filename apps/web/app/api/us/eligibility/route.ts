@@ -58,7 +58,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const env = getServerEnv();
 
-  const json = await request.json().catch(() => null);
+  const json: unknown = await request.json().catch(() => null);
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json(

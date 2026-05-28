@@ -1,6 +1,24 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
+interface BffJsonBody {
+  data: {
+    ok?: boolean;
+    reason?: string;
+    idempotentReplay?: boolean;
+    subscriptionModeFlipped?: boolean;
+    policy?: { policyVersion?: number };
+    executionPolicyVersion?: number | null;
+    managedExecutionState?: { status?: string };
+    managedExecutionStatusBefore?: string | null;
+    managedExecutionStatusAfter?: string | null;
+    reasonCodeCleared?: string | null;
+    [key: string]: unknown;
+  };
+  receipt?: { action?: string };
+  [key: string]: unknown;
+}
+
 // Surface 6 — Profile reactivation.
 // When the active ExecutionPolicy's pinned advisory profile version is stale
 // (aging or materially changed), the investor must re-confirm before Managed
@@ -75,7 +93,7 @@ test.describe("Profile reactivation — aging-only stale profile", () => {
     const beforeStatus = await page.request.get("/api/v1/investor/status", {
       headers: { "x-correlation-id": "e2e-profile-before-status" },
     });
-    const beforeBody = await beforeStatus.json();
+    const beforeBody = (await beforeStatus.json()) as BffJsonBody;
     const policyVersionBefore = beforeBody.data
       .executionPolicyVersion as number;
 
@@ -94,7 +112,7 @@ test.describe("Profile reactivation — aging-only stale profile", () => {
     const afterStatus = await page.request.get("/api/v1/investor/status", {
       headers: { "x-correlation-id": "e2e-profile-after-status" },
     });
-    const afterBody = await afterStatus.json();
+    const afterBody = (await afterStatus.json()) as BffJsonBody;
     expect(afterBody.data.executionPolicyVersion).toBe(policyVersionBefore);
 
     // MES restored to active under the same policy version.
@@ -137,7 +155,7 @@ test.describe("Profile reactivation — aging-only stale profile", () => {
       data: {},
     });
     expect(direct.status()).toBe(412);
-    const body = await direct.json();
+    const body = (await direct.json()) as BffJsonBody;
     expect(body.data.reason).toBe("system_pause_must_clear_upstream");
   });
 });
@@ -193,14 +211,14 @@ test.describe("Profile reactivation — material change routes to policy review"
       data: { profileVersion: 2, acknowledgeUnchanged: true },
     });
     expect(res.status()).toBe(409);
-    const body = await res.json();
+    const body = (await res.json()) as BffJsonBody;
     expect(body.data.ok).toBe(false);
     expect(body.data.reason).toBe("material_change_requires_policy_review");
 
     const status = await page.request.get("/api/v1/investor/status", {
       headers: { "x-correlation-id": "e2e-profile-material-status" },
     });
-    const statusBody = await status.json();
+    const statusBody = (await status.json()) as BffJsonBody;
     expect(statusBody.data.managedExecutionState.status).toBe(
       "paused_by_system",
     );
@@ -233,7 +251,7 @@ test.describe("Profile reactivation — remaining blockers", () => {
       data: { profileVersion: 1, acknowledgeUnchanged: true },
     });
     expect(res.status()).toBe(200);
-    const body = await res.json();
+    const body = (await res.json()) as BffJsonBody;
     expect(body.data.ok).toBe(true);
     expect(body.data.reasonCodeCleared).toBeNull();
     expect(body.data.managedExecutionStatusAfter).toBe("paused_by_system");
@@ -346,7 +364,7 @@ test.describe("Profile reactivation — direct API fail-closed cases", () => {
       data: { profileVersion: 9999, acknowledgeUnchanged: true },
     });
     expect(res.status()).toBe(409);
-    const body = await res.json();
+    const body = (await res.json()) as BffJsonBody;
     expect(body.data.reason).toBe("profile_version_mismatch");
   });
 
@@ -366,7 +384,7 @@ test.describe("Profile reactivation — direct API fail-closed cases", () => {
       data: { profileVersion: 1, acknowledgeUnchanged: true },
     });
     expect(res.status()).toBe(412);
-    const body = await res.json();
+    const body = (await res.json()) as BffJsonBody;
     // Signal user has no profile-snapshot seeded either, so no_profile fires
     // first — either is a legitimate fail-closed outcome.
     expect(["no_profile", "no_active_policy"]).toContain(body.data.reason);

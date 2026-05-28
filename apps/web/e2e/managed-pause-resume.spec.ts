@@ -1,6 +1,24 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
+interface BffJsonBody {
+  data: {
+    ok?: boolean;
+    reason?: string;
+    idempotentReplay?: boolean;
+    subscriptionModeFlipped?: boolean;
+    policy?: { policyVersion?: number };
+    executionPolicyVersion?: number | null;
+    managedExecutionState?: { status?: string };
+    managedExecutionStatusBefore?: string | null;
+    managedExecutionStatusAfter?: string | null;
+    reasonCodeCleared?: string | null;
+    [key: string]: unknown;
+  };
+  receipt?: { action?: string };
+  [key: string]: unknown;
+}
+
 // Surface 4 — Managed pause/resume.
 // The investor controls automated execution self-service. Pause/Resume mutate
 // ManagedExecutionState only; never the ExecutionPolicy version, never a
@@ -136,7 +154,7 @@ test.describe("Managed pause/resume — paused_by_system (read-only)", () => {
       data: {},
     });
     expect(direct.status()).toBe(412);
-    const body = await direct.json();
+    const body = (await direct.json()) as BffJsonBody;
     // bffMutate emits a 412 with the blocked-outcome envelope (data.ok=false,
     // data.reason carries the reason code). Receipt is still recorded.
     expect(body.data.ok).toBe(false);

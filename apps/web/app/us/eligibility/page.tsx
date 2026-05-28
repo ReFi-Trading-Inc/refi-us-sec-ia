@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
 import { z } from "zod";
 import {
@@ -68,15 +68,22 @@ export default function EligibilityPage() {
     register,
     handleSubmit,
     setValue,
-    watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: standardSchemaResolver(eligibilitySchema),
     defaultValues: { state: "", isUsPerson: undefined, dob: "" },
   });
 
-  const stateValue = watch("state");
-  const usPersonValue = watch("isUsPerson");
+  // useWatch is the memo-safe variant of watch(); plain watch() returns a
+  // non-memoizable function and triggers react-hooks/incompatible-library.
+  const stateValue = useWatch({ control, name: "state" });
+  const usPersonValue = useWatch({ control, name: "isUsPerson" });
+
+  function onSubmitForm(event: React.SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    void handleSubmit(onSubmit)(event);
+  }
 
   async function onSubmit(values: FormValues): Promise<void> {
     setSubmitError(null);
@@ -126,9 +133,7 @@ export default function EligibilityPage() {
 
         {decision === null ? (
           <form
-            onSubmit={(e) => {
-              void handleSubmit(onSubmit)(e);
-            }}
+            onSubmit={onSubmitForm}
             className="flex flex-col gap-6"
             noValidate
           >

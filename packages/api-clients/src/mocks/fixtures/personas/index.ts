@@ -16,6 +16,11 @@ export { davidKim } from "./david-kim";
 export { sarahPatel } from "./sarah-patel";
 
 export const PERSONA_COOKIE = "refi_persona_v1";
+// Test/mock-only fallback header. Only consulted by MSW handlers, which are
+// dev/test-only and disabled when NEXT_PUBLIC_REFI_ENV=prod. Allows Playwright
+// to deterministically pin persona via context.setExtraHTTPHeaders when
+// cookie propagation to fetch() is unreliable. Never used in production.
+export const PERSONA_HEADER = "x-refi-persona";
 
 export const PERSONAS: Record<PersonaId, PersonaPackage> = {
   maya: mayaThompson,
@@ -40,8 +45,15 @@ function isPersonaId(value: string | null): value is PersonaId {
   return value === "maya" || value === "david" || value === "sarah";
 }
 
-/** Returns the persona package matching `refi_persona_v1`, default Maya. */
+/**
+ * Returns the persona package, resolved in this order:
+ *   1. x-refi-persona header (test/mock-only; see PERSONA_HEADER comment)
+ *   2. refi_persona_v1 cookie (dev PersonaSwitcher)
+ *   3. Maya fallback
+ */
 export function getActivePersona(request: Request): PersonaPackage {
+  const headerValue = request.headers.get(PERSONA_HEADER);
+  if (isPersonaId(headerValue)) return PERSONAS[headerValue];
   const cookieValue = readCookie(request, PERSONA_COOKIE);
   if (isPersonaId(cookieValue)) return PERSONAS[cookieValue];
   return mayaThompson;

@@ -87,7 +87,13 @@ export default function SupportPage() {
     !submit.isPending;
 
   return (
-    <div className="flex flex-col gap-6 max-w-2xl">
+    <div
+      className="flex flex-col gap-6 max-w-2xl"
+      data-testid="support-page"
+      data-blocked={classification.blocked ? "true" : "false"}
+      data-rule-id={classification.boundary_rule_id ?? ""}
+      data-category={classification.category}
+    >
       <div>
         <h1 className="text-xl font-semibold text-charcoal-50 mb-1">
           {support.heading}
@@ -162,7 +168,11 @@ export default function SupportPage() {
             </StatusBanner>
           )}
 
-          <Button type="submit" disabled={!canSubmit}>
+          <Button
+            type="submit"
+            disabled={!canSubmit}
+            data-testid="support-submit-button"
+          >
             {submit.isPending ? "Submitting…" : support.submitLabel}
           </Button>
         </form>

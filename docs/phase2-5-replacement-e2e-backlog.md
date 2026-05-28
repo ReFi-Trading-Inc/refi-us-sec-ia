@@ -2,7 +2,36 @@
 
 **Owner of this backlog:** `phase2-5-wip-rebase` branch.
 **Sibling doc:** `docs/phase2-5-post-rebase-checkpoint.md`.
-**Status:** 16 e2e tests suspended (`test.skip(...)`) pending the replacement coverage below. The branch **does not merge** until §A–§D land as passing specs.
+**Status:** 16 e2e tests suspended (`test.skip(...)`) pending the replacement coverage below.
+
+**2026-05-28 update — all four replacement sections shipped and green.**
+
+| Section                          | Spec file                                                | Tests | Result  |
+| -------------------------------- | -------------------------------------------------------- | ----- | ------- |
+| §A Structural fail-closed        | `apps/web/e2e/compliance-fail-closed-structural.spec.ts` | 6     | passing |
+| §B Verdict visibility            | `apps/web/e2e/compliance-verdict-visibility.spec.ts`     | 6     | passing |
+| §C Persona-switch stable         | `apps/web/e2e/persona-switch-stable.spec.ts`             | 5     | passing |
+| §D Support-boundary preservation | `apps/web/e2e/support-boundary-preservation.spec.ts`     | 8     | passing |
+
+Legacy specs removed alongside the replacements:
+
+- `apps/web/e2e/compliance-fail-closed.spec.ts` — entire suite was `test.skip(true, …)`; all 11 cases superseded by §A + §B.
+- `apps/web/e2e/support-boundary.spec.ts` — 3 copy-regex cases superseded by §D's stable-attribute coverage (`data-rule-id`, `data-blocked`, `data-category`).
+- `apps/web/e2e/persona-switch.spec.ts` — trimmed to the one non-skipped case (David onboarding-incomplete blocks managed execution), which is orthogonal to §C and not duplicated.
+
+**Production behavior unchanged.** The only product-source changes carried by this branch are additive test-handle attributes (`data-testid` / `data-status` / `data-freshness` / `data-eligibility` / `data-tier` / `data-blocked` / `data-rule-id` / `data-category` / `data-ack-count` / `data-total-count`) on the BrokerStatusBanner, dashboard disclosure card, recommendation detail page, and support page, plus a test/mock-only `x-refi-persona` header path in the persona resolver (consulted only inside MSW handlers, which are disabled in production).
+
+**Daniel backend untouched.** No reads, writes, or deletions under `…/Daniels Back End/live-components-main` or `…/refinity-main-main`. Verified via `git diff --stat`.
+
+**Known limitation — scope of this coverage.** §A–§D are _frontend / MSW / BFF boundary_ tests. They prove that:
+
+- the investor UI never renders a per-trade Accept / Approve / Submit / staff-approval affordance,
+- the support surface never advances classifier-blocked prompts and never exposes the forbidden labels,
+- persona swaps propagate through MSW deterministically.
+
+They do **not** assert that Daniel's backend itself refuses such actions on the wire — the contract layer for that lives in `live-components-main` and is the responsibility of the backend repo's own integration tests. Pairing this frontend coverage with backend contract tests is a Phase 3+ concern.
+
+The branch **does not merge** until §A–§D land as passing specs.
 
 ---
 

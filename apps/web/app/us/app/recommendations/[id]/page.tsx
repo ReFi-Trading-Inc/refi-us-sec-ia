@@ -75,10 +75,40 @@ export default function RecommendationDetailPage({
     />
   );
 
+  // Eligibility surface attribute carried at page root so e2e can read it
+  // without touching layout. `loading` is short-lived; `unavailable` is the
+  // shallow-only fallback when the deep detail isn't published yet.
+  const eligibility: "allow" | "review" | "deny" | "unavailable" | "loading" =
+    detail
+      ? detail.automation_eligibility.status === "ALLOW"
+        ? "allow"
+        : detail.automation_eligibility.status === "REVIEW"
+          ? "review"
+          : detail.automation_eligibility.status === "DENY"
+            ? "deny"
+            : "unavailable"
+      : "unavailable";
+
   if (detail) {
-    return <DeepDetail detail={detail} actions={actions} />;
+    return (
+      <DeepDetail
+        detail={detail}
+        actions={actions}
+        tier={tier}
+        eligibility={eligibility}
+        pendingExceptionId={pendingException?.exception_id ?? null}
+      />
+    );
   }
-  return <ShallowDetail shallow={shallow!} actions={actions} />;
+  return (
+    <ShallowDetail
+      shallow={shallow!}
+      actions={actions}
+      tier={tier}
+      eligibility={eligibility}
+      pendingExceptionId={pendingException?.exception_id ?? null}
+    />
+  );
 }
 
 // --- Tier-aware actions (replaces the per-rec Accept/Reject/Review block) -
@@ -96,7 +126,7 @@ function TierAwareActions({
   // Exception Review surface where the canonical approve/reject buttons live.
   if (tier === "managed" && pendingException) {
     return (
-      <Card>
+      <Card data-testid="recommendation-exception-route">
         <CardContent className="pt-5 flex flex-col gap-3">
           <SectionLabel>{T.managedException.title}</SectionLabel>
           <StatusBanner variant="warning">
@@ -114,8 +144,9 @@ function TierAwareActions({
           </ul>
           <Link
             href={
-              `/us/app/managed/exceptions/${pendingException.exception_id}` as Route
+              `/us/app/exceptions` as Route /* exception detail surface lives at the Surface 7 queue */
             }
+            data-testid="recommendation-exception-route-cta"
           >
             <Button size="sm">{T.managedException.openAction}</Button>
           </Link>
@@ -128,7 +159,7 @@ function TierAwareActions({
   // this kind of decision at activation; no per-rec approval needed.
   if (tier === "managed") {
     return (
-      <Card>
+      <Card data-testid="managed-non-executing-state">
         <CardContent className="pt-5 flex flex-col gap-2">
           <SectionLabel>{T.managed.title}</SectionLabel>
           <p className="text-sm text-charcoal-300">{T.managed.body}</p>
@@ -152,7 +183,7 @@ function SignalActions() {
   const [acted, setActed] = useState<"saved" | "dismissed" | null>(null);
 
   return (
-    <Card>
+    <Card data-testid="signal-advisory-actions">
       <CardContent className="pt-5 flex flex-col gap-3">
         <SectionLabel>{T.signal.title}</SectionLabel>
         <p className="text-sm text-charcoal-300">{T.signal.body}</p>
@@ -193,15 +224,27 @@ function SignalActions() {
 function DeepDetail({
   detail,
   actions,
+  tier,
+  eligibility,
+  pendingExceptionId,
 }: {
   detail: RecommendationDetail;
   actions: React.ReactNode;
+  tier: Tier;
+  eligibility: "allow" | "review" | "deny" | "unavailable" | "loading";
+  pendingExceptionId: string | null;
 }) {
   const rec = detail.recommendation;
   const tone = badgeToneForType(detail.recommendation_type);
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
+    <div
+      className="flex flex-col gap-6 max-w-3xl"
+      data-testid="recommendation-detail-page"
+      data-tier={tier}
+      data-eligibility={eligibility}
+      data-pending-exception={pendingExceptionId ?? ""}
+    >
       <BackLink />
 
       <header className="flex flex-col gap-3">
@@ -314,7 +357,10 @@ function DeepDetail({
       ) : null}
 
       {/* Automation eligibility (policy-engine pre-check) */}
-      <Card>
+      <Card
+        data-testid="recommendation-eligibility"
+        data-eligibility={eligibility}
+      >
         <CardContent className="pt-5 flex flex-col gap-3">
           <SectionLabel>{D.automationEligibility}</SectionLabel>
           <div className="flex items-center gap-3">
@@ -415,9 +461,15 @@ function DeepDetail({
 function ShallowDetail({
   shallow,
   actions,
+  tier,
+  eligibility,
+  pendingExceptionId,
 }: {
   shallow: NonNullable<ReturnType<typeof useRecommendation>["data"]>;
   actions: React.ReactNode;
+  tier: Tier;
+  eligibility: "allow" | "review" | "deny" | "unavailable" | "loading";
+  pendingExceptionId: string | null;
 }) {
   const tone =
     shallow.action === "buy"
@@ -427,7 +479,13 @@ function ShallowDetail({
         : "neutral";
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
+    <div
+      className="flex flex-col gap-6 max-w-3xl"
+      data-testid="recommendation-detail-page"
+      data-tier={tier}
+      data-eligibility={eligibility}
+      data-pending-exception={pendingExceptionId ?? ""}
+    >
       <BackLink />
       <StatusBanner variant="info">{D.shallowFallbackNote}</StatusBanner>
       <div className="flex items-center gap-3">

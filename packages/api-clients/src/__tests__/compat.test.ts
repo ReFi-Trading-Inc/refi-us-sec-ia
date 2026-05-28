@@ -93,6 +93,8 @@ describe("OrderPreviewResult", () => {
       reasons: [],
       source: "fresh",
       latency_ms: 42,
+      expiry_at: "2026-05-28T00:00:00Z",
+      policy_version: "v1",
     };
     expectTypeOf(r.latency_ms).toEqualTypeOf<number | undefined>();
     expect(r.latency_ms).toBe(42);

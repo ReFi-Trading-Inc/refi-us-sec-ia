@@ -44,10 +44,14 @@ export default defineConfig({
       IP_HASH_SECRET: "playwright-test-ip-hash-secret-minimum-32-chars",
       ELIGIBILITY_JWT_SECRET: "playwright-test-jwt-secret-minimum-32-chars!",
       REFI_DATA_ADAPTER: "mock",
-      // Disable browser MSW in e2e. Surface 1 only needs the BFF route, and
-      // service-worker registration in headless Chromium is the slowest part
-      // of dev-mode boot, which makes the mswReady gate flake.
-      NEXT_PUBLIC_REFI_DATA_ADAPTER: "live",
+      // Enable browser MSW for e2e. Phase 2.5 replacement coverage
+      // (compliance-fail-closed-structural / compliance-verdict-visibility /
+      // persona-switch-stable) exercises persona-aware MSW handlers for
+      // recommendation detail, BrokerStatusBanner data, and disclosure-card
+      // counts. Phase 2 BFF-routed specs continue to pass because Next.js
+      // server routes are not intercepted by MSW (the worker runs only in
+      // the browser).
+      NEXT_PUBLIC_REFI_DATA_ADAPTER: "mock",
       REFI_PROTOTYPE_STORE_DIR: PROTOTYPE_STORE_DIR,
     },
   },

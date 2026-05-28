@@ -154,7 +154,7 @@ Each skipped test has an inline `// TODO(replacement-e2e-backlog): ...` marker r
 
 ## Daniel backend repo
 
-**Not touched.** Daniel's backend lives at `/Users/za/Library/CloudStorage/Dropbox/Nature Of Commerce LLC/ReFi/Website/Daniels Back End/refinity-main-main` — a separate repo. No file under that path was read, written, deleted, or otherwise modified by this rebase or by any commit on `phase2-5-wip-rebase`. The Phase 2.5 alignment documents at `refi-build-docs/spec-current/07-daniel-blueprint-alignment.md`, `09-daniel-answers-and-product-reframe.md`, and `12-daniel-2026-05-20-guidance.md` are documentation about Daniel's contract; they arrived through the rebase with zero conflict and zero modification.
+**Not touched.** Daniel's backend lives at `/Users/za/Library/CloudStorage/Dropbox/Nature Of Commerce LLC/ReFi/Website/Daniels Back End/live-components-main` — a separate repo. (Earlier drafts of this doc referenced `refinity-main-main`; that sibling folder is an older snapshot and is _not_ canonical. The canonical folder is `live-components-main`. See `memory/scope_daniel_backend_path.md`.) No file under that path was read, written, deleted, or otherwise modified by this rebase or by any commit on `phase2-5-wip-rebase`. The Phase 2.5 alignment documents at `refi-build-docs/spec-current/07-daniel-blueprint-alignment.md`, `09-daniel-answers-and-product-reframe.md`, and `12-daniel-2026-05-20-guidance.md` are documentation about Daniel's contract; they arrived through the rebase with zero conflict and zero modification.
 
 ---
 
@@ -179,3 +179,35 @@ The branch is **not yet ready for merge into `main`**. Required follow-up before
 3. Re-run the full gate set including the four new spec areas.
 
 Until those land, the branch represents a clean rebase floor: Phase 2.5 work preserved, Phase 2 Surface 1–7 behavior intact, no boundary weakened, no Daniel-backend touched.
+
+---
+
+## 2026-05-28 replacement-coverage update
+
+All four replacement sections (§A–§D) shipped as passing specs:
+
+| Section                          | Spec file                                                | Tests |
+| -------------------------------- | -------------------------------------------------------- | ----- |
+| §A Structural fail-closed        | `apps/web/e2e/compliance-fail-closed-structural.spec.ts` | 6     |
+| §B Verdict visibility            | `apps/web/e2e/compliance-verdict-visibility.spec.ts`     | 6     |
+| §C Persona-switch stable         | `apps/web/e2e/persona-switch-stable.spec.ts`             | 5     |
+| §D Support-boundary preservation | `apps/web/e2e/support-boundary-preservation.spec.ts`     | 8     |
+
+Files changed (no product-behavior change — additive test handles only):
+
+- `apps/web/app/us/app/_components/BrokerStatusBanner.tsx` — `data-testid="broker-status-banner"`, `data-status`, `data-freshness`.
+- `apps/web/app/us/app/home/_components/dashboard.tsx` — `data-testid="disclosure-ack-card"`, `data-ack-count`, `data-total-count`, `data-action`.
+- `apps/web/app/us/app/recommendations/[id]/page.tsx` — `data-testid="recommendation-detail-page"`, `data-tier`, `data-eligibility`, `data-pending-exception`; eligibility card + exception card + signal-advisory testids.
+- `apps/web/app/us/app/support/page.tsx` — `data-testid="support-page"` with `data-blocked`, `data-rule-id`, `data-category`; `data-testid="support-submit-button"`.
+- `apps/web/playwright.config.ts` — `NEXT_PUBLIC_REFI_DATA_ADAPTER: "mock"` so the persona-aware MSW handlers run in e2e.
+- `packages/api-clients/src/mocks/fixtures/personas/index.ts` — test/mock-only `x-refi-persona` header path consulted before the cookie in `getActivePersona`. Only reachable through MSW handlers; production code path is unchanged.
+
+Legacy specs removed:
+
+- `apps/web/e2e/compliance-fail-closed.spec.ts` — entire suite was `test.skip(true, …)`; all 11 cases replaced by §A + §B.
+- `apps/web/e2e/support-boundary.spec.ts` — 3 copy-regex cases replaced by §D.
+- `apps/web/e2e/persona-switch.spec.ts` — trimmed to the David onboarding-incomplete case (orthogonal to §C, not duplicated).
+
+Production behavior: unchanged. Daniel backend (`live-components-main`): untouched.
+
+Known limitation: §A–§D are frontend / MSW / BFF boundary tests. They prove the investor UI and the support classifier refuse forbidden actions and surface the correct compliance posture. They do not assert that Daniel's backend itself refuses these actions on the wire — that contract layer lives in `live-components-main` and is the responsibility of that repo's integration tests.

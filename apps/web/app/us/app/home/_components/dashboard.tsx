@@ -176,13 +176,31 @@ function DisclosureStatusCard() {
     .replace("{ack}", String(requiredAckedCount))
     .replace("{total}", String(requiredTotal));
 
+  // Stable attribute envelope for e2e (Phase 2.5 backlog §C). The visual
+  // CardShell is unchanged; the wrapper exposes data-ack-count /
+  // data-total-count / data-action so persona-switch-stable.spec can read
+  // the disclosure card state without binding to copy.
+  const action: "acknowledge" | "complete" | "blocked" =
+    requiredAckedCount === requiredTotal
+      ? "complete"
+      : requiredAckedCount === 0
+        ? "blocked"
+        : "acknowledge";
+
   return (
-    <CardShell
-      title={C.disclosures.title}
-      whatThisMeans={C.disclosures.whatThisMeans}
-      badge={<Badge variant={tone}>{text}</Badge>}
-      cta={{ href: "/us/app/documents", label: C.disclosures.cta }}
-    />
+    <div
+      data-testid="disclosure-ack-card"
+      data-ack-count={String(requiredAckedCount)}
+      data-total-count={String(requiredTotal)}
+      data-action={action}
+    >
+      <CardShell
+        title={C.disclosures.title}
+        whatThisMeans={C.disclosures.whatThisMeans}
+        badge={<Badge variant={tone}>{text}</Badge>}
+        cta={{ href: "/us/app/documents", label: C.disclosures.cta }}
+      />
+    </div>
   );
 }
 

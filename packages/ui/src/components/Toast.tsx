@@ -4,7 +4,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useId,
   useReducer,
   useEffect,
   useRef,
@@ -153,7 +152,9 @@ function ToastItem({
 
   useEffect(() => {
     const duration = toast.duration ?? DEFAULT_DURATION;
-    timerRef.current = setTimeout(() => onDismiss(toast.id), duration);
+    timerRef.current = setTimeout(() => {
+      onDismiss(toast.id);
+    }, duration);
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
     };
@@ -175,7 +176,9 @@ function ToastItem({
         )}
       </div>
       <button
-        onClick={() => onDismiss(toast.id)}
+        onClick={() => {
+          onDismiss(toast.id);
+        }}
         className="shrink-0 text-charcoal-500 hover:text-charcoal-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400 rounded"
         aria-label="Dismiss notification"
       >

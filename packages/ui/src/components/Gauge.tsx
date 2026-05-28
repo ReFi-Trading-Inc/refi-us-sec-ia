@@ -33,7 +33,7 @@ function Gauge({ value, label, className }: GaugeProps) {
             "w-full rounded-full transition-all duration-500 motion-reduce:transition-none",
             zone,
           )}
-          style={{ height: `${clamped}%` }}
+          style={{ height: `${String(clamped)}%` }}
         />
       </div>
       {label && (

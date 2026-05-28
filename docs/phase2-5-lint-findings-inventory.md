@@ -130,3 +130,30 @@ Full E2E was not run on this branch — this is an infrastructure cleanup branch
 - **No lint rules were weakened.** The `no-undef`/`no-redeclare` disables for `.ts`/`.tsx` files (from `phase2-5-lint-tooling`) follow official typescript-eslint guidance because TypeScript catches the same violations with full type awareness; the base ESLint variants misreport on TS namespace types and declaration merging. The `varsIgnorePattern: '^_'` addition aligns the rule with the underscore-prefix-means-intentionally-unused convention used by Phase 2 SEC 203A-2(e) compile-time type assertions (`_Check`, `_Assert`). No rule was relaxed in scope or severity. The six remaining findings are not silenced — they are surfaced as red on every CI run and tracked in §"Potential product defect" above.
 - **No SEC 203A-2(e) product behavior changed.** Every fix is mechanical (rename, type tightening, void-prefix, String() wrap, sync arrow body wrap, type-predicate revert). No investor-facing affordance was added, removed, or repositioned. No persona / eligibility / execution-policy / exception / disclosure / record path semantic was changed. The tripwire (`scripts/tripwire-investor-boundary.ts`) still scans clean.
 - **Daniel backend was untouched.** No file under `…/Daniels Back End/live-components-main` was opened with write or delete intent. Verified by `git diff --stat origin/main..HEAD` showing zero files outside `refi-us-sec-ia`.
+
+---
+
+## React hooks closure result
+
+Landed on `phase2-5-react-hooks-cleanup` (stacked on `phase2-5-lint-findings-cleanup`). The six findings flagged above as "potential product defect, requires review" were all resolved structurally — no `eslint-disable` comments, no rule weakening, no override widening.
+
+### Fix per finding
+
+| File:line                                              | Rule                                         | Structural fix                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------ | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/app/_hooks/useSimulation.ts:174`             | `react-hooks/refs` (error)                   | Removed the gratuitous `dispatchRef.current = dispatch` write during render. `useReducer`'s `dispatch` is stable across renders, so the interval can capture it directly. Effect deps now include `dispatch`. Behaviorally identical.                                                                                                  |
+| `apps/web/app/us/app/settings/automation/page.tsx:291` | `react-hooks/set-state-in-effect` (error)    | Replaced the `setForm(toForm(draftQ.data))` effect with a `useMemo` derivation. New `edits` state holds only user changes; `form = useMemo(() => { ...toForm(draftQ.data), ...edits })`. Background refetches no longer risk clobbering edits. Save / discard / pause / resume payloads unchanged.                                     |
+| `apps/web/app/us/onboarding/profile/page.tsx:57`       | `react-hooks/set-state-in-effect` (error)    | Same shape: `setFields({ ...existing })` effect replaced by `edits` state + `useMemo` derivation. Field set, labels, submit payload, and navigation unchanged.                                                                                                                                                                         |
+| `apps/web/app/us/app/exceptions/page.tsx:238`          | `react-hooks/exhaustive-deps` (warning)      | Wrapped `allItems = listQ.data?.items ?? []` in `useMemo(... [listQ.data?.items])` so the empty-array fallback has stable identity. The downstream `useMemo(filtered, [allItems, filter])` no longer recomputes on every render. Exception filtering/sorting/labels/resolution logic unchanged.                                        |
+| `apps/web/app/us/eligibility/page.tsx:78`              | `react-hooks/incompatible-library` (warning) | Replaced `watch("state")` / `watch("isUsPerson")` with `useWatch({ control, name: ... })` — the memo-safe variant. Form's `register` / `handleSubmit` / `setValue` / `formState` / validation behavior preserved. Submit wired through a named `onSubmitForm(event: React.SyntheticEvent<HTMLFormElement>)` handler per the directive. |
+| `apps/web/app/us/onboarding/broker/page.tsx:106`       | `react-hooks/incompatible-library` (warning) | Same `watch → useWatch({ control, name: "environment" })` swap. Submit wired through a named `onSubmitForm`. Reset-on-unmount effect preserved.                                                                                                                                                                                        |
+
+### Statements
+
+- The six findings were fixed structurally.
+- No eslint-disable comments were added.
+- No lint rules were weakened.
+- No SEC 203A-2(e) product behavior changed.
+- Daniel backend was untouched.
+- `pnpm lint` now exits 0.
+- Full E2E remains deferred to `phase2-5-stale-e2e-cleanup`.

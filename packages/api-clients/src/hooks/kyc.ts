@@ -31,7 +31,7 @@ export function useKycStatus(options?: {
     staleTime: 30_000,
     refetchInterval: (query) => {
       if (!poll) return false;
-      const data = query.state.data as KycStatus | undefined;
+      const data = query.state.data;
       if (!data) return intervalMs;
       return TERMINAL.has(data.status) ? false : intervalMs;
     },

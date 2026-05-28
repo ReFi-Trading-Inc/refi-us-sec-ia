@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-28
 **Branch:** `phase2-5-wip-rebase`
-**Latest commit:** `f9ae439 test: complete phase 2.5 compliance boundary coverage`
+**Latest commit:** see `git log -1` (gate-cleanup pass adds `docs/phase2-5-gate-cleanup.md` and deletes the stale `apps/web/e2e/recommendations.spec.ts` superseded by §A + §B).
 **Pushed to:** `origin/phase2-5-wip-rebase`
 **Not merged:** Do not merge into `main` — see [Merge rule](#merge-rule) below.
 
@@ -51,6 +51,7 @@ The following invariants are not negotiable on this branch or any branch derived
 
 ## Pointers
 
+- **`docs/phase2-5-gate-cleanup.md` — gate-by-gate classification, separate-cleanup-branch scopes, and merge-readiness verdict. Read this first if you are about to open a PR or merge.**
 - `docs/phase2-5-replacement-e2e-backlog.md` — §A–§D requirement specification + 2026-05-28 completion update.
 - `docs/phase2-5-post-rebase-checkpoint.md` — rebase conflict resolution log + 2026-05-28 replacement-coverage update.
 - `memory/scope_daniel_backend_path.md` — canonical Daniel backend folder (`live-components-main`, NOT `refinity-main-main`).

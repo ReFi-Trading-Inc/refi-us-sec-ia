@@ -50,7 +50,7 @@ export default function SupportPage() {
     setBlocked(blockedPromptPatterns.some((p) => p.test(val)));
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!canSubmit) return;
     submit.mutate({

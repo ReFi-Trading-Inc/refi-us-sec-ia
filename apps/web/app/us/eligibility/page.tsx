@@ -91,7 +91,7 @@ export default function EligibilityPage() {
         }),
       });
       if (!response.ok) {
-        throw new Error(`Request failed (${response.status})`);
+        throw new Error(`Request failed (${String(response.status)})`);
       }
       const body = (await response.json()) as Decision;
       setDecision(body);
@@ -126,7 +126,9 @@ export default function EligibilityPage() {
 
         {decision === null ? (
           <form
-            onSubmit={handleSubmit(onSubmit)}
+            onSubmit={(e) => {
+              void handleSubmit(onSubmit)(e);
+            }}
             className="flex flex-col gap-6"
             noValidate
           >

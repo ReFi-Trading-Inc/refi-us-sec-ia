@@ -134,8 +134,8 @@ function PauseResumeCard(props: {
   mode: string;
   status: ManagedExecutionStatus | null;
   reasonCode?: string;
-  onPause: () => void;
-  onResume: () => void;
+  onPause: () => void | Promise<void>;
+  onResume: () => void | Promise<void>;
   pausePending: boolean;
   resumePending: boolean;
   error: string | null;
@@ -201,7 +201,9 @@ function PauseResumeCard(props: {
             <Button
               data-testid="managed-pause-button"
               variant="secondary"
-              onClick={props.onPause}
+              onClick={() => {
+                void props.onPause();
+              }}
               loading={props.pausePending}
             >
               Pause automation
@@ -210,7 +212,9 @@ function PauseResumeCard(props: {
           {status === "paused_by_user" && (
             <Button
               data-testid="managed-resume-button"
-              onClick={props.onResume}
+              onClick={() => {
+                void props.onResume();
+              }}
               loading={props.resumePending}
             >
               Resume automation
@@ -296,8 +300,9 @@ export default function AutomationCenterPage() {
     <K extends keyof DraftForm>(field: K, value: DraftForm[K]) => {
       setForm((prev) => (prev ? { ...prev, [field]: value } : prev));
       setErrors((prev) => {
-        const next = { ...prev };
-        delete next[field];
+        // Strip the field by spreading without it (no-dynamic-delete) while
+        // preserving the Partial<Record<...>> semantic.
+        const { [field]: _removed, ...next } = prev;
         return next;
       });
       setSaveState("idle");
@@ -760,7 +765,9 @@ export default function AutomationCenterPage() {
           <div className="flex flex-wrap gap-3">
             <Button
               data-testid="automation-save-draft"
-              onClick={onSave}
+              onClick={() => {
+                void onSave();
+              }}
               loading={saveMut.isPending}
               disabled={form === null}
             >

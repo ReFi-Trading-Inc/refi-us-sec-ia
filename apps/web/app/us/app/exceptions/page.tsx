@@ -104,7 +104,10 @@ const RESOLUTION_LABEL: Record<UiResolution, string> = {
 
 function ExceptionCard(props: {
   item: InvestorExceptionItem;
-  onResolve: (item: InvestorExceptionItem, resolution: UiResolution) => void;
+  onResolve: (
+    item: InvestorExceptionItem,
+    resolution: UiResolution,
+  ) => void | Promise<void>;
   pendingResolution: UiResolution | null;
 }) {
   const { item, onResolve, pendingResolution } = props;
@@ -184,8 +187,8 @@ function ExceptionCard(props: {
                   res === "acknowledge_disclosure" ||
                   res === "reconnect_broker") &&
                 copy.primaryRoute;
-              if (isRouteAction) {
-                const route = copy.primaryRoute!;
+              if (isRouteAction && copy.primaryRoute) {
+                const route = copy.primaryRoute;
                 return (
                   <Link
                     key={res}
@@ -207,7 +210,7 @@ function ExceptionCard(props: {
                   size="sm"
                   loading={pendingResolution === res}
                   onClick={() => {
-                    onResolve(item, res);
+                    void onResolve(item, res);
                   }}
                 >
                   {RESOLUTION_LABEL[res]}
@@ -313,9 +316,7 @@ export default function ExceptionsPage() {
           <h1 className="text-xl font-semibold text-charcoal-50">
             Exception Review
           </h1>
-          {mode !== "unset" && (
-            <ModeBadge mode={mode === "managed" ? "managed" : "signal"} />
-          )}
+          {mode !== "unset" && <ModeBadge mode="managed" />}
         </div>
         <p
           className="text-sm text-charcoal-400"

@@ -41,7 +41,7 @@ async function ensureDir(dir: string): Promise<void> {
 }
 
 async function atomicWrite(path: string, body: string): Promise<void> {
-  const tmp = `${path}.tmp-${process.pid}-${Date.now()}`;
+  const tmp = `${path}.tmp-${String(process.pid)}-${String(Date.now())}`;
   await fs.writeFile(tmp, body, "utf8");
   await fs.rename(tmp, path);
 }

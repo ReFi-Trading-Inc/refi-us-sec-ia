@@ -73,7 +73,10 @@ export async function appendProfileConfirmation(
   const ok = await store.putIfAbsent(k, stored);
   if (!ok) {
     const after = await store.get(k);
-    return { confirmation: after!, created: false };
+    if (!after) {
+      throw new Error(`profile confirmation ${k} missing after putIfAbsent`);
+    }
+    return { confirmation: after, created: false };
   }
   return { confirmation: stored, created: true };
 }

@@ -11,16 +11,10 @@
  *   - errors are converted to BffErrorBody, never naked Error responses
  */
 import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
+import type { NextResponse } from "next/server";
 import { correlationIdFrom } from "./correlation";
 import { getAuthContext, type AuthContext } from "./auth";
-import {
-  bffOk,
-  BffErrors,
-  type BffSource,
-  type GapId,
-  type BffReceipt,
-} from "./envelope";
+import { bffOk, BffErrors, type BffSource, type GapId } from "./envelope";
 import type {
   InvestorActionName,
   RecordAccessAction,
@@ -102,7 +96,7 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
 
       let input: T;
       if (handler.parse) {
-        const json = await req.json().catch(() => null);
+        const json: unknown = await req.json().catch(() => null);
         try {
           input = await handler.parse(json);
         } catch (parseErr) {
@@ -143,7 +137,7 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
         receipt: {
           receiptId: receipt.receiptId,
           action: handler.action,
-        } as BffReceipt,
+        },
         status: result.status ?? 200,
       };
       if (handler.upstreamGap) opts.upstreamGap = handler.upstreamGap;

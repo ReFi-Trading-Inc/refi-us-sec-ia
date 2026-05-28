@@ -65,8 +65,8 @@ function makeMeta(opts: EnvelopeOptions): BffMeta {
   return meta;
 }
 
-export function bffOk<T>(data: T, opts: EnvelopeOptions): NextResponse {
-  const body: BffResponse<T> = { data, meta: makeMeta(opts) };
+export function bffOk(data: unknown, opts: EnvelopeOptions): NextResponse {
+  const body: BffResponse<unknown> = { data, meta: makeMeta(opts) };
   if (opts.receipt) body.receipt = opts.receipt;
   const res = NextResponse.json(body, { status: opts.status ?? 200 });
   res.headers.set("x-correlation-id", opts.correlationId);

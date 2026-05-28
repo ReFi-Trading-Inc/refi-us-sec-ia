@@ -21,7 +21,8 @@ export async function getAuthSessionLink(
   authId: string,
 ): Promise<AuthSessionLink | null> {
   const all = await links.list(`${authId}__`);
-  return all.length > 0 ? all[0]!.value : null;
+  const first = all[0];
+  return first ? first.value : null;
 }
 
 export async function linkAuthToAccount(args: {

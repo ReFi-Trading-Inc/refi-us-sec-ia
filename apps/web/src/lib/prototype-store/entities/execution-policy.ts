@@ -84,14 +84,12 @@ export async function appendExecutionPolicy(args: {
   policy: Omit<ExecutionPolicy, "policyVersion" | "policyId" | "meta">;
 }): Promise<ExecutionPolicy> {
   const existing = await listExecutionPolicies(args.policy.accountId);
-  const nextVersion =
-    existing.length === 0
-      ? 1
-      : existing[existing.length - 1]!.policyVersion + 1;
+  const last = existing[existing.length - 1];
+  const nextVersion = last ? last.policyVersion + 1 : 1;
   const stored: ExecutionPolicy = {
     ...args.policy,
     policyVersion: nextVersion,
-    policyId: `${args.policy.accountId}-policy-v${nextVersion}`,
+    policyId: `${args.policy.accountId}-policy-v${String(nextVersion)}`,
     meta: makePrototypeMeta(args.policy.correlationId),
   };
   const ok = await policies.putIfAbsent(
@@ -100,7 +98,7 @@ export async function appendExecutionPolicy(args: {
   );
   if (!ok) {
     throw new Error(
-      `execution policy ${args.policy.accountId}/v${nextVersion} already exists`,
+      `execution policy ${args.policy.accountId}/v${String(nextVersion)} already exists`,
     );
   }
   return stored;

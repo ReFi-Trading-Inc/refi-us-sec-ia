@@ -41,7 +41,7 @@ export const baseConfig = [
       "no-redeclare": "off",
       "@typescript-eslint/no-unused-vars": [
         "error",
-        { argsIgnorePattern: "^_" },
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/consistent-type-imports": [
         "error",

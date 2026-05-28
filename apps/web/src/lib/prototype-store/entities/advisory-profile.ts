@@ -108,10 +108,8 @@ export async function appendProfileSnapshot(args: {
   correlationId: string;
 }): Promise<InvestorProfileSnapshot> {
   const existing = await listProfileSnapshots(args.accountId);
-  const nextVersion =
-    existing.length === 0
-      ? 1
-      : existing[existing.length - 1]!.profileVersion + 1;
+  const last = existing[existing.length - 1];
+  const nextVersion = last ? last.profileVersion + 1 : 1;
   const snapshot: InvestorProfileSnapshot = {
     ...args.fields,
     accountId: args.accountId,
@@ -127,7 +125,7 @@ export async function appendProfileSnapshot(args: {
   );
   if (!ok) {
     throw new Error(
-      `profile snapshot ${args.accountId}/v${nextVersion} already exists`,
+      `profile snapshot ${args.accountId}/v${String(nextVersion)} already exists`,
     );
   }
   return snapshot;

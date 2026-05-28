@@ -21,6 +21,7 @@
   "devDependencies": {
     "@refi/config": "workspace:*",
     "@tanstack/react-query": "^5.0.0",
+    "eslint": "^9.0.0",
     "msw": "^2.10.0",
     "openapi-typescript": "^7.0.0",
     "react": "^19.0.0",

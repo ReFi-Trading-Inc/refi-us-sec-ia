@@ -2,18 +2,26 @@
   "name": "@refi/config",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "exports": {
     "./tsconfig/*": "./tsconfig/*.json",
     "./tailwind": "./tailwind/index.ts",
     "./eslint": "./eslint/index.js",
     "./blocked-terms": "./blocked-terms.ts"
   },
-  "devDependencies": {
+  "dependencies": {
+    "@eslint/js": "^9.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
-    "eslint": "^9.0.0",
     "eslint-config-next": "^16.0.0",
     "eslint-config-prettier": "^9.0.0",
+    "globals": "^16.0.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
     "tailwindcss": "^3.4.0",
     "typescript": "^6.0.0"
   }

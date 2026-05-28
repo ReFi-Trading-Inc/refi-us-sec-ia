@@ -1,6 +1,24 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
+interface BffJsonBody {
+  data: {
+    ok?: boolean;
+    reason?: string;
+    idempotentReplay?: boolean;
+    subscriptionModeFlipped?: boolean;
+    policy?: { policyVersion?: number };
+    executionPolicyVersion?: number | null;
+    managedExecutionState?: { status?: string };
+    managedExecutionStatusBefore?: string | null;
+    managedExecutionStatusAfter?: string | null;
+    reasonCodeCleared?: string | null;
+    [key: string]: unknown;
+  };
+  receipt?: { action?: string };
+  [key: string]: unknown;
+}
+
 // Surface 5 — Disclosure re-acknowledgement.
 // When a disclosure version pinned in the active ExecutionPolicy is
 // superseded in the registry, the investor must re-acknowledge the new
@@ -89,7 +107,7 @@ test.describe("Disclosure re-acknowledgement — Managed user with stale disclos
     const beforeStatus = await page.request.get("/api/v1/investor/status", {
       headers: { "x-correlation-id": "e2e-reack-before-status" },
     });
-    const beforeBody = await beforeStatus.json();
+    const beforeBody = (await beforeStatus.json()) as BffJsonBody;
     const policyVersionBefore = beforeBody.data
       .executionPolicyVersion as number;
     expect(typeof policyVersionBefore).toBe("number");
@@ -104,7 +122,7 @@ test.describe("Disclosure re-acknowledgement — Managed user with stale disclos
     const afterStatus = await page.request.get("/api/v1/investor/status", {
       headers: { "x-correlation-id": "e2e-reack-after-status" },
     });
-    const afterBody = await afterStatus.json();
+    const afterBody = (await afterStatus.json()) as BffJsonBody;
     expect(afterBody.data.executionPolicyVersion).toBe(policyVersionBefore);
 
     // Automation Center no longer surfaces the blocked banner.
@@ -139,7 +157,7 @@ test.describe("Disclosure re-acknowledgement — paused_by_system clears on ack"
       data: {},
     });
     expect(direct.status()).toBe(412);
-    const body = await direct.json();
+    const body = (await direct.json()) as BffJsonBody;
     expect(body.data.ok).toBe(false);
     expect(body.data.reason).toBe("system_pause_must_clear_upstream");
   });
@@ -275,7 +293,7 @@ test.describe("Disclosure re-acknowledgement — forbidden language and API guar
       },
     );
     expect(notInPolicy.status()).toBe(409);
-    const notInPolicyBody = await notInPolicy.json();
+    const notInPolicyBody = (await notInPolicy.json()) as BffJsonBody;
     expect(notInPolicyBody.data.reason).toBe("disclosure_not_in_active_policy");
 
     // Submitting the SAME version that is already pinned in the policy
@@ -290,7 +308,7 @@ test.describe("Disclosure re-acknowledgement — forbidden language and API guar
       },
     );
     expect(sameAsActive.status()).toBe(409);
-    const sameAsActiveBody = await sameAsActive.json();
+    const sameAsActiveBody = (await sameAsActive.json()) as BffJsonBody;
     expect(sameAsActiveBody.data.reason).toBe("version_matches_active_policy");
 
     // Unknown version
@@ -305,7 +323,7 @@ test.describe("Disclosure re-acknowledgement — forbidden language and API guar
       },
     );
     expect(unknown.status()).toBe(404);
-    const unknownBody = await unknown.json();
+    const unknownBody = (await unknown.json()) as BffJsonBody;
     expect(unknownBody.data.reason).toBe("document_not_found");
   });
 });

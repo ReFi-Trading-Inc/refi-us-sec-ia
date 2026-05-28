@@ -30,7 +30,9 @@ test.describe("Eligibility flow", () => {
   test("under-18 applicant sees age error", async ({ page }) => {
     const underageYear = new Date().getFullYear() - 16;
     await page.getByLabel(/state/i).selectOption("CA");
-    await page.getByLabel(/date of birth/i).fill(`${underageYear}-01-01`);
+    await page
+      .getByLabel(/date of birth/i)
+      .fill(`${String(underageYear)}-01-01`);
     await page.getByRole("checkbox", { name: /us person/i }).check();
     await page.getByRole("button", { name: /continue/i }).click();
     await expect(page.getByText(/18|age|minor/i)).toBeVisible();

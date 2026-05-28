@@ -9,7 +9,7 @@
  * activation is the only path that turns this draft into a signed policy
  * version. See memory/handoff_phase2_surface2.md.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { z } from "zod";
 import {
@@ -255,7 +255,12 @@ export default function AutomationCenterPage() {
   const reackQ = useDisclosureReacknowledgement();
   const profileReactQ = useProfileReactivation();
 
-  const [form, setForm] = useState<DraftForm | null>(null);
+  // User edits accumulate here. The visible `form` is derived from the
+  // server draft + edits via useMemo below, so a background refetch never
+  // clobbers in-flight edits. `null` edits means "user has not touched
+  // the form yet"; once the user edits a single field, `edits` becomes a
+  // partial map and the derivation switches to "base + edits".
+  const [edits, setEdits] = useState<Partial<DraftForm> | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saveState, setSaveState] = useState<"idle" | "saved" | "error">(
     "idle",
@@ -284,13 +289,18 @@ export default function AutomationCenterPage() {
     }
   }, [resumeMut]);
 
-  // Hydrate the form once the draft loads. We do not re-hydrate on subsequent
-  // refetches — that would clobber unsaved edits.
-  useEffect(() => {
-    if (form === null && draftQ.data) {
-      setForm(toForm(draftQ.data));
-    }
-  }, [draftQ.data, form]);
+  // Derive the visible form from the server draft + any local edits. This
+  // replaces an earlier "setForm in useEffect" mirror that fought the
+  // react-hooks/set-state-in-effect rule and risked clobbering edits on
+  // background refetches. The derivation is pure and behavior-identical:
+  //   - Loading state (no draft yet) ⇒ form = null (same as before)
+  //   - Server draft present, no edits ⇒ form mirrors the server draft
+  //   - Server draft present, edits present ⇒ base + edits
+  const form: DraftForm | null = useMemo(() => {
+    if (!draftQ.data) return null;
+    const base = toForm(draftQ.data);
+    return edits ? { ...base, ...edits } : base;
+  }, [draftQ.data, edits]);
 
   const mode = modeQ.data?.mode ?? "unset";
   const mes = mesQ.data ?? null;
@@ -298,7 +308,7 @@ export default function AutomationCenterPage() {
 
   const update = useCallback(
     <K extends keyof DraftForm>(field: K, value: DraftForm[K]) => {
-      setForm((prev) => (prev ? { ...prev, [field]: value } : prev));
+      setEdits((prev) => ({ ...(prev ?? {}), [field]: value }));
       setErrors((prev) => {
         // Strip the field by spreading without it (no-dynamic-delete) while
         // preserving the Partial<Record<...>> semantic.
@@ -336,7 +346,8 @@ export default function AutomationCenterPage() {
 
   const onDiscard = useCallback(() => {
     if (draftQ.data) {
-      setForm(toForm(draftQ.data));
+      // Clear local edits so the derived form falls back to the server draft.
+      setEdits(null);
       setErrors({});
       setSaveState("idle");
     }

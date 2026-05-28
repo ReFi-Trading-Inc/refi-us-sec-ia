@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
 import { z } from "zod";
 import {
@@ -90,9 +90,9 @@ export default function OnboardingBrokerPage() {
   const {
     register,
     handleSubmit,
-    watch,
     setValue,
     reset,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<ApiKeyFormValues>({
     resolver: standardSchemaResolver(apiKeySchema),
@@ -103,7 +103,10 @@ export default function OnboardingBrokerPage() {
     },
   });
 
-  const environment = watch("environment");
+  // useWatch is the memo-safe variant; plain watch() triggers
+  // react-hooks/incompatible-library because the returned function cannot
+  // be memoized by React Compiler.
+  const environment = useWatch({ control, name: "environment" });
 
   // Defensive: if the form is ever unmounted while values are in memory,
   // make sure we clear them. RHF clears its own internal state on unmount,
@@ -141,6 +144,11 @@ export default function OnboardingBrokerPage() {
       return brokerApiKey.errors.networkError;
     }
     return brokerApiKey.errors.generic;
+  }
+
+  function onSubmitForm(event: React.SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    void handleSubmit(onSubmit)(event);
   }
 
   async function onSubmit(values: ApiKeyFormValues): Promise<void> {
@@ -250,9 +258,7 @@ export default function OnboardingBrokerPage() {
 
                   {isActive && b.id === "alpaca" && (
                     <form
-                      onSubmit={(e) => {
-                        void handleSubmit(onSubmit)(e);
-                      }}
+                      onSubmit={onSubmitForm}
                       className="flex flex-col gap-4 border-t border-charcoal-700 pt-4"
                       autoComplete="off"
                       noValidate

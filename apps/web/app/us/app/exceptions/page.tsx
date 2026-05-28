@@ -235,7 +235,10 @@ export default function ExceptionsPage() {
   const [serverError, setServerError] = useState<string | null>(null);
 
   const mode = modeQ.data?.mode ?? "unset";
-  const allItems = listQ.data?.items ?? [];
+  // Memoize so the empty-array fallback has a stable identity across renders;
+  // otherwise `useMemo(... [allItems, filter])` below recomputes on every
+  // render and the dependency array is reported as inexhaustive.
+  const allItems = useMemo(() => listQ.data?.items ?? [], [listQ.data?.items]);
 
   const onResolve = useCallback(
     async (item: InvestorExceptionItem, resolution: UiResolution) => {

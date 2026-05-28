@@ -84,7 +84,7 @@ The adapter must:
 - dedupe repeated signals using deterministic signal identity (see §7 Question 4)
 - enforce signal freshness (see §7 Question 3)
 - attach strategy and model metadata (`strategy_id`, `model_version`)
-- map signal direction (`+1 | -1`) into investor-facing recommendation intent (`buy | sell | hold | exit`)
+- map Daniel's `position` field (`-1 | 0 | 1`) into investor-facing recommendation intent (`open_long | open_short | hold`) — matching the §3 `RecommendationProjection.recommendation_type` enum. Specifically: `position = 1` → `open_long`, `position = -1` → `open_short`, `position = 0` → `hold` OR the adapter emits no `RecommendationProjection` at all (adapter policy decision). The verbal labels `buy / sell / hold / exit` from earlier drafts are superseded.
 - prevent direct broker execution
 - prevent any per-trade investor-accept flow
 - create the correct downstream audit trail (`InvestorActionReceipt` for state changes; `RecordAccessLog` for views; never mixed — see `memory/contract_receipt_vs_access_log.md`)
@@ -97,26 +97,144 @@ TypeScript-style interfaces. Where Daniel field shapes are not confirmed from `l
 
 ### DanielSignalRaw
 
-Shape inferred from `live-components-main/Inference Pipeline/generate_final_signal.py` writing to the `live_signals` MongoDB collection, plus `rl_predictions` and `sharpe_series` collections. Exact projection at the read boundary is `TODO(confirm-daniel-field)`.
+Shape **verified** against `live-components-main/Inference Pipeline/generate_final_signal.py` writing to the `live_signals` MongoDB collection. The 2026-05-28 live backend audit (`docs/phase2-5-daniel-live-backend-field-map.md` §3) and delta analysis (`docs/phase2-5-signal-contract-live-backend-delta.md`) drove the corrections below.
 
 ```ts
 interface DanielSignalRaw {
-  symbol: string; // e.g. "IBM"
-  signal: -1 | 1; // generate_final_signal.py output
-  predicted_at: string; // ISO-8601, derived from MongoDB timestamp
-  model_version: string; // TODO(confirm-daniel-field) — pipeline writes per-symbol RL models with weekly retrain cadence
-  strategy_id: string; // TODO(confirm-daniel-field) — surfaces from `selected_features` / strategy selector
-  confidence_score?: number; // TODO(confirm-daniel-field) — rl_predictions writes Q-values; mapping to a single scalar TBD
-  sharpe_metric?: number; // TODO(confirm-daniel-field) — sharpe_series collection value
-  asset_status?: // From `asset_status` collection
-    "Ready for Inference" | "Needs Model Update" | "Inference in Progress";
-  last_prediction_ts?: string; // From `asset_status.last_prediction_ts`
-  source_collection:
-    | "live_signals"
-    | "rl_predictions"
-    | "sharpe_series"
-    | string;
-  source_route?: string; // If transported via Pub/Sub or polled via a future Daniel-side HTTP endpoint
+  // ────────────────────────────────────────────────────────────────────────
+  // WIRE FIELDS — emitted directly by Daniel's generate_final_signal.py
+  // as a `live_signals` MongoDB document via `bulk_write(UpdateOne(...))`.
+  // ────────────────────────────────────────────────────────────────────────
+
+  /** Asset symbol, uppercase ticker. e.g. "IBM", "AAPL". */
+  symbol: string;
+
+  /**
+   * Daniel's terminal signal at this bar. Note the field is named `position`
+   * on the wire, not `signal`, and the domain is **three-valued**, not two:
+   *   `1`  → long signal     (adapter maps to `open_long`)
+   *  `-1`  → short signal    (adapter maps to `open_short`)
+   *   `0`  → flat / hold / no executable recommendation
+   *           (adapter emits a `hold` projection OR no projection at all,
+   *            per adapter policy — see §7 Question 5 + §3.3 below)
+   * Generated at `generate_final_signal.py:170-173` via the stateful
+   * `raw_signals.ffill().fillna(0).astype(int)` pipeline.
+   */
+  position: -1 | 0 | 1;
+
+  /**
+   * Bar timestamp in **UNIX seconds** (integer). NOT an ISO-8601 string.
+   * Written at `generate_final_signal.py:182` as `{"date": int(dt)}`.
+   * The adapter is responsible for parsing this into ISO-8601 before
+   * any investor-facing surface consumes it.
+   */
+  date: number;
+
+  /**
+   * Pipeline identifier. Literal `"live_inference"` for the Inference
+   * Pipeline. Carried for record lineage (`RecordArtifact.source`).
+   */
+  pipeline: "live_inference";
+
+  /**
+   * Script identifier. Literal `"generate_final_signal.py"`. Carried for
+   * record lineage.
+   */
+  script: "generate_final_signal.py";
+
+  // ────────────────────────────────────────────────────────────────────────
+  // DERIVED FIELDS — NOT present on the `live_signals` document. The
+  // adapter must derive each one via a separate read against a sibling
+  // Daniel artifact. Adapter contract tests must cover each derivation
+  // path (see `phase2-5-daniel-adapter-fixtures-required.md`).
+  // ────────────────────────────────────────────────────────────────────────
+
+  /**
+   * **Derived**, not on the wire. The adapter looks up
+   * `available_strategies` (populated by `Pre Pipeline/strategy_selector.py`)
+   * keyed by `symbol` and reads `available_strategies.collection ∈
+   * {"rf_strategies", "rl_strategies"}` to identify the active strategy
+   * stream. If the symbol is absent from `available_strategies`, the
+   * adapter rejects the signal with `rejection_reason = "SYMBOL_UNAVAILABLE"`
+   * (see `phase2-5-daniel-adapter-fixtures-required.md` Fixture 6).
+   */
+  strategy_id: string;
+
+  /**
+   * **Derived**, not on the wire. The adapter reads from a future model
+   * registry write OR from the file-system path of the loaded
+   * `models/<symbol>/final_eval_model.joblib` joblib artifact at
+   * `generate_final_signal.py:75`. Until Daniel adds an explicit
+   * registry write, the adapter must record `"unknown"` and emit a
+   * warning rather than fail closed — model_version is required for
+   * production audit but is not load-bearing for the boundary itself.
+   */
+  model_version: string;
+}
+```
+
+#### Optional / read-from-sibling-collection fields
+
+These are not part of the principal `live_signals` document, but the adapter MUST read them from the sibling `asset_status` collection to determine signal freshness. Carry them as a separate read:
+
+```ts
+interface DanielAssetStatus {
+  /** `asset_status._id` — symbol-keyed. */
+  _id: string;
+
+  /**
+   * Pipeline state machine for this asset. Determines whether a new
+   * signal is being generated (`"Inference in Progress"`) or is ready
+   * (`"Ready for Inference"`) or is awaiting a weekly retrain
+   * (`"Needs Model Update"`).
+   */
+  status:
+    | "Ready for Inference"
+    | "Needs Model Update"
+    | "Inference in Progress";
+
+  /**
+   * UNIX seconds (integer), NOT an ISO-8601 string. Written at
+   * `generate_final_signal.py:207`. The adapter is responsible for
+   * parsing this into ISO-8601 AND computing freshness:
+   *   - fresh:   `now - last_prediction_ts <= 2h`
+   *   - stale:   `2h < now - last_prediction_ts <= 24h` → REVIEW
+   *   - expired: `now - last_prediction_ts > 24h`     → DENY or no projection
+   * (provisional SLA per §7 Question 3; strategy-specific tolerances TBD).
+   */
+  last_prediction_ts: number;
+
+  /** ISO-8601, written via `datetime.utcnow()` at `generate_final_signal.py:208`. */
+  last_status_update: string;
+}
+```
+
+#### Fields the contract previously named that are NOT principal intake
+
+The contract's earlier draft included `confidence_score?: number` and `sharpe_metric?: number` as optional fields on `DanielSignalRaw`. After the live audit, both are **not present on the `live_signals` document as scalars**:
+
+- `rl_predictions` carries **Q-values** (action-space multi-dimensional output from the CQL agent — see `Inference Pipeline/predict_rl_action.py`). Mapping to a single scalar `confidence_score` requires an explicit aggregation rule (e.g., `max(q_values) - min(q_values)`, or `softmax_entropy`, or `argmax_action_probability`). The aggregation rule is **undefined** today and must be decided before any investor-facing surface displays a confidence score.
+- `sharpe_series` carries per-`(source, method, lookback)` value series, written by `Inference Pipeline/update_sharpe_series.py`. Aggregating to a single scalar `risk_metric` requires picking a canonical series (e.g., the highest-priority lookback) or a weighted combination. Again, undefined today.
+
+**Adapter contract decision (provisional):** treat both fields as optional **derived** fields with explicit `null` until the aggregation rule is defined. Investor-facing surfaces must not depend on either field being populated.
+
+#### Removed: `source_collection` and `source_route`
+
+The earlier contract listed `source_collection: "live_signals" | "rl_predictions" | "sharpe_series" | string` as an intake field. After the live audit, the adapter's **only** intake source is `live_signals`. The other two collections (`rl_predictions`, `sharpe_series`) are upstream pipeline features that feed into `live_signals` via `generate_final_signal.py`; they are not adapter intake sources. The field is therefore tightened:
+
+```ts
+interface DanielSignalRaw_Tightened {
+  // ... all fields above ...
+  /** Always `"live_signals"`. Reserved as a constant for record lineage. */
+  source_collection: "live_signals";
+
+  /**
+   * Reserved-future field. Today the adapter polls MongoDB directly.
+   * When Daniel publishes signals via Pub/Sub (mentioned at
+   * `generate_final_signal.py:8` in the docstring), this field will
+   * carry the topic name. Optional.
+   */
+  source_route?: string;
 }
 ```
 
@@ -155,6 +273,13 @@ interface SignalCandidate {
 
 The investor-product recommendation object. This is the contract surface §B's `data-eligibility` indirectly depends on, and the §A "no per-trade button" boundary structurally constrains.
 
+**Per-account context is REQUIRED to construct this object.** Daniel's signal alone (`position ∈ {-1, 0, 1}` at the symbol level) cannot determine whether the action is an _opening_ trade (`open_long` / `open_short`) or a _closing_ trade (`close_long` / `close_short`). That distinction depends on the investor's current position in `symbol`, which lives in the future `account-intent-builder` (per `phase2-5-daniel-to-refi-alignment-gap-register.md` GAP-ID-001). Until that service ships, the adapter MUST:
+
+- For `position = 1`: emit `recommendation_type = "open_long"` only when the investor has **no** existing long position in `symbol`; otherwise consult adapter policy (`hold` / suppression / accumulation).
+- For `position = -1`: emit `recommendation_type = "open_short"` only when the investor has **no** existing short position in `symbol`; otherwise consult adapter policy.
+- For `position = 0`: emit either `recommendation_type = "hold"` (when the investor has an open position) OR emit **no** `RecommendationProjection` at all (when the investor has no position) — an explicit adapter-policy decision. The default is "no projection" to avoid investor noise.
+- `close_long` / `close_short` are produced only when the per-account context indicates the investor is unwinding an existing position. Daniel's raw signal alone never produces these directly.
+
 ```ts
 interface RecommendationProjection {
   recommendation_id: string; // opaque ULID; the frontend's `intent_id`
@@ -162,8 +287,15 @@ interface RecommendationProjection {
   account_id: string;
   symbol: string;
   side: "long" | "short";
-  recommendation_type: // mapped from side + strategy posture
-    "open_long" | "open_short" | "close_long" | "close_short" | "hold";
+  // Open vs close requires per-account current-position context from the
+  // future `account-intent-builder`. See above for the adapter policy that
+  // bridges Daniel's `position` to this enum.
+  recommendation_type:
+    | "open_long"
+    | "open_short"
+    | "close_long"
+    | "close_short"
+    | "hold";
   advisory_context: {
     // matches frontend `AdvisoryContext` schema
     summary: string;
@@ -326,24 +458,32 @@ interface RecordArtifact {
 
 ## 4. Required Mapping Table
 
-Every Daniel field surfaced by the reconciliation audit, mapped through to its downstream destinations. Unconfirmed fields carry `TODO(confirm-daniel-field)`; the downstream requirement is still pinned.
+Every Daniel field, **verified against the live backend audit (2026-05-28)**. Fields previously marked `TODO(confirm-daniel-field)` have been resolved to one of three statuses: **wire** (Daniel writes it directly on `live_signals` or `asset_status`), **derived** (the adapter reads it from a sibling collection or computes it), or **out-of-band** (not on the wire, requires an undefined aggregation rule before use).
 
-| Daniel field                                                                                           | Daniel route / source                                                                                                                                  | Normalized BFF field                                                            | Investor-facing field                                                         | Record artifact field                            | Transformation required                                                                          | Validation required                                                                              | Failure behavior                                                                               | Risk if missing                                                               |
-| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `symbol`                                                                                               | `live_signals` collection; `rl_predictions.symbol`; `sharpe_series._id`                                                                                | `SignalCandidate.symbol`                                                        | `RecommendationProjection.symbol`                                             | `RecordArtifact.display_title` (rendering input) | uppercase, strip whitespace                                                                      | must be in `available_strategies` (Daniel's cached symbol list); else reject                     | `SignalCandidate.normalization_status = "rejected"`, `rejection_reason = "SYMBOL_UNAVAILABLE"` | High — without symbol there is no recommendation                              |
-| `signal` (`+1 \| -1`)                                                                                  | `live_signals` collection (`generate_final_signal.py`)                                                                                                 | `SignalCandidate.side`                                                          | `RecommendationProjection.side` + `recommendation_type`                       | indirectly via `RecommendationProjection`        | `+1 → "long"`, `-1 → "short"`                                                                    | must be exactly `+1` or `-1`; else reject                                                        | `rejection_reason = "INVALID_SIDE"`                                                            | High — undefined side cannot become a recommendation                          |
-| `predicted_at`                                                                                         | `live_signals.timestamp`; orchestrator passes `start_date/end_date` payloads                                                                           | `SignalCandidate.predicted_at`                                                  | `RecommendationProjection.created_at` (derived)                               | `RecordArtifact.event_time`                      | parse to ISO-8601 UTC                                                                            | must be parseable; must be in the past                                                           | `rejection_reason = "INVALID_TIMESTAMP"`                                                       | High — without timestamp, freshness cannot be evaluated                       |
-| `model_version`                                                                                        | `TODO(confirm-daniel-field)` — pipeline retrains weekly per `Inference Pipeline/README.md` §"Weekly Prediction Cadence"; current write path is unclear | `SignalCandidate.model_version`                                                 | `RecommendationProjection.advisory_context.decision_record_ref` (input)       | `RecordArtifact` (for audit lineage)             | passthrough                                                                                      | required for production audit; warn-and-continue acceptable during Phase 2.5 BFF prototype phase | `SignalCandidate.model_version = "unknown"`, log warning                                       | Medium — without model_version, audit lineage is incomplete                   |
-| `strategy_id`                                                                                          | `TODO(confirm-daniel-field)` — implied by `selected_features` collection keyed per asset                                                               | `SignalCandidate.strategy_id`                                                   | `RecommendationProjection.advisory_context.model_factors` (context)           | `RecordArtifact` (audit lineage)                 | passthrough                                                                                      | required for production audit                                                                    | `SignalCandidate.strategy_id = "unknown"`, log warning                                         | Medium — needed to explain "why" to the investor                              |
-| `confidence_score`                                                                                     | `TODO(confirm-daniel-field)` — `rl_predictions` writes Q-values; scalar reduction is TBD                                                               | `SignalCandidate.confidence_score`                                              | `RecommendationProjection.risk_summary` (input)                               | not directly recorded                            | normalize to `[0,1]` if Daniel surface confirms a different range                                | optional; null acceptable                                                                        | `SignalCandidate.confidence_score = null`                                                      | Low — recommendation can ship without it                                      |
-| `sharpe_metric`                                                                                        | `sharpe_series` collection                                                                                                                             | `SignalCandidate.risk_metric`                                                   | `RecommendationProjection.risk_summary.risk_metric`                           | not directly recorded                            | passthrough                                                                                      | optional; null acceptable                                                                        | `SignalCandidate.risk_metric = null`                                                           | Low                                                                           |
-| `asset_status` (`Ready for Inference \| Needs Model Update \| Inference in Progress`)                  | `asset_status` collection                                                                                                                              | not stored on `SignalCandidate` directly; consulted at intake                   | indirectly affects `EligibilityCheck.signal_freshness_status`                 | not recorded                                     | if `Inference in Progress` → defer adapter intake; if `Needs Model Update` → freshness downgrade | adapter must skip signals whose asset is `Inference in Progress` to avoid races                  | adapter retries on next poll                                                                   | Medium — without this gate the adapter could ingest a half-written prediction |
-| `last_prediction_ts`                                                                                   | `asset_status.last_prediction_ts`                                                                                                                      | used to compute `SignalCandidate.freshness_status`                              | indirectly via `EligibilityCheck.signal_freshness_status`                     | `RecordArtifact.event_time` (context)            | compare against now to derive freshness                                                          | required for freshness decision                                                                  | adapter falls back to `predicted_at`; if both missing, mark `expired`                          | High — freshness is a load-bearing eligibility input                          |
-| `live_signals` collection write                                                                        | MongoDB; `generate_final_signal.py` writes `bulk_ops`                                                                                                  | adapter's primary intake source                                                 | n/a (intake side)                                                             | n/a                                              | dedupe by `raw_source_ref` identity                                                              | reads must be idempotent                                                                         | adapter retries on transient MongoDB errors with backoff                                       | High — primary signal channel                                                 |
-| Pub/Sub topic (alternative published target)                                                           | `generate_final_signal.py` "Writes to a `live_signals` collection or publishes them to a Google Cloud Pub/Sub topic."                                  | adapter intake (transport-neutral)                                              | n/a                                                                           | n/a                                              | transport-neutral; same identity rule                                                            | at-least-once delivery → adapter MUST dedupe                                                     | adapter drops duplicates silently                                                              | Medium — only relevant if Pub/Sub is chosen over polling                      |
-| `selected_features` collection                                                                         | per-asset feature list                                                                                                                                 | `RecommendationProjection.advisory_context.model_factors` (context, not values) | shown in detail page "Why now" / "Model factors" sections (Phase 2 detail UI) | not recorded directly                            | reduce to human-readable factor names                                                            | warn-and-continue if missing                                                                     | `RecommendationProjection.advisory_context.model_factors = []`                                 | Low — UI gracefully renders empty                                             |
-| `available_strategies` collection                                                                      | strategy registry                                                                                                                                      | adapter intake guard (`SignalCandidate` reject if symbol not in set)            | n/a                                                                           | n/a                                              | passthrough                                                                                      | must be non-empty for adapter to function                                                        | adapter rejects all signals if registry empty                                                  | High — without this, adapter cannot validate symbols                          |
-| `/get-upload-url`, `/process-upload`, `/get-upload-result`, `/assets`, `/analyze` (Daniel HTTP routes) | `Portfolio Analyzer/portfolio-service/app/api.py`                                                                                                      | **not consumed by the adapter**                                                 | n/a                                                                           | n/a                                              | n/a — these are research/upload workflow, not signal stream                                      | n/a                                                                                              | n/a                                                                                            | n/a — out of scope for signal-to-execution adapter                            |
+| Daniel field                                                                                           | Daniel route / source                                                                                                                                                                                                                    | Status                            | Normalized BFF field                                                                                                          | Investor-facing field                                                                                                               | Record artifact field                            | Transformation required                                                                                                                                                                            | Validation required                                                                                                    | Failure behavior                                                                               | Risk if missing                                                               |
+| ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `symbol`                                                                                               | `live_signals` document, `bulk_write(UpdateOne(... "symbol": symbol))` at `generate_final_signal.py:181`                                                                                                                                 | **wire**                          | `SignalCandidate.symbol`                                                                                                      | `RecommendationProjection.symbol`                                                                                                   | `RecordArtifact.display_title` (rendering input) | uppercase, strip whitespace                                                                                                                                                                        | must be in `available_strategies` (Pre Pipeline's gating set); else reject                                             | `SignalCandidate.normalization_status = "rejected"`, `rejection_reason = "SYMBOL_UNAVAILABLE"` | High — without symbol there is no recommendation                              |
+| `position` (`-1 \| 0 \| 1`)                                                                            | `live_signals.position`, set at `generate_final_signal.py:184` after `raw_signals.ffill().fillna(0).astype(int)`                                                                                                                         | **wire**                          | `SignalCandidate.side` (mapped) + retain `position` for `RecommendationProjection.recommendation_type` decision               | `RecommendationProjection.side` (`"long"` / `"short"`) + `recommendation_type` (open/close requires per-account context — see §3.3) | indirectly via `RecommendationProjection`        | `1 → side="long"`, `-1 → side="short"`, `0 → "hold"` projection or no projection (adapter policy)                                                                                                  | exactly `-1`, `0`, or `1`; else reject                                                                                 | `rejection_reason = "INVALID_SIDE"`                                                            | High — undefined side cannot become a recommendation                          |
+| `date` (UNIX seconds, integer)                                                                         | `live_signals.date`, set at `generate_final_signal.py:182` as `{"date": int(dt)}`                                                                                                                                                        | **wire**                          | `SignalCandidate.predicted_at` (ISO-8601 string after conversion)                                                             | `RecommendationProjection.created_at` (derived)                                                                                     | `RecordArtifact.event_time`                      | **Adapter MUST convert `int seconds → ISO-8601 UTC string`** (`new Date(date * 1000).toISOString()`). The wire field is integer seconds, not ISO.                                                  | must be parseable; must be in the past                                                                                 | `rejection_reason = "INVALID_TIMESTAMP"`                                                       | High — without timestamp, freshness cannot be evaluated                       |
+| `pipeline` (literal `"live_inference"`)                                                                | `live_signals.pipeline`, written at `generate_final_signal.py:67-68` (`PIPELINE_NAME_OUT`)                                                                                                                                               | **wire**                          | `SignalCandidate.source = "daniel-live-signals"` (via constant)                                                               | not surfaced                                                                                                                        | `RecordArtifact.source` (lineage)                | passthrough                                                                                                                                                                                        | n/a (constant)                                                                                                         | n/a                                                                                            | Low                                                                           |
+| `script` (literal `"generate_final_signal.py"`)                                                        | `live_signals.script`, written at `generate_final_signal.py:67-68`                                                                                                                                                                       | **wire**                          | not stored separately; folded into `source`                                                                                   | not surfaced                                                                                                                        | `RecordArtifact.source` (lineage)                | passthrough                                                                                                                                                                                        | n/a (constant)                                                                                                         | n/a                                                                                            | Low                                                                           |
+| `model_version`                                                                                        | **NOT on the wire.** Implicit via GCS path of `models/<symbol>/final_eval_model.joblib` loaded at `generate_final_signal.py:75`.                                                                                                         | **derived**                       | `SignalCandidate.model_version`                                                                                               | `RecommendationProjection.advisory_context.decision_record_ref` (input)                                                             | `RecordArtifact` (audit lineage)                 | adapter reads from joblib path (file stat / GCS object metadata); fall back to `"unknown"` with warning until Daniel ships a registry write                                                        | required for production audit; `"unknown"` acceptable in Phase 2.5 with warning                                        | `SignalCandidate.model_version = "unknown"`, log warning                                       | Medium — without model_version, audit lineage is incomplete                   |
+| `strategy_id`                                                                                          | **NOT on the wire.** Looked up by symbol in `available_strategies.collection ∈ {"rf_strategies", "rl_strategies"}` (populated by `Pre Pipeline/strategy_selector.py`).                                                                   | **derived**                       | `SignalCandidate.strategy_id`                                                                                                 | `RecommendationProjection.advisory_context.model_factors` (context)                                                                 | `RecordArtifact` (audit lineage)                 | adapter performs lookup; if symbol absent, reject the signal (`SYMBOL_UNAVAILABLE`)                                                                                                                | required for `available_strategies` membership check                                                                   | `rejection_reason = "SYMBOL_UNAVAILABLE"`                                                      | High — symbol-eligibility gate                                                |
+| `confidence_score` (optional)                                                                          | **NOT on the wire as a scalar.** `rl_predictions` writes Q-values (multi-dimensional; per `Inference Pipeline/predict_rl_action.py`). Aggregation rule (e.g., max - min, softmax entropy) is **undefined**.                              | **out-of-band**                   | `SignalCandidate.confidence_score: number \| null`                                                                            | `RecommendationProjection.risk_summary` (input)                                                                                     | not directly recorded                            | until the aggregation rule is defined: emit `null`; investor surfaces must not depend on this field                                                                                                | optional; `null` acceptable                                                                                            | `SignalCandidate.confidence_score = null`                                                      | Low — recommendation can ship without it                                      |
+| `sharpe_metric` (optional)                                                                             | **NOT on the wire as a scalar.** `sharpe_series` collection carries per-`(source, method, lookback)` value series, written by `Inference Pipeline/update_sharpe_series.py`. Aggregation rule (which series to surface) is **undefined**. | **out-of-band**                   | `SignalCandidate.risk_metric: number \| null`                                                                                 | `RecommendationProjection.risk_summary.risk_metric`                                                                                 | not directly recorded                            | until the aggregation rule is defined: emit `null`; investor surfaces must not depend on this field                                                                                                | optional; `null` acceptable                                                                                            | `SignalCandidate.risk_metric = null`                                                           | Low                                                                           |
+| `asset_status.status` (`"Ready for Inference" \| "Needs Model Update" \| "Inference in Progress"`)     | sibling read against `asset_status` collection (symbol-keyed) at adapter intake time                                                                                                                                                     | **wire (sibling)**                | not stored on `SignalCandidate` directly; consulted at intake                                                                 | indirectly affects `EligibilityCheck.signal_freshness_status`                                                                       | not recorded                                     | if `"Inference in Progress"` → defer adapter intake; if `"Needs Model Update"` → freshness downgrade to `"stale"` or `"expired"`                                                                   | adapter must skip signals whose asset is `"Inference in Progress"` to avoid races on a half-written `live_signals` row | adapter retries on next poll                                                                   | Medium — without this gate the adapter could ingest a half-written prediction |
+| `asset_status.last_prediction_ts` (UNIX seconds, integer)                                              | sibling read against `asset_status._id == symbol`, written at `generate_final_signal.py:207`                                                                                                                                             | **wire (sibling)**                | drives `SignalCandidate.freshness_status`                                                                                     | indirectly via `EligibilityCheck.signal_freshness_status`                                                                           | `RecordArtifact.event_time` (context)            | **Adapter MUST convert `int seconds → ISO-8601`**, then compute `now - parsed_at` for freshness: ≤ 2h → fresh; 2h–24h → stale; > 24h → expired                                                     | required for freshness decision                                                                                        | adapter falls back to `live_signals.date`; if both missing, mark `"expired"`                   | High — freshness is a load-bearing eligibility input                          |
+| `live_signals` collection write                                                                        | MongoDB; `generate_final_signal.py:177-188` `bulk_write`                                                                                                                                                                                 | **wire (principal intake)**       | adapter's only principal intake source                                                                                        | n/a (intake side)                                                                                                                   | n/a                                              | dedupe by deterministic identity. Note: Daniel's own upsert key is `(pipeline, script, symbol, date)` so the adapter's `raw_source_ref` identity must reduce to that on the wire-derivable subset. | reads must be idempotent                                                                                               | adapter retries on transient MongoDB errors with backoff                                       | High — primary signal channel                                                 |
+| Pub/Sub topic (alternative published target)                                                           | `generate_final_signal.py:8` docstring mentions: "Writes the final signals to a `live_signals` collection or publishes them to a Google Cloud Pub/Sub topic." Not active today.                                                          | **reserved-future**               | adapter intake (transport-neutral)                                                                                            | n/a                                                                                                                                 | n/a                                              | transport-neutral; same identity rule                                                                                                                                                              | at-least-once delivery → adapter MUST dedupe                                                                           | adapter drops duplicates silently                                                              | Medium — only relevant if Pub/Sub is chosen over polling                      |
+| `selected_features` collection                                                                         | per-asset feature list, read by `Inference Pipeline/update_indicators.py`; carries feature names like `rolling_pearson_returns_log_return_12_proc`                                                                                       | **derived (display context)**     | `RecommendationProjection.advisory_context.model_factors` (context, not values; investor-readable label translation **TODO**) | shown in detail page "Why now" / "Model factors" sections (Phase 2 detail UI)                                                       | not recorded directly                            | reduce to human-readable factor names (translation table; not yet authored)                                                                                                                        | warn-and-continue if missing                                                                                           | `RecommendationProjection.advisory_context.model_factors = []`                                 | Low — UI gracefully renders empty                                             |
+| `available_strategies` collection                                                                      | strategy registry, populated by `Pre Pipeline/strategy_selector.py` with gating `MIN_SHARPE ≥ 0.5`, `MIN_LEN ≥ 4,300` bars, `MIN_YEARS ≥ 3.0`                                                                                            | **wire (registry; sibling read)** | adapter intake guard (`SignalCandidate` reject if symbol not in set); source of `strategy_id` derivation                      | n/a                                                                                                                                 | n/a                                              | passthrough as `strategy_id`                                                                                                                                                                       | must be non-empty for adapter to function                                                                              | adapter rejects all signals if registry empty                                                  | High — without this, adapter cannot validate symbols                          |
+| `/get-upload-url`, `/process-upload`, `/get-upload-result`, `/assets`, `/analyze` (Daniel HTTP routes) | `Portfolio Analyzer/portfolio-service/app/api.py` (Cloud Run, `https://portfolio-api-996917531721.us-west1.run.app`)                                                                                                                     | **out-of-scope**                  | **not consumed by the adapter**                                                                                               | n/a                                                                                                                                 | n/a                                              | n/a — these are research/upload workflow, not signal stream                                                                                                                                        | n/a                                                                                                                    | n/a                                                                                            | n/a — out of scope for signal-to-execution adapter                            |
+
+Three rows were **removed** from the prior table because they conflated multiple Daniel collections into a single `signal` mapping:
+
+- The earlier row `signal (+1 \| -1) → side mapping` is superseded by the corrected `position` row above (note: the wire field name is `position`, not `signal`, and the domain is **three-valued**, not two).
+- The earlier `predicted_at` row that named `live_signals.timestamp` is superseded by the corrected `date` row (the wire field is `date: int seconds`, not `timestamp: ISO-8601`).
+- The earlier `model_version` and `strategy_id` rows that named them as wire fields are superseded by the `derived` status rows above.
 
 ---
 
@@ -561,6 +701,49 @@ Any merge attempt that does not honor every item above contradicts the SEC 203A-
 
 ---
 
-## 11. Scope lock — re-affirmed
+## 11. Live backend correction status
+
+This contract was revised on **2026-05-28** to align with the actual code inspection of `…/Daniels Back End/live-components-main`. The audit drove ten specific corrections; all are now applied above and recorded for reviewers:
+
+1. The §2 verbal mapping `buy / sell / hold / exit` was replaced with the canonical enum `open_long / open_short / hold` to match the §3 `RecommendationProjection.recommendation_type` enum.
+2. `DanielSignalRaw.signal: -1 | 1` was replaced with the actual wire field `position: -1 | 0 | 1`. The flat / hold case (`0`) is now explicit; the adapter maps `0` to either a `hold` projection or no projection at all per adapter policy.
+3. `predicted_at` was clarified: Daniel emits `date: number` as UNIX seconds, not an ISO-8601 string. The adapter is responsible for the conversion.
+4. `last_prediction_ts` was clarified: same UNIX-seconds wire shape; same adapter-side conversion + freshness computation.
+5. `source_collection` was tightened from `"live_signals" | "rl_predictions" | "sharpe_series" | string` to a constant `"live_signals"`. The other two collections are upstream pipeline features, not adapter intake sources.
+6. `model_version` is now explicitly marked **derived** (not on the wire); the adapter derives it from the joblib artifact path or a future registry write, with a `"unknown"` warn-and-continue fallback.
+7. `strategy_id` is now explicitly marked **derived**; the adapter reads it from `available_strategies.collection ∈ {"rf_strategies", "rl_strategies"}` keyed by `symbol`.
+8. `confidence_score` and `sharpe_metric` are now **out-of-band** with an undefined aggregation rule. `rl_predictions` carries Q-values (multi-dimensional); `sharpe_series` carries multi-`(source, method, lookback)` series. Investor-facing surfaces must not depend on either field until the aggregation rule is decided. Both default to `null`.
+9. `RecommendationProjection.recommendation_type` was clarified: Daniel's `position` alone cannot determine open vs close; the future `account-intent-builder` provides the per-account current-position context. Until then, the adapter applies the explicit policy documented in §3.3.
+10. The §4 mapping table was rewritten to make every field's status explicit (**wire**, **derived**, **out-of-band**, **reserved-future**, **out-of-scope**) and to record the timestamp conversions required at adapter intake.
+
+### What this contract now reflects
+
+- This contract now reflects the actual Daniel backend snapshot inspected on 2026-05-28.
+- Daniel backend currently emits **symbol-level signals**, not account-level recommendations.
+- Account binding requires the future `account-intent-builder`.
+- REVIEW / DENY verdicts require the future `risk-engine`.
+- Broker submission requires the future `exec-gateway` and `trade-manager`.
+- Record retention requires the future `AuditEvents` plus ReFi `RecordArtifact` persistence.
+
+### What this contract still leaves open
+
+These are the named follow-ups; none is a code change required for the Phase 2.5 merge:
+
+- The `confidence_score` aggregation rule from `rl_predictions` Q-values.
+- The `sharpe_metric` series-selection rule from `sharpe_series`.
+- The translation table from `selected_features` machine names (e.g., `rolling_pearson_returns_log_return_12_proc`) to investor-readable factor labels.
+- The provisional 2h / 24h freshness SLA still needs per-strategy tolerance confirmation.
+- The future Pub/Sub vs polling intake decision (transport-neutral identity rule is already specified).
+
+### Cross-references
+
+- `docs/phase2-5-daniel-live-backend-field-map.md` — the source-of-truth field map driving these corrections.
+- `docs/phase2-5-signal-contract-live-backend-delta.md` §8.1 — the prior delta document that enumerated these 10 corrections before they were applied.
+- `docs/phase2-5-daniel-adapter-fixtures-required.md` — the 10 adapter fixture cases that test these contract shapes.
+- `docs/phase2-5-daniel-to-refi-alignment-gap-register.md` — the structural gap register documenting which backend services are missing on Daniel's side.
+
+---
+
+## 12. Scope lock — re-affirmed
 
 No new product surfaces. No Daniel backend changes (`live-components-main` remains untouched read-only reference). No weakening of SEC 203A-2(e) boundary assertions. No per-trade Accept, Approve, Submit, investor-accept, staff approval, founder review, or support-led advice reintroduced. No implementation code written. This document is a contract, not a design or implementation.

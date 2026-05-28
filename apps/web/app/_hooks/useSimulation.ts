@@ -177,7 +177,9 @@ export function useSimulation(): SimulationResult {
     const id = setInterval(() => {
       dispatchRef.current({ type: "tick" });
     }, TICK_MS);
-    return () => clearInterval(id);
+    return () => {
+      clearInterval(id);
+    };
   }, []);
 
   const totalValue = portfolioValue(state.positions);

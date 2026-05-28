@@ -189,7 +189,7 @@ export const POST = bffMutate<ReackBody>({
       },
       references: [
         `disclosure-ack:${ctx.input.docId}/${ctx.input.version}`,
-        `execution-policy:${policy.policyId}/v${policy.policyVersion}`,
+        `execution-policy:${policy.policyId}/v${String(policy.policyVersion)}`,
         ...(reasonCodeCleared ? [`managed-execution-state:${accountId}`] : []),
       ],
     };

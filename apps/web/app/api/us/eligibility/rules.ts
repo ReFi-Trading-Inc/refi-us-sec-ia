@@ -21,7 +21,7 @@ export const eligibilityRules: readonly EligibilityRule[] = [
     id: "us-person-required",
     result: "ineligible",
     reason: "US residents only",
-    matches: (i) => i.isUsPerson === false,
+    matches: (i) => !i.isUsPerson,
   },
   {
     id: "age-required",

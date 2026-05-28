@@ -24,7 +24,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const json = await request.json().catch(() => null);
+  const json: unknown = await request.json().catch(() => null);
   const parsed = bodySchema.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json(
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   // Forward to internal support system. In production, route to Zendesk or
   // a managed support platform. Ticket ID is synthetic until backend wires up.
-  const ticketId = `tkt_${Date.now()}`;
+  const ticketId = `tkt_${String(Date.now())}`;
 
   console.info(
     JSON.stringify({

@@ -99,7 +99,9 @@ function DisclosureRow(props: {
               label={`I have reviewed ${doc.docId} ${doc.currentVersion} and acknowledge it.`}
               data-testid={`reack-row-${doc.docId}-ack-checkbox`}
               checked={accepted}
-              onChange={(e) => setAccepted(e.target.checked)}
+              onChange={(e) => {
+                setAccepted(e.target.checked);
+              }}
             />
             <div>
               <Button

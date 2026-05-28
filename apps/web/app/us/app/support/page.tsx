@@ -100,7 +100,9 @@ export default function SupportPage() {
             placeholder="Select…"
             options={categoryOptions}
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => {
+              setCategory(e.target.value);
+            }}
             required
           />
 

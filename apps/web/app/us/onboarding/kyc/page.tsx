@@ -146,7 +146,9 @@ export default function OnboardingKycPage() {
               key={s}
               size="sm"
               variant="secondary"
-              onClick={() => simulate.mutate({ status: s })}
+              onClick={() => {
+                simulate.mutate({ status: s });
+              }}
               disabled={simulate.isPending}
             >
               {s}

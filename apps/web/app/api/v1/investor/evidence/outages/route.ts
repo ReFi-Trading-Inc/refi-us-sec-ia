@@ -11,7 +11,7 @@ export const GET = bffReadWithAccessLog({
   source: "prototype-bff",
   upstreamGap: "G-117",
   recordRef: () => "evidence:outages",
-  fetch: async () => ({
+  fetch: () => ({
     kind: "outages" as const,
     notice: "Outage timeline is available in preview.",
     windows: [] as unknown[],

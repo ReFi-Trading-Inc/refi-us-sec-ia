@@ -23,7 +23,9 @@ export default function DocumentsPage() {
       apiFetch<{ ok: boolean }>("/v1/documents/acknowledge", {
         method: "POST",
       }),
-    onSuccess: () => setAcknowledged(true),
+    onSuccess: () => {
+      setAcknowledged(true);
+    },
   });
 
   return (
@@ -121,7 +123,9 @@ export default function DocumentsPage() {
                 <input
                   type="checkbox"
                   checked={checked}
-                  onChange={(e) => setChecked(e.target.checked)}
+                  onChange={(e) => {
+                    setChecked(e.target.checked);
+                  }}
                   className="mt-0.5 h-4 w-4 rounded border border-charcoal-600 bg-charcoal-800 text-mint-400 focus:ring-mint-400 focus:ring-offset-charcoal-900"
                 />
                 <span className="text-xs text-charcoal-300">
@@ -139,7 +143,9 @@ export default function DocumentsPage() {
               <Button
                 size="sm"
                 disabled={!checked || acknowledge.isPending}
-                onClick={() => acknowledge.mutate()}
+                onClick={() => {
+                  acknowledge.mutate();
+                }}
               >
                 {acknowledge.isPending ? "Confirming…" : "Confirm"}
               </Button>

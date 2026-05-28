@@ -72,8 +72,12 @@ export default function OnboardingProfilePage() {
     if (!valid) return;
     setError(null);
     save.mutate(fields, {
-      onSuccess: () => router.push("/us/onboarding/broker"),
-      onError: (err) => setError(err.message),
+      onSuccess: () => {
+        router.push("/us/onboarding/broker");
+      },
+      onError: (err) => {
+        setError(err.message);
+      },
     });
   }
 
@@ -94,9 +98,9 @@ export default function OnboardingProfilePage() {
             placeholder="Select…"
             options={options}
             value={fields[key]}
-            onChange={(e) =>
-              setFields((prev) => ({ ...prev, [key]: e.target.value }))
-            }
+            onChange={(e) => {
+              setFields((prev) => ({ ...prev, [key]: e.target.value }));
+            }}
             required
           />
         ))}

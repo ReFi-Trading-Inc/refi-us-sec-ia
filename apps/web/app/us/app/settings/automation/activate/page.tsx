@@ -164,7 +164,7 @@ export default function ActivatePage() {
               "Saved Execution Policy draft",
               draftReady ? "ok" : "blocked",
               draftReady
-                ? `Last saved ${new Date(draft!.updatedAt).toLocaleString()}`
+                ? `Last saved ${new Date(draft.updatedAt).toLocaleString()}`
                 : "Save a draft in the Automation Center first.",
             )}
             {checklistRow(
@@ -263,13 +263,17 @@ export default function ActivatePage() {
             label={`I have read and accept the advisory agreement (${ADVISORY_AGREEMENT_VERSION}).`}
             data-testid="ack-advisory-agreement"
             checked={agreementAccepted}
-            onChange={(e) => setAgreementAccepted(e.target.checked)}
+            onChange={(e) => {
+              setAgreementAccepted(e.target.checked);
+            }}
           />
           <Checkbox
             label="I understand that activation signs this exact policy version and that ReFi will execute trades automatically under it until I pause or supersede it."
             data-testid="ack-confirm-activation"
             checked={confirmActivation}
-            onChange={(e) => setConfirmActivation(e.target.checked)}
+            onChange={(e) => {
+              setConfirmActivation(e.target.checked);
+            }}
           />
         </CardContent>
       </Card>
@@ -289,7 +293,9 @@ export default function ActivatePage() {
             <Button
               data-testid="activate-cancel"
               variant="secondary"
-              onClick={() => router.push("/us/app/settings/automation")}
+              onClick={() => {
+                router.push("/us/app/settings/automation");
+              }}
             >
               Back to Automation Center
             </Button>

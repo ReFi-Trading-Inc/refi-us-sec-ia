@@ -7,9 +7,9 @@ interface BffJsonBody {
     reason?: string;
     idempotentReplay?: boolean;
     subscriptionModeFlipped?: boolean;
-    policy?: { policyVersion?: number };
+    policy?: { policyVersion: number };
     executionPolicyVersion?: number | null;
-    managedExecutionState?: { status?: string };
+    managedExecutionState?: { status: string };
     managedExecutionStatusBefore?: string | null;
     managedExecutionStatusAfter?: string | null;
     reasonCodeCleared?: string | null;

@@ -1,4 +1,5 @@
-import { type NextRequest, NextResponse } from "next/server";
+import type { NextResponse } from "next/server";
+import { type NextRequest } from "next/server";
 
 const CSRF_COOKIE = "csrf_v1";
 const CSRF_HEADER = "x-csrf-token";

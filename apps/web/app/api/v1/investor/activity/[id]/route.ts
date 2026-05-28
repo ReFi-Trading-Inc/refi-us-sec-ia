@@ -7,7 +7,8 @@ import { listActionReceipts, listDecisionRecords } from "@lib/prototype-store";
 function idFromUrl(url: string): string | null {
   const parts = new URL(url).pathname.split("/").filter(Boolean);
   const i = parts.indexOf("activity");
-  return i >= 0 && parts[i + 1] ? parts[i + 1]! : null;
+  if (i < 0) return null;
+  return parts[i + 1] ?? null;
 }
 
 export const GET = bffRead({

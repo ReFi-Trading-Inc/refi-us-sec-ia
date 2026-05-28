@@ -7,9 +7,9 @@ interface BffJsonBody {
     reason?: string;
     idempotentReplay?: boolean;
     subscriptionModeFlipped?: boolean;
-    policy?: { policyVersion?: number };
+    policy?: { policyVersion: number };
     executionPolicyVersion?: number | null;
-    managedExecutionState?: { status?: string };
+    managedExecutionState?: { status: string };
     managedExecutionStatusBefore?: string | null;
     managedExecutionStatusAfter?: string | null;
     reasonCodeCleared?: string | null;
@@ -116,7 +116,7 @@ test.describe("Profile reactivation — aging-only stale profile", () => {
     expect(afterBody.data.executionPolicyVersion).toBe(policyVersionBefore);
 
     // MES restored to active under the same policy version.
-    expect(afterBody.data.managedExecutionState.status).toBe("active");
+    expect(afterBody.data.managedExecutionState?.status).toBe("active");
 
     // Automation Center no longer surfaces the profile blocked banner.
     await page.goto("/us/app/settings/automation", {
@@ -219,7 +219,7 @@ test.describe("Profile reactivation — material change routes to policy review"
       headers: { "x-correlation-id": "e2e-profile-material-status" },
     });
     const statusBody = (await status.json()) as BffJsonBody;
-    expect(statusBody.data.managedExecutionState.status).toBe(
+    expect(statusBody.data.managedExecutionState?.status).toBe(
       "paused_by_system",
     );
   });

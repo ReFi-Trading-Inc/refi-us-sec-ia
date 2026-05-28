@@ -268,7 +268,9 @@ export default function ProfileReactivationPage() {
                   data-testid="profile-react-submit"
                   disabled={!accepted || reconfirmMut.isPending}
                   loading={reconfirmMut.isPending}
-                  onClick={onConfirm}
+                  onClick={() => {
+                    void onConfirm();
+                  }}
                 >
                   Confirm profile
                 </Button>

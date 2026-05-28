@@ -6,7 +6,7 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: path.join(__dirname, "../../"),
   transpilePackages: ["@refi/ui", "@refi/api-clients"],
   typedRoutes: true,
-  headers: async () => [
+  headers: () => [
     {
       source: "/(.*)",
       headers: [

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Badge,
@@ -155,7 +154,7 @@ export default function AccountPage() {
           <CardTitle>{account.broker}</CardTitle>
         </CardHeader>
         <CardContent className="pb-5 flex flex-col gap-3">
-          {isConnected && connection ? (
+          {isConnected ? (
             <>
               <div className="flex items-center justify-between">
                 <div>

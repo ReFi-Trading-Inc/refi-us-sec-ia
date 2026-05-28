@@ -1,6 +1,6 @@
 import { nextConfig } from "../../packages/config/eslint/index.js";
 
-export default [
+const config = [
   ...nextConfig,
   {
     // Generated artifacts: Playwright HTML traces and the MSW service worker
@@ -15,3 +15,5 @@ export default [
     ],
   },
 ];
+
+export default config;

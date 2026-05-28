@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { Metadata } from "next";
 import { Badge, Button, Card, CardContent, StatusBanner } from "@ui/components";
 import { useMutation } from "@tanstack/react-query";
 import { apiFetch } from "@refi/api-clients";

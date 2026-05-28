@@ -67,7 +67,7 @@ export default function OnboardingProfilePage() {
 
   const valid = Object.values(fields).every((v) => v !== "");
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!valid) return;
     setError(null);

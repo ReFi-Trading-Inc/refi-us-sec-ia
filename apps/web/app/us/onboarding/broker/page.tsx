@@ -250,7 +250,9 @@ export default function OnboardingBrokerPage() {
 
                   {isActive && b.id === "alpaca" && (
                     <form
-                      onSubmit={handleSubmit(onSubmit)}
+                      onSubmit={(e) => {
+                        void handleSubmit(onSubmit)(e);
+                      }}
                       className="flex flex-col gap-4 border-t border-charcoal-700 pt-4"
                       autoComplete="off"
                       noValidate

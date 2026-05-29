@@ -17,6 +17,7 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
+import type { Route } from "next";
 import {
   Badge,
   Button,
@@ -188,7 +189,10 @@ function ExceptionCard(props: {
                   res === "reconnect_broker") &&
                 copy.primaryRoute;
               if (isRouteAction && copy.primaryRoute) {
-                const route = copy.primaryRoute;
+                // Next.js typed-routes brand: copy.primaryRoute is authored
+                // as a plain string in the exception copy table; the route
+                // value itself does not change.
+                const route = copy.primaryRoute as Route;
                 return (
                   <Link
                     key={res}

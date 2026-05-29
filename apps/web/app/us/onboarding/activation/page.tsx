@@ -30,7 +30,9 @@ export default function OnboardingActivationPage() {
 
   function handleActivate() {
     activate.mutate(undefined, {
-      onSuccess: () => router.push("/us/app/home"),
+      onSuccess: () => {
+        router.push("/us/app/home");
+      },
     });
   }
 
@@ -46,7 +48,7 @@ export default function OnboardingActivationPage() {
       <Card>
         <CardContent className="pt-5 flex flex-col gap-3">
           {activation.checklist.map((item) => {
-            const checked = status[item.key as keyof AccountActivationStatus];
+            const checked = status[item.key];
             return (
               <div
                 key={item.key}

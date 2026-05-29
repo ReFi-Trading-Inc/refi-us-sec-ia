@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { Metadata } from "next";
 import Link from "next/link";
 import {
   Badge,
@@ -155,7 +154,7 @@ export default function AccountPage() {
           <CardTitle>{account.broker}</CardTitle>
         </CardHeader>
         <CardContent className="pb-5 flex flex-col gap-3">
-          {isConnected && connection ? (
+          {isConnected ? (
             <>
               <div className="flex items-center justify-between">
                 <div>
@@ -196,7 +195,9 @@ export default function AccountPage() {
                     <Button
                       size="sm"
                       variant="secondary"
-                      onClick={() => setConfirmDisconnect(false)}
+                      onClick={() => {
+                        setConfirmDisconnect(false);
+                      }}
                     >
                       Cancel
                     </Button>
@@ -206,7 +207,9 @@ export default function AccountPage() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => setConfirmDisconnect(true)}
+                  onClick={() => {
+                    setConfirmDisconnect(true);
+                  }}
                 >
                   Disconnect broker
                 </Button>

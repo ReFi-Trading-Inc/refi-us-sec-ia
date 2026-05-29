@@ -79,7 +79,9 @@ export function useSiweAuth() {
     }
   }, [address, chainId, nonceMut, signMessageAsync, verifyMut]);
 
-  const reset = useCallback(() => setState({ phase: "idle" }), []);
+  const reset = useCallback(() => {
+    setState({ phase: "idle" });
+  }, []);
 
   return { state, signIn, reset };
 }

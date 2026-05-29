@@ -9,7 +9,7 @@
  * activation is the only path that turns this draft into a signed policy
  * version. See memory/handoff_phase2_surface2.md.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import { z } from "zod";
 import {
@@ -134,8 +134,8 @@ function PauseResumeCard(props: {
   mode: string;
   status: ManagedExecutionStatus | null;
   reasonCode?: string;
-  onPause: () => void;
-  onResume: () => void;
+  onPause: () => void | Promise<void>;
+  onResume: () => void | Promise<void>;
   pausePending: boolean;
   resumePending: boolean;
   error: string | null;
@@ -201,7 +201,9 @@ function PauseResumeCard(props: {
             <Button
               data-testid="managed-pause-button"
               variant="secondary"
-              onClick={props.onPause}
+              onClick={() => {
+                void props.onPause();
+              }}
               loading={props.pausePending}
             >
               Pause automation
@@ -210,7 +212,9 @@ function PauseResumeCard(props: {
           {status === "paused_by_user" && (
             <Button
               data-testid="managed-resume-button"
-              onClick={props.onResume}
+              onClick={() => {
+                void props.onResume();
+              }}
               loading={props.resumePending}
             >
               Resume automation
@@ -251,7 +255,12 @@ export default function AutomationCenterPage() {
   const reackQ = useDisclosureReacknowledgement();
   const profileReactQ = useProfileReactivation();
 
-  const [form, setForm] = useState<DraftForm | null>(null);
+  // User edits accumulate here. The visible `form` is derived from the
+  // server draft + edits via useMemo below, so a background refetch never
+  // clobbers in-flight edits. `null` edits means "user has not touched
+  // the form yet"; once the user edits a single field, `edits` becomes a
+  // partial map and the derivation switches to "base + edits".
+  const [edits, setEdits] = useState<Partial<DraftForm> | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [saveState, setSaveState] = useState<"idle" | "saved" | "error">(
     "idle",
@@ -261,7 +270,7 @@ export default function AutomationCenterPage() {
   const onPause = useCallback(async () => {
     setPauseError(null);
     try {
-      await pauseMut.mutateAsync();
+      await pauseMut.mutateAsync(undefined);
     } catch (e) {
       setPauseError(
         e instanceof Error ? e.message : "Could not pause automation.",
@@ -280,13 +289,18 @@ export default function AutomationCenterPage() {
     }
   }, [resumeMut]);
 
-  // Hydrate the form once the draft loads. We do not re-hydrate on subsequent
-  // refetches — that would clobber unsaved edits.
-  useEffect(() => {
-    if (form === null && draftQ.data) {
-      setForm(toForm(draftQ.data));
-    }
-  }, [draftQ.data, form]);
+  // Derive the visible form from the server draft + any local edits. This
+  // replaces an earlier "setForm in useEffect" mirror that fought the
+  // react-hooks/set-state-in-effect rule and risked clobbering edits on
+  // background refetches. The derivation is pure and behavior-identical:
+  //   - Loading state (no draft yet) ⇒ form = null (same as before)
+  //   - Server draft present, no edits ⇒ form mirrors the server draft
+  //   - Server draft present, edits present ⇒ base + edits
+  const form: DraftForm | null = useMemo(() => {
+    if (!draftQ.data) return null;
+    const base = toForm(draftQ.data);
+    return edits ? { ...base, ...edits } : base;
+  }, [draftQ.data, edits]);
 
   const mode = modeQ.data?.mode ?? "unset";
   const mes = mesQ.data ?? null;
@@ -294,10 +308,11 @@ export default function AutomationCenterPage() {
 
   const update = useCallback(
     <K extends keyof DraftForm>(field: K, value: DraftForm[K]) => {
-      setForm((prev) => (prev ? { ...prev, [field]: value } : prev));
+      setEdits((prev) => ({ ...(prev ?? {}), [field]: value }));
       setErrors((prev) => {
-        const next = { ...prev };
-        delete next[field];
+        // Strip the field by spreading without it (no-dynamic-delete) while
+        // preserving the Partial<Record<...>> semantic.
+        const { [field]: _removed, ...next } = prev;
         return next;
       });
       setSaveState("idle");
@@ -331,7 +346,8 @@ export default function AutomationCenterPage() {
 
   const onDiscard = useCallback(() => {
     if (draftQ.data) {
-      setForm(toForm(draftQ.data));
+      // Clear local edits so the derived form falls back to the server draft.
+      setEdits(null);
       setErrors({});
       setSaveState("idle");
     }
@@ -552,32 +568,36 @@ export default function AutomationCenterPage() {
                   data-testid="draft-strategyId"
                   value={form.strategyId}
                   error={errors.strategyId}
-                  onChange={(e) => update("strategyId", e.target.value)}
+                  onChange={(e) => {
+                    update("strategyId", e.target.value);
+                  }}
                 />
                 <Input
                   label="Account scope"
                   data-testid="draft-accountScope"
                   value={form.accountScope}
                   error={errors.accountScope}
-                  onChange={(e) => update("accountScope", e.target.value)}
+                  onChange={(e) => {
+                    update("accountScope", e.target.value);
+                  }}
                 />
                 <Input
                   label="Asset universe (comma-separated)"
                   data-testid="draft-assetUniverse"
                   value={form.assetUniverse.join(", ")}
                   error={errors.assetUniverse}
-                  onChange={(e) =>
-                    update("assetUniverse", csvToArray(e.target.value))
-                  }
+                  onChange={(e) => {
+                    update("assetUniverse", csvToArray(e.target.value));
+                  }}
                 />
                 <Input
                   label="Restricted sectors (comma-separated)"
                   data-testid="draft-restrictedSectors"
                   value={form.restrictedSectors.join(", ")}
                   error={errors.restrictedSectors}
-                  onChange={(e) =>
-                    update("restrictedSectors", csvToArray(e.target.value))
-                  }
+                  onChange={(e) => {
+                    update("restrictedSectors", csvToArray(e.target.value));
+                  }}
                 />
                 <Input
                   label="Max single order (USD)"
@@ -586,7 +606,9 @@ export default function AutomationCenterPage() {
                   value={form.maxSingleOrderUsd}
                   error={errors.maxSingleOrderUsd}
                   hint="25.00 to 25000.00"
-                  onChange={(e) => update("maxSingleOrderUsd", e.target.value)}
+                  onChange={(e) => {
+                    update("maxSingleOrderUsd", e.target.value);
+                  }}
                 />
                 <Input
                   label="Max position size (basis points)"
@@ -595,12 +617,12 @@ export default function AutomationCenterPage() {
                   value={form.maxPositionSizeBps}
                   error={errors.maxPositionSizeBps}
                   hint="100 to 2500"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "maxPositionSizeBps",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Input
                   label="Minimum cash reserve (basis points)"
@@ -609,12 +631,12 @@ export default function AutomationCenterPage() {
                   value={form.minimumCashReserveBps}
                   error={errors.minimumCashReserveBps}
                   hint="0 to 5000"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "minimumCashReserveBps",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Input
                   label="Daily order limit"
@@ -623,12 +645,12 @@ export default function AutomationCenterPage() {
                   value={form.dailyOrderLimit}
                   error={errors.dailyOrderLimit}
                   hint="1 to 25"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "dailyOrderLimit",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Input
                   label="Daily loss pause (basis points)"
@@ -637,12 +659,12 @@ export default function AutomationCenterPage() {
                   value={form.dailyLossPauseBps}
                   error={errors.dailyLossPauseBps}
                   hint="100 to 1000"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "dailyLossPauseBps",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Input
                   label="Drawdown pause (basis points)"
@@ -651,12 +673,12 @@ export default function AutomationCenterPage() {
                   value={form.drawdownPauseBps}
                   error={errors.drawdownPauseBps}
                   hint="300 to 3000"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "drawdownPauseBps",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Input
                   label="Max open orders"
@@ -665,36 +687,36 @@ export default function AutomationCenterPage() {
                   value={form.maxOpenOrders}
                   error={errors.maxOpenOrders}
                   hint="1 to 20"
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "maxOpenOrders",
                       Number.parseInt(e.target.value, 10) || 0,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Select
                   label="Pause after stale broker data"
                   data-testid="draft-staleBrokerDataPauseAfter"
                   value={form.staleBrokerDataPauseAfter}
                   options={STALE_BROKER_OPTIONS}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "staleBrokerDataPauseAfter",
                       e.target.value as StaleBrokerDataDuration,
-                    )
-                  }
+                    );
+                  }}
                 />
                 <Select
                   label="Pause after stale profile"
                   data-testid="draft-staleProfilePauseAfter"
                   value={form.staleProfilePauseAfter}
                   options={STALE_PROFILE_OPTIONS}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     update(
                       "staleProfilePauseAfter",
                       e.target.value as StaleProfileDuration,
-                    )
-                  }
+                    );
+                  }}
                 />
               </div>
               <div className="flex flex-col gap-2 pt-1">
@@ -702,17 +724,17 @@ export default function AutomationCenterPage() {
                   label="Pause automation when a new disclosure version supersedes the active policy"
                   data-testid="draft-pauseOnDisclosureSuperseded"
                   checked={form.pauseOnDisclosureSuperseded}
-                  onChange={(e) =>
-                    update("pauseOnDisclosureSuperseded", e.target.checked)
-                  }
+                  onChange={(e) => {
+                    update("pauseOnDisclosureSuperseded", e.target.checked);
+                  }}
                 />
                 <Checkbox
                   label="Pause automation when the advisory profile is superseded"
                   data-testid="draft-pauseOnProfileSuperseded"
                   checked={form.pauseOnProfileSuperseded}
-                  onChange={(e) =>
-                    update("pauseOnProfileSuperseded", e.target.checked)
-                  }
+                  onChange={(e) => {
+                    update("pauseOnProfileSuperseded", e.target.checked);
+                  }}
                 />
               </div>
             </>
@@ -754,7 +776,9 @@ export default function AutomationCenterPage() {
           <div className="flex flex-wrap gap-3">
             <Button
               data-testid="automation-save-draft"
-              onClick={onSave}
+              onClick={() => {
+                void onSave();
+              }}
               loading={saveMut.isPending}
               disabled={form === null}
             >

@@ -117,7 +117,7 @@ export default function ActivatePage() {
       clientAttestation: true,
       deviceFingerprint:
         typeof navigator !== "undefined"
-          ? `${navigator.userAgent}|${navigator.language}|${screen.width}x${screen.height}`
+          ? `${navigator.userAgent}|${navigator.language}|${String(screen.width)}x${String(screen.height)}`
           : "unknown-device",
     };
     try {
@@ -164,7 +164,7 @@ export default function ActivatePage() {
               "Saved Execution Policy draft",
               draftReady ? "ok" : "blocked",
               draftReady
-                ? `Last saved ${new Date(draft!.updatedAt).toLocaleString()}`
+                ? `Last saved ${new Date(draft.updatedAt).toLocaleString()}`
                 : "Save a draft in the Automation Center first.",
             )}
             {checklistRow(
@@ -172,7 +172,7 @@ export default function ActivatePage() {
               "Advisory profile on file",
               profileReady ? "ok" : "blocked",
               profileReady
-                ? `Profile version ${status?.latestProfileVersion}`
+                ? `Profile version ${String(status?.latestProfileVersion ?? "")}`
                 : "Complete your investor profile before activating.",
             )}
             {checklistRow(
@@ -180,7 +180,7 @@ export default function ActivatePage() {
               "Brokerage connection active",
               brokerReady ? "ok" : "blocked",
               brokerReady
-                ? `Broker connection status: ${status?.brokerageStatus}`
+                ? `Broker connection status: ${status.brokerageStatus ?? "unknown"}`
                 : `Broker status: ${status?.brokerageStatus ?? "not connected"}.`,
             )}
             {checklistRow(
@@ -192,8 +192,8 @@ export default function ActivatePage() {
                   ? "ok"
                   : "blocked",
               allDisclosuresAcked
-                ? `${availableDisclosures.length} disclosure(s) acknowledged`
-                : `${availableDisclosures.length - userAcks.length} disclosure(s) pending acknowledgement`,
+                ? `${String(availableDisclosures.length)} disclosure(s) acknowledged`
+                : `${String(availableDisclosures.length - userAcks.length)} disclosure(s) pending acknowledgement`,
             )}
           </ul>
         </CardContent>
@@ -202,7 +202,7 @@ export default function ActivatePage() {
       {/* Policy summary from draft */}
       <Card data-testid="activate-policy-summary">
         <CardHeader>
-          <CardTitle>Policy you're about to sign</CardTitle>
+          <CardTitle>Policy you&apos;re about to sign</CardTitle>
         </CardHeader>
         <CardContent className="pb-5">
           {draft ? (
@@ -263,13 +263,17 @@ export default function ActivatePage() {
             label={`I have read and accept the advisory agreement (${ADVISORY_AGREEMENT_VERSION}).`}
             data-testid="ack-advisory-agreement"
             checked={agreementAccepted}
-            onChange={(e) => setAgreementAccepted(e.target.checked)}
+            onChange={(e) => {
+              setAgreementAccepted(e.target.checked);
+            }}
           />
           <Checkbox
             label="I understand that activation signs this exact policy version and that ReFi will execute trades automatically under it until I pause or supersede it."
             data-testid="ack-confirm-activation"
             checked={confirmActivation}
-            onChange={(e) => setConfirmActivation(e.target.checked)}
+            onChange={(e) => {
+              setConfirmActivation(e.target.checked);
+            }}
           />
         </CardContent>
       </Card>
@@ -280,7 +284,9 @@ export default function ActivatePage() {
           <div className="flex flex-wrap items-center gap-3">
             <Button
               data-testid="activate-managed-button"
-              onClick={onActivate}
+              onClick={() => {
+                void onActivate();
+              }}
               loading={activateMut.isPending}
               disabled={!canActivate}
             >
@@ -289,7 +295,9 @@ export default function ActivatePage() {
             <Button
               data-testid="activate-cancel"
               variant="secondary"
-              onClick={() => router.push("/us/app/settings/automation")}
+              onClick={() => {
+                router.push("/us/app/settings/automation");
+              }}
             >
               Back to Automation Center
             </Button>

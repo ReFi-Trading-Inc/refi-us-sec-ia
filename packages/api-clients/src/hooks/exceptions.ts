@@ -26,10 +26,10 @@ async function bffFetch<T>(path: string): Promise<T> {
   return env.data;
 }
 
-async function bffMutate<TReq, TRes>(
+async function bffMutate<TRes>(
   path: string,
   method: "POST" | "PUT",
-  body: TReq,
+  body: unknown,
 ): Promise<TRes> {
   const env = await apiFetch<BffEnvelope<TRes>>(path, { method, body });
   return env.data;
@@ -82,8 +82,8 @@ export function describeBackendResolution(r: BackendResolution | null): string {
   if (r === "update_profile") return "Resolved by profile update";
   if (r === "reconnect_broker") return "Resolved by broker reconnect";
   if (r === "acknowledge_disclosure") return "Resolved by disclosure review";
-  if (r === "pause_managed") return "Resolved by pausing Managed";
-  return "Resolved";
+  // Only remaining BackendResolution member at this point is "pause_managed".
+  return "Resolved by pausing Managed";
 }
 
 /** True when a recorded resolution corresponds to the UI's "Dismiss exception"
@@ -139,14 +139,7 @@ export function useResolveException(): UseMutationResult<
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ exceptionId, resolution, reasonCode }) =>
-      bffMutate<
-        {
-          resolution: BackendResolution;
-          reasonCode?: string;
-          clientAttestation: true;
-        },
-        ResolveExceptionResult
-      >(
+      bffMutate<ResolveExceptionResult>(
         `/api/v1/investor/exceptions/${encodeURIComponent(exceptionId)}/resolve`,
         "POST",
         {
@@ -156,8 +149,8 @@ export function useResolveException(): UseMutationResult<
         },
       ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["investor-exceptions"] });
-      qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
+      void qc.invalidateQueries({ queryKey: ["investor-exceptions"] });
+      void qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
     },
   });
 }

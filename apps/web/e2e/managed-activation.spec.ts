@@ -1,6 +1,24 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
+interface BffJsonBody {
+  data: {
+    ok?: boolean;
+    reason?: string;
+    idempotentReplay?: boolean;
+    subscriptionModeFlipped?: boolean;
+    policy?: { policyVersion: number };
+    executionPolicyVersion?: number | null;
+    managedExecutionState?: { status: string };
+    managedExecutionStatusBefore?: string | null;
+    managedExecutionStatusAfter?: string | null;
+    reasonCodeCleared?: string | null;
+    [key: string]: unknown;
+  };
+  receipt?: { action?: string };
+  [key: string]: unknown;
+}
+
 // Surface 3 — Managed Execution Activation.
 // Activation is the ONLY path that promotes a saved draft into a signed,
 // versioned ExecutionPolicy. The spec proves: (a) every precondition gates the
@@ -136,7 +154,7 @@ test.describe("Managed activation — idempotency", () => {
     const headers = {
       "content-type": "application/json",
       "x-correlation-id": "e2e-idempotency-1",
-      "idempotency-key": `e2e-activate-key-${Date.now()}-${Math.random()}`,
+      "idempotency-key": `e2e-activate-key-${String(Date.now())}-${String(Math.random())}`,
     };
     const body = {
       acknowledgedDisclosures: [{ docId: "form-adv-2a", version: "v2026-06" }],
@@ -150,9 +168,9 @@ test.describe("Managed activation — idempotency", () => {
       { headers, data: body },
     );
     expect(first.status()).toBe(201);
-    const firstJson = await first.json();
+    const firstJson = (await first.json()) as BffJsonBody;
     expect(firstJson.data.idempotentReplay).toBe(false);
-    const firstVersion = firstJson.data.policy.policyVersion;
+    const firstVersion = firstJson.data.policy?.policyVersion;
     expect(typeof firstVersion).toBe("number");
 
     const second = await page.request.post(
@@ -160,10 +178,10 @@ test.describe("Managed activation — idempotency", () => {
       { headers, data: body },
     );
     expect(second.status()).toBe(200);
-    const secondJson = await second.json();
+    const secondJson = (await second.json()) as BffJsonBody;
     expect(secondJson.data.idempotentReplay).toBe(true);
     expect(secondJson.data.subscriptionModeFlipped).toBe(false);
-    expect(secondJson.data.policy.policyVersion).toBe(firstVersion);
+    expect(secondJson.data.policy?.policyVersion).toBe(firstVersion);
   });
 
   test("Derived-key replay (no header) on second activation attempt returns idempotentReplay:true", async ({
@@ -195,8 +213,8 @@ test.describe("Managed activation — idempotency", () => {
       { headers, data: body },
     );
     expect(first.status()).toBe(201);
-    const firstJson = await first.json();
-    const firstVersion = firstJson.data.policy.policyVersion;
+    const firstJson = (await first.json()) as BffJsonBody;
+    const firstVersion = firstJson.data.policy?.policyVersion;
     expect(firstJson.data.idempotentReplay).toBe(false);
 
     // Even a different deviceFingerprint must still collapse to the same
@@ -212,9 +230,9 @@ test.describe("Managed activation — idempotency", () => {
       },
     );
     expect(second.status()).toBe(200);
-    const secondJson = await second.json();
+    const secondJson = (await second.json()) as BffJsonBody;
     expect(secondJson.data.idempotentReplay).toBe(true);
-    expect(secondJson.data.policy.policyVersion).toBe(firstVersion);
+    expect(secondJson.data.policy?.policyVersion).toBe(firstVersion);
   });
 });
 

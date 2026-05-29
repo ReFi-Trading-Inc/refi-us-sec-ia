@@ -11,7 +11,7 @@ import { getRecommendation } from "@lib/prototype-store";
 function idFromUrl(url: string): string | null {
   const parts = new URL(url).pathname.split("/").filter(Boolean);
   const i = parts.indexOf("recommendations");
-  return i >= 0 && parts[i + 1] ? parts[i + 1]! : null;
+  return parts[i + 1] ?? null;
 }
 
 export const GET = bffRead({

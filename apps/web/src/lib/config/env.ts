@@ -50,10 +50,10 @@ function withFallback(
 }
 
 const clientSchema = z.object({
-  NEXT_PUBLIC_API_BASE_URL: z.string().url(),
+  NEXT_PUBLIC_API_BASE_URL: z.url(),
   NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: z.string().min(1),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().min(1),
-  NEXT_PUBLIC_SENTRY_DSN: z.string().url(),
+  NEXT_PUBLIC_SENTRY_DSN: z.url(),
   NEXT_PUBLIC_REFI_ENV: z.enum(["dev", "staging", "prod"]).default("dev"),
 });
 

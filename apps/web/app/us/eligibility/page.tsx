@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
 import { z } from "zod";
 import {
@@ -68,15 +68,22 @@ export default function EligibilityPage() {
     register,
     handleSubmit,
     setValue,
-    watch,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: standardSchemaResolver(eligibilitySchema),
     defaultValues: { state: "", isUsPerson: undefined, dob: "" },
   });
 
-  const stateValue = watch("state");
-  const usPersonValue = watch("isUsPerson");
+  // useWatch is the memo-safe variant of watch(); plain watch() returns a
+  // non-memoizable function and triggers react-hooks/incompatible-library.
+  const stateValue = useWatch({ control, name: "state" });
+  const usPersonValue = useWatch({ control, name: "isUsPerson" });
+
+  function onSubmitForm(event: React.SyntheticEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    void handleSubmit(onSubmit)(event);
+  }
 
   async function onSubmit(values: FormValues): Promise<void> {
     setSubmitError(null);
@@ -91,7 +98,7 @@ export default function EligibilityPage() {
         }),
       });
       if (!response.ok) {
-        throw new Error(`Request failed (${response.status})`);
+        throw new Error(`Request failed (${String(response.status)})`);
       }
       const body = (await response.json()) as Decision;
       setDecision(body);
@@ -126,7 +133,7 @@ export default function EligibilityPage() {
 
         {decision === null ? (
           <form
-            onSubmit={handleSubmit(onSubmit)}
+            onSubmit={onSubmitForm}
             className="flex flex-col gap-6"
             noValidate
           >
@@ -135,7 +142,9 @@ export default function EligibilityPage() {
               placeholder={eligibilityCopy.fields.state.placeholder}
               options={stateOptions}
               value={stateValue}
-              onChange={(e) => setValue("state", e.target.value)}
+              onChange={(e) => {
+                setValue("state", e.target.value);
+              }}
               error={errors.state?.message}
               required
             />
@@ -148,9 +157,9 @@ export default function EligibilityPage() {
                 { value: "no", label: eligibilityCopy.fields.no },
               ]}
               value={usPersonValue}
-              onChange={(v) =>
-                setValue("isUsPerson", v as FormValues["isUsPerson"])
-              }
+              onChange={(v) => {
+                setValue("isUsPerson", v as FormValues["isUsPerson"]);
+              }}
               error={errors.isUsPerson?.message}
             />
 
@@ -234,7 +243,9 @@ function EligibilityResult({ decision }: { decision: Decision }) {
               placeholder={eligibilityCopy.emailCapture.placeholder}
               hint={eligibilityCopy.emailCapture.helper}
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(e) => {
+                setEmail(e.target.value);
+              }}
             />
             <Button type="submit" disabled={email.length === 0}>
               {eligibilityCopy.emailCapture.submit}

@@ -8,7 +8,7 @@ function generateCorrelationId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
-  return `cid-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `cid-${String(Date.now())}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function getCorrelationId(): string {
@@ -81,13 +81,13 @@ export async function apiFetch<T>(
 
   const contentType = response.headers.get("content-type") ?? "";
   const isJson = contentType.includes("application/json");
-  const data = isJson ? await response.json() : await response.text();
+  const data: unknown = isJson ? await response.json() : await response.text();
 
   if (!response.ok) {
     const message =
       typeof data === "object" && data && "message" in data
         ? String((data as { message?: unknown }).message)
-        : `Request failed with status ${response.status}`;
+        : `Request failed with status ${String(response.status)}`;
     throw new ApiError(response.status, message, data);
   }
 

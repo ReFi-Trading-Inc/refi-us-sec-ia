@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Select, StatusBanner } from "@ui/components";
 import type { SelectOption } from "@ui/components";
@@ -48,32 +48,41 @@ export default function OnboardingProfilePage() {
   const router = useRouter();
   const { data: existing } = useAdvisoryProfile();
   const save = useSaveAdvisoryProfile();
-  const [fields, setFields] = useState<Record<FieldKey, string>>(EMPTY);
+  // Track only what the user changed; derive the visible `fields` from the
+  // server-side record + edits. Avoids the previous "setState in useEffect"
+  // mirror pattern (react-hooks/set-state-in-effect) and keeps the form's
+  // submit payload, validation, and field set unchanged.
+  const [edits, setEdits] = useState<Partial<Record<FieldKey, string>>>({});
   const [error, setError] = useState<string | null>(null);
 
-  // Hydrate from the server-side record so a returning user resumes mid-wizard.
-  useEffect(() => {
-    if (!existing) return;
-    setFields({
-      goal: existing.goal,
-      timeHorizon: existing.timeHorizon,
-      incomeBand: existing.incomeBand,
-      liquidNetWorth: existing.liquidNetWorth,
-      riskTolerance: existing.riskTolerance,
-      investmentExperience: existing.investmentExperience,
-      accountPurpose: existing.accountPurpose,
-    });
-  }, [existing]);
+  const fields: Record<FieldKey, string> = useMemo(() => {
+    const base: Record<FieldKey, string> = existing
+      ? {
+          goal: existing.goal,
+          timeHorizon: existing.timeHorizon,
+          incomeBand: existing.incomeBand,
+          liquidNetWorth: existing.liquidNetWorth,
+          riskTolerance: existing.riskTolerance,
+          investmentExperience: existing.investmentExperience,
+          accountPurpose: existing.accountPurpose,
+        }
+      : EMPTY;
+    return { ...base, ...edits };
+  }, [existing, edits]);
 
   const valid = Object.values(fields).every((v) => v !== "");
 
-  function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!valid) return;
     setError(null);
     save.mutate(fields, {
-      onSuccess: () => router.push("/us/onboarding/broker"),
-      onError: (err) => setError(err.message),
+      onSuccess: () => {
+        router.push("/us/onboarding/broker");
+      },
+      onError: (err) => {
+        setError(err.message);
+      },
     });
   }
 
@@ -94,9 +103,9 @@ export default function OnboardingProfilePage() {
             placeholder="Select…"
             options={options}
             value={fields[key]}
-            onChange={(e) =>
-              setFields((prev) => ({ ...prev, [key]: e.target.value }))
-            }
+            onChange={(e) => {
+              setEdits((prev) => ({ ...prev, [key]: e.target.value }));
+            }}
             required
           />
         ))}

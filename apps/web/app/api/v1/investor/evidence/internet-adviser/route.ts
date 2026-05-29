@@ -12,7 +12,7 @@ export const GET = bffReadWithAccessLog({
   source: "prototype-bff",
   upstreamGap: "G-117",
   recordRef: () => "evidence:internet-adviser",
-  fetch: async () => ({
+  fetch: () => ({
     kind: "internet-adviser" as const,
     notice: "Evidence package is available in preview.",
     sections: {

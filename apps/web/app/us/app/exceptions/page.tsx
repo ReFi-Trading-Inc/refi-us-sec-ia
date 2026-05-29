@@ -17,6 +17,7 @@
  */
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
+import type { Route } from "next";
 import {
   Badge,
   Button,
@@ -104,7 +105,10 @@ const RESOLUTION_LABEL: Record<UiResolution, string> = {
 
 function ExceptionCard(props: {
   item: InvestorExceptionItem;
-  onResolve: (item: InvestorExceptionItem, resolution: UiResolution) => void;
+  onResolve: (
+    item: InvestorExceptionItem,
+    resolution: UiResolution,
+  ) => void | Promise<void>;
   pendingResolution: UiResolution | null;
 }) {
   const { item, onResolve, pendingResolution } = props;
@@ -184,12 +188,15 @@ function ExceptionCard(props: {
                   res === "acknowledge_disclosure" ||
                   res === "reconnect_broker") &&
                 copy.primaryRoute;
-              if (isRouteAction) {
-                const route = copy.primaryRoute!;
+              if (isRouteAction && copy.primaryRoute) {
+                // Next.js typed-routes brand: copy.primaryRoute is authored
+                // as a plain string in the exception copy table; the route
+                // value itself does not change.
+                const route = copy.primaryRoute as Route;
                 return (
                   <Link
                     key={res}
-                    href={route as never}
+                    href={route}
                     data-testid={`exception-card-${item.exceptionId}-route-${res}`}
                     className="inline-flex items-center justify-center gap-2 rounded-md font-medium border border-charcoal-600 bg-transparent text-charcoal-100 hover:bg-charcoal-800 h-8 px-3 text-sm transition-colors"
                   >
@@ -206,7 +213,9 @@ function ExceptionCard(props: {
                   }
                   size="sm"
                   loading={pendingResolution === res}
-                  onClick={() => onResolve(item, res)}
+                  onClick={() => {
+                    void onResolve(item, res);
+                  }}
                 >
                   {RESOLUTION_LABEL[res]}
                 </Button>
@@ -230,7 +239,10 @@ export default function ExceptionsPage() {
   const [serverError, setServerError] = useState<string | null>(null);
 
   const mode = modeQ.data?.mode ?? "unset";
-  const allItems = listQ.data?.items ?? [];
+  // Memoize so the empty-array fallback has a stable identity across renders;
+  // otherwise `useMemo(... [allItems, filter])` below recomputes on every
+  // render and the dependency array is reported as inexhaustive.
+  const allItems = useMemo(() => listQ.data?.items ?? [], [listQ.data?.items]);
 
   const onResolve = useCallback(
     async (item: InvestorExceptionItem, resolution: UiResolution) => {
@@ -311,9 +323,7 @@ export default function ExceptionsPage() {
           <h1 className="text-xl font-semibold text-charcoal-50">
             Exception Review
           </h1>
-          {mode !== "unset" && (
-            <ModeBadge mode={mode === "managed" ? "managed" : "signal"} />
-          )}
+          {mode !== "unset" && <ModeBadge mode="managed" />}
         </div>
         <p
           className="text-sm text-charcoal-400"
@@ -345,7 +355,9 @@ export default function ExceptionsPage() {
               role="tab"
               aria-selected={active}
               data-testid={`exceptions-filter-${f}`}
-              onClick={() => setFilter(f)}
+              onClick={() => {
+                setFilter(f);
+              }}
               className={
                 "rounded-md px-3 py-1.5 text-sm transition-colors border " +
                 (active

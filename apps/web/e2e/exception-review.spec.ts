@@ -1,6 +1,24 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
+interface BffJsonBody {
+  data: {
+    ok?: boolean;
+    reason?: string;
+    idempotentReplay?: boolean;
+    subscriptionModeFlipped?: boolean;
+    policy?: { policyVersion: number };
+    executionPolicyVersion?: number | null;
+    managedExecutionState?: { status: string };
+    managedExecutionStatusBefore?: string | null;
+    managedExecutionStatusAfter?: string | null;
+    reasonCodeCleared?: string | null;
+    [key: string]: unknown;
+  };
+  receipt?: { action?: string };
+  [key: string]: unknown;
+}
+
 // Surface 7 — Exception Review.
 // Exception Review resolves eligibility blockers. It does not approve trades,
 // override guardrails, submit broker orders, or expose the legacy backend
@@ -172,7 +190,7 @@ test.describe("Exception Review — Managed user", () => {
     const beforeStatus = await page.request.get("/api/v1/investor/status", {
       headers: { "x-correlation-id": "e2e-exc-before" },
     });
-    const beforeBody = await beforeStatus.json();
+    const beforeBody = (await beforeStatus.json()) as BffJsonBody;
     const policyVersionBefore = beforeBody.data
       .executionPolicyVersion as number;
 
@@ -188,7 +206,7 @@ test.describe("Exception Review — Managed user", () => {
     const afterStatus = await page.request.get("/api/v1/investor/status", {
       headers: { "x-correlation-id": "e2e-exc-after" },
     });
-    const afterBody = await afterStatus.json();
+    const afterBody = (await afterStatus.json()) as BffJsonBody;
     expect(afterBody.data.executionPolicyVersion).toBe(policyVersionBefore);
   });
 

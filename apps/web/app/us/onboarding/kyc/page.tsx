@@ -45,7 +45,11 @@ export default function OnboardingKycPage() {
   // session so AuthContext reflects the new kyc_status, then forward.
   useEffect(() => {
     if (current !== "approved") return;
-    let cancelled = false;
+    // Use a getter so TS's control-flow analysis cannot narrow the cancelled
+    // state to a constant across await boundaries. Cleanup mutates the
+    // backing object; isCancelled() always re-reads.
+    const ctrl: { cancelled: boolean } = { cancelled: false };
+    const isCancelled = (): boolean => ctrl.cancelled;
     void (async () => {
       if (auth.account_id) {
         try {
@@ -55,13 +59,13 @@ export default function OnboardingKycPage() {
           // next preview anyway.
         }
       }
-      if (cancelled) return;
+      if (isCancelled()) return;
       await auth.refetchSession();
-      if (cancelled) return;
+      if (isCancelled()) return;
       router.replace("/us/onboarding/profile");
     })();
     return () => {
-      cancelled = true;
+      ctrl.cancelled = true;
     };
     // We intentionally don't include auth.refetchSession / invalidateCache in
     // deps — they're stable across renders and changing references would loop.
@@ -146,7 +150,9 @@ export default function OnboardingKycPage() {
               key={s}
               size="sm"
               variant="secondary"
-              onClick={() => simulate.mutate({ status: s })}
+              onClick={() => {
+                simulate.mutate({ status: s });
+              }}
               disabled={simulate.isPending}
             >
               {s}

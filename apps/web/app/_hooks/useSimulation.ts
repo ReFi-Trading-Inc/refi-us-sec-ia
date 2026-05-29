@@ -7,7 +7,7 @@
 // Tick cadence: 5 seconds (setInterval in useEffect). Each tick walks every
 // position's price by ±0.5%. Respects prefers-reduced-motion: data still
 // updates, but consumers can decide whether to animate transitions.
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer } from "react";
 import type { Position } from "@refi/api-clients";
 
 const TICK_MS = 5_000;
@@ -170,15 +170,19 @@ function initialState(): SimulationState {
 
 export function useSimulation(): SimulationResult {
   const [state, dispatch] = useReducer(reducer, undefined, initialState);
-  const dispatchRef = useRef(dispatch);
-  dispatchRef.current = dispatch;
 
+  // `dispatch` from useReducer is stable across renders, so the interval
+  // closure always sees the latest reducer without needing a ref. The
+  // previous render-time `dispatchRef.current = dispatch` write triggered
+  // react-hooks/refs; the simpler direct capture is behaviorally identical.
   useEffect(() => {
     const id = setInterval(() => {
-      dispatchRef.current({ type: "tick" });
+      dispatch({ type: "tick" });
     }, TICK_MS);
-    return () => clearInterval(id);
-  }, []);
+    return () => {
+      clearInterval(id);
+    };
+  }, [dispatch]);
 
   const totalValue = portfolioValue(state.positions);
   const dayPl = totalValue - state.dayStartValue;

@@ -259,14 +259,18 @@ export default function ProfileReactivationPage() {
                 label="I have reviewed my profile and confirm it is still accurate."
                 data-testid="profile-react-ack-checkbox"
                 checked={accepted}
-                onChange={(e) => setAccepted(e.target.checked)}
+                onChange={(e) => {
+                  setAccepted(e.target.checked);
+                }}
               />
               <div>
                 <Button
                   data-testid="profile-react-submit"
                   disabled={!accepted || reconfirmMut.isPending}
                   loading={reconfirmMut.isPending}
-                  onClick={onConfirm}
+                  onClick={() => {
+                    void onConfirm();
+                  }}
                 >
                   Confirm profile
                 </Button>

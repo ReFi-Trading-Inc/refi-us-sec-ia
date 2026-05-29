@@ -53,7 +53,7 @@ export const POST = bffMutate<InvestorProfileFields>({
     return {
       data: snapshot,
       references: [
-        `advisory-profile:${snapshot.accountId}/v${snapshot.profileVersion}`,
+        `advisory-profile:${snapshot.accountId}/v${String(snapshot.profileVersion)}`,
       ],
       status: 201,
     };

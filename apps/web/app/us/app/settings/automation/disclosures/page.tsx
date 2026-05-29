@@ -99,14 +99,18 @@ function DisclosureRow(props: {
               label={`I have reviewed ${doc.docId} ${doc.currentVersion} and acknowledge it.`}
               data-testid={`reack-row-${doc.docId}-ack-checkbox`}
               checked={accepted}
-              onChange={(e) => setAccepted(e.target.checked)}
+              onChange={(e) => {
+                setAccepted(e.target.checked);
+              }}
             />
             <div>
               <Button
                 data-testid={`reack-row-${doc.docId}-submit`}
                 disabled={!accepted || pending}
                 loading={pending}
-                onClick={() => props.onAcknowledge(doc)}
+                onClick={() => {
+                  void props.onAcknowledge(doc);
+                }}
               >
                 Submit acknowledgement
               </Button>
@@ -225,7 +229,7 @@ export default function DisclosureReackPage() {
           ? "Loading the latest disclosure status…"
           : allClear
             ? "Your disclosure acknowledgements are current. No further action is needed."
-            : `Your active Execution Policy version v${view.activePolicyVersion ?? "—"} stays signed. Acknowledging these updated disclosures does not create a new policy version.`}
+            : `Your active Execution Policy version v${String(view.activePolicyVersion ?? "—")} stays signed. Acknowledging these updated disclosures does not create a new policy version.`}
       </StatusBanner>
 
       <section

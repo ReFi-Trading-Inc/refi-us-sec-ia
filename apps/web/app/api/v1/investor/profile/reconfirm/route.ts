@@ -59,7 +59,7 @@ export const POST = bffMutate<ReconfirmBody>({
       };
     }
 
-    const [policy, latestSnapshot, allSnapshots, mesBefore, lastConfirmation] =
+    const [policy, latestSnapshot, _allSnapshots, mesBefore, lastConfirmation] =
       await Promise.all([
         getLatestExecutionPolicy(accountId),
         getLatestProfileSnapshot(accountId),
@@ -200,9 +200,9 @@ export const POST = bffMutate<ReconfirmBody>({
         reasonCodeCleared,
       },
       references: [
-        `profile-snapshot:${accountId}/v${latestSnapshot.profileVersion}`,
-        `profile-confirmation:${accountId}/v${latestSnapshot.profileVersion}`,
-        `execution-policy:${policy.policyId}/v${policy.policyVersion}`,
+        `profile-snapshot:${accountId}/v${String(latestSnapshot.profileVersion)}`,
+        `profile-confirmation:${accountId}/v${String(latestSnapshot.profileVersion)}`,
+        `execution-policy:${policy.policyId}/v${String(policy.policyVersion)}`,
         ...(reasonCodeCleared ? [`managed-execution-state:${accountId}`] : []),
       ],
       ...(reasonCodeCleared ? { reasonCode: "stale_profile_cleared" } : {}),

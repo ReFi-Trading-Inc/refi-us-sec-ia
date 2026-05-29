@@ -38,7 +38,7 @@ export function buildSiweMessage(input: SiweMessageInput): string {
     "",
     `URI: ${input.uri}`,
     "Version: 1",
-    `Chain ID: ${input.chainId}`,
+    `Chain ID: ${String(input.chainId)}`,
     `Nonce: ${input.nonce}`,
     `Issued At: ${input.issuedAt}`,
     `Expiration Time: ${input.expirationTime}`,

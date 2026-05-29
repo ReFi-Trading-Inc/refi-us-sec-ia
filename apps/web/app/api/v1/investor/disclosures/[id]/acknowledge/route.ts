@@ -28,7 +28,7 @@ function paramFromUrl(url: string): string | null {
   const u = new URL(url);
   const parts = u.pathname.split("/").filter(Boolean);
   const i = parts.indexOf("disclosures");
-  return i >= 0 && parts[i + 1] ? parts[i + 1]! : null;
+  return parts[i + 1] ?? null;
 }
 
 export const POST = bffMutate<AckBody>({

@@ -61,7 +61,10 @@ export async function appendDisclosureAck(args: {
   const created = await acks.putIfAbsent(key, ack);
   if (!created) {
     const existing = await acks.get(key);
-    return { ack: existing!, created: false };
+    if (!existing) {
+      throw new Error(`disclosure ack ${key} missing after putIfAbsent`);
+    }
+    return { ack: existing, created: false };
   }
   return { ack, created: true };
 }

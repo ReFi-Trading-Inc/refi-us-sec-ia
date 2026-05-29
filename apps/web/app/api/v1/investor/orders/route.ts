@@ -10,7 +10,7 @@ import { bffRead } from "@lib/bff/handler";
 export const GET = bffRead({
   source: "prototype-bff",
   upstreamGap: "G-001",
-  fetch: async (ctx) => {
+  fetch: (ctx) => {
     if (!ctx.auth || !ctx.auth.accountId) {
       return { items: [], notice: "Sign in to view orders." };
     }

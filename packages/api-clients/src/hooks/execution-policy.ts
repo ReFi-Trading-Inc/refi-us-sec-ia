@@ -20,10 +20,10 @@ async function bffFetch<T>(path: string): Promise<T> {
   return env.data;
 }
 
-async function bffMutate<TReq, TRes>(
+async function bffMutate<TRes>(
   path: string,
   method: "POST" | "PUT",
-  body: TReq,
+  body: unknown,
 ): Promise<TRes> {
   const env = await apiFetch<BffEnvelope<TRes>>(path, { method, body });
   return env.data;
@@ -152,13 +152,13 @@ export function useSaveExecutionPolicyDraft(): UseMutationResult<
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input) =>
-      bffMutate<SaveExecutionPolicyDraftInput, ExecutionPolicyDraftDto>(
+      bffMutate<ExecutionPolicyDraftDto>(
         "/api/v1/investor/execution-policy/draft",
         "PUT",
         input,
       ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["execution-policy-draft"] });
+      void qc.invalidateQueries({ queryKey: ["execution-policy-draft"] });
     },
   });
 }
@@ -177,18 +177,18 @@ export function useManagedExecutionState(): UseQueryResult<ManagedExecutionState
 export function usePauseManaged(): UseMutationResult<
   ManagedExecutionStateDto,
   Error,
-  { reason?: string } | void
+  { reason?: string } | undefined
 > {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input) =>
-      bffMutate<{ reason?: string }, ManagedExecutionStateDto>(
+      bffMutate<ManagedExecutionStateDto>(
         "/api/v1/investor/managed/pause",
         "POST",
         input ?? {},
       ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
+      void qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
     },
   });
 }
@@ -201,15 +201,15 @@ export function useActivateExecutionPolicy(): UseMutationResult<
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input) =>
-      bffMutate<ActivateExecutionPolicyInput, ActivateExecutionPolicyResult>(
+      bffMutate<ActivateExecutionPolicyResult>(
         "/api/v1/investor/execution-policy/activate",
         "POST",
         input,
       ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["execution-policy"] });
-      qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
-      qc.invalidateQueries({ queryKey: ["subscription-mode"] });
+      void qc.invalidateQueries({ queryKey: ["execution-policy"] });
+      void qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
+      void qc.invalidateQueries({ queryKey: ["subscription-mode"] });
     },
   });
 }
@@ -315,15 +315,15 @@ export function useReconfirmProfile(): UseMutationResult<
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input) =>
-      bffMutate<ReconfirmProfileInput, ReconfirmProfileResult>(
+      bffMutate<ReconfirmProfileResult>(
         "/api/v1/investor/profile/reconfirm",
         "POST",
         input,
       ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["profile-reactivation"] });
-      qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
-      qc.invalidateQueries({ queryKey: ["investor-status"] });
+      void qc.invalidateQueries({ queryKey: ["profile-reactivation"] });
+      void qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
+      void qc.invalidateQueries({ queryKey: ["investor-status"] });
     },
   });
 }
@@ -347,15 +347,15 @@ export function useReacknowledgeDisclosure(): UseMutationResult<
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input) =>
-      bffMutate<ReacknowledgeDisclosureInput, ReacknowledgeDisclosureResult>(
+      bffMutate<ReacknowledgeDisclosureResult>(
         "/api/v1/investor/disclosures/reacknowledge",
         "POST",
         input,
       ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["disclosure-reacknowledgement"] });
-      qc.invalidateQueries({ queryKey: ["disclosure-registry"] });
-      qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
+      void qc.invalidateQueries({ queryKey: ["disclosure-reacknowledgement"] });
+      void qc.invalidateQueries({ queryKey: ["disclosure-registry"] });
+      void qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
     },
   });
 }
@@ -396,13 +396,13 @@ export function useResumeManaged(): UseMutationResult<
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () =>
-      bffMutate<Record<string, never>, ManagedExecutionStateDto>(
+      bffMutate<ManagedExecutionStateDto>(
         "/api/v1/investor/managed/resume",
         "POST",
         {},
       ),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
+      void qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
     },
   });
 }

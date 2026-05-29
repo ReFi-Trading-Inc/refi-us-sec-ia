@@ -11,16 +11,10 @@
  *   - errors are converted to BffErrorBody, never naked Error responses
  */
 import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
+import type { NextResponse } from "next/server";
 import { correlationIdFrom } from "./correlation";
 import { getAuthContext, type AuthContext } from "./auth";
-import {
-  bffOk,
-  BffErrors,
-  type BffSource,
-  type GapId,
-  type BffReceipt,
-} from "./envelope";
+import { bffOk, BffErrors, type BffSource, type GapId } from "./envelope";
 import type {
   InvestorActionName,
   RecordAccessAction,
@@ -41,7 +35,7 @@ export interface BffReadHandler<T> {
   allowAnonymous?: boolean;
   fetch: (
     ctx: BffContext | { req: NextRequest; correlationId: string; auth: null },
-  ) => Promise<T>;
+  ) => Promise<T> | T;
 }
 
 export interface BffMutateHandler<T> {
@@ -49,13 +43,21 @@ export interface BffMutateHandler<T> {
   source?: BffSource;
   upstreamGap?: GapId | GapId[];
   parse?: (body: unknown) => Promise<T> | T;
-  apply: (ctx: BffContext & { input: T }) => Promise<{
-    data: unknown;
-    references?: string[];
-    outcome?: "ok" | "rejected" | "blocked";
-    reasonCode?: string;
-    status?: number;
-  }>;
+  apply: (ctx: BffContext & { input: T }) =>
+    | Promise<{
+        data: unknown;
+        references?: string[];
+        outcome?: "ok" | "rejected" | "blocked";
+        reasonCode?: string;
+        status?: number;
+      }>
+    | {
+        data: unknown;
+        references?: string[];
+        outcome?: "ok" | "rejected" | "blocked";
+        reasonCode?: string;
+        status?: number;
+      };
 }
 
 export function bffRead<T>(handler: BffReadHandler<T>) {
@@ -68,7 +70,7 @@ export function bffRead<T>(handler: BffReadHandler<T>) {
           correlationId,
           auth: null,
         });
-        const opts: Parameters<typeof bffOk<T>>[1] = {
+        const opts: Parameters<typeof bffOk>[1] = {
           source: handler.source ?? "prototype-bff",
           correlationId,
         };
@@ -78,7 +80,7 @@ export function bffRead<T>(handler: BffReadHandler<T>) {
       const auth = await getAuthContext(req);
       if (!auth) return BffErrors.unauthorized(correlationId);
       const data = await handler.fetch({ req, auth, correlationId });
-      const opts: Parameters<typeof bffOk<T>>[1] = {
+      const opts: Parameters<typeof bffOk>[1] = {
         source: handler.source ?? "prototype-bff",
         correlationId,
       };
@@ -102,7 +104,7 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
 
       let input: T;
       if (handler.parse) {
-        const json = await req.json().catch(() => null);
+        const json: unknown = await req.json().catch(() => null);
         try {
           input = await handler.parse(json);
         } catch (parseErr) {
@@ -137,13 +139,13 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
         references: result.references ?? [],
       });
 
-      const opts: Parameters<typeof bffOk<unknown>>[1] = {
+      const opts: Parameters<typeof bffOk>[1] = {
         source: handler.source ?? "prototype-bff",
         correlationId,
         receipt: {
           receiptId: receipt.receiptId,
           action: handler.action,
-        } as BffReceipt,
+        },
         status: result.status ?? 200,
       };
       if (handler.upstreamGap) opts.upstreamGap = handler.upstreamGap;
@@ -168,7 +170,7 @@ export interface BffReadWithAccessLogHandler<T> {
    * captures the intended target even if fetch returns 404.
    */
   recordRef: (ctx: BffContext) => string | Promise<string>;
-  fetch: (ctx: BffContext) => Promise<T | null>;
+  fetch: (ctx: BffContext) => Promise<T | null> | T | null;
 }
 
 /**
@@ -197,7 +199,7 @@ export function bffReadWithAccessLog<T>(
         correlationId,
         recordRef,
       });
-      const opts: Parameters<typeof bffOk<T>>[1] = {
+      const opts: Parameters<typeof bffOk>[1] = {
         source: handler.source ?? "prototype-bff",
         correlationId,
       };

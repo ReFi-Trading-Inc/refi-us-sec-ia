@@ -230,7 +230,7 @@ export const POST = bffMutate<ActivateBody>({
           idempotencyKey,
         },
         references: [
-          `execution-policy:${existing.policyId}/v${existing.policyVersion}`,
+          `execution-policy:${existing.policyId}/v${String(existing.policyVersion)}`,
           `activation-idempotency:${idempotencyKey}`,
         ],
         reasonCode: "idempotent_replay",
@@ -302,6 +302,12 @@ export const POST = bffMutate<ActivateBody>({
       correlationId: ctx.correlationId,
     });
 
+    // isExecutionReady(broker) was true above, so broker is non-null here.
+    // Narrow explicitly so the BFF reference list doesn't need a non-null !.
+    if (!broker) {
+      throw new Error("broker missing after isExecutionReady check");
+    }
+
     // Activating an Execution Policy implies Managed mode. We flip the
     // subscription_mode projection here so Signal users transitioning to
     // Managed do not need a separate explicit mode-change step. If the
@@ -335,9 +341,9 @@ export const POST = bffMutate<ActivateBody>({
         idempotencyKey,
       },
       references: [
-        `execution-policy:${policy.policyId}/v${policy.policyVersion}`,
-        `advisory-profile:${accountId}/v${profile.profileVersion}`,
-        `broker-connection:${broker!.connectionId}`,
+        `execution-policy:${policy.policyId}/v${String(policy.policyVersion)}`,
+        `advisory-profile:${accountId}/v${String(profile.profileVersion)}`,
+        `broker-connection:${broker.connectionId}`,
         `lifecycle:${accountId}`,
         `managed-execution-state:${accountId}`,
         `subscription-mode:${accountId}`,

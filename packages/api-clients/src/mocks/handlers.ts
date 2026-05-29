@@ -23,8 +23,7 @@ import {
 declare const process: { env: Record<string, string | undefined> } | undefined;
 
 const BASE =
-  (typeof process !== "undefined" &&
-    process?.env?.["NEXT_PUBLIC_API_BASE_URL"]) ||
+  (typeof process !== "undefined" && process.env["NEXT_PUBLIC_API_BASE_URL"]) ||
   "*";
 
 function url(path: string): string {
@@ -132,7 +131,7 @@ export const handlers = [
       .json()
       .catch(() => ({}))) as Partial<OrderRequest>;
     const order: Order = {
-      id: `ord_${Date.now()}`,
+      id: `ord_${String(Date.now())}`,
       symbol: body.symbol ?? "AAPL",
       qty: body.qty ?? 1,
       side: body.side ?? "buy",
@@ -162,7 +161,7 @@ export const handlers = [
     HttpResponse.json({ ok: true }),
   ),
   http.post(url("/v1/support/ticket"), () =>
-    HttpResponse.json({ ok: true, ticket_id: `tkt_${Date.now()}` }),
+    HttpResponse.json({ ok: true, ticket_id: `tkt_${String(Date.now())}` }),
   ),
 
   http.post(url("/v1/us/eligibility"), () => {

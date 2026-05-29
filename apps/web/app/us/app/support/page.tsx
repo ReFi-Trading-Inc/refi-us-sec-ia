@@ -107,10 +107,15 @@ export default function SupportPage() {
           />
 
           <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium text-charcoal-200">
+            <label
+              htmlFor="support-message"
+              className="text-sm font-medium text-charcoal-200"
+            >
               {support.messageLabel}
             </label>
             <textarea
+              id="support-message"
+              data-testid="support-message"
               className="rounded-md border border-charcoal-700 bg-charcoal-800 px-3 py-2 text-sm text-charcoal-100 placeholder:text-charcoal-600 focus:outline-none focus:ring-2 focus:ring-mint-400 min-h-[120px] resize-y"
               placeholder={support.placeholder}
               value={message}

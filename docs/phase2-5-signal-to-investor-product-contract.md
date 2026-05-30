@@ -1,5 +1,7 @@
 # Phase 2.5 Signal-to-Investor-Product Contract (V2 — GitLab-aligned)
 
+> **Superseded note:** This document reflects Phase 2.5 alignment against `refinity-main main @ 0a7d64d`. Phase 2.6 supersedes it using `refinity-main main @ 9f9dfc9` and `docs/authoritative/*` as the backend source of truth. Retain this file as historical audit evidence. See [`phase2-6-authoritative-source-of-truth.md`](phase2-6-authoritative-source-of-truth.md).
+
 **Date:** 2026-05-29
 **Branch:** `phase2-5-contract-gap-v2-gitlab`
 **Status:** Phase 2.5 merge-gate contract. **Not** a Phase 3 implementation design.

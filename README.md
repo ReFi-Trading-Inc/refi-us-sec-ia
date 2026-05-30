@@ -10,19 +10,33 @@
 
 ---
 
-## 🧭 Coming from the trading backend? Read these first.
+## 🧭 Backend source of truth for Phase 2.6
 
-If you maintain [`refinity_dev/refinity-main`](https://gitlab.com/refinity_dev/refinity-main) and you're here to look at the alignment / contract / open-question stack, this is your fast path. Each link is the canonical doc — start at the top, stop when you have enough.
+The current source of truth for the trading backend is **`refinity_dev/refinity-main main @ 9f9dfc9`** and specifically the docs under **`refinity-main/docs/authoritative/*`**. Phase 2.5 docs are retained as historical audit evidence with supersession headers.
 
-| Order | Doc                                                                                                              | What it gives you                                                                                                               |
-| ----- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| 1     | [`docs/phase2-5-final-merge-package.md`](docs/phase2-5-final-merge-package.md)                                   | One-page summary of what shipped in Phase 2.5 (the PR that just merged to `main`).                                              |
-| 2     | [`docs/phase2-5-signal-to-investor-product-contract.md`](docs/phase2-5-signal-to-investor-product-contract.md)   | **Contract V2.** The authoritative bridge between your backend and this shell. GitLab-aligned (`refinity-main main @ 0a7d64d`). |
-| 3     | [`docs/phase2-5-gitlab-backend-capability-map.md`](docs/phase2-5-gitlab-backend-capability-map.md)               | Exact file:line refs from your repo that Contract V2 builds on. **If we misread anything, this is where to push back.**         |
-| 4     | [`docs/phase2-5-gap-register-v2-against-gitlab.md`](docs/phase2-5-gap-register-v2-against-gitlab.md)             | **Gap Register V2.** Per-gap classification. §10 holds the four open questions waiting on you.                                  |
-| 5     | [`docs/phase2-5-surface-to-gitlab-alignment-register.md`](docs/phase2-5-surface-to-gitlab-alignment-register.md) | 16-row per-surface verdict — where each frontend surface lands against your backend.                                            |
+### If you maintain `refinity-main`, read these first
 
-SEC-boundary context (the "why" behind the four open questions in Gap Register V2 §10):
+| Order | Doc                                                                                                      | What it gives you                                                                                                                                                         |
+| ----- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | [`docs/phase2-6-authoritative-source-of-truth.md`](docs/phase2-6-authoritative-source-of-truth.md)       | The Phase 2.6 source-of-truth declaration with pinned commits and the authority hierarchy.                                                                                |
+| 2     | [`docs/phase2-6-repo-observation-report.md`](docs/phase2-6-repo-observation-report.md)                   | Evidence-anchored report from inspecting both repos. Conflicts, stale assumptions, validated assumptions.                                                                 |
+| 3     | [`docs/phase2-6-daniel-answer-resolution.md`](docs/phase2-6-daniel-answer-resolution.md)                 | Closes the four Phase 2.5 blockers with your direct answers and the authoritative docs.                                                                                   |
+| 4     | [`docs/phase2-6-contract-v3-plan.md`](docs/phase2-6-contract-v3-plan.md)                                 | Plan for Contract V3. Drops `policy_id`/`policy_version`/`strategy_id`/`aggregation_status`; risk goes binary; signal:0 is neutral; lifecycle moves to correlation spine. |
+| 5     | [`docs/phase2-6-gap-register-v3-plan.md`](docs/phase2-6-gap-register-v3-plan.md)                         | Plan for Gap Register V3 — gaps closed, reclassified, new, with owners and severity.                                                                                      |
+| 6     | [`docs/phase2-6-surface-reframing-map.md`](docs/phase2-6-surface-reframing-map.md)                       | Per-surface reframing against the authoritative backend (all 16 surfaces).                                                                                                |
+| 7     | [`docs/phase2-6-account-prefs-history-options.md`](docs/phase2-6-account-prefs-history-options.md)       | The new AccountPrefs history scope — needs your ratification.                                                                                                             |
+| 8     | [`docs/phase2-6-admin-portal-api-consumption-map.md`](docs/phase2-6-admin-portal-api-consumption-map.md) | Per-endpoint mapping of Admin Portal routes to investor surfaces, with ACL/scoping/cache rules.                                                                           |
+| 9     | [`docs/phase2-6-next-pr-sequence.md`](docs/phase2-6-next-pr-sequence.md)                                 | The 8-PR sequence after this observation branch.                                                                                                                          |
+
+### Authoritative backend docs (in `refinity-main`)
+
+- `docs/authoritative/executive_overview.md` — system summary with mermaid pipeline diagram
+- `docs/authoritative/frontend_integration_contract.md` — frontend integration contract
+- `docs/authoritative/trade_lifecycle_contract.md` — lifecycle vocabulary and transitions
+- `docs/authoritative/trade_auditability_contract.md` — audit reconstruction patterns
+- `docs/authoritative/trade_lifecycle_retention_legal_hold.md` — retention rules
+
+### SEC-boundary context (unchanged from Phase 2.5)
 
 - [`docs/sec203a-product-boundary.md`](docs/sec203a-product-boundary.md)
 - [`docs/admin-investor-boundary.md`](docs/admin-investor-boundary.md)

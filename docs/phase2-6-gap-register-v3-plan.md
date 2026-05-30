@@ -5,6 +5,8 @@
 **Supersedes:** [`phase2-5-gap-register-v2-against-gitlab.md`](phase2-5-gap-register-v2-against-gitlab.md) (V2).
 **Status:** **Plan** for Gap Register V3. Detailed authoring happens in PR-B.
 
+> **Status update (2026-05-30):** Final Gap Register V3 has been authored in [`docs/phase2-6-gap-register-v3-against-authoritative.md`](phase2-6-gap-register-v3-against-authoritative.md). This plan is retained as planning evidence.
+
 This doc enumerates the gap-classification changes from V2 → V3 driven by Daniel's authoritative docs. New gaps, closed gaps, reclassified gaps, owners, severity, surface impact, next action.
 
 ---

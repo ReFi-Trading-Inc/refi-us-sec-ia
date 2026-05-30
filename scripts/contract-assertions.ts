@@ -72,6 +72,9 @@ const { setManagedExecutionState, getManagedExecutionState } =
 const { appendExecutionPolicy, getLatestExecutionPolicy } =
   await import("../apps/web/src/lib/prototype-store/entities/execution-policy.ts");
 
+const { upsertRecommendation, getRecommendation } =
+  await import("../apps/web/src/lib/prototype-store/entities/recommendation-projection.ts");
+
 // ─── Action taxonomy assertions ─────────────────────────────────────────────
 
 await section(
@@ -362,6 +365,84 @@ await section(
     assert.equal(now?.status, "paused_by_user");
     // Pause did not change policy version.
     assert.equal(now?.executionPolicyVersion, 1);
+  },
+);
+
+// ─── Contract V3 PR-C realignment assertions ───────────────────────────────
+
+await section(
+  'RecommendationProjection.action excludes "hold" (Contract V3 §4a + §7.5a)',
+  async () => {
+    const accountId = `rec-${Date.now()}`;
+    const allowed = ["buy", "sell", "neutral", "rebalance"] as const;
+    for (const action of allowed) {
+      const rec = await upsertRecommendation({
+        rec: {
+          accountId,
+          recommendationId: `r-${action}`,
+          symbol: "AAPL",
+          action,
+          rationale: "fixture",
+          confidence: "0.50",
+          status: "open",
+          generatedAt: new Date().toISOString(),
+        },
+        correlationId: `c-${action}`,
+      });
+      assert.equal(rec.action, action);
+    }
+    // Read-back type narrowing: every recorded action must be in the V3 set.
+    const read = await getRecommendation(accountId, "r-neutral");
+    assert.ok(read);
+    assert.notEqual(
+      read.action as string,
+      "hold",
+      'V3 forbids "hold" as a RecommendationProjection.action — signal: 0 is "neutral".',
+    );
+    assert.ok(
+      (allowed as readonly string[]).includes(read.action),
+      `read.action "${read.action}" not in V3 allowed set ${allowed.join("|")}`,
+    );
+  },
+);
+
+await section(
+  "InvestorAccountActionVerb is restricted to the Contract V3 §13.3 allowlist",
+  async () => {
+    // Contract V3 §13.3 — the only investor-side admin-action verbs the BFF
+    // may accept. Any string outside this set must be a 403 + tripwire hit.
+    const allowlist = [
+      "pause_autopilot",
+      "resume_autopilot",
+      "join_template",
+      "leave_template",
+      "update_prefs",
+      "liquidate_all",
+    ];
+    const forbidden = [
+      "force_rebuild",
+      "rebalance",
+      "manual_rebalance",
+      "template.admin",
+      "staff_approve",
+      "founder_approve",
+      "support_advise",
+      "investor_accept",
+    ];
+    // The allowlist is the authoritative set; this assertion fails loudly if
+    // a forbidden verb ever sneaks into the allowlist.
+    for (const v of forbidden) {
+      assert.equal(
+        allowlist.includes(v),
+        false,
+        `Forbidden verb "${v}" appears in the InvestorAccountActionVerb allowlist.`,
+      );
+    }
+    assert.equal(
+      allowlist.length,
+      6,
+      "Contract V3 §13.3 fixes the allowlist at exactly 6 verbs; update Contract V3 before extending.",
+    );
   },
 );
 

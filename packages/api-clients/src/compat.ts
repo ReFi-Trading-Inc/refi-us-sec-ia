@@ -182,7 +182,7 @@ export interface RecommendationProjection {
   recommendationId: string;
   intentId?: string;
   symbol: string;
-  action: "buy" | "sell" | "hold" | "rebalance";
+  action: "buy" | "sell" | "neutral" | "rebalance";
   rationale: string;
   confidence: string;
   expectedAllocation?: string;

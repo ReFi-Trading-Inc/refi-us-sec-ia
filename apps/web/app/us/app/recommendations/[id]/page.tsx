@@ -36,7 +36,9 @@ export default function RecommendationDetailPage({
     );
   }
 
-  const actionable = data.action !== "hold";
+  // "neutral" carries the Contract V3 signal: 0 semantic (no new stance);
+  // "rebalance" is informational and does not surface a per-trade action.
+  const actionable = data.action !== "neutral" && data.action !== "rebalance";
 
   const tone =
     data.action === "buy"

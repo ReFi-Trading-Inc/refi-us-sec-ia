@@ -28,7 +28,7 @@ function cookiesFor(cookieValue: string) {
 // "Loading…" placeholder.
 async function mockRecommendationDetail(
   page: Page,
-  args: { id: string; symbol: string; action: "buy" | "sell" | "hold" },
+  args: { id: string; symbol: string; action: "buy" | "sell" | "neutral" },
 ) {
   await page.route(`**/v1/recommendations/${args.id}`, (route) =>
     route.fulfill({

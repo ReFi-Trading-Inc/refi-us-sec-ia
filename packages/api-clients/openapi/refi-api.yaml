@@ -439,7 +439,7 @@ components:
       properties:
         id: { type: string }
         symbol: { type: string }
-        action: { type: string, enum: [buy, sell, hold] }
+        action: { type: string, enum: [buy, sell, neutral, rebalance] }
         rationale: { type: string }
         confidence: { type: number }
         created_at: { type: string, format: date-time }

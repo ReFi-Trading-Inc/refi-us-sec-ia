@@ -1,12 +1,45 @@
 /**
- * Execution Policy — the investor-approved, durable, versioned policy object.
+ * Execution Policy — BFF-owned signed investor-authorization artifact.
  *
- * This is the SEC 203A-2(e) product fulcrum: the artifact the investor
- * signs at activation. Each version is immutable; updates produce a new
- * version. The activation receipt references the specific version.
+ * What this is:
+ *   - A BFF-owned, durable, append-only ledger of the signed standing
+ *     authorization the investor produces at Managed-mode activation.
+ *   - The SEC 203A-2(e) product fulcrum: it captures the disclosure
+ *     versions, advisory-profile version, advisory-agreement version,
+ *     and signed evidence (timestamp, IP hash, device fingerprint hash)
+ *     in effect at the moment of activation.
+ *   - `policyId` and `policyVersion` are BFF-assigned identifiers for this
+ *     BFF-owned artifact. They are NOT mirrors of any Daniel backend field.
  *
- * Distinct from ManagedExecutionState (the runtime status machine — see
- * managed-execution-state.ts).
+ * What this is NOT:
+ *   - NOT a Daniel backend object. `refinity-main` has no `ExecutionPolicy`
+ *     table; Daniel's execution path runs on `AccountPrefs`, `AccountConsents`,
+ *     `UserConsents`, `RiskLimits`, `TradingControlStates`, `AccountIntents`,
+ *     `RiskSnapshots`, `ExecutionPlans`, `Orders`, `OrderEvents`, and
+ *     downstream lifecycle evidence.
+ *   - NOT an `exec-gateway` policy contract. Do not pass this artifact (or
+ *     its `policyId` / `policyVersion`) downstream as a backend trust input.
+ *   - NOT a broker-driver `ExecutionPolicy`. The broker submission path
+ *     uses Admin Portal projections of `Orders` / `OrderEvents`.
+ *   - NOT `ManagedExecutionState` (see managed-execution-state.ts), which
+ *     answers "under the current authorization, what is automation doing
+ *     right now?"
+ *
+ * Why it stays as `ExecutionPolicy` for now:
+ *   - Six shipped E2E specs treat `policyVersion` bumps as the audit-trail
+ *     contract for disclosure re-acknowledgement, profile reactivation,
+ *     managed pause/resume, activation, and exception review.
+ *   - Phase 2.6 PR-C is a type/fixture realignment, not a behavior change.
+ *   - PR-D (AccountPrefs History Contract + canonical backend-aligned writer
+ *     path) is the appropriate place to consider a rename to
+ *     `InvestorSignedPolicy` / `ManagedAuthorizationArtifact`. The rename
+ *     itself is optional — the doc-comment above is the contract.
+ *
+ * See:
+ *   - docs/phase2-6-signal-to-investor-product-contract-v3.md §4 (removals
+ *     vs preserved-as-BFF-owned)
+ *   - memory: contract_execution_policy.md (Execution Policy vs Managed
+ *     Execution State separation)
  *
  * All thresholds carry as DecimalString to avoid float precision loss; the
  * BFF refuses non-decimal-string inputs at the boundary.

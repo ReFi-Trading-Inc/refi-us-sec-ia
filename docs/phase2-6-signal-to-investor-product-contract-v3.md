@@ -114,22 +114,44 @@ Mode behavior:
 
 ---
 
-## 4. Removals (dropped from V3)
+## 4. Removals (dropped from V3) — scoping correction
 
-| Item                                                                | Why dropped                                                                                           |
-| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `policy_id` (wire / type / route)                                   | No such field in backend; Daniel confirmed (Q4)                                                       |
-| `policy_version`                                                    | Same                                                                                                  |
-| `execution_policy_id`                                               | Same; existing in `packages/api-clients/src/generated/api.ts:42,801` etc. — to be regenerated in PR-C |
-| `execution_policy_version`                                          | Same                                                                                                  |
-| `strategy_id` (wire / type / route)                                 | No standalone field; identity = `stream_id + strategy_source`                                         |
-| `aggregation_status` enum                                           | Backend canonicalizes via `AccountIntents.legs.{source_streams, stream_contributions}`                |
-| `ExecutionPolicyDecision` object                                    | No backend equivalent; replaced by `RiskDecisionProjection` + `BffEligibilityState`                   |
-| `ExecutionPolicyVersion` object                                     | Same                                                                                                  |
-| `ExecutionPolicyActivation` object                                  | Replaced by `InvestorTemplateActivationRequest`                                                       |
-| Risk reason REVIEW / DENY partition                                 | Risk is binary at backend; Daniel confirmed (Q1)                                                      |
-| `RecommendationProjection.action = "hold"` (as `signal: 0` meaning) | `0` is neutral / no new stance per FIC line 98; never "hold" framing                                  |
-| Per-trade `BrokerSubmission` object as a BFF-created object         | Replaced by `OrderLifecycleProjection` reading `Orders`+`OrderEvents`+`BrokerOrderAttempts`+`Fills`   |
+The V3 removal list applies to **claims of being a Daniel backend wire contract**. It does **not** delete BFF-owned signed-artifact concepts that legitimately exist on the BFF side. The two cases are kept separate below.
+
+### 4a. Removed from the backend wire contract
+
+These names must not appear as claims of being a Daniel backend field, exec-gateway policy contract, or broker-driver input.
+
+| Item                                                                    | Why dropped from the wire                                                                              |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `policy_id` as a backend wire field                                     | No such field in `refinity-main`; Daniel confirmed (Q4)                                                |
+| `policy_version` as a backend wire field                                | Same                                                                                                   |
+| `execution_policy_id` as a backend wire field                           | Same; existing OpenAPI generated artifacts are V2 vestiges with no live consumers                      |
+| `execution_policy_version` as a backend wire field                      | Same                                                                                                   |
+| Frontend code that treats any of the above as exec-gateway trust inputs | The backend execution path runs on Daniel-owned tables (see §2); BFF must not pretend otherwise        |
+| `strategy_id` as a backend strategy identity                            | Per rule §8.12, strategy identity is `stream_id + strategy_source`; no standalone backend field        |
+| `aggregation_status` enum                                               | Backend canonicalizes via `AccountIntents.legs.{source_streams, stream_contributions}`                 |
+| `ExecutionPolicyDecision` object as a backend projection                | No backend equivalent; risk decisions live in `RiskSnapshots`; non-risk gates in `BffEligibilityState` |
+| `ExecutionPolicyVersion` object as a backend projection                 | Same                                                                                                   |
+| `ExecutionPolicyActivation` object as a backend projection              | Activation routes through `InvestorTemplateActivationRequest` (§7.16)                                  |
+| Risk reason REVIEW / DENY partition on the risk side                    | Risk is binary at backend; Daniel confirmed (Q1)                                                       |
+| `RecommendationProjection.action = "hold"` (as `signal: 0` meaning)     | `0` is neutral / no new stance per FIC line 98; never "hold" framing                                   |
+| Per-trade `BrokerSubmission` object as a BFF-created object             | Replaced by `OrderLifecycleProjection` reading `Orders`+`OrderEvents`+`BrokerOrderAttempts`+`Fills`    |
+
+### 4b. Preserved as BFF-owned signed artifact
+
+The BFF prototype currently has a legitimate, BFF-owned investor-authorization artifact. It is **not** removed by §4a.
+
+| Item                                                                                                 | Why preserved                                                                                                                                                                                                                                            |
+| ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Prototype `ExecutionPolicy` entity (`apps/web/src/lib/prototype-store/entities/execution-policy.ts`) | BFF-owned signed investor-authorization artifact: captures advisory-profile version, disclosure versions, advisory-agreement version, signed timestamp / IP hash / device fingerprint hash. SEC 203A-2(e) product evidence; not a backend wire contract. |
+| `policyId` (BFF-assigned)                                                                            | BFF identifier for the BFF-owned artifact. Not a Daniel backend field.                                                                                                                                                                                   |
+| `policyVersion` (BFF-assigned, monotonically increasing)                                             | BFF audit-trail anchor for disclosure re-acknowledgement, profile reactivation, managed pause/resume, activation, and exception review. Six shipped E2E specs depend on this contract.                                                                   |
+| `ManagedExecutionState` (`managed-execution-state.ts`)                                               | Runtime status machine; references the current `executionPolicyVersion` as a BFF-internal pointer. Distinct from the artifact above; never collapse the two (memory contract).                                                                           |
+
+**Naming continuity in PR-C.** The prototype entity keeps its `ExecutionPolicy` name through Phase 2.6. A future rename to `InvestorSignedPolicy` or `ManagedAuthorizationArtifact` may be considered in PR-D or later but is **not required**. The doc-comment block at the top of `execution-policy.ts` (PR-C) is the authoritative BFF-ownership statement; the name itself is incidental.
+
+**SEC 203A-2(e) note.** The standing investor authorization (signed `UserConsents` + signed product disclosures + advisory-profile version) is the regulatory fulcrum. Whether the BFF stores this as `ExecutionPolicy` or a renamed equivalent is a naming choice; the evidence linkage is the substance. PR-D (AccountPrefs History Contract + canonical writer path) is the appropriate forum to revisit the naming.
 
 ---
 

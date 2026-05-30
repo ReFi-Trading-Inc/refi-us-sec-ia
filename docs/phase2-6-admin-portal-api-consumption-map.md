@@ -4,6 +4,7 @@
 **Source of truth:** [`phase2-6-authoritative-source-of-truth.md`](phase2-6-authoritative-source-of-truth.md)
 **Gap:** `GAP-ADMIN-API-004`, `GAP-ACL-005`
 **Status:** Per-endpoint mapping of Admin Portal API routes to investor-product surfaces, with ACL / scoping / caching rules.
+**Daniel ratification (2026-05-30):** Phase 2.6 ACL strategy ratified as **patterns 1 + 2** (route-scoped filtering + account-filtered list filtering). Phase 3 migrates to **pattern 3** — dedicated `/api/v1/investor/*` projections owned by Daniel. `GAP-ACL-005` remains open for implementation in PR-E. See Contract V3 §13.2.
 
 This doc identifies, for every Admin Portal endpoint that's relevant to the investor product, the source table, investor-safe status, fields to redact, account-id scoping requirement, cacheability, BFF route candidate, surface served, production readiness, and security notes.
 
@@ -19,7 +20,18 @@ Every Admin Portal route the BFF consumes must be filtered against the authentic
 2. **Account-filtered**: the endpoint returns a list filtered by a query parameter (e.g. `GET /api/v1/orders?account_id=…`). BFF injects the session's `account_id` and rejects any other.
 3. **Tenant-scoped projection**: a new endpoint is added on Admin Portal side that emits only the requested investor's data (e.g. `GET /api/v1/investor/accounts/{account_id}/dashboard`). Cleanest for production; needs Daniel coordination.
 
-**Recommendation**: ship with patterns 1 + 2 in Phase 2.6 (BFF-side filter); migrate to pattern 3 in Phase 3 once Daniel scopes investor-facing projections explicitly. Tracked as GAP-ACL-005.
+**Ratified (Daniel, 2026-05-30):** ship with patterns 1 + 2 in Phase 2.6 (BFF-side filter); migrate to pattern 3 in Phase 3 once Daniel scopes investor-facing projections explicitly. Tracked as `GAP-ACL-005`.
+
+### 1.1 BFF ACL invariants (Phase 2.6)
+
+- BFF authenticates the investor session (SIWE) before every Admin Portal call.
+- BFF derives `account_id` from the session — never from caller input.
+- BFF rejects (403) any caller-supplied `account_id` that does not match the session.
+- BFF injects `account_id=session.account_id` into pattern-2 list routes.
+- BFF redacts admin-only fields per the per-route redaction table in §4.
+- BFF rate-limits sensitive routes (audit packet, trace, record download).
+- BFF emits `RecordAccessLog` for every view/download of record/audit-packet routes (separate from `InvestorActionReceipt`).
+- BFF never exposes raw Admin Portal route vocabulary to the investor UI; all routes are product-mediated under `/api/v1/investor/*` BFF paths.
 
 ## 2. Field redaction principle
 

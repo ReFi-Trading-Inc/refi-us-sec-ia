@@ -222,6 +222,31 @@ export interface TemplateDescriptor {
 }
 ```
 
+### 7.3a `TemplateTargetProjection` and `TemplateTargetAffectedStreamProjection`
+
+Projections of `TemplateTargets` and `TemplateTargetAffectedStreams`. The portfolio-engine emits one `TemplateTargets` row per template recomputation; affected streams trail the row for lineage. Frontend reads only; never invents these.
+
+```ts
+export interface TemplateTargetProjection {
+  template_target_id: string;
+  template_id: string;
+  template_version: string;
+  computed_at: string;
+  weights: Array<{
+    asset_id: string;
+    target_weight: number;
+  }>;
+  correlation_id: string;
+}
+
+export interface TemplateTargetAffectedStreamProjection {
+  template_target_id: string;
+  stream_id: StreamId;
+  asset_id: string;
+  contribution_weight: number; // multi-stream canonicalization lineage
+}
+```
+
 ### 7.4 `AccountIntentProjection`
 
 Direct projection of an `AccountIntents` row (header).
@@ -279,6 +304,31 @@ export interface AccountIntentLegProjection {
   action_id: string;
   ts: string;
   blocked_reason?: string;
+}
+```
+
+### 7.5a `RecommendationProjection`
+
+Investor-facing projection of account-level backend evidence. A recommendation is **not** raw model output and is never directly executable. It is always tied to account context (`account_id`, `intent_id`).
+
+```ts
+export interface RecommendationProjection {
+  recommendation_id: string; // === AccountIntents.intent_id
+  account_id: string;
+  asset_id: string;
+  action: "neutral" | "increase" | "decrease" | "enter" | "exit"; // V3 drops "hold"
+  signal_value?: number; // raw signal preserved; 0 is neutral, never "hold"
+  rationale_ref?: string; // pointer to intent / plan rationale, not staff advice
+  source_streams: StreamId[]; // lineage
+  template_id: string;
+  template_version: string;
+  action_id: string;
+  intent_status: AccountIntentProjection["status"];
+  created_at: string;
+  correlation_id: string;
+  // Signal tier: record-only; never reachable to broker.
+  // Managed tier: routes through TradingControlStates + RiskSnapshots + ExecutionPlans + Orders.
+  // No per-trade Accept, no investor-accept, no staff approval, no founder review.
 }
 ```
 
@@ -399,6 +449,45 @@ export interface ReconciliationDiscrepancyProjection {
 }
 ```
 
+### 7.9a `ExceptionReviewProjection`
+
+Investor-facing exception surface. **Never** clears a backend risk rejection; **never** mediates staff approval, founder review, or support-led individualized advice.
+
+```ts
+export type ExceptionCategory =
+  | "trading_control" // operator/system control blocking activity
+  | "blocked_order" // OrderEvents.status in blocked_by_conflict | blocked_dependency
+  | "reconciliation" // open ReconciliationDiscrepancy
+  | "broker_state" // broker disconnected / stale snapshot
+  | "consent_gap" // missing or stale UserConsents
+  | "disclosure_gap" // un-acknowledged disclosure version
+  | "profile_gap" // incomplete or stale AdvisoryProfile
+  | "account_state"; // unsupported AccountSettings state
+
+export interface ExceptionReviewProjection {
+  exception_id: string;
+  account_id: string;
+  category: ExceptionCategory;
+  detected_at: string;
+  display_summary: string;
+  next_action: {
+    // Only allowed investor verbs are exposed; risk-reject overrides are never offered.
+    verb?:
+      | InvestorAccountActionVerb
+      | "acknowledge_disclosure"
+      | "complete_profile"
+      | "reconnect_broker"
+      | "contact_support";
+    target?: string;
+  };
+  control_state_ref?: string; // ControlStateProjection
+  order_ref?: string; // OrderLifecycleProjection.order_id
+  discrepancy_ref?: string; // ReconciliationDiscrepancyProjection
+  cleared_by?: "system" | "operator"; // never "investor" for operator/system/risk/reconciliation/broker controls
+  correlation_id: string;
+}
+```
+
 ### 7.10 `OrderLifecycleProjection`
 
 Joined projection of `Orders` + `OrderEvents` + `BrokerOrderAttempts` + `Fills`. Replaces V2's invented `BrokerSubmission`.
@@ -505,6 +594,56 @@ export interface RecordArtifactProjection {
 }
 ```
 
+### 7.11a `AuditPacketProjection`
+
+Investor-downloadable audit packet, sourced from `/api/v1/trace` per Daniel decision §13.6. Authenticated, account-scoped, redacted, logged.
+
+```ts
+export interface AuditPacketProjection {
+  packet_id: string; // ULID
+  account_id: string;
+  scope: {
+    // Exactly one of these anchors; cross-account anchors rejected at BFF.
+    intent_id?: string;
+    plan_id?: string;
+    order_id?: string;
+    fill_id?: string;
+    reconciliation_run_id?: string;
+  };
+  generated_at: string;
+  spine: RecordArtifactProjection["spine"];
+  records: RecordArtifactProjection[];
+  redactions_applied: string[]; // names of admin-only fields stripped before emit
+  retention_class: "regulatory_7y";
+  // Admin notes, staff-only comments, internal secrets, tokens, broker credentials,
+  // raw vendor secrets, and private operational payloads MUST NOT appear.
+}
+```
+
+### 7.11b `RecordAccessLog`
+
+BFF-owned record of every investor view / download of a sensitive record or audit packet. Separate stream from `InvestorActionReceipt` (memory contract holds; see §7 boundary rules above).
+
+```ts
+export interface RecordAccessLog {
+  access_id: string; // ULID
+  account_id: string;
+  actor_auth_id: string; // session-derived investor identity
+  route: string; // BFF route path; never a raw Admin Portal route
+  resource_kind:
+    | "audit_packet"
+    | "record_artifact"
+    | "trace"
+    | "consent_evidence";
+  resource_ref: string; // record_id / packet_id / etc.
+  at: string;
+  ip_hash?: string;
+  user_agent_hash?: string;
+  correlation_id: string;
+  // Never carries the investor action verb; viewing is not action.
+}
+```
+
 ### 7.12 `AccountPrefsProjection`
 
 Direct projection of `AccountPrefs` (current state).
@@ -540,6 +679,26 @@ export interface AccountPrefsHistoryEntry {
   user_agent_hash?: string; // investor change only
   device_fingerprint_hash?: string; // investor change only
   correlation_id: string;
+}
+```
+
+### 7.13a `RiskLimitsProjection`
+
+Direct projection of `RiskLimits`. **Read-only for investors.** Operator-mutable; audited via `AdminInterventions`. No investor-facing edit path unless Daniel later approves one.
+
+```ts
+export interface RiskLimitsProjection {
+  account_id: string;
+  max_gross_exposure_pct: number;
+  max_net_exposure_pct: number;
+  max_single_name_pct: number;
+  max_sector_pct: number;
+  var_config?: Record<string, unknown>;
+  order_limits?: Record<string, unknown>;
+  staleness?: Record<string, unknown>;
+  compliance?: Record<string, unknown>;
+  updated_at: string;
+  // BFF must surface as display-only. No PATCH route exposed to investor UI.
 }
 ```
 
@@ -768,6 +927,66 @@ The BFF does not invent state; it only composes, filters, redacts, and translate
 - `template.admin`, `target_account_id`, `manual_rebalance` NEVER appear in any investor-visible artifact (tripwire-enforced at source level; E2E-enforced at render level).
 - `force_rebuild` / `rebalance` (operator-only `account.admin` verbs) NEVER reach an investor surface.
 - Support cannot override eligibility, execution status, exception status, policy state.
+
+### Per-PR test requirements (recorded; specs land with each PR)
+
+**PR-C — type and fixture realignment.**
+
+- No frontend-facing `policy_id` / `policy_version` / `execution_policy_id` / `execution_policy_version`.
+- No standalone `strategy_id`.
+- No `signal: 0` rendered as "hold".
+- `risk.rejected` maps to DENY; risk-reject never enters REVIEW.
+- `REVIEW` only for BFF non-risk gates listed in §7.7.
+- Signal tier never routes to broker (no `OrderLifecycleProjection` reachable from a Signal-tier `RecommendationProjection`).
+- No per-trade Accept; no investor-accept verb anywhere in fixtures.
+- Tripwire forbidden-term list updated: drop `policy_id` / `policy_version`; admin-shape items remain.
+- OpenAPI client regenerated; `execution_policy_*` / `strategy_id` absent.
+
+**PR-D — AccountPrefs History Contract.**
+
+- Before/after diff computed against current `AccountPrefs` row.
+- Empty diff is a no-op (no history row written).
+- Material-change list (configurable) triggers `signed_consent_ref` requirement; write fails closed if absent.
+- Write procedure is atomic: history row created in the same transaction as the `AccountPrefs` update.
+- Parity fixtures: TS port and Python writer produce identical outputs for shared inputs (Daniel decision §13.1).
+- Hash behavior stable across TS and Python.
+- Retention behavior aligns with `apps/common/trade_lifecycle/retention.py` (7-year minimum + legal hold).
+
+**PR-E — Admin Portal API proxy + ACL.**
+
+- `account_id` mismatch rejected (403) for both pattern-1 and pattern-2 routes.
+- Admin-only fields redacted per per-route Zod schema (consumption map §4).
+- Pattern-1 route-scoped filtering enforced; pattern-2 account-filtered list enforced.
+- No raw Admin Portal route exposed under `/api/v1/investor/*`.
+- Audit-packet / trace routes emit `RecordAccessLog` on every read.
+- Rate limits present on sensitive routes (audit packet, trace, record download).
+
+**PR-F — Account Controls Center (Surface 4).**
+
+- `AccountPrefs` editor writes through the canonical Option 3c writer path; BFF does not invent a separate write.
+- `RiskLimits` rendered read-only; no PATCH affordance.
+- `ConsentRequirement` displayed when outstanding; `ConsentAcceptance` records on submit.
+- History view renders `AccountPrefsHistoryEntry` ledger.
+- Pause/resume respects the investor-safe subset (Daniel decision §13.4); operator/system controls render read-only.
+- Surface 4 implementation gated: no merge before PR-D AccountPrefs History Contract lands.
+
+**PR-G — Records Center (Surface 11).**
+
+- Lifecycle correlation spine visible in every record artifact view.
+- Record artifacts link to correct IDs (`correlation_id`, `action_id`, `intent_id`, `plan_id`, `order_id`, `client_order_id`, `broker_order_id`, `attempt_id`, `fill_id`, `reconciliation_run_id`).
+- `AuditPacketProjection` download scoped to investor's own account; cross-account anchors rejected (403).
+- Redactions applied per `AuditPacketProjection.redactions_applied`.
+- Every download emits `RecordAccessLog`.
+
+**PR-H — Exception Review (Surface 10).**
+
+- Risk rejection cannot be cleared by investor (no affordance rendered).
+- Operator-set controls render read-only.
+- System-set controls render read-only.
+- Reconciliation block cannot be cleared by investor.
+- Broker failure cannot be cleared by investor.
+- Only the allowed `InvestorAccountActionVerb` subset (§13.3) is offered as `next_action.verb`.
+- Forbidden verbs (`force_rebuild`, `rebalance`, `template.admin`, `target_account_id`, staff/founder/support-mediated) rejected at BFF; tripwire enforced.
 
 ---
 

@@ -3,7 +3,9 @@
 **Date:** 2026-05-30
 **Source of truth:** [`phase2-6-authoritative-source-of-truth.md`](phase2-6-authoritative-source-of-truth.md)
 **Gap:** `GAP-PREFS-HISTORY-001`, `GAP-PREFS-WRITE-002`, `GAP-PREFS-AUDIT-003`
-**Status:** **Plan** for the new AccountPrefs History scope. Needs Daniel ratification on the architecture choice before PR-F implementation.
+**Status:** **Architecture ratified by Daniel (2026-05-30): Option 3c — hybrid TS/Python split.** Implementation still blocked pending final Contract V3 + AccountPrefs History Contract (PR-D). Surface 4 remains blocked.
+
+> **Daniel decision (2026-05-30):** Option 3c is ratified. `apps/common` is the canonical backend procedure location. Python is the authoritative write path. TypeScript handles reads + validation in the BFF. Parity fixtures hold TS and Python to identical payload shape, diff logic, validation, and hash behavior. The BFF must not invent a separate AccountPrefs write procedure. See Contract V3 §13.1.
 
 This doc captures Daniel's stated requirement, current backend state, the missing history ledger, candidate architectures, the recommended approach, open questions for Daniel, SEC 203A-2(e) implications, test/deploy strategy, and production-blocker classification.
 
@@ -139,9 +141,19 @@ The procedure lives in `refinity-main/apps/common/account_prefs_history/{writer.
 - Pure TS port (Option 3a) risks drift on write-time invariants. The write path is the load-bearing audit path; drift here is unacceptable.
 - Pure Python sidecar (Option 3b) makes read-side operations (form validation, diff preview, "what would this change look like") incur a network hop. Read-side is hot-path UX.
 
-### Decision (pending Daniel ratification)
+### Decision — ratified by Daniel (2026-05-30)
 
-Recommendation: **Option 3c — hybrid**. Final choice deferred to PR-D after Daniel reviews this doc and confirms or counter-proposes.
+**Option 3c — hybrid — confirmed.**
+
+- `apps/common/account_prefs_history/*` is the canonical write procedure (Daniel's repo, Python).
+- Python sidecar wraps the canonical writer for cross-language consumers; all writes route through it.
+- BFF uses a TypeScript port for reads + validation in `packages/common-ts/account-prefs-history/`, gated by parity fixtures.
+- Parity fixtures cover payload shape, diff logic, validation rules, and hash behavior.
+- The BFF must not invent a separate AccountPrefs write procedure.
+- All `AccountPrefs` mutations route through the canonical writer regardless of caller (BFF or admin-portal).
+- AccountPrefs History Contract is the remaining gate; until PR-D lands, Surface 4 implementation stays blocked.
+
+Gap status: `GAP-PREFS-HISTORY-001`, `GAP-PREFS-WRITE-002`, `GAP-PREFS-AUDIT-003` move from "needs Daniel ratification" to **"architecture ratified, implementation still blocked pending final Contract V3 + AccountPrefs History Contract."**
 
 ## 7. SEC 203A-2(e) proof-of-consent implications
 
@@ -188,7 +200,7 @@ If Option 3c lands:
 
 | #   | Question                                                                                                           | Why it matters                                                                           |
 | --- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| 1   | Confirm or counter-propose the Option 3c hybrid architecture                                                       | Drives PR-D and PR-F design                                                              |
+| 1   | ~~Confirm or counter-propose the Option 3c hybrid architecture~~ **Resolved 2026-05-30: Option 3c ratified.**      | Drives PR-D and PR-F design                                                              |
 | 2   | Should `AccountPrefsHistory` live in your Spanner instance?                                                        | Strong preference: yes — keeps audit trail unified with rest of trade-lifecycle evidence |
 | 3   | Confirm the DDL shape proposed in §4, or counter-propose                                                           | Locks the contract                                                                       |
 | 4   | Confirm `apps/common.account_prefs_history.writer` is the canonical writer for ALL writers (admin-portal included) | Otherwise drift                                                                          |

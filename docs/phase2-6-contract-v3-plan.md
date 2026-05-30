@@ -5,6 +5,8 @@
 **Supersedes:** [`phase2-5-signal-to-investor-product-contract.md`](phase2-5-signal-to-investor-product-contract.md) (V2).
 **Status:** **Plan** for Contract V3. Detailed authoring happens in PR-B.
 
+> **Status update (2026-05-30):** Final Contract V3 has been authored in [`docs/phase2-6-signal-to-investor-product-contract-v3.md`](phase2-6-signal-to-investor-product-contract-v3.md). This plan is retained as planning evidence.
+
 This doc plans the replacement of Phase 2.5 Contract V2 with a Contract V3 that aligns to `refinity-main` authoritative docs at commit `9f9dfc9`. It enumerates fields to remove, rename, preserve, and add; the new object model; and the implementation impact.
 
 ---

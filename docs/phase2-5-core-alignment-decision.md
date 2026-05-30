@@ -1,5 +1,7 @@
 # Phase 2.5 Core Alignment Decision Memo
 
+> **Superseded note:** This document reflects Phase 2.5 alignment against `refinity-main main @ 0a7d64d`. Phase 2.6 supersedes it using `refinity-main main @ 9f9dfc9` and `docs/authoritative/*` as the backend source of truth. Retain this file as historical audit evidence. See [`phase2-6-authoritative-source-of-truth.md`](phase2-6-authoritative-source-of-truth.md).
+
 **Date:** 2026-05-29
 **Audit branch:** `phase2-5-gitlab-surface-alignment-audit`
 **Companion docs:** `phase2-5-gitlab-branch-inventory.md`, `phase2-5-gitlab-backend-capability-map.md`, `phase2-5-frontend-surface-inventory.md`, `phase2-5-surface-to-gitlab-alignment-register.md`.

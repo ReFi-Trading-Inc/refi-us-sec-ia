@@ -61,6 +61,15 @@ const {
   isInvestorAdminVerb,
 } = await import("../apps/web/src/lib/sec203a/admin-verbs.ts");
 
+const { RISK_DECISIONS, isRiskDecision, riskSnapshotSchema, riskLimitsSchema } =
+  await import("../apps/web/src/lib/sec203a/risk.ts");
+
+const { appendRiskLimits, listRiskLimits, getLatestRiskLimits } =
+  await import("../apps/web/src/lib/prototype-store/entities/risk-limits.ts");
+
+const { appendRiskSnapshot, getRiskSnapshot } =
+  await import("../apps/web/src/lib/prototype-store/entities/risk-snapshot.ts");
+
 const { appendProfileSnapshot, getLatestProfileSnapshot } =
   await import("../apps/web/src/lib/prototype-store/entities/advisory-profile.ts");
 
@@ -519,6 +528,217 @@ await section(
       undefined,
       "BFF-only acknowledgeDisclosure receipt must omit adminVerb.",
     );
+  },
+);
+
+// ─── Risk domain (FIC §253-309, DDL RiskLimits/RiskSnapshots) ──────────────
+
+await section(
+  "RiskDecision is binary: approved | rejected (no REVIEW/DENY partition)",
+  async () => {
+    assert.deepEqual(
+      [...RISK_DECISIONS].sort(),
+      ["approved", "rejected"],
+      "RISK_DECISIONS drifted from Daniel FIC §253-309 binary decision contract.",
+    );
+    for (const v of [
+      "needs_review",
+      "review",
+      "deny",
+      "denied",
+      "flag",
+      "flagged",
+      "pending",
+      "hold",
+      "manual_review",
+    ]) {
+      assert.equal(
+        isRiskDecision(v),
+        false,
+        `Forbidden risk decision "${v}" was accepted — would re-introduce REVIEW/DENY partition.`,
+      );
+    }
+  },
+);
+
+await section(
+  "RiskSnapshot enforces reasons/decision invariant via Zod",
+  async () => {
+    // Approved + non-empty reasons → reject.
+    const approvedWithReasons = riskSnapshotSchema.safeParse({
+      intentId: "i-1",
+      accountId: "a-1",
+      decision: "approved",
+      snapshot: {},
+      snapshotHash: "a".repeat(64),
+      correlationId: "c-1",
+      assessedAt: new Date().toISOString(),
+      reasons: ["something"],
+    });
+    assert.equal(
+      approvedWithReasons.success,
+      false,
+      "Approved snapshot with non-empty reasons[] must be rejected.",
+    );
+    // Rejected + empty reasons → reject.
+    const rejectedWithoutReasons = riskSnapshotSchema.safeParse({
+      intentId: "i-2",
+      accountId: "a-1",
+      decision: "rejected",
+      snapshot: {},
+      snapshotHash: "b".repeat(64),
+      correlationId: "c-2",
+      assessedAt: new Date().toISOString(),
+      reasons: [],
+    });
+    assert.equal(
+      rejectedWithoutReasons.success,
+      false,
+      "Rejected snapshot with empty reasons[] must be rejected.",
+    );
+    // Invalid hash → reject.
+    const badHash = riskSnapshotSchema.safeParse({
+      intentId: "i-3",
+      accountId: "a-1",
+      decision: "approved",
+      snapshot: {},
+      snapshotHash: "not-hex",
+      correlationId: "c-3",
+      assessedAt: new Date().toISOString(),
+      reasons: [],
+    });
+    assert.equal(
+      badHash.success,
+      false,
+      "Snapshot with non-SHA-256 hash must be rejected.",
+    );
+    // Valid approved → accept.
+    const ok = riskSnapshotSchema.safeParse({
+      intentId: "i-4",
+      accountId: "a-1",
+      decision: "approved",
+      snapshot: { positions: [] },
+      snapshotHash: "c".repeat(64),
+      correlationId: "c-4",
+      assessedAt: new Date().toISOString(),
+      reasons: [],
+    });
+    assert.equal(ok.success, true, "Valid approved snapshot must parse.");
+  },
+);
+
+await section(
+  "RiskSnapshots are immutable per intent_id (17 CFR 275.204-2)",
+  async () => {
+    const intentId = `i-immut-${Date.now()}`;
+    await appendRiskSnapshot({
+      snapshot: {
+        intentId,
+        accountId: "imut-acc",
+        decision: "approved",
+        snapshot: { v: 1 },
+        snapshotHash: "d".repeat(64),
+        correlationId: "c-imut-1",
+        assessedAt: new Date().toISOString(),
+        reasons: [],
+      },
+    });
+    // Second write with same intentId — even with same payload — must throw.
+    await assert.rejects(
+      appendRiskSnapshot({
+        snapshot: {
+          intentId,
+          accountId: "imut-acc",
+          decision: "rejected",
+          snapshot: { v: 2 },
+          snapshotHash: "e".repeat(64),
+          correlationId: "c-imut-2",
+          assessedAt: new Date().toISOString(),
+          reasons: ["limits_breached"],
+        },
+      }),
+      /already exists/,
+      "A second RiskSnapshot for the same intent_id must be rejected.",
+    );
+    const read = await getRiskSnapshot(intentId);
+    assert.ok(read);
+    assert.equal(read.decision, "approved", "Original snapshot must persist.");
+    assert.equal(read.snapshot["v"], 1);
+  },
+);
+
+await section(
+  "RiskLimits versions monotonically increase per account",
+  async () => {
+    const accountId = `rl-${Date.now()}`;
+    const base = {
+      accountId,
+      maxGrossExposurePct: 1.0,
+      maxNetExposurePct: 1.0,
+      maxSingleNamePct: 0.1,
+      maxSectorPct: 0.3,
+    };
+    const v1 = await appendRiskLimits({
+      limits: base,
+      correlationId: "c-rl-1",
+    });
+    const v2 = await appendRiskLimits({
+      limits: { ...base, maxSingleNamePct: 0.05 },
+      correlationId: "c-rl-2",
+    });
+    const v3 = await appendRiskLimits({
+      limits: { ...base, maxSectorPct: 0.25 },
+      correlationId: "c-rl-3",
+    });
+    assert.equal(v1.version, 1);
+    assert.equal(v2.version, 2);
+    assert.equal(v3.version, 3);
+    const latest = await getLatestRiskLimits(accountId);
+    assert.equal(latest?.version, 3);
+    const all = await listRiskLimits(accountId);
+    assert.deepEqual(
+      all.map((l) => l.version),
+      [1, 2, 3],
+    );
+  },
+);
+
+await section(
+  "RiskLimits schema rejects out-of-range pcts and non-decimal-string monetary fields",
+  async () => {
+    // pct > 1 for single-name is impossible (can't hold >100% of one asset).
+    const tooBig = riskLimitsSchema.safeParse({
+      accountId: "a-1",
+      maxGrossExposurePct: 1.0,
+      maxNetExposurePct: 1.0,
+      maxSingleNamePct: 1.5,
+      maxSectorPct: 0.3,
+    });
+    assert.equal(tooBig.success, false, "maxSingleNamePct > 1 must reject.");
+    // orderLimits with JS number monetary → reject.
+    const numberMoney = riskLimitsSchema.safeParse({
+      accountId: "a-1",
+      maxGrossExposurePct: 1.0,
+      maxNetExposurePct: 1.0,
+      maxSingleNamePct: 0.1,
+      maxSectorPct: 0.3,
+      orderLimits: { maxOrderNotional: 10000 },
+    });
+    assert.equal(
+      numberMoney.success,
+      false,
+      "Monetary fields must be DecimalString, not JS number.",
+    );
+    // Valid with DecimalString → accept.
+    const ok = riskLimitsSchema.safeParse({
+      accountId: "a-1",
+      maxGrossExposurePct: 1.0,
+      maxNetExposurePct: 1.0,
+      maxSingleNamePct: 0.1,
+      maxSectorPct: 0.3,
+      orderLimits: { maxOrderNotional: "10000.00" },
+    });
+    assert.equal(ok.success, true, "Valid RiskLimits must parse.");
   },
 );
 

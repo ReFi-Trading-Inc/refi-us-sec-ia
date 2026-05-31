@@ -200,7 +200,7 @@ export const riskSnapshotSchema: z.ZodType<RiskSnapshot> = z
       message: "snapshotHash must be 64-char lowercase hex (SHA-256).",
     }),
     correlationId: z.string().min(1),
-    assessedAt: z.string().datetime(),
+    assessedAt: z.iso.datetime(),
     reasons: z.array(z.string()),
   })
   .refine((s) => (s.decision === "approved" ? s.reasons.length === 0 : true), {

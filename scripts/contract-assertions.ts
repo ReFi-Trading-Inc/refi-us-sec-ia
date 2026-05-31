@@ -144,6 +144,19 @@ const {
   listBrokerAttemptRetryChain,
 } = brokerAttemptEntity;
 
+const { FILL_SOURCES, KNOWN_LIQUIDITY_VALUES, isFillSource, fillSchema } =
+  await import("../apps/web/src/lib/sec203a/fills.ts");
+
+const fillEntity =
+  await import("../apps/web/src/lib/prototype-store/entities/fill.ts");
+const {
+  appendFill,
+  getFill,
+  listFillsForOrder,
+  listFillsForBrokerOrder,
+  listFillsForAccount,
+} = fillEntity;
+
 const { appendProfileSnapshot, getLatestProfileSnapshot } =
   await import("../apps/web/src/lib/prototype-store/entities/advisory-profile.ts");
 
@@ -2464,6 +2477,356 @@ await section(
       "listBrokerAttemptsForOrder",
       "listBrokerAttemptsForCorrelation",
       "listBrokerAttemptRetryChain",
+    ];
+    for (const name of expected) {
+      assert.equal(
+        exported.has(name),
+        true,
+        `Expected entity export "${name}" missing.`,
+      );
+    }
+  },
+);
+
+// ─── Fills domain (DDL 212-247, pipeline.py writer audit) ─────────────────
+
+await section(
+  "Fill source enum matches Daniel exactly (3 closed values per pipeline.py)",
+  async () => {
+    assert.deepEqual(
+      [...FILL_SOURCES].sort(),
+      ["poller", "reconciliation", "webhook"],
+      "FILL_SOURCES drifted from pipeline.py:2908,1778.",
+    );
+    assert.equal(FILL_SOURCES.length, 3);
+    for (const bad of [
+      "broker_webhook",
+      "broker_poller",
+      "admin",
+      "reconciler",
+      "frontend",
+      "exec-gateway",
+    ]) {
+      assert.equal(
+        isFillSource(bad),
+        false,
+        `Non-Fill source "${bad}" was accepted — confusing with BROKER_TRUTH_SOURCES.`,
+      );
+    }
+  },
+);
+
+await section(
+  "Fill KNOWN_LIQUIDITY_VALUES documents the commonly-observed broker values",
+  async () => {
+    // liquidity is free-form per Daniel; this sentinel set is documentation.
+    for (const v of ["maker", "taker", "unknown"]) {
+      assert.equal(
+        (KNOWN_LIQUIDITY_VALUES as readonly string[]).includes(v),
+        true,
+        `KNOWN_LIQUIDITY_VALUES missing canonical "${v}".`,
+      );
+    }
+  },
+);
+
+function baseFill(
+  overrides: Partial<{
+    orderId: string;
+    fillId: string;
+  }> = {},
+): Parameters<typeof fillSchema.safeParse>[0] {
+  return {
+    orderId: overrides.orderId ?? "o-1",
+    fillId: overrides.fillId ?? "f-1",
+  };
+}
+
+await section(
+  "Fill schema: orderId + fillId are required; all other fields optional matching Daniel",
+  async () => {
+    const noOrder = fillSchema.safeParse({ ...baseFill(), orderId: "" });
+    assert.equal(noOrder.success, false, "Empty orderId must be rejected.");
+    const noFill = fillSchema.safeParse({ ...baseFill(), fillId: "" });
+    assert.equal(noFill.success, false, "Empty fillId must be rejected.");
+    // Bare-minimum (just PK) must parse — all other fields nullable in Daniel.
+    const ok = fillSchema.safeParse(baseFill());
+    assert.equal(ok.success, true, "Bare PK-only Fill must parse.");
+  },
+);
+
+await section(
+  "Fill schema: qty, price, fees, commission MUST be DecimalString",
+  async () => {
+    const numQty = fillSchema.safeParse({ ...baseFill(), qty: 10 });
+    assert.equal(numQty.success, false, "qty as JS number must be rejected.");
+    const numPrice = fillSchema.safeParse({ ...baseFill(), price: 150.5 });
+    assert.equal(
+      numPrice.success,
+      false,
+      "price as JS number must be rejected.",
+    );
+    const numFees = fillSchema.safeParse({ ...baseFill(), fees: 1.25 });
+    assert.equal(numFees.success, false, "fees as JS number must be rejected.");
+    const numCommission = fillSchema.safeParse({
+      ...baseFill(),
+      commission: 0.5,
+    });
+    assert.equal(
+      numCommission.success,
+      false,
+      "commission as JS number must be rejected.",
+    );
+    const ok = fillSchema.safeParse({
+      ...baseFill(),
+      qty: "10",
+      price: "150.50",
+      fees: "1.25",
+      commission: "0.50",
+    });
+    assert.equal(
+      ok.success,
+      true,
+      "Valid Fill with DecimalString fields must parse.",
+    );
+  },
+);
+
+await section(
+  "Fill schema: timestamp fields must be valid ISO datetime",
+  async () => {
+    for (const field of [
+      "ts",
+      "brokerExecutionTs",
+      "localReceivedAt",
+      "createdAt",
+    ] as const) {
+      const bad = fillSchema.safeParse({
+        ...baseFill(),
+        [field]: "not-a-date",
+      });
+      assert.equal(
+        bad.success,
+        false,
+        `${field} with non-ISO value must be rejected.`,
+      );
+      const ok = fillSchema.safeParse({
+        ...baseFill(),
+        [field]: new Date().toISOString(),
+      });
+      assert.equal(ok.success, true, `${field} with valid ISO must parse.`);
+    }
+  },
+);
+
+await section(
+  "Fill schema: rawHash must be 64-char lowercase SHA-256 hex when set",
+  async () => {
+    const badHex = fillSchema.safeParse({
+      ...baseFill(),
+      rawHash: "Z".repeat(64),
+    });
+    assert.equal(badHex.success, false, "Non-hex rawHash must be rejected.");
+    const tooShort = fillSchema.safeParse({
+      ...baseFill(),
+      rawHash: "a".repeat(63),
+    });
+    assert.equal(
+      tooShort.success,
+      false,
+      "rawHash < 64 chars must be rejected.",
+    );
+    const ok = fillSchema.safeParse({
+      ...baseFill(),
+      rawHash: "b".repeat(64),
+    });
+    assert.equal(ok.success, true);
+  },
+);
+
+await section(
+  "Fill entity: append-only — duplicate (orderId, fillId) is rejected",
+  async () => {
+    const orderId = `o-imut-${Date.now()}`;
+    const fillId = `f-imut-${Date.now()}`;
+    await appendFill({
+      fill: { orderId, fillId, qty: "10", price: "150.00" },
+    });
+    await assert.rejects(
+      appendFill({
+        fill: {
+          orderId,
+          fillId,
+          qty: "20",
+          price: "151.00",
+        },
+      }),
+      /already exists/,
+      "Second append for same (orderId, fillId) must be rejected.",
+    );
+    const read = await getFill(orderId, fillId);
+    assert.ok(read);
+    assert.equal(read.qty, "10", "Original fill must persist.");
+  },
+);
+
+await section(
+  "Fill entity: same fillId across DIFFERENT orderIds is allowed (PK is composite)",
+  async () => {
+    const fillId = `f-shared-${Date.now()}`;
+    const orderA = `oA-${Date.now()}`;
+    const orderB = `oB-${Date.now()}`;
+    await appendFill({ fill: { orderId: orderA, fillId } });
+    await appendFill({ fill: { orderId: orderB, fillId } });
+    const a = await getFill(orderA, fillId);
+    const b = await getFill(orderB, fillId);
+    assert.ok(a);
+    assert.ok(b);
+    assert.notEqual(
+      a.orderId,
+      b.orderId,
+      "Composite PK must allow same fillId across different orders.",
+    );
+  },
+);
+
+await section(
+  "Fill entity: listFillsForOrder returns fills in chronological order",
+  async () => {
+    const orderId = `o-chron-${Date.now()}`;
+    const base = new Date("2026-06-01T10:00:00Z").getTime();
+    const fillIds = [
+      `chron0-${orderId}`,
+      `chron1-${orderId}`,
+      `chron2-${orderId}`,
+    ];
+    // Insert out of order; expect list to come back in ts ascending.
+    await appendFill({
+      fill: {
+        orderId,
+        fillId: fillIds[2]!,
+        ts: new Date(base + 2000).toISOString(),
+      },
+    });
+    await appendFill({
+      fill: {
+        orderId,
+        fillId: fillIds[0]!,
+        ts: new Date(base + 0).toISOString(),
+      },
+    });
+    await appendFill({
+      fill: {
+        orderId,
+        fillId: fillIds[1]!,
+        ts: new Date(base + 1000).toISOString(),
+      },
+    });
+    const list = await listFillsForOrder(orderId);
+    assert.equal(list.length, 3);
+    assert.deepEqual(
+      list.map((f) => f.fillId),
+      fillIds,
+      "listFillsForOrder must return fills in ascending ts order.",
+    );
+  },
+);
+
+await section(
+  "Fill entity: listFillsForBrokerOrder filters by brokerOrderId",
+  async () => {
+    const brokerOrderId = `bo-${Date.now()}`;
+    const orderId = `o-bo-${Date.now()}`;
+    for (let i = 0; i < 3; i++) {
+      await appendFill({
+        fill: {
+          orderId,
+          fillId: `f-bo-${i}-${Date.now()}`,
+          brokerOrderId,
+          ts: new Date(Date.now() + i).toISOString(),
+        },
+      });
+    }
+    const list = await listFillsForBrokerOrder(brokerOrderId);
+    assert.equal(list.length, 3);
+    assert.equal(list[0]?.brokerOrderId, brokerOrderId);
+  },
+);
+
+await section(
+  "Fill entity: listFillsForAccount filters by accountId",
+  async () => {
+    const accountId = `acc-${Date.now()}`;
+    const orderId = `o-acc-${Date.now()}`;
+    for (let i = 0; i < 2; i++) {
+      await appendFill({
+        fill: {
+          orderId,
+          fillId: `f-acc-${i}-${Date.now()}`,
+          accountId,
+          ts: new Date(Date.now() + i).toISOString(),
+        },
+      });
+    }
+    const list = await listFillsForAccount(accountId);
+    assert.equal(list.length, 2);
+    assert.equal(list[0]?.accountId, accountId);
+  },
+);
+
+await section(
+  "Fill entity: exports NO Order-mutation, OrderEvent-create, BrokerAttempt-create, OrderIdMap-create, or broker-submission helpers",
+  async () => {
+    const forbidden = [
+      // Order mutation
+      "updateOrder",
+      "transitionOrder",
+      "mutateOrder",
+      "patchOrder",
+      // OrderEvents creation
+      "createOrderEvent",
+      "appendOrderEvent",
+      "recordOrderEvent",
+      // BrokerOrderAttempts creation
+      "createBrokerAttempt",
+      "appendBrokerAttempt",
+      "completeBrokerAttempt",
+      "recordBrokerAttempt",
+      // OrderIdMap creation
+      "createOrderIdMap",
+      "appendOrderIdMap",
+      "recordOrderIdMap",
+      "upsertOrderIdMap",
+      // Broker submission helpers
+      "submit",
+      "submitOrder",
+      "submitToBroker",
+      "placeOrder",
+      "sendToBroker",
+      "executeOrder",
+      "callBroker",
+    ];
+    const exported = Object.keys(fillEntity);
+    for (const name of forbidden) {
+      assert.equal(
+        exported.includes(name),
+        false,
+        `Fill entity exports forbidden symbol "${name}" — Fills are broker evidence only.`,
+      );
+    }
+  },
+);
+
+await section(
+  "Fill entity: exports exactly the expected append + lookup surface",
+  async () => {
+    const exported = new Set(Object.keys(fillEntity));
+    const expected = [
+      "appendFill",
+      "getFill",
+      "listFillsForOrder",
+      "listFillsForBrokerOrder",
+      "listFillsForAccount",
     ];
     for (const name of expected) {
       assert.equal(

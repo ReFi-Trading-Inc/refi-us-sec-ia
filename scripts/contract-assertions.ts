@@ -106,6 +106,23 @@ const {
   listOrdersByCorrelation,
 } = orderEntity;
 
+const {
+  ORDER_EVENT_TYPES,
+  ORDER_EVENT_REASON_CODES,
+  ORDER_EVENT_SOURCE_SERVICES,
+  isOrderEventType,
+  orderEventSchema,
+} = await import("../apps/web/src/lib/sec203a/order-events.ts");
+
+const orderEventEntity =
+  await import("../apps/web/src/lib/prototype-store/entities/order-event.ts");
+const {
+  appendOrderEvent,
+  getOrderEvent,
+  listOrderEventsForOrder,
+  listOrderEventsForCorrelation,
+} = orderEventEntity;
+
 const { appendProfileSnapshot, getLatestProfileSnapshot } =
   await import("../apps/web/src/lib/prototype-store/entities/advisory-profile.ts");
 
@@ -1465,6 +1482,376 @@ await section(
       "listOrdersByAccount",
       "listOrdersByIntent",
       "listOrdersByCorrelation",
+    ];
+    for (const name of expected) {
+      assert.equal(
+        exported.has(name),
+        true,
+        `Expected entity export "${name}" missing.`,
+      );
+    }
+  },
+);
+
+// ─── OrderEvents domain (DDL 294-330, constants.py 3-72, transitions.py) ──
+
+await section(
+  "OrderEvent event_type enum matches Daniel ORDER_EVENT_TYPES exactly (27 values)",
+  async () => {
+    const expected = [
+      "order_planned",
+      "submit_queued",
+      "submit_started",
+      "submit_acknowledged",
+      "submit_rejected",
+      "submit_timeout",
+      "submit_unknown",
+      "broker_status_observed",
+      "order_working",
+      "fill_observed",
+      "partial_fill_observed",
+      "order_filled",
+      "cancel_requested",
+      "cancel_acknowledged",
+      "cancel_rejected",
+      "order_canceled",
+      "order_expired",
+      "amend_requested",
+      "replace_requested",
+      "reconciliation_started",
+      "reconciliation_discrepancy",
+      "reconciliation_repaired",
+      "reconciliation_escalated",
+      "operator_intervention",
+      "transition_rejected",
+      "ignored_duplicate",
+      "stale_event_ignored",
+    ];
+    assert.deepEqual(
+      [...ORDER_EVENT_TYPES].sort(),
+      [...expected].sort(),
+      "ORDER_EVENT_TYPES drifted from apps/common/trade_lifecycle/constants.py:3-32.",
+    );
+    assert.equal(ORDER_EVENT_TYPES.length, 27);
+    // Forbidden additions — would re-introduce REVIEW/DENY semantics.
+    for (const bad of [
+      "needs_review",
+      "review",
+      "deny",
+      "denied",
+      "pending",
+      "approved",
+      "rejected", // bare "rejected" is not an event_type (different from "submit_rejected")
+    ]) {
+      assert.equal(
+        isOrderEventType(bad),
+        false,
+        `Forbidden event_type "${bad}" was accepted.`,
+      );
+    }
+  },
+);
+
+await section(
+  "OrderEvent reason_code enum matches Daniel REASON_CODES exactly (35 values)",
+  async () => {
+    assert.equal(
+      ORDER_EVENT_REASON_CODES.length,
+      35,
+      "REASON_CODES count drifted from constants.py:34-72.",
+    );
+    // Spot-check anchors representing each category.
+    const anchors = [
+      "submit_requested",
+      "broker_acknowledged",
+      "transition_allowed",
+      "invalid_transition",
+      "missing_fill_evidence",
+      "control_halt_global",
+    ];
+    for (const code of anchors) {
+      assert.equal(
+        (ORDER_EVENT_REASON_CODES as readonly string[]).includes(code),
+        true,
+        `Expected reason_code "${code}" missing from ORDER_EVENT_REASON_CODES.`,
+      );
+    }
+  },
+);
+
+await section(
+  "OrderEvent source_service enum matches Daniel writer set (8 values)",
+  async () => {
+    assert.deepEqual(
+      [...ORDER_EVENT_SOURCE_SERVICES].sort(),
+      [
+        "admin",
+        "admin_intervention",
+        "broker_poller",
+        "broker_webhook",
+        "exec-gateway",
+        "poller",
+        "reconciler",
+        "trade-manager",
+      ],
+      "ORDER_EVENT_SOURCE_SERVICES drifted from BROKER_TRUTH_SOURCES (transitions.py:52-54) + writer services.",
+    );
+  },
+);
+
+function baseEvent(
+  overrides: Partial<{
+    eventId: string;
+    orderId: string;
+    occurredAt: string;
+    correlationId?: string;
+    rawHash?: string;
+  }> = {},
+): Parameters<typeof orderEventSchema.safeParse>[0] {
+  return {
+    orderId: overrides.orderId ?? "o-1",
+    occurredAt: overrides.occurredAt ?? new Date().toISOString(),
+    eventId: overrides.eventId ?? "ev-1",
+    eventType: "order_planned",
+    sourceService: "trade-manager",
+    ...(overrides.correlationId !== undefined
+      ? { correlationId: overrides.correlationId }
+      : {}),
+    ...(overrides.rawHash !== undefined ? { rawHash: overrides.rawHash } : {}),
+  };
+}
+
+await section(
+  "OrderEvent schema: eventId, orderId, occurredAt, eventType, sourceService are REQUIRED",
+  async () => {
+    const noEventId = orderEventSchema.safeParse({
+      ...baseEvent(),
+      eventId: "",
+    });
+    assert.equal(noEventId.success, false, "Empty eventId must be rejected.");
+    const noOrderId = orderEventSchema.safeParse({
+      ...baseEvent(),
+      orderId: "",
+    });
+    assert.equal(noOrderId.success, false, "Empty orderId must be rejected.");
+    const badTs = orderEventSchema.safeParse({
+      ...baseEvent(),
+      occurredAt: "not-a-date",
+    });
+    assert.equal(badTs.success, false, "Non-ISO occurredAt must be rejected.");
+    const badType = orderEventSchema.safeParse({
+      ...baseEvent(),
+      eventType: "fabricated_type",
+    });
+    assert.equal(
+      badType.success,
+      false,
+      "event_type outside the 27-value set must be rejected.",
+    );
+    const badSource = orderEventSchema.safeParse({
+      ...baseEvent(),
+      sourceService: "frontend",
+    });
+    assert.equal(
+      badSource.success,
+      false,
+      "source_service outside the 8-value writer set must be rejected.",
+    );
+    // Valid minimal record parses.
+    const ok = orderEventSchema.safeParse(baseEvent());
+    assert.equal(ok.success, true, "Valid minimal OrderEvent must parse.");
+  },
+);
+
+await section(
+  "OrderEvent schema: correlationId is OPTIONAL (matches Daniel nullable)",
+  async () => {
+    // No correlationId → accept (Daniel: best-effort, may be null early in lifecycle).
+    const noCorr = orderEventSchema.safeParse(baseEvent());
+    assert.equal(
+      noCorr.success,
+      true,
+      "OrderEvent without correlationId must parse — Daniel permits null.",
+    );
+    // With correlationId → accept.
+    const withCorr = orderEventSchema.safeParse(
+      baseEvent({ correlationId: "c-1" }),
+    );
+    assert.equal(withCorr.success, true);
+    // Empty correlationId → reject.
+    const emptyCorr = orderEventSchema.safeParse({
+      ...baseEvent(),
+      correlationId: "",
+    });
+    assert.equal(
+      emptyCorr.success,
+      false,
+      "Empty correlationId string must be rejected.",
+    );
+  },
+);
+
+await section(
+  "OrderEvent schema: rawHash must be 64-char lowercase SHA-256 hex when set",
+  async () => {
+    const badShort = orderEventSchema.safeParse(
+      baseEvent({ rawHash: "a".repeat(63) }),
+    );
+    assert.equal(badShort.success, false, "rawHash < 64 chars must reject.");
+    const badUpper = orderEventSchema.safeParse(
+      baseEvent({ rawHash: "A".repeat(64) }),
+    );
+    assert.equal(
+      badUpper.success,
+      false,
+      "rawHash uppercase must reject (Python hexdigest is lowercase).",
+    );
+    const ok = orderEventSchema.safeParse(
+      baseEvent({ rawHash: "c".repeat(64) }),
+    );
+    assert.equal(ok.success, true, "Valid 64-char lowercase hex must parse.");
+  },
+);
+
+await section(
+  "OrderEvent entity: append-only — duplicate eventId is rejected",
+  async () => {
+    const eventId = `ev-immut-${Date.now()}`;
+    const orderId = `o-immut-${Date.now()}`;
+    await appendOrderEvent({
+      event: {
+        orderId,
+        occurredAt: new Date().toISOString(),
+        eventId,
+        eventType: "order_planned",
+        sourceService: "trade-manager",
+      },
+    });
+    await assert.rejects(
+      appendOrderEvent({
+        event: {
+          orderId,
+          occurredAt: new Date().toISOString(),
+          eventId,
+          eventType: "submit_started",
+          sourceService: "trade-manager",
+        },
+      }),
+      /already exists/,
+      "Second append with same eventId must throw — OrderEvents are append-only.",
+    );
+    const read = await getOrderEvent(eventId);
+    assert.ok(read);
+    assert.equal(
+      read.eventType,
+      "order_planned",
+      "Original event must persist.",
+    );
+  },
+);
+
+await section(
+  "OrderEvent entity: listOrderEventsForOrder returns events in chronological order",
+  async () => {
+    const orderId = `o-chron-${Date.now()}`;
+    const base = new Date("2026-05-31T10:00:00Z").getTime();
+    for (const [i, eventType] of [
+      [0, "order_planned"],
+      [2, "submit_started"],
+      [1, "submit_queued"],
+      [3, "order_filled"],
+    ] as const) {
+      await appendOrderEvent({
+        event: {
+          orderId,
+          occurredAt: new Date(base + i * 1000).toISOString(),
+          eventId: `ev-chron-${orderId}-${i}`,
+          eventType,
+          sourceService: "trade-manager",
+        },
+      });
+    }
+    const ordered = await listOrderEventsForOrder(orderId);
+    assert.equal(ordered.length, 4);
+    assert.deepEqual(
+      ordered.map((e) => e.eventType),
+      ["order_planned", "submit_queued", "submit_started", "order_filled"],
+      "Events must be returned in ascending occurredAt order.",
+    );
+  },
+);
+
+await section(
+  "OrderEvent entity: listOrderEventsForCorrelation filters by correlationId",
+  async () => {
+    const corr = `c-look-${Date.now()}`;
+    const orderId = `o-corr-${Date.now()}`;
+    for (let i = 0; i < 3; i++) {
+      await appendOrderEvent({
+        event: {
+          orderId,
+          occurredAt: new Date(Date.now() + i * 1000).toISOString(),
+          eventId: `ev-corr-${orderId}-${i}`,
+          eventType: "broker_status_observed",
+          sourceService: "broker_webhook",
+          correlationId: corr,
+        },
+      });
+    }
+    const byCorr = await listOrderEventsForCorrelation(corr);
+    assert.equal(byCorr.length, 3);
+    assert.equal(byCorr[0]?.correlationId, corr);
+  },
+);
+
+await section(
+  "OrderEvent entity: exports NO Orders-mutation, broker-submission, attempt, or fill helpers",
+  async () => {
+    const forbidden = [
+      // Order mutation
+      "updateOrder",
+      "transitionOrder",
+      "mutateOrder",
+      "patchOrder",
+      // Broker submission
+      "submit",
+      "submitOrder",
+      "submitToBroker",
+      "placeOrder",
+      "placeBroker",
+      "sendToBroker",
+      "executeOrder",
+      "broker",
+      "brokerSubmit",
+      // BrokerOrderAttempts
+      "createBrokerAttempt",
+      "appendBrokerAttempt",
+      "recordBrokerAttempt",
+      // Fills
+      "createFill",
+      "appendFill",
+      "recordFill",
+    ];
+    const exported = Object.keys(orderEventEntity);
+    for (const name of forbidden) {
+      assert.equal(
+        exported.includes(name),
+        false,
+        `OrderEvent entity exports forbidden symbol "${name}" — entity must not mutate Orders, submit to broker, or create attempts/fills.`,
+      );
+    }
+  },
+);
+
+await section(
+  "OrderEvent entity: exports exactly the expected append + lookup surface",
+  async () => {
+    const exported = new Set(Object.keys(orderEventEntity));
+    const expected = [
+      "appendOrderEvent",
+      "getOrderEvent",
+      "listOrderEventsForOrder",
+      "listOrderEventsForCorrelation",
     ];
     for (const name of expected) {
       assert.equal(

@@ -54,6 +54,13 @@ const {
 const { decimalStringRefiner } =
   await import("../apps/web/src/lib/sec203a/decimal.ts");
 
+const {
+  INVESTOR_ADMIN_VERBS,
+  INVESTOR_ACTION_TO_ADMIN_VERB,
+  adminVerbFor,
+  isInvestorAdminVerb,
+} = await import("../apps/web/src/lib/sec203a/admin-verbs.ts");
+
 const { appendProfileSnapshot, getLatestProfileSnapshot } =
   await import("../apps/web/src/lib/prototype-store/entities/advisory-profile.ts");
 
@@ -407,11 +414,13 @@ await section(
 );
 
 await section(
-  "InvestorAccountActionVerb is restricted to the Contract V3 §13.3 allowlist",
+  "INVESTOR_ADMIN_VERBS matches Contract V3 §13.3 exactly",
   async () => {
     // Contract V3 §13.3 — the only investor-side admin-action verbs the BFF
     // may accept. Any string outside this set must be a 403 + tripwire hit.
-    const allowlist = [
+    // Imported from apps/web/src/lib/sec203a/admin-verbs.ts so the literal
+    // cannot drift from the source-of-truth module.
+    const expected = [
       "pause_autopilot",
       "resume_autopilot",
       "join_template",
@@ -429,19 +438,86 @@ await section(
       "support_advise",
       "investor_accept",
     ];
-    // The allowlist is the authoritative set; this assertion fails loudly if
-    // a forbidden verb ever sneaks into the allowlist.
+    assert.deepEqual(
+      [...INVESTOR_ADMIN_VERBS].sort(),
+      [...expected].sort(),
+      "INVESTOR_ADMIN_VERBS drifted from Contract V3 §13.3 — update Contract V3 and Daniel's authoritative spec before changing.",
+    );
     for (const v of forbidden) {
       assert.equal(
-        allowlist.includes(v),
+        isInvestorAdminVerb(v),
         false,
-        `Forbidden verb "${v}" appears in the InvestorAccountActionVerb allowlist.`,
+        `Forbidden verb "${v}" was accepted as an InvestorAdminVerb.`,
       );
     }
     assert.equal(
-      allowlist.length,
+      INVESTOR_ADMIN_VERBS.length,
       6,
-      "Contract V3 §13.3 fixes the allowlist at exactly 6 verbs; update Contract V3 before extending.",
+      "Contract V3 §13.3 fixes the allowlist at exactly 6 verbs.",
+    );
+  },
+);
+
+await section(
+  "InvestorActionName → InvestorAdminVerb mapping is consistent",
+  async () => {
+    // Every value in the mapping must be a real admin verb.
+    for (const [action, verb] of Object.entries(
+      INVESTOR_ACTION_TO_ADMIN_VERB,
+    )) {
+      assert.equal(
+        isInvestorAdminVerb(verb),
+        true,
+        `Mapping for "${action}" → "${verb}" is not a recognized admin verb.`,
+      );
+    }
+    // Spot-check the three actions Phase 2.6 wires up.
+    assert.equal(adminVerbFor("pauseManaged"), "pause_autopilot");
+    assert.equal(adminVerbFor("resumeManaged"), "resume_autopilot");
+    assert.equal(adminVerbFor("updateAccountPrefs"), "update_prefs");
+    // BFF-only actions must NOT map (no backend admin-actions call exists).
+    assert.equal(
+      adminVerbFor("acknowledgeDisclosure"),
+      undefined,
+      "acknowledgeDisclosure must not map to a backend admin verb — it's a BFF-only action.",
+    );
+    assert.equal(
+      adminVerbFor("saveExecutionPolicyDraft"),
+      undefined,
+      "saveExecutionPolicyDraft must not map — drafts never reach backend.",
+    );
+  },
+);
+
+await section(
+  "appendActionReceipt auto-populates adminVerb from the action mapping",
+  async () => {
+    const corr = `c-verb-${Date.now()}`;
+    const paused = await appendActionReceipt({
+      action: "pauseManaged",
+      actor: "user",
+      authId: "verb-test-user",
+      accountId: "verb-test-account",
+      correlationId: corr,
+      outcome: "ok",
+    });
+    assert.equal(
+      paused.adminVerb,
+      "pause_autopilot",
+      "pauseManaged receipt must carry adminVerb=pause_autopilot.",
+    );
+    const ack = await appendActionReceipt({
+      action: "acknowledgeDisclosure",
+      actor: "user",
+      authId: "verb-test-user",
+      accountId: "verb-test-account",
+      correlationId: `${corr}-ack`,
+      outcome: "ok",
+    });
+    assert.equal(
+      ack.adminVerb,
+      undefined,
+      "BFF-only acknowledgeDisclosure receipt must omit adminVerb.",
     );
   },
 );

@@ -70,6 +70,17 @@ const { appendRiskLimits, listRiskLimits, getLatestRiskLimits } =
 const { appendRiskSnapshot, getRiskSnapshot } =
   await import("../apps/web/src/lib/prototype-store/entities/risk-snapshot.ts");
 
+const {
+  ACCOUNT_INTENT_STATUSES,
+  ACCOUNT_INTENT_KINDS,
+  isAccountIntentStatus,
+  accountIntentSchema,
+} = await import("../apps/web/src/lib/sec203a/account-intents.ts");
+
+const accountIntentEntity =
+  await import("../apps/web/src/lib/prototype-store/entities/account-intent.ts");
+const { appendAccountIntent, getAccountIntent } = accountIntentEntity;
+
 const { appendProfileSnapshot, getLatestProfileSnapshot } =
   await import("../apps/web/src/lib/prototype-store/entities/advisory-profile.ts");
 
@@ -739,6 +750,274 @@ await section(
       orderLimits: { maxOrderNotional: "10000.00" },
     });
     assert.equal(ok.success, true, "Valid RiskLimits must parse.");
+  },
+);
+
+// ─── AccountIntents domain (DDL line 74-94, FIC §89-92, builder.py) ────────
+
+await section(
+  "AccountIntentStatus matches Daniel authoritative enum (4 values, no REVIEW/DENY)",
+  async () => {
+    assert.deepEqual(
+      [...ACCOUNT_INTENT_STATUSES].sort(),
+      ["blocked", "empty", "invalid", "ready"],
+      "ACCOUNT_INTENT_STATUSES drifted from Daniel models.py/builder.py.",
+    );
+    for (const v of [
+      "needs_review",
+      "review",
+      "deny",
+      "denied",
+      "flag",
+      "flagged",
+      "pending",
+      "hold",
+      "manual_review",
+      "approved",
+      "rejected",
+    ]) {
+      assert.equal(
+        isAccountIntentStatus(v),
+        false,
+        `Forbidden status "${v}" was accepted — would re-introduce REVIEW/DENY partition.`,
+      );
+    }
+    // intent_kind enum is the live set; canary against silent expansion.
+    assert.deepEqual(
+      [...ACCOUNT_INTENT_KINDS].sort(),
+      ["liquidate_all", "rebalance", "signal_flip"],
+      "ACCOUNT_INTENT_KINDS drifted from Daniel models.py.",
+    );
+  },
+);
+
+function validIntent(
+  overrides: Partial<{
+    intentId: string;
+    status: "ready" | "blocked" | "empty" | "invalid";
+    blockedReason?: string;
+  }> = {},
+): Parameters<typeof accountIntentSchema.safeParse>[0] {
+  const base = {
+    intentId: overrides.intentId ?? "i-ok",
+    accountId: "a-1",
+    status: overrides.status ?? "ready",
+    templateId: "tpl-1",
+    templateVersion: "v1",
+    actionId: "a".repeat(64),
+    intentKind: "rebalance",
+    ts: new Date().toISOString(),
+    legs: [],
+    summaryJson: {},
+    legsHash: "b".repeat(64),
+    correlationId: "c-1",
+  };
+  if (overrides.blockedReason !== undefined) {
+    return { ...base, blockedReason: overrides.blockedReason };
+  }
+  return base;
+}
+
+await section(
+  "AccountIntent: blocked status REQUIRES blockedReason",
+  async () => {
+    const missing = accountIntentSchema.safeParse(
+      validIntent({ status: "blocked" }),
+    );
+    assert.equal(
+      missing.success,
+      false,
+      "status='blocked' without blockedReason must be rejected.",
+    );
+    const present = accountIntentSchema.safeParse(
+      validIntent({ status: "blocked", blockedReason: "AUTOPILOT_DISABLED" }),
+    );
+    assert.equal(
+      present.success,
+      true,
+      "status='blocked' with blockedReason must parse.",
+    );
+  },
+);
+
+await section(
+  "AccountIntent: non-blocked status FORBIDS blockedReason",
+  async () => {
+    for (const status of ["ready", "empty", "invalid"] as const) {
+      const withReason = accountIntentSchema.safeParse(
+        validIntent({ status, blockedReason: "AUTOPILOT_DISABLED" }),
+      );
+      assert.equal(
+        withReason.success,
+        false,
+        `status='${status}' with blockedReason must be rejected.`,
+      );
+      const clean = accountIntentSchema.safeParse(validIntent({ status }));
+      assert.equal(
+        clean.success,
+        true,
+        `status='${status}' without blockedReason must parse.`,
+      );
+    }
+  },
+);
+
+await section(
+  "AccountIntent: legsHash and actionId MUST be 64-char lowercase SHA-256 hex",
+  async () => {
+    const badLegs = accountIntentSchema.safeParse({
+      ...validIntent(),
+      legsHash: "not-hex",
+    });
+    assert.equal(badLegs.success, false, "legsHash must reject non-hex.");
+    const shortHash = accountIntentSchema.safeParse({
+      ...validIntent(),
+      legsHash: "a".repeat(63),
+    });
+    assert.equal(shortHash.success, false, "legsHash must reject < 64 chars.");
+    const upperHash = accountIntentSchema.safeParse({
+      ...validIntent(),
+      legsHash: "A".repeat(64),
+    });
+    assert.equal(
+      upperHash.success,
+      false,
+      "legsHash must reject uppercase hex (Python hexdigest() is lowercase).",
+    );
+    const badAction = accountIntentSchema.safeParse({
+      ...validIntent(),
+      actionId: "Z".repeat(64),
+    });
+    assert.equal(
+      badAction.success,
+      false,
+      "actionId must reject non-hex characters.",
+    );
+  },
+);
+
+await section(
+  "AccountIntent: immutable per intent_id (17 CFR 275.204-2)",
+  async () => {
+    const intentId = `ai-immut-${Date.now()}`;
+    const intent = {
+      intentId,
+      accountId: "imut-acc",
+      status: "ready" as const,
+      templateId: "tpl-1",
+      templateVersion: "v1",
+      actionId: "1".repeat(64),
+      intentKind: "rebalance" as const,
+      ts: new Date().toISOString(),
+      legs: [],
+      summaryJson: {},
+      legsHash: "2".repeat(64),
+      correlationId: "c-imut-1",
+    };
+    await appendAccountIntent({ intent });
+    // Second write — even with same payload — must throw.
+    await assert.rejects(
+      appendAccountIntent({
+        intent: {
+          ...intent,
+          status: "blocked",
+          blockedReason: "AUTOPILOT_DISABLED",
+        },
+      }),
+      /already exists/,
+      "A second AccountIntent for the same intent_id must be rejected.",
+    );
+    const read = await getAccountIntent(intentId);
+    assert.ok(read);
+    assert.equal(
+      read.status,
+      "ready",
+      "Original intent must persist unchanged.",
+    );
+  },
+);
+
+await section(
+  "AccountIntent: BFF execution-policy ref is a wrapper, not a Daniel field",
+  async () => {
+    const intentId = `ai-bff-${Date.now()}`;
+    const intent = {
+      intentId,
+      accountId: "bff-acc",
+      status: "ready" as const,
+      templateId: "tpl-1",
+      templateVersion: "v1",
+      actionId: "3".repeat(64),
+      intentKind: "rebalance" as const,
+      ts: new Date().toISOString(),
+      legs: [],
+      summaryJson: {},
+      legsHash: "4".repeat(64),
+      correlationId: "c-bff-1",
+    };
+    const stored = await appendAccountIntent({
+      intent,
+      bffExecutionPolicyRef: { policyId: "p-1", policyVersion: 7 },
+    });
+    // Stored shape carries the BFF ref.
+    assert.deepEqual(stored.bffExecutionPolicyRef, {
+      policyId: "p-1",
+      policyVersion: 7,
+    });
+    // Stored Daniel-shape fields are unchanged byte-for-byte.
+    for (const k of Object.keys(intent) as Array<keyof typeof intent>) {
+      assert.deepEqual(
+        (stored as unknown as Record<string, unknown>)[k],
+        intent[k],
+        `BFF wrapping must not mutate Daniel field "${String(k)}".`,
+      );
+    }
+    // The bff ref is NOT a recognized field on Daniel's wire-shape schema —
+    // Zod parse of the stored object including the ref must STRIP it (z.object
+    // default is to drop unknowns), proving the wire shape can't carry it.
+    const parsed = accountIntentSchema.safeParse(stored);
+    assert.equal(parsed.success, true);
+    if (parsed.success) {
+      assert.equal(
+        (parsed.data as unknown as Record<string, unknown>)[
+          "bffExecutionPolicyRef"
+        ],
+        undefined,
+        "Daniel wire schema must not surface bffExecutionPolicyRef.",
+      );
+    }
+  },
+);
+
+await section(
+  "AccountIntent module does NOT expose order-creation or broker-submission helpers",
+  async () => {
+    // Negative-space invariant: the intent entity must not be a vector for
+    // creating Orders or submitting to a broker. Names like `submit`,
+    // `createOrder`, `placeBroker`, `executeIntent` are forbidden exports.
+    const forbidden = [
+      "submit",
+      "submitIntent",
+      "submitToBroker",
+      "placeOrder",
+      "placeBroker",
+      "createOrder",
+      "createOrders",
+      "executeIntent",
+      "broker",
+      "brokerSubmit",
+      "sendToBroker",
+    ];
+    const exported = Object.keys(accountIntentEntity);
+    for (const name of forbidden) {
+      assert.equal(
+        exported.includes(name),
+        false,
+        `AccountIntent entity exports forbidden symbol "${name}" — intents must not create orders or imply broker submission.`,
+      );
+    }
+    // Also: no prototype-store entity for Orders exists in this PR (we
+    // explicitly scoped Orders out). If one ships later, that's a separate PR.
   },
 );
 

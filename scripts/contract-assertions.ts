@@ -81,6 +81,31 @@ const accountIntentEntity =
   await import("../apps/web/src/lib/prototype-store/entities/account-intent.ts");
 const { appendAccountIntent, getAccountIntent } = accountIntentEntity;
 
+const {
+  ORDER_STATUSES,
+  NON_TERMINAL_ORDER_STATUSES,
+  TERMINAL_ORDER_STATUSES,
+  ORDER_SIDES,
+  ORDER_TYPES,
+  ORDER_TIFS,
+  KNOWN_TERMINAL_REASON_CODES,
+  canTransitionOrderStatus,
+  isOrderStatus,
+  isTerminalOrderStatus,
+  orderSchema,
+} = await import("../apps/web/src/lib/sec203a/orders.ts");
+
+const orderEntity =
+  await import("../apps/web/src/lib/prototype-store/entities/order.ts");
+const {
+  appendOrder,
+  transitionOrder,
+  getOrder,
+  listOrdersByAccount,
+  listOrdersByIntent,
+  listOrdersByCorrelation,
+} = orderEntity;
+
 const { appendProfileSnapshot, getLatestProfileSnapshot } =
   await import("../apps/web/src/lib/prototype-store/entities/advisory-profile.ts");
 
@@ -1018,6 +1043,436 @@ await section(
     }
     // Also: no prototype-store entity for Orders exists in this PR (we
     // explicitly scoped Orders out). If one ships later, that's a separate PR.
+  },
+);
+
+// ─── Orders domain (DDL line 380-418, states.py, transitions.py) ──────────
+
+await section(
+  "Order status enum matches Daniel authoritative source (23 values; 7 terminal)",
+  async () => {
+    const expected = [
+      // non-terminal (16)
+      "planned",
+      "pending_submit",
+      "blocked_by_conflict",
+      "blocked_dependency",
+      "submit_started",
+      "submitted",
+      "acknowledged",
+      "working",
+      "partial_fill",
+      "cancel_requested",
+      "cancel_acknowledged",
+      "amend_requested",
+      "replace_requested",
+      "unknown",
+      "reconciliation_pending",
+      "escalated",
+      // terminal (7)
+      "filled",
+      "partially_filled_terminal",
+      "canceled",
+      "expired",
+      "rejected",
+      "failed",
+      "reconciled_terminal",
+    ];
+    assert.deepEqual(
+      [...ORDER_STATUSES].sort(),
+      [...expected].sort(),
+      "ORDER_STATUSES drifted from apps/common/trade_lifecycle/states.py:3-34.",
+    );
+    assert.equal(
+      NON_TERMINAL_ORDER_STATUSES.length,
+      16,
+      "Expected exactly 16 non-terminal statuses.",
+    );
+    assert.equal(
+      TERMINAL_ORDER_STATUSES.length,
+      7,
+      "Expected exactly 7 terminal statuses.",
+    );
+    // No overlap between non-terminal and terminal sets.
+    const overlap = (NON_TERMINAL_ORDER_STATUSES as readonly string[]).filter(
+      (s) => (TERMINAL_ORDER_STATUSES as readonly string[]).includes(s),
+    );
+    assert.deepEqual(
+      overlap,
+      [],
+      `Status appears in both terminal and non-terminal sets: ${overlap.join(", ")}`,
+    );
+  },
+);
+
+await section(
+  "Order status: forbidden REVIEW/DENY values are rejected",
+  async () => {
+    for (const v of [
+      "needs_review",
+      "review",
+      "deny",
+      "denied",
+      "flag",
+      "flagged",
+      "pending",
+      "hold",
+      "manual_review",
+      "approved",
+    ]) {
+      assert.equal(
+        isOrderStatus(v),
+        false,
+        `Forbidden status "${v}" was accepted — would re-introduce REVIEW/DENY partition.`,
+      );
+    }
+  },
+);
+
+await section(
+  "Order side enum matches Daniel authoritative source",
+  async () => {
+    assert.deepEqual(
+      [...ORDER_SIDES].sort(),
+      ["buy", "buy_to_cover", "sell", "sell_short"],
+      "ORDER_SIDES drifted from apps/account-intent-builder/src/domain/models.py:15-21.",
+    );
+  },
+);
+
+await section(
+  "Order type and TIF enums match observed exec-gateway defaults",
+  async () => {
+    assert.deepEqual([...ORDER_TYPES].sort(), [
+      "limit",
+      "market",
+      "stop",
+      "stop_limit",
+    ]);
+    assert.deepEqual([...ORDER_TIFS].sort(), ["day", "fok", "gtc", "ioc"]);
+  },
+);
+
+function baseOrder(
+  overrides: Partial<{
+    orderId: string;
+    status: import("../apps/web/src/lib/sec203a/orders.ts").OrderStatus;
+    terminalAt?: string;
+    terminalReasonCode?: string;
+  }> = {},
+): Parameters<typeof orderSchema.safeParse>[0] {
+  const base = {
+    orderId: overrides.orderId ?? "o-1",
+    accountId: "a-1",
+    intentId: "i-1",
+    asset: "AAPL",
+    side: "buy" as const,
+    qty: "10",
+    tif: "day" as const,
+    status: overrides.status ?? "planned",
+    submittedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    orderType: "market" as const,
+  };
+  if (overrides.terminalAt !== undefined) {
+    return {
+      ...base,
+      terminalAt: overrides.terminalAt,
+      ...(overrides.terminalReasonCode
+        ? { terminalReasonCode: overrides.terminalReasonCode }
+        : {}),
+    };
+  }
+  if (overrides.terminalReasonCode !== undefined) {
+    return { ...base, terminalReasonCode: overrides.terminalReasonCode };
+  }
+  return base;
+}
+
+await section(
+  "Order schema requires DecimalString for qty, limitPrice, stopPrice, filledQty, avgFillPrice",
+  async () => {
+    // qty as number → reject.
+    const numQty = orderSchema.safeParse({ ...baseOrder(), qty: 10 });
+    assert.equal(numQty.success, false, "qty as JS number must be rejected.");
+    // limitPrice as number → reject.
+    const numLimit = orderSchema.safeParse({
+      ...baseOrder(),
+      limitPrice: 150.5,
+    });
+    assert.equal(
+      numLimit.success,
+      false,
+      "limitPrice as JS number must be rejected.",
+    );
+    // filledQty as number → reject.
+    const numFilled = orderSchema.safeParse({
+      ...baseOrder(),
+      filledQty: 5,
+    });
+    assert.equal(
+      numFilled.success,
+      false,
+      "filledQty as JS number must be rejected.",
+    );
+    // Valid with all DecimalString → accept.
+    const ok = orderSchema.safeParse({
+      ...baseOrder(),
+      qty: "10.00",
+      limitPrice: "150.50",
+      stopPrice: "149.00",
+      filledQty: "5.00",
+      avgFillPrice: "150.25",
+    });
+    assert.equal(
+      ok.success,
+      true,
+      "Valid order with DecimalString fields must parse.",
+    );
+  },
+);
+
+await section(
+  "Order schema requires intentId, accountId at investor-facing wire boundary",
+  async () => {
+    const noIntent = orderSchema.safeParse({
+      ...baseOrder(),
+      intentId: undefined,
+    });
+    assert.equal(noIntent.success, false, "Missing intentId must be rejected.");
+    const emptyIntent = orderSchema.safeParse({ ...baseOrder(), intentId: "" });
+    assert.equal(
+      emptyIntent.success,
+      false,
+      "Empty intentId must be rejected.",
+    );
+    const noAccount = orderSchema.safeParse({
+      ...baseOrder(),
+      accountId: undefined,
+    });
+    assert.equal(
+      noAccount.success,
+      false,
+      "Missing accountId must be rejected.",
+    );
+  },
+);
+
+await section(
+  "Order: terminal status REQUIRES terminalAt + terminalReasonCode; non-terminal FORBIDS them",
+  async () => {
+    // Terminal status without terminalAt → reject.
+    const terminalNoAt = orderSchema.safeParse(
+      baseOrder({
+        status: "filled",
+        terminalReasonCode: "broker_acknowledged",
+      }),
+    );
+    assert.equal(
+      terminalNoAt.success,
+      false,
+      "filled without terminalAt must be rejected.",
+    );
+    // Non-terminal with terminalAt → reject.
+    const nonTerminalWithAt = orderSchema.safeParse(
+      baseOrder({ status: "working", terminalAt: new Date().toISOString() }),
+    );
+    assert.equal(
+      nonTerminalWithAt.success,
+      false,
+      "Non-terminal status with terminalAt must be rejected.",
+    );
+    // Terminal with both → accept.
+    const ok = orderSchema.safeParse(
+      baseOrder({
+        status: "filled",
+        terminalAt: new Date().toISOString(),
+        terminalReasonCode: "broker_acknowledged",
+      }),
+    );
+    assert.equal(ok.success, true, "Terminal with both fields must parse.");
+  },
+);
+
+await section(
+  "Known terminal_reason_code values all parse against orderSchema",
+  async () => {
+    for (const code of KNOWN_TERMINAL_REASON_CODES) {
+      const parsed = orderSchema.safeParse(
+        baseOrder({
+          status: "rejected",
+          terminalAt: new Date().toISOString(),
+          terminalReasonCode: code,
+        }),
+      );
+      assert.equal(
+        parsed.success,
+        true,
+        `Known terminal_reason_code "${code}" failed schema parse.`,
+      );
+    }
+  },
+);
+
+await section(
+  "canTransitionOrderStatus: terminal status CANNOT transition to any active state",
+  async () => {
+    for (const terminal of TERMINAL_ORDER_STATUSES) {
+      for (const active of NON_TERMINAL_ORDER_STATUSES) {
+        assert.equal(
+          canTransitionOrderStatus(terminal, active),
+          false,
+          `Forbidden transition allowed: ${terminal} → ${active}`,
+        );
+      }
+      // Also forbid terminal → terminal (broker-truth overrides are out of
+      // scope for the investor surface).
+      for (const otherTerminal of TERMINAL_ORDER_STATUSES) {
+        if (otherTerminal === terminal) continue;
+        assert.equal(
+          canTransitionOrderStatus(terminal, otherTerminal),
+          false,
+          `Forbidden terminal→terminal transition allowed: ${terminal} → ${otherTerminal}`,
+        );
+      }
+    }
+    // Sanity: a few KNOWN-GOOD transitions must succeed.
+    assert.equal(canTransitionOrderStatus("planned", "pending_submit"), true);
+    assert.equal(canTransitionOrderStatus("working", "filled"), true);
+    assert.equal(canTransitionOrderStatus("submitted", "rejected"), true);
+  },
+);
+
+await section(
+  "Order entity: terminal immutability enforced by transitionOrder()",
+  async () => {
+    const orderId = `o-imut-${Date.now()}`;
+    const corr = `c-${Date.now()}`;
+    await appendOrder({
+      order: {
+        orderId,
+        accountId: "imut-acc",
+        intentId: "i-imut",
+        asset: "AAPL",
+        side: "buy",
+        qty: "10",
+        tif: "day",
+        status: "filled",
+        submittedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        orderType: "market",
+        terminalAt: new Date().toISOString(),
+        terminalReasonCode: "broker_acknowledged",
+      },
+      bffCorrelationId: corr,
+    });
+    // Attempt to transition out of terminal — must throw.
+    await assert.rejects(
+      transitionOrder({
+        orderId,
+        expectedFromStatus: "filled",
+        toStatus: "working",
+        updatedAt: new Date().toISOString(),
+      }),
+      /terminal/,
+      "Terminal → active transition must be rejected.",
+    );
+    const stored = await getOrder(orderId);
+    assert.ok(stored);
+    assert.equal(
+      stored.status,
+      "filled",
+      "Terminal order must remain terminal.",
+    );
+  },
+);
+
+await section(
+  "Order entity: lookups by accountId, intentId, and bffCorrelationId work",
+  async () => {
+    const corr = `c-look-${Date.now()}`;
+    const accountId = `acc-look-${Date.now()}`;
+    const intentId = `int-look-${Date.now()}`;
+    for (let i = 0; i < 3; i++) {
+      await appendOrder({
+        order: {
+          orderId: `o-look-${i}-${Date.now()}`,
+          accountId,
+          intentId,
+          asset: "AAPL",
+          side: "buy",
+          qty: "1",
+          tif: "day",
+          status: "planned",
+          submittedAt: new Date(Date.now() + i).toISOString(),
+          updatedAt: new Date(Date.now() + i).toISOString(),
+          orderType: "market",
+        },
+        bffCorrelationId: corr,
+      });
+    }
+    const byAccount = await listOrdersByAccount(accountId);
+    assert.equal(byAccount.length, 3);
+    const byIntent = await listOrdersByIntent(intentId);
+    assert.equal(byIntent.length, 3);
+    const byCorr = await listOrdersByCorrelation(corr);
+    assert.equal(byCorr.length, 3);
+    // Stored shape carries bffCorrelationId.
+    assert.equal(byCorr[0]?.bffCorrelationId, corr);
+  },
+);
+
+await section(
+  "Order module exposes NO submission, placement, broker, OrderEvents, BrokerOrderAttempts, or Fills helpers",
+  async () => {
+    const forbidden = [
+      "submit",
+      "submitOrder",
+      "submitToBroker",
+      "placeOrder",
+      "placeBroker",
+      "sendToBroker",
+      "executeOrder",
+      "createOrder",
+      "createOrderEvent",
+      "appendOrderEvent",
+      "createBrokerAttempt",
+      "appendBrokerAttempt",
+      "createFill",
+      "appendFill",
+      "broker",
+      "brokerSubmit",
+    ];
+    const exported = Object.keys(orderEntity);
+    for (const name of forbidden) {
+      assert.equal(
+        exported.includes(name),
+        false,
+        `Order entity exports forbidden symbol "${name}" — frontend must not submit, place, or emit lifecycle events / attempts / fills.`,
+      );
+    }
+  },
+);
+
+await section(
+  "Order entity exports only the expected lookup + lifecycle-guarded write surface",
+  async () => {
+    const exported = new Set(Object.keys(orderEntity));
+    const expected = [
+      "appendOrder",
+      "transitionOrder",
+      "getOrder",
+      "listOrdersByAccount",
+      "listOrdersByIntent",
+      "listOrdersByCorrelation",
+    ];
+    for (const name of expected) {
+      assert.equal(
+        exported.has(name),
+        true,
+        `Expected entity export "${name}" missing.`,
+      );
+    }
   },
 );
 

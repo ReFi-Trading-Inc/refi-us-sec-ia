@@ -17,7 +17,8 @@
  *
  * Allowlisted files (these define the boundary, so they may name the forbidden
  * things): scripts/tripwire-investor-boundary.ts, packages/config/blocked-terms.ts,
- * apps/web/src/lib/sec203a/actions.ts, docs/**.
+ * apps/web/src/lib/sec203a/actions.ts, apps/web/src/lib/sec203a/admin-verbs.ts,
+ * docs/**.
  *
  * Run: pnpm tripwire
  */
@@ -138,6 +139,7 @@ const ALLOWED_PATHS: ReadonlyArray<string> = [
   "scripts/tripwire-investor-boundary.ts",
   "packages/config/blocked-terms.ts",
   "apps/web/src/lib/sec203a/actions.ts",
+  "apps/web/src/lib/sec203a/admin-verbs.ts",
   "docs/",
   // Tests may name forbidden things in negative assertions.
   "/__tests__/",

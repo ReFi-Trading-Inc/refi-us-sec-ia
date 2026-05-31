@@ -5,10 +5,21 @@
  */
 import { appendOnlyStore } from "../store";
 import type { InvestorActionName } from "../../sec203a/actions";
+import {
+  adminVerbFor,
+  type InvestorAdminVerb,
+} from "../../sec203a/admin-verbs";
 
 export interface InvestorActionReceipt {
   receiptId: string;
   action: InvestorActionName;
+  /**
+   * Daniel's backend admin-actions verb this investor action translates to,
+   * when one exists. Recorded so the audit trail carries backend vocabulary
+   * even while the BFF runs prototype-only. Omitted for BFF-only actions
+   * (e.g. acknowledgeDisclosure).
+   */
+  adminVerb?: InvestorAdminVerb;
   actor: "user" | "system";
   authId: string;
   accountId?: string;
@@ -34,9 +45,11 @@ export async function appendActionReceipt(args: {
   reasonCode?: string;
   references?: string[];
 }): Promise<InvestorActionReceipt> {
+  const verb = adminVerbFor(args.action);
   const receipt: InvestorActionReceipt = {
     receiptId: crypto.randomUUID(),
     action: args.action,
+    ...(verb ? { adminVerb: verb } : {}),
     actor: args.actor,
     authId: args.authId,
     ...(args.accountId ? { accountId: args.accountId } : {}),

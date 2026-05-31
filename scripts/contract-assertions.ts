@@ -123,6 +123,27 @@ const {
   listOrderEventsForCorrelation,
 } = orderEventEntity;
 
+const {
+  ATTEMPT_TYPES,
+  BROKER_ATTEMPT_STATUSES,
+  OUTCOME_BROKER_ATTEMPT_STATUSES,
+  ATTEMPT_HTTP_METHODS,
+  KNOWN_SECRET_KEY_PARTS,
+  isBrokerAttemptStatus,
+  brokerOrderAttemptSchema,
+} = await import("../apps/web/src/lib/sec203a/broker-order-attempts.ts");
+
+const brokerAttemptEntity =
+  await import("../apps/web/src/lib/prototype-store/entities/broker-order-attempt.ts");
+const {
+  appendBrokerAttempt,
+  completeBrokerAttempt,
+  getBrokerAttempt,
+  listBrokerAttemptsForOrder,
+  listBrokerAttemptsForCorrelation,
+  listBrokerAttemptRetryChain,
+} = brokerAttemptEntity;
+
 const { appendProfileSnapshot, getLatestProfileSnapshot } =
   await import("../apps/web/src/lib/prototype-store/entities/advisory-profile.ts");
 
@@ -1852,6 +1873,597 @@ await section(
       "getOrderEvent",
       "listOrderEventsForOrder",
       "listOrderEventsForCorrelation",
+    ];
+    for (const name of expected) {
+      assert.equal(
+        exported.has(name),
+        true,
+        `Expected entity export "${name}" missing.`,
+      );
+    }
+  },
+);
+
+// ─── BrokerOrderAttempts domain (DDL 2783-2833, states.py:50-74) ──────────
+
+await section(
+  "BrokerOrderAttempt attempt_type enum matches Daniel exactly (8 values)",
+  async () => {
+    assert.deepEqual(
+      [...ATTEMPT_TYPES].sort(),
+      [
+        "amend",
+        "cancel",
+        "fill_lookup",
+        "position_lookup",
+        "reconcile",
+        "replace",
+        "status_lookup",
+        "submit",
+      ],
+      "ATTEMPT_TYPES drifted from apps/common/trade_lifecycle/states.py:63-74.",
+    );
+    assert.equal(ATTEMPT_TYPES.length, 8);
+  },
+);
+
+await section(
+  "BrokerOrderAttempt status enum matches Daniel exactly (8 values; 1 initial + 7 outcome)",
+  async () => {
+    assert.deepEqual(
+      [...BROKER_ATTEMPT_STATUSES].sort(),
+      [
+        "acknowledged",
+        "error",
+        "recovered",
+        "rejected",
+        "started",
+        "terminal",
+        "timeout",
+        "unknown",
+      ],
+      "BROKER_ATTEMPT_STATUSES drifted from apps/common/trade_lifecycle/states.py:50-61.",
+    );
+    assert.equal(BROKER_ATTEMPT_STATUSES.length, 8);
+    assert.equal(
+      OUTCOME_BROKER_ATTEMPT_STATUSES.length,
+      7,
+      "Outcome set must be exactly 7 (all statuses except 'started').",
+    );
+    assert.equal(
+      (OUTCOME_BROKER_ATTEMPT_STATUSES as readonly string[]).includes(
+        "started",
+      ),
+      false,
+      "'started' is the initial status; must not appear in outcome set.",
+    );
+    for (const v of [
+      "needs_review",
+      "review",
+      "deny",
+      "denied",
+      "approved",
+      "pending",
+      "hold",
+      "manual_review",
+    ]) {
+      assert.equal(
+        isBrokerAttemptStatus(v),
+        false,
+        `Forbidden status "${v}" was accepted — would re-introduce REVIEW/DENY partition.`,
+      );
+    }
+  },
+);
+
+await section(
+  "BrokerOrderAttempt http_method enum includes standard HTTP + SDK markers (8 values)",
+  async () => {
+    assert.deepEqual([...ATTEMPT_HTTP_METHODS].sort(), [
+      "DELETE",
+      "DRY_RUN",
+      "GET",
+      "PATCH",
+      "POST",
+      "PUT",
+      "SDK",
+      "UNSUPPORTED",
+    ]);
+  },
+);
+
+function baseAttempt(
+  overrides: Partial<{
+    attemptId: string;
+    attemptSeq: number;
+    parentAttemptId?: string;
+    status:
+      | "started"
+      | "acknowledged"
+      | "rejected"
+      | "timeout"
+      | "error"
+      | "unknown"
+      | "recovered"
+      | "terminal";
+    localCompletedAt?: string;
+  }> = {},
+): Parameters<typeof brokerOrderAttemptSchema.safeParse>[0] {
+  const base = {
+    attemptId: overrides.attemptId ?? "att-1",
+    orderId: "o-1",
+    accountId: "a-1",
+    attemptType: "submit" as const,
+    attemptSeq: overrides.attemptSeq ?? 1,
+    status: overrides.status ?? "started",
+    localStartedAt: new Date().toISOString(),
+  };
+  return {
+    ...base,
+    ...(overrides.parentAttemptId !== undefined
+      ? { parentAttemptId: overrides.parentAttemptId }
+      : {}),
+    ...(overrides.localCompletedAt !== undefined
+      ? { localCompletedAt: overrides.localCompletedAt }
+      : {}),
+  };
+}
+
+await section(
+  "BrokerOrderAttempt schema requires attemptId, attemptType, attemptSeq>=1, status, localStartedAt",
+  async () => {
+    const noId = brokerOrderAttemptSchema.safeParse({
+      ...baseAttempt(),
+      attemptId: "",
+    });
+    assert.equal(noId.success, false, "Empty attemptId must be rejected.");
+    const zeroSeq = brokerOrderAttemptSchema.safeParse({
+      ...baseAttempt(),
+      attemptSeq: 0,
+    });
+    assert.equal(
+      zeroSeq.success,
+      false,
+      "attemptSeq=0 must be rejected (must be positive).",
+    );
+    const negSeq = brokerOrderAttemptSchema.safeParse({
+      ...baseAttempt(),
+      attemptSeq: -1,
+    });
+    assert.equal(
+      negSeq.success,
+      false,
+      "negative attemptSeq must be rejected.",
+    );
+    const badStart = brokerOrderAttemptSchema.safeParse({
+      ...baseAttempt(),
+      localStartedAt: "not-a-date",
+    });
+    assert.equal(
+      badStart.success,
+      false,
+      "Non-ISO localStartedAt must be rejected.",
+    );
+    const badType = brokerOrderAttemptSchema.safeParse({
+      ...baseAttempt(),
+      attemptType: "fabricated",
+    });
+    assert.equal(
+      badType.success,
+      false,
+      "attempt_type outside the 8-value set must be rejected.",
+    );
+    // Valid minimal record parses.
+    const ok = brokerOrderAttemptSchema.safeParse(baseAttempt());
+    assert.equal(ok.success, true, "Valid minimal attempt must parse.");
+  },
+);
+
+await section(
+  "BrokerOrderAttempt schema: started status FORBIDS completion fields",
+  async () => {
+    const startedWithCompletion = brokerOrderAttemptSchema.safeParse({
+      ...baseAttempt({ status: "started" }),
+      localCompletedAt: new Date().toISOString(),
+    });
+    assert.equal(
+      startedWithCompletion.success,
+      false,
+      "status='started' with localCompletedAt must be rejected.",
+    );
+    const startedWithResponse = brokerOrderAttemptSchema.safeParse({
+      ...baseAttempt({ status: "started" }),
+      responsePayloadRaw: { ok: true },
+    });
+    assert.equal(
+      startedWithResponse.success,
+      false,
+      "status='started' with responsePayloadRaw must be rejected.",
+    );
+  },
+);
+
+await section(
+  "BrokerOrderAttempt schema: attempt_seq=1 forbids parent_attempt_id; seq>1 requires it",
+  async () => {
+    const seq1WithParent = brokerOrderAttemptSchema.safeParse({
+      ...baseAttempt({ attemptSeq: 1, parentAttemptId: "att-0" }),
+    });
+    assert.equal(
+      seq1WithParent.success,
+      false,
+      "attempt_seq=1 with parent_attempt_id must be rejected.",
+    );
+    const seq2NoParent = brokerOrderAttemptSchema.safeParse(
+      baseAttempt({ attemptSeq: 2 }),
+    );
+    assert.equal(
+      seq2NoParent.success,
+      false,
+      "attempt_seq>1 without parent_attempt_id must be rejected.",
+    );
+    const ok = brokerOrderAttemptSchema.safeParse(
+      baseAttempt({ attemptSeq: 2, parentAttemptId: "att-root" }),
+    );
+    assert.equal(
+      ok.success,
+      true,
+      "attempt_seq=2 with parent_attempt_id must parse.",
+    );
+  },
+);
+
+await section(
+  "BrokerOrderAttempt schema: raw_request_hash and raw_response_hash must be SHA-256 hex",
+  async () => {
+    const badReq = brokerOrderAttemptSchema.safeParse({
+      ...baseAttempt(),
+      rawRequestHash: "Z".repeat(64),
+    });
+    assert.equal(
+      badReq.success,
+      false,
+      "Non-hex rawRequestHash must be rejected.",
+    );
+    const badRespLen = brokerOrderAttemptSchema.safeParse({
+      ...baseAttempt(),
+      rawResponseHash: "a".repeat(63),
+    });
+    assert.equal(
+      badRespLen.success,
+      false,
+      "rawResponseHash < 64 chars must be rejected.",
+    );
+    const ok = brokerOrderAttemptSchema.safeParse({
+      ...baseAttempt(),
+      rawRequestHash: "b".repeat(64),
+      rawResponseHash: "c".repeat(64),
+    });
+    assert.equal(ok.success, true);
+  },
+);
+
+await section(
+  "BrokerOrderAttempt KNOWN_SECRET_KEY_PARTS covers all critical credential vocabulary",
+  async () => {
+    // Spot-check that the redaction sentinel set hasn't lost a critical key.
+    const required = [
+      "authorization",
+      "api_key",
+      "secret",
+      "password",
+      "token",
+      "access_token",
+      "refresh_token",
+      "cookie",
+    ];
+    for (const key of required) {
+      assert.equal(
+        (KNOWN_SECRET_KEY_PARTS as readonly string[]).includes(key),
+        true,
+        `Critical secret-key sentinel "${key}" missing from KNOWN_SECRET_KEY_PARTS.`,
+      );
+    }
+  },
+);
+
+await section(
+  "BrokerOrderAttempt entity: appendBrokerAttempt rejects non-started status",
+  async () => {
+    await assert.rejects(
+      appendBrokerAttempt({
+        attempt: {
+          attemptId: `att-bad-${Date.now()}`,
+          attemptType: "submit",
+          attemptSeq: 1,
+          status: "acknowledged" as const,
+          localStartedAt: new Date().toISOString(),
+        },
+      }),
+      /status="started"/,
+      "appendBrokerAttempt with status='acknowledged' must throw.",
+    );
+  },
+);
+
+await section(
+  "BrokerOrderAttempt entity: appendBrokerAttempt rejects completion fields at insert",
+  async () => {
+    await assert.rejects(
+      appendBrokerAttempt({
+        attempt: {
+          attemptId: `att-early-${Date.now()}`,
+          attemptType: "submit",
+          attemptSeq: 1,
+          status: "started",
+          localStartedAt: new Date().toISOString(),
+          localCompletedAt: new Date().toISOString(),
+        },
+      }),
+      /completion fields/,
+      "appendBrokerAttempt with localCompletedAt must throw.",
+    );
+  },
+);
+
+await section(
+  "BrokerOrderAttempt entity: completeBrokerAttempt is single-shot (double-completion rejected)",
+  async () => {
+    const attemptId = `att-2shot-${Date.now()}`;
+    await appendBrokerAttempt({
+      attempt: {
+        attemptId,
+        orderId: "o-2shot",
+        attemptType: "submit",
+        attemptSeq: 1,
+        status: "started",
+        localStartedAt: new Date().toISOString(),
+      },
+    });
+    const completed = await completeBrokerAttempt({
+      attemptId,
+      status: "acknowledged",
+      localCompletedAt: new Date().toISOString(),
+      httpStatus: 200,
+    });
+    assert.equal(completed.status, "acknowledged");
+    assert.equal(completed.httpStatus, 200);
+    // Second completion must throw.
+    await assert.rejects(
+      completeBrokerAttempt({
+        attemptId,
+        status: "rejected",
+        localCompletedAt: new Date().toISOString(),
+      }),
+      /already completed/,
+      "Second completion attempt must be rejected.",
+    );
+  },
+);
+
+await section(
+  "BrokerOrderAttempt entity: completion preserves immutable identity fields byte-for-byte",
+  async () => {
+    const attemptId = `att-imut-${Date.now()}`;
+    const orderId = `o-imut-${Date.now()}`;
+    const initial = {
+      attemptId,
+      orderId,
+      planId: "p-1",
+      intentId: "i-1",
+      accountId: "a-1",
+      clientOrderId: "coid-1",
+      brokerName: "alpaca",
+      asset: "AAPL",
+      attemptType: "submit" as const,
+      attemptSeq: 1,
+      status: "started" as const,
+      endpointAction: "execute_order",
+      httpMethod: "POST" as const,
+      requestPayloadInternal: { qty: "10" },
+      localStartedAt: new Date().toISOString(),
+      correlationId: "c-imut",
+      rawRequestHash: "d".repeat(64),
+    };
+    await appendBrokerAttempt({ attempt: initial });
+    const completed = await completeBrokerAttempt({
+      attemptId,
+      status: "rejected",
+      localCompletedAt: new Date().toISOString(),
+      brokerCode: "INSUFFICIENT_FUNDS",
+      errorType: "BrokerRejectError",
+      retryable: false,
+    });
+    // Immutable fields must match initial.
+    const immutableKeys = [
+      "attemptId",
+      "orderId",
+      "planId",
+      "intentId",
+      "accountId",
+      "clientOrderId",
+      "brokerName",
+      "asset",
+      "attemptType",
+      "attemptSeq",
+      "endpointAction",
+      "httpMethod",
+      "requestPayloadInternal",
+      "localStartedAt",
+      "correlationId",
+      "rawRequestHash",
+    ] as const;
+    for (const k of immutableKeys) {
+      assert.deepEqual(
+        (completed as unknown as Record<string, unknown>)[k],
+        (initial as unknown as Record<string, unknown>)[k],
+        `Immutable field "${k}" was mutated by completion.`,
+      );
+    }
+    // Mutable fields were set.
+    assert.equal(completed.status, "rejected");
+    assert.equal(completed.brokerCode, "INSUFFICIENT_FUNDS");
+    assert.equal(completed.retryable, false);
+  },
+);
+
+await section(
+  "BrokerOrderAttempt entity: completeBrokerAttempt rejects unknown attempt and 'started' as completion",
+  async () => {
+    await assert.rejects(
+      completeBrokerAttempt({
+        attemptId: `att-missing-${Date.now()}`,
+        status: "acknowledged",
+        localCompletedAt: new Date().toISOString(),
+      }),
+      /not found/,
+      "Completing an unknown attempt must throw.",
+    );
+    // Try to "complete" with status="started" (not in outcome set).
+    const attemptId = `att-badcomp-${Date.now()}`;
+    await appendBrokerAttempt({
+      attempt: {
+        attemptId,
+        attemptType: "submit",
+        attemptSeq: 1,
+        status: "started",
+        localStartedAt: new Date().toISOString(),
+      },
+    });
+    await assert.rejects(
+      completeBrokerAttempt({
+        attemptId,
+        status: "started" as unknown as "acknowledged",
+        localCompletedAt: new Date().toISOString(),
+      }),
+      /OUTCOME_BROKER_ATTEMPT_STATUSES/,
+      "Completing with status='started' must throw.",
+    );
+  },
+);
+
+await section(
+  "BrokerOrderAttempt entity: retry chain returns root + retries in attempt_seq order",
+  async () => {
+    const rootId = `att-root-${Date.now()}`;
+    const orderId = `o-retry-${Date.now()}`;
+    // Insert root attempt (seq=1, no parent).
+    await appendBrokerAttempt({
+      attempt: {
+        attemptId: rootId,
+        orderId,
+        attemptType: "submit",
+        attemptSeq: 1,
+        status: "started",
+        localStartedAt: new Date(Date.now()).toISOString(),
+      },
+    });
+    // Insert two retries (seq=2, seq=3) chained to root.
+    for (const seq of [3, 2]) {
+      // intentionally out-of-order insertion
+      await appendBrokerAttempt({
+        attempt: {
+          attemptId: `${rootId}-retry-${seq}`,
+          orderId,
+          attemptType: "submit",
+          attemptSeq: seq,
+          parentAttemptId: rootId,
+          status: "started",
+          localStartedAt: new Date(Date.now() + seq * 1000).toISOString(),
+        },
+      });
+    }
+    const chain = await listBrokerAttemptRetryChain(rootId);
+    assert.equal(chain.length, 3);
+    assert.deepEqual(
+      chain.map((a) => a.attemptSeq),
+      [1, 2, 3],
+      "Retry chain must be ordered by attempt_seq ascending.",
+    );
+    assert.equal(chain[0]?.attemptId, rootId);
+    assert.equal(chain[1]?.parentAttemptId, rootId);
+    assert.equal(chain[2]?.parentAttemptId, rootId);
+  },
+);
+
+await section(
+  "BrokerOrderAttempt entity: lookups by orderId and correlationId work",
+  async () => {
+    const corr = `c-bal-${Date.now()}`;
+    const orderId = `o-bal-${Date.now()}`;
+    for (let i = 0; i < 3; i++) {
+      const attemptId = `att-bal-${orderId}-${i}`;
+      await appendBrokerAttempt({
+        attempt: {
+          attemptId,
+          orderId,
+          attemptType: "status_lookup",
+          attemptSeq: 1,
+          status: "started",
+          localStartedAt: new Date(Date.now() + i).toISOString(),
+          correlationId: corr,
+        },
+      });
+    }
+    const byOrder = await listBrokerAttemptsForOrder(orderId);
+    assert.equal(byOrder.length, 3);
+    const byCorr = await listBrokerAttemptsForCorrelation(corr);
+    assert.equal(byCorr.length, 3);
+    assert.equal(byCorr[0]?.correlationId, corr);
+    // Spot-check get by id.
+    const single = await getBrokerAttempt(byOrder[0]!.attemptId);
+    assert.ok(single);
+  },
+);
+
+await section(
+  "BrokerOrderAttempt entity: exports NO Order-mutation, OrderEvent-create, Fill-create, or broker-submission helpers",
+  async () => {
+    const forbidden = [
+      // Order mutation
+      "updateOrder",
+      "transitionOrder",
+      "mutateOrder",
+      "patchOrder",
+      // OrderEvents creation
+      "createOrderEvent",
+      "appendOrderEvent",
+      "recordOrderEvent",
+      // Fills creation
+      "createFill",
+      "appendFill",
+      "recordFill",
+      // Broker submission helpers (entity records evidence; doesn't submit)
+      "submit",
+      "submitOrder",
+      "submitToBroker",
+      "placeOrder",
+      "sendToBroker",
+      "executeOrder",
+      "callBroker",
+    ];
+    const exported = Object.keys(brokerAttemptEntity);
+    for (const name of forbidden) {
+      assert.equal(
+        exported.includes(name),
+        false,
+        `BrokerOrderAttempt entity exports forbidden symbol "${name}" — entity is an evidence ledger, not an actor.`,
+      );
+    }
+  },
+);
+
+await section(
+  "BrokerOrderAttempt entity: exports exactly the expected append + complete + lookup surface",
+  async () => {
+    const exported = new Set(Object.keys(brokerAttemptEntity));
+    const expected = [
+      "appendBrokerAttempt",
+      "completeBrokerAttempt",
+      "getBrokerAttempt",
+      "listBrokerAttemptsForOrder",
+      "listBrokerAttemptsForCorrelation",
+      "listBrokerAttemptRetryChain",
     ];
     for (const name of expected) {
       assert.equal(

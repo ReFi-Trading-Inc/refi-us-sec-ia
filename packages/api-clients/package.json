@@ -10,6 +10,7 @@
   },
   "scripts": {
     "generate": "mkdir -p src/generated && openapi-typescript openapi/refi-api.yaml -o src/generated/_openapi.gen.ts",
+    "postinstall": "pnpm generate",
     "build": "pnpm generate",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings=0",

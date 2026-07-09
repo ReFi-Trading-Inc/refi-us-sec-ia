@@ -1,0 +1,210 @@
+{
+  "$schema": "./route-manifest.schema.json",
+  "description": "Allowlist of every route file under apps/web/app/api/. A new route must be added here in the same PR that lands it, with a purpose and an owner. CI fails if the tree contains any route not present in this list, or any manifest entry not present on disk. This is the deny-by-default construction described in S4b of the Security Elevation Register.",
+  "routes": [
+    {
+      "path": "app/api/health/route.ts",
+      "purpose": "Cloud Run liveness probe. Public, no auth, no account scoping.",
+      "auth": "public",
+      "owner": "platform"
+    },
+    {
+      "path": "app/api/us/eligibility/route.ts",
+      "purpose": "US pre-auth eligibility gate. Sets the eligibility cookie consumed downstream.",
+      "auth": "public",
+      "owner": "onboarding"
+    },
+    {
+      "path": "app/api/us/support/route.ts",
+      "purpose": "Public support / contact intake.",
+      "auth": "public",
+      "owner": "onboarding"
+    },
+    {
+      "path": "app/api/v1/investor/activity/route.ts",
+      "purpose": "Records Center activity list (correlation-spine composition).",
+      "auth": "investor",
+      "owner": "records"
+    },
+    {
+      "path": "app/api/v1/investor/activity/[id]/route.ts",
+      "purpose": "Records Center activity detail by correlation id.",
+      "auth": "investor",
+      "owner": "records"
+    },
+    {
+      "path": "app/api/v1/investor/broker/connection/route.ts",
+      "purpose": "Brokerage connection status for the current investor account.",
+      "auth": "investor",
+      "owner": "onboarding"
+    },
+    {
+      "path": "app/api/v1/investor/dashboard/route.ts",
+      "purpose": "Dashboard composition — subscription mode, latest recommendation, execution state.",
+      "auth": "investor",
+      "owner": "surface-1"
+    },
+    {
+      "path": "app/api/v1/investor/disclosures/route.ts",
+      "purpose": "Disclosure documents and per-user acknowledgement status.",
+      "auth": "investor",
+      "owner": "compliance"
+    },
+    {
+      "path": "app/api/v1/investor/disclosures/[id]/acknowledge/route.ts",
+      "purpose": "Record a disclosure acknowledgement for the current user.",
+      "auth": "investor",
+      "owner": "compliance"
+    },
+    {
+      "path": "app/api/v1/investor/disclosures/reacknowledge/route.ts",
+      "purpose": "Reacknowledge a superseded disclosure version.",
+      "auth": "investor",
+      "owner": "compliance"
+    },
+    {
+      "path": "app/api/v1/investor/disclosures/reacknowledgement/route.ts",
+      "purpose": "Read the current reacknowledgement requirement state.",
+      "auth": "investor",
+      "owner": "compliance"
+    },
+    {
+      "path": "app/api/v1/investor/evidence/internet-adviser/route.ts",
+      "purpose": "Rule 203A-2(e) internet-adviser exemption evidence bundle.",
+      "auth": "investor",
+      "owner": "compliance"
+    },
+    {
+      "path": "app/api/v1/investor/evidence/multi-client/route.ts",
+      "purpose": "Multi-client evidence bundle (per SEC boundary docs).",
+      "auth": "investor",
+      "owner": "compliance"
+    },
+    {
+      "path": "app/api/v1/investor/evidence/outages/route.ts",
+      "purpose": "Outage/incident evidence bundle for the current account.",
+      "auth": "investor",
+      "owner": "compliance"
+    },
+    {
+      "path": "app/api/v1/investor/exceptions/route.ts",
+      "purpose": "Exception Review inbox for the current account.",
+      "auth": "investor",
+      "owner": "surface-7"
+    },
+    {
+      "path": "app/api/v1/investor/exceptions/[id]/resolve/route.ts",
+      "purpose": "Resolve an exception (allowlist of resolution verbs).",
+      "auth": "investor",
+      "owner": "surface-7"
+    },
+    {
+      "path": "app/api/v1/investor/execution-policy/route.ts",
+      "purpose": "Read the active ExecutionPolicy for the current account.",
+      "auth": "investor",
+      "owner": "surface-3"
+    },
+    {
+      "path": "app/api/v1/investor/execution-policy/draft/route.ts",
+      "purpose": "Read/write the saved ExecutionPolicy draft.",
+      "auth": "investor",
+      "owner": "surface-3"
+    },
+    {
+      "path": "app/api/v1/investor/execution-policy/activate/route.ts",
+      "purpose": "Activate a signed ExecutionPolicy; idempotent by key.",
+      "auth": "investor",
+      "owner": "surface-3"
+    },
+    {
+      "path": "app/api/v1/investor/managed/state/route.ts",
+      "purpose": "Read ManagedExecutionState for the current account.",
+      "auth": "investor",
+      "owner": "surface-4"
+    },
+    {
+      "path": "app/api/v1/investor/managed/pause/route.ts",
+      "purpose": "Pause managed execution (user-initiated).",
+      "auth": "investor",
+      "owner": "surface-4"
+    },
+    {
+      "path": "app/api/v1/investor/managed/resume/route.ts",
+      "purpose": "Resume managed execution (user-initiated).",
+      "auth": "investor",
+      "owner": "surface-4"
+    },
+    {
+      "path": "app/api/v1/investor/orders/route.ts",
+      "purpose": "Order list scoped to the current account.",
+      "auth": "investor",
+      "owner": "records"
+    },
+    {
+      "path": "app/api/v1/investor/orders/[client_order_id]/lineage/route.ts",
+      "purpose": "Order lifecycle projection (15-state vocabulary).",
+      "auth": "investor",
+      "owner": "records"
+    },
+    {
+      "path": "app/api/v1/investor/profile/route.ts",
+      "purpose": "Read the current advisory profile.",
+      "auth": "investor",
+      "owner": "surface-6"
+    },
+    {
+      "path": "app/api/v1/investor/profile/reconfirm/route.ts",
+      "purpose": "Reconfirm the advisory profile without material change.",
+      "auth": "investor",
+      "owner": "surface-6"
+    },
+    {
+      "path": "app/api/v1/investor/profile/reactivation/route.ts",
+      "purpose": "Reactivation eligibility view (profile + disclosure blockers).",
+      "auth": "investor",
+      "owner": "surface-6"
+    },
+    {
+      "path": "app/api/v1/investor/recommendations/route.ts",
+      "purpose": "Recommendation projections list for the current account.",
+      "auth": "investor",
+      "owner": "surface-1"
+    },
+    {
+      "path": "app/api/v1/investor/recommendations/[id]/route.ts",
+      "purpose": "Recommendation detail (upstream-owned wire shape).",
+      "auth": "investor",
+      "owner": "surface-1"
+    },
+    {
+      "path": "app/api/v1/investor/records/route.ts",
+      "purpose": "Records list for the current account.",
+      "auth": "investor",
+      "owner": "records"
+    },
+    {
+      "path": "app/api/v1/investor/records/[id]/route.ts",
+      "purpose": "Record detail; writes a RecordAccessLog entry on every read.",
+      "auth": "investor",
+      "owner": "records"
+    },
+    {
+      "path": "app/api/v1/investor/session/route.ts",
+      "purpose": "Session context for the client (auth id, account id, mode).",
+      "auth": "investor",
+      "owner": "platform"
+    },
+    {
+      "path": "app/api/v1/investor/status/route.ts",
+      "purpose": "Lifecycle status for the current account.",
+      "auth": "investor",
+      "owner": "onboarding"
+    },
+    {
+      "path": "app/api/v1/investor/subscription-mode/route.ts",
+      "purpose": "Read/write the current subscription mode (signal / managed).",
+      "auth": "investor",
+      "owner": "surface-1"
+    }
+  ]
+}

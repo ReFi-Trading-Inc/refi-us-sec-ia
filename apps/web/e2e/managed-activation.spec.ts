@@ -39,12 +39,6 @@ async function seedCookies(
       domain: "localhost",
       path: "/",
     },
-    {
-      name: "us_session_v1",
-      value: "e2e-placeholder-session-token",
-      domain: "localhost",
-      path: "/",
-    },
   ]);
 }
 

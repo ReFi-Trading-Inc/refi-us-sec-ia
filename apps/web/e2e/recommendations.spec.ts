@@ -12,12 +12,6 @@ function cookiesFor(cookieValue: string) {
       domain: "localhost",
       path: "/",
     },
-    {
-      name: "us_session_v1",
-      value: cookieValue,
-      domain: "localhost",
-      path: "/",
-    },
   ];
 }
 

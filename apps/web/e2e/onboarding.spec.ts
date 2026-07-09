@@ -10,12 +10,6 @@ const authCookies = [
     domain: "localhost",
     path: "/",
   },
-  {
-    name: "us_session_v1",
-    value: SIGNAL_COOKIE,
-    domain: "localhost",
-    path: "/",
-  },
 ];
 
 // The investor BFF does not currently expose `/v1/brokers/*` routes; the

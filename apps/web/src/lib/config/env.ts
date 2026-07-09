@@ -29,6 +29,7 @@ const PROTOTYPE_DEFAULTS = {
   IP_HASH_SECRET: "prototype-only-ip-hash-secret-32+chars",
   ELIGIBILITY_JWT_SECRET: "prototype-only-eligibility-jwt-32+chars",
   REFI_DATA_ADAPTER: "mock" as const,
+  REFI_ENV: "dev" as const,
 };
 
 /**
@@ -62,6 +63,19 @@ const serverSchema = clientSchema.extend({
   IP_HASH_SECRET: z.string().min(32),
   ELIGIBILITY_JWT_SECRET: z.string().min(32),
   REFI_DATA_ADAPTER: z.enum(["mock", "live"]).default("mock"),
+  // Server-only twin of NEXT_PUBLIC_REFI_ENV. Security decisions (auth
+  // fail-closed, CSRF, rate limits) gate on this — never on the
+  // NEXT_PUBLIC value, which is a public build-time constant an
+  // attacker can inspect and which cannot diverge from client bundles
+  // without a rebuild.
+  REFI_ENV: z.enum(["dev", "staging", "prod"]).default("dev"),
+  // Backing-mode contract, per docs/phase2-6-backing-mode-contract.md.
+  // Global default; individual entities can override via
+  // REFI_BACKING__<ENTITY>. The four modes are enforced by the resolver
+  // in lib/config/backing.ts, which knows which modes are valid per entity.
+  REFI_BACKING_DEFAULT: z
+    .enum(["msw", "prototype", "durable", "backend"])
+    .default("prototype"),
 });
 
 function formatError(error: z.ZodError): string {
@@ -140,6 +154,8 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
       "ELIGIBILITY_JWT_SECRET",
     ),
     REFI_DATA_ADAPTER: process.env["REFI_DATA_ADAPTER"],
+    REFI_ENV: process.env["REFI_ENV"],
+    REFI_BACKING_DEFAULT: process.env["REFI_BACKING_DEFAULT"],
   });
 
   if (!parsed.success) {

@@ -31,6 +31,7 @@
  *     response so callers can attach it to their own logs.
  */
 import { getServerEnv } from "../config/env";
+import { proxyCacheGet, proxyCacheSet, proxyCacheKey } from "./cache";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -54,6 +55,11 @@ export interface ProxyRequest {
   maxAttempts?: number;
   /** Optional Idempotency-Key header value. Never derived from body. */
   idempotencyKey?: string;
+  /**
+   * Cache TTL override in ms for GET requests. If omitted, the default
+   * TTL from cache.ts applies. Set to 0 to bypass the cache entirely.
+   */
+  cacheTtlMs?: number;
 }
 
 export interface ProxyResponse {
@@ -199,6 +205,22 @@ export async function proxyRequest(req: ProxyRequest): Promise<ProxyResponse> {
     );
   }
 
+  // Cache lookup for GET only. Mutations always hit upstream so a stale
+  // read never masks a fresh write.
+  const cacheEligible = method === "GET" && req.cacheTtlMs !== 0;
+  const cacheKey = cacheEligible
+    ? proxyCacheKey({
+        accountId: req.accountId,
+        path: req.path,
+        method,
+        ...(req.query ? { query: req.query } : {}),
+      })
+    : null;
+  if (cacheKey) {
+    const hit = proxyCacheGet(cacheKey);
+    if (hit) return hit as ProxyResponse;
+  }
+
   const url = buildUrl(env.ADMIN_PORTAL_BASE_URL, req.path, req.query);
   const traceparent = newTraceparent();
   const timeoutMs = req.timeoutMs ?? 10_000;
@@ -251,13 +273,22 @@ export async function proxyRequest(req: ProxyRequest): Promise<ProxyResponse> {
         breakerRecordFailure(breaker);
       }
 
-      return {
+      const out: ProxyResponse = {
         ok: res.ok,
         status: res.status,
         json,
         traceparent,
         headers: outHeaders,
       };
+
+      // Only cache 2xx responses. 4xx are semantic and short-lived from
+      // the caller's perspective (client will fix input); 5xx already
+      // don't reach here on the last attempt.
+      if (cacheKey && res.ok) {
+        proxyCacheSet(cacheKey, out, req.cacheTtlMs);
+      }
+
+      return out;
     } catch (err) {
       lastErr = err;
       breakerRecordFailure(breaker);

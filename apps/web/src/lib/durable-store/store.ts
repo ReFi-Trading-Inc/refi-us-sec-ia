@@ -93,10 +93,9 @@ export function durableKvStore<T>(name: string): KVStore<T> {
     },
     async list(filterPrefix) {
       const col = client().collection(collectionName);
-      // Prefix scan on document id. '' is the highest character in
-      // the Basic Multilingual Plane, so it sorts after any legal id
-      // continuation — the standard Firestore idiom for "everything
-      // starting with this string".
+      // U+F8FF is Firestore's canonical prefix-scan upper bound: it
+      // sorts after every legal id continuation, so `endAt(prefix +
+      // U+F8FF)` matches "every doc id starting with prefix".
       const query = filterPrefix
         ? col
             .orderBy(FieldPath.documentId())

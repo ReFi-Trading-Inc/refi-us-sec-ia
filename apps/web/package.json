@@ -13,6 +13,7 @@
     "route-manifest": "tsx scripts/route-manifest-check.ts"
   },
   "dependencies": {
+    "@google-cloud/firestore": "^8.6.0",
     "@hookform/resolvers": "^5.2.2",
     "@opentelemetry/auto-instrumentations-node": "^0.57.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",

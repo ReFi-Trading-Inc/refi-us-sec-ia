@@ -4,7 +4,8 @@
  * Idempotent append per (user_id, doc_id, version). Carries IP/UA hashes for
  * audit evidence. The document registry lives in disclosure-document.ts.
  */
-import { kvStore, makePrototypeMeta, type PrototypeMeta } from "../store";
+import { makePrototypeMeta, type PrototypeMeta } from "../store";
+import { resolveKvStore } from "../../store";
 
 export interface DisclosureAcknowledgement {
   userId: string;
@@ -17,7 +18,12 @@ export interface DisclosureAcknowledgement {
   meta: PrototypeMeta;
 }
 
-const acks = kvStore<DisclosureAcknowledgement>("disclosure-acks");
+// Routed through the S3 factory. Ack records are Rule 204-2 evidence
+// once ADV files; durable backing keeps them across redeploys.
+const acks = resolveKvStore<DisclosureAcknowledgement>(
+  "disclosure-acknowledgement",
+  "disclosure-acks",
+);
 
 function ackKey(userId: string, docId: string, version: string): string {
   return `${userId}__${docId}__${version}`;

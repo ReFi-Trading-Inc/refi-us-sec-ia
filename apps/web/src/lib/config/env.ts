@@ -31,6 +31,8 @@ const PROTOTYPE_DEFAULTS = {
   REFI_DATA_ADAPTER: "mock" as const,
   REFI_ENV: "dev" as const,
   REFI_TRUSTED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000" as const,
+  SESSION_JWT_ISSUER: "refi-us-sec-ia" as const,
+  SESSION_JWT_AUDIENCE: "refi-us-sec-ia-bff" as const,
 };
 
 /**
@@ -82,6 +84,14 @@ const serverSchema = clientSchema.extend({
   // origin must be listed explicitly. A misconfigured deploy fails loud
   // rather than silently trusting a broader set.
   REFI_TRUSTED_ORIGINS: z.string().min(1),
+  // Session JWT iss/aud policy (S1). Any token that verifies against
+  // SESSION_JWT_SECRET is additionally required to declare these values,
+  // so a token issued for another audience (a different service sharing
+  // the secret in a future misconfiguration) is rejected. Both are
+  // documented values, not secrets; they must be stable across mint site
+  // (Daniel's auth-siwe / D8 magic-link) and verify site.
+  SESSION_JWT_ISSUER: z.string().min(1),
+  SESSION_JWT_AUDIENCE: z.string().min(1),
 });
 
 function formatError(error: z.ZodError): string {
@@ -165,6 +175,14 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     REFI_TRUSTED_ORIGINS: withFallback(
       process.env["REFI_TRUSTED_ORIGINS"],
       "REFI_TRUSTED_ORIGINS",
+    ),
+    SESSION_JWT_ISSUER: withFallback(
+      process.env["SESSION_JWT_ISSUER"],
+      "SESSION_JWT_ISSUER",
+    ),
+    SESSION_JWT_AUDIENCE: withFallback(
+      process.env["SESSION_JWT_AUDIENCE"],
+      "SESSION_JWT_AUDIENCE",
     ),
   });
 

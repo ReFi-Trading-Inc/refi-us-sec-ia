@@ -9,6 +9,7 @@
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getAuthSessionLink } from "../prototype-store/entities/auth-link";
+import { getServerEnv } from "../config/env";
 
 const SESSION_COOKIE = "us_session_v1";
 
@@ -68,10 +69,22 @@ export async function getAuthContext(
     const secret = process.env["SESSION_JWT_SECRET"];
     if (!secret) return null;
     try {
+      const env = getServerEnv();
+      // jose enforces exp automatically; iss/aud are pinned so a token
+      // minted for another audience (e.g., a sibling service that shares
+      // the secret in a future misconfiguration) cannot pass this verify.
+      // A clock skew tolerance of 5 seconds is enough for NTP drift
+      // between the mint site and the BFF.
       const { payload } = await jwtVerify(
         token,
         new TextEncoder().encode(secret),
-        { algorithms: ["HS256"] },
+        {
+          algorithms: ["HS256"],
+          issuer: env.SESSION_JWT_ISSUER,
+          audience: env.SESSION_JWT_AUDIENCE,
+          clockTolerance: 5,
+          requiredClaims: ["exp", "iat", "sub"],
+        },
       );
       const sub = typeof payload.sub === "string" ? payload.sub : null;
       if (!sub) return null;

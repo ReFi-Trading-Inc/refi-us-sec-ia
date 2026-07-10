@@ -49,6 +49,11 @@ export default defineConfig({
       // fires mutations with that Origin. 127.0.0.1 is included so direct
       // APIRequestContext tests may target either loopback form.
       REFI_TRUSTED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000",
+      // S1 iss/aud pinning. These are documented, non-secret constants;
+      // the future mint site (auth-siwe / D8 magic-link) must produce
+      // tokens declaring exactly these values.
+      SESSION_JWT_ISSUER: "refi-us-sec-ia",
+      SESSION_JWT_AUDIENCE: "refi-us-sec-ia-bff",
       // Disable browser MSW in e2e. Surface 1 only needs the BFF route, and
       // service-worker registration in headless Chromium is the slowest part
       // of dev-mode boot, which makes the mswReady gate flake.

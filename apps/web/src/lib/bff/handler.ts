@@ -15,6 +15,7 @@ import type { NextResponse } from "next/server";
 import { correlationIdFrom } from "./correlation";
 import { getAuthContext, type AuthContext } from "./auth";
 import { bffOk, BffErrors, type BffSource, type GapId } from "./envelope";
+import { enforceCsrfOrigin } from "./csrf";
 import type {
   InvestorActionName,
   RecordAccessAction,
@@ -99,6 +100,13 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
   return async (req: NextRequest): Promise<NextResponse> => {
     const correlationId = correlationIdFrom(req);
     try {
+      // CSRF check runs BEFORE auth. Rationale: rejecting cross-origin
+      // credentialed requests is a browser-level concern; it should not
+      // be conditional on whether the caller's cookie happens to verify.
+      // Rejecting before auth also avoids exposing an auth oracle to
+      // cross-origin probes.
+      const csrfReject = enforceCsrfOrigin(req, correlationId);
+      if (csrfReject) return csrfReject;
       const auth = await getAuthContext(req);
       if (!auth) return BffErrors.unauthorized(correlationId);
 

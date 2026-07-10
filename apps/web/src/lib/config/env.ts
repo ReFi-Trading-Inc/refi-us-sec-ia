@@ -30,6 +30,7 @@ const PROTOTYPE_DEFAULTS = {
   ELIGIBILITY_JWT_SECRET: "prototype-only-eligibility-jwt-32+chars",
   REFI_DATA_ADAPTER: "mock" as const,
   REFI_ENV: "dev" as const,
+  REFI_TRUSTED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000" as const,
 };
 
 /**
@@ -76,6 +77,11 @@ const serverSchema = clientSchema.extend({
   REFI_BACKING_DEFAULT: z
     .enum(["msw", "prototype", "durable", "backend"])
     .default("prototype"),
+  // Comma-separated allowlist of origins permitted to make mutating BFF
+  // calls (S2 CSRF, lib/bff/csrf.ts). No wildcards; each preview/staging
+  // origin must be listed explicitly. A misconfigured deploy fails loud
+  // rather than silently trusting a broader set.
+  REFI_TRUSTED_ORIGINS: z.string().min(1),
 });
 
 function formatError(error: z.ZodError): string {
@@ -156,6 +162,10 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     REFI_DATA_ADAPTER: process.env["REFI_DATA_ADAPTER"],
     REFI_ENV: process.env["REFI_ENV"],
     REFI_BACKING_DEFAULT: process.env["REFI_BACKING_DEFAULT"],
+    REFI_TRUSTED_ORIGINS: withFallback(
+      process.env["REFI_TRUSTED_ORIGINS"],
+      "REFI_TRUSTED_ORIGINS",
+    ),
   });
 
   if (!parsed.success) {

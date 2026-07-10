@@ -44,6 +44,11 @@ export default defineConfig({
       IP_HASH_SECRET: "playwright-test-ip-hash-secret-minimum-32-chars",
       ELIGIBILITY_JWT_SECRET: "playwright-test-jwt-secret-minimum-32-chars!",
       REFI_DATA_ADAPTER: "mock",
+      REFI_ENV: "dev",
+      // S2 CSRF: the e2e host is localhost:3000, and Playwright's browser
+      // fires mutations with that Origin. 127.0.0.1 is included so direct
+      // APIRequestContext tests may target either loopback form.
+      REFI_TRUSTED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000",
       // Disable browser MSW in e2e. Surface 1 only needs the BFF route, and
       // service-worker registration in headless Chromium is the slowest part
       // of dev-mode boot, which makes the mswReady gate flake.

@@ -1,7 +1,7 @@
 /**
  * Feature flags — single typed module.
  *
- * Every new investor surface or admin-portal-proxy route ships behind a
+ * Every new investor surface or upstream proxy route ships behind a
  * flag defined here. Flags are read from process.env exactly once at
  * boot and cached; they are server-only decisions (`getServerFlag`), so
  * whether a route is enabled is not observable to the browser except

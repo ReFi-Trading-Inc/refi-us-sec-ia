@@ -7,7 +7,8 @@
  * the dashboard can answer "who am I, what account am I acting on, when
  * does my session expire" without re-deriving from cookies on every screen.
  */
-import { kvStore, makePrototypeMeta, type PrototypeMeta } from "../store";
+import { makePrototypeMeta, type PrototypeMeta } from "../store";
+import { resolveKvStore } from "../../store";
 
 export interface SessionProjection {
   authId: string;
@@ -18,7 +19,10 @@ export interface SessionProjection {
   meta: PrototypeMeta;
 }
 
-const sessions = kvStore<SessionProjection>("sessions");
+// Routed through the storage factory: prototype today, Firestore-durable
+// once the S3 driver lands. Collection name stays "sessions" so any
+// existing dev prototype-store data survives the abstraction change.
+const sessions = resolveKvStore<SessionProjection>("session", "sessions");
 
 export async function getSession(
   authId: string,

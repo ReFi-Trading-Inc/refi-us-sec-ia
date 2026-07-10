@@ -48,13 +48,10 @@ async function atomicWrite(path: string, body: string): Promise<void> {
 
 // ─── KV store (mutable + put-if-absent) ──────────────────────────────────────
 
-export interface KVStore<T> {
-  get(key: string): Promise<T | null>;
-  put(key: string, value: T): Promise<void>;
-  putIfAbsent(key: string, value: T): Promise<boolean>;
-  list(filterPrefix?: string): Promise<Array<{ key: string; value: T }>>;
-  delete(key: string): Promise<void>;
-}
+// Interface now lives in lib/store/types.ts so it's shared across drivers
+// (prototype, durable Firestore). Re-exported here for existing callers.
+import type { KVStore, AppendOnlyStore } from "../store/types";
+export type { KVStore, AppendOnlyStore };
 
 export function kvStore<T>(name: string): KVStore<T> {
   const dir = join(rootDir(), safeKey(name));
@@ -115,11 +112,6 @@ export function kvStore<T>(name: string): KVStore<T> {
 }
 
 // ─── Append-only event log ───────────────────────────────────────────────────
-
-export interface AppendOnlyStore<T> {
-  append(event: T): Promise<void>;
-  list(filter?: (event: T) => boolean): Promise<T[]>;
-}
 
 export function appendOnlyStore<T>(name: string): AppendOnlyStore<T> {
   const file = join(rootDir(), `${safeKey(name)}.jsonl`);

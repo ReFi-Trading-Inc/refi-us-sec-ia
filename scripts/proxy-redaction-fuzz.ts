@@ -82,6 +82,21 @@ async function loadCases(): Promise<EndpointCase[]> {
     project: (w: unknown) => unknown;
     WIRE_ADMIN_FIELDS: readonly string[];
   };
+  const executionPlans = (await load("execution-plans.ts")) as {
+    wireExecutionPlanSchema: import("zod").ZodTypeAny;
+    project: (w: unknown) => unknown;
+    WIRE_ADMIN_FIELDS: readonly string[];
+  };
+  const orders = (await load("orders.ts")) as {
+    wireOrderSchema: import("zod").ZodTypeAny;
+    project: (w: unknown) => unknown;
+    WIRE_ADMIN_FIELDS: readonly string[];
+  };
+  const ordersBlocked = (await load("orders-blocked.ts")) as {
+    wireBlockedOrderSchema: import("zod").ZodTypeAny;
+    project: (w: unknown) => unknown;
+    WIRE_ADMIN_FIELDS: readonly string[];
+  };
 
   const mk = (
     name: string,
@@ -193,6 +208,49 @@ async function loadCases(): Promise<EndpointCase[]> {
         account_id: "acct_1",
         decision: "approved",
         decided_at: "2025-01-01T00:00:00Z",
+      },
+    ),
+    mk(
+      "execution-plans",
+      executionPlans.wireExecutionPlanSchema,
+      executionPlans.project,
+      executionPlans.WIRE_ADMIN_FIELDS,
+      {
+        plan_id: "plan_1",
+        intent_id: "int_1",
+        account_id: "acct_1",
+        status: "planned",
+        planned_at: "2025-01-01T00:00:00Z",
+      },
+    ),
+    mk(
+      "orders",
+      orders.wireOrderSchema,
+      orders.project,
+      orders.WIRE_ADMIN_FIELDS,
+      {
+        order_id: "ord_1",
+        account_id: "acct_1",
+        symbol: "AAPL",
+        side: "buy",
+        qty: "10",
+        status: "new",
+        submitted_at: "2025-01-01T00:00:00Z",
+      },
+    ),
+    mk(
+      "orders-blocked",
+      ordersBlocked.wireBlockedOrderSchema,
+      ordersBlocked.project,
+      ordersBlocked.WIRE_ADMIN_FIELDS,
+      {
+        id: "blk_1",
+        account_id: "acct_1",
+        symbol: "AAPL",
+        side: "buy",
+        qty: "10",
+        block_reason: "risk_limit_exceeded",
+        blocked_at: "2025-01-01T00:00:00Z",
       },
     ),
   ];

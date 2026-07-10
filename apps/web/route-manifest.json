@@ -253,6 +253,18 @@
       "purpose": "Risk-engine decisions on the caller's intents, sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_RISK_DECISIONS.",
       "auth": "investor",
       "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/execution-plans/route.ts",
+      "purpose": "Caller's execution plans, sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_EXECUTION_PLANS.",
+      "auth": "investor",
+      "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/orders-blocked/route.ts",
+      "purpose": "Orders blocked before submission by risk or broker gateway. Dark behind FLAG_ADMIN_PROXY_ORDERS_BLOCKED.",
+      "auth": "investor",
+      "owner": "proxy"
     }
   ]
 }

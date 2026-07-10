@@ -229,6 +229,30 @@
       "purpose": "Caller's own account projection, sourced upstream via the S4 proxy. No target-account param — scope is the auth-bound accountId. Dark behind FLAG_ADMIN_PROXY_ACCOUNTS.",
       "auth": "investor",
       "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/account-flow/route.ts",
+      "purpose": "Caller's onboarding/lifecycle flow projection, sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_ACCOUNT_FLOW.",
+      "auth": "investor",
+      "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/risk-limits/route.ts",
+      "purpose": "Caller's risk limits, sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_RISK_LIMITS.",
+      "auth": "investor",
+      "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/intents/route.ts",
+      "purpose": "Caller's AccountIntent list, sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_INTENTS.",
+      "auth": "investor",
+      "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/risk-decisions/route.ts",
+      "purpose": "Risk-engine decisions on the caller's intents, sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_RISK_DECISIONS.",
+      "auth": "investor",
+      "owner": "proxy"
     }
   ]
 }

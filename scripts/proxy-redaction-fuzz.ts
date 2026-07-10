@@ -97,6 +97,21 @@ async function loadCases(): Promise<EndpointCase[]> {
     project: (w: unknown) => unknown;
     WIRE_ADMIN_FIELDS: readonly string[];
   };
+  const brokerInteractions = (await load("broker-interactions.ts")) as {
+    wireBrokerInteractionSchema: import("zod").ZodTypeAny;
+    project: (w: unknown) => unknown;
+    WIRE_ADMIN_FIELDS: readonly string[];
+  };
+  const reconciliation = (await load("reconciliation.ts")) as {
+    wireReconciliationRunSchema: import("zod").ZodTypeAny;
+    project: (w: unknown) => unknown;
+    WIRE_ADMIN_FIELDS: readonly string[];
+  };
+  const tradingControls = (await load("trading-controls.ts")) as {
+    wireTradingControlsSchema: import("zod").ZodTypeAny;
+    project: (w: unknown) => unknown;
+    WIRE_ADMIN_FIELDS: readonly string[];
+  };
 
   const mk = (
     name: string,
@@ -251,6 +266,45 @@ async function loadCases(): Promise<EndpointCase[]> {
         qty: "10",
         block_reason: "risk_limit_exceeded",
         blocked_at: "2025-01-01T00:00:00Z",
+      },
+    ),
+    mk(
+      "broker-interactions",
+      brokerInteractions.wireBrokerInteractionSchema,
+      brokerInteractions.project,
+      brokerInteractions.WIRE_ADMIN_FIELDS,
+      {
+        id: "bi_1",
+        account_id: "acct_1",
+        broker: "alpaca",
+        action: "submit_order",
+        at: "2025-01-01T00:00:00Z",
+      },
+    ),
+    mk(
+      "reconciliation",
+      reconciliation.wireReconciliationRunSchema,
+      reconciliation.project,
+      reconciliation.WIRE_ADMIN_FIELDS,
+      {
+        id: "rec_1",
+        account_id: "acct_1",
+        started_at: "2025-01-01T00:00:00Z",
+        status: "completed",
+        discrepancy_count: 0,
+      },
+    ),
+    mk(
+      "trading-controls",
+      tradingControls.wireTradingControlsSchema,
+      tradingControls.project,
+      tradingControls.WIRE_ADMIN_FIELDS,
+      {
+        account_id: "acct_1",
+        autopilot_active: true,
+        reduce_only: false,
+        halted: false,
+        last_changed_at: "2025-01-01T00:00:00Z",
       },
     ),
   ];

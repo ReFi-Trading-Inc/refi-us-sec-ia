@@ -265,6 +265,24 @@
       "purpose": "Orders blocked before submission by risk or broker gateway. Dark behind FLAG_ADMIN_PROXY_ORDERS_BLOCKED.",
       "auth": "investor",
       "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/broker-interactions/route.ts",
+      "purpose": "Caller's broker-gateway interaction log, sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_BROKER_INTERACTIONS.",
+      "auth": "investor",
+      "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/reconciliation/route.ts",
+      "purpose": "Reconciliation run history for the caller's account, sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_RECONCILIATION.",
+      "auth": "investor",
+      "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/trading-controls-state/route.ts",
+      "purpose": "Read-only projection of the caller's TradingControlStates (autopilot, reduce_only, halt). Writes go through /managed/pause and /managed/resume. Dark behind FLAG_ADMIN_PROXY_TRADING_CONTROLS.",
+      "auth": "investor",
+      "owner": "proxy"
     }
   ]
 }

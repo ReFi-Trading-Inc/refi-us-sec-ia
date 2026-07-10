@@ -211,6 +211,24 @@
       "purpose": "Investor-facing strategy template list, sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_TEMPLATES.",
       "auth": "investor",
       "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/memberships/route.ts",
+      "purpose": "Caller's template memberships, sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_MEMBERSHIPS.",
+      "auth": "investor",
+      "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/rules/route.ts",
+      "purpose": "Template rules (methodology + description), sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_RULES.",
+      "auth": "investor",
+      "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/accounts/route.ts",
+      "purpose": "Caller's own account projection, sourced upstream via the S4 proxy. No target-account param — scope is the auth-bound accountId. Dark behind FLAG_ADMIN_PROXY_ACCOUNTS.",
+      "auth": "investor",
+      "owner": "proxy"
     }
   ]
 }

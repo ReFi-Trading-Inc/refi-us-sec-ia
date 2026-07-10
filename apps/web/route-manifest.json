@@ -205,6 +205,12 @@
       "purpose": "Read/write the current subscription mode (signal / managed).",
       "auth": "investor",
       "owner": "surface-1"
+    },
+    {
+      "path": "app/api/v1/investor/templates/route.ts",
+      "purpose": "Investor-facing strategy template list, sourced upstream via the S4 proxy. Dark behind FLAG_ADMIN_PROXY_TEMPLATES.",
+      "auth": "investor",
+      "owner": "proxy"
     }
   ]
 }

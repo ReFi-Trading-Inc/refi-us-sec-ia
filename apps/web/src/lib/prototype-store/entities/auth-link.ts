@@ -1,7 +1,8 @@
 /**
  * Auth ↔ trading account link (G-007).
  */
-import { kvStore, makePrototypeMeta, type PrototypeMeta } from "../store";
+import { makePrototypeMeta, type PrototypeMeta } from "../store";
+import { resolveKvStore } from "../../store";
 
 export interface AuthSessionLink {
   authId: string;
@@ -11,7 +12,11 @@ export interface AuthSessionLink {
   meta: PrototypeMeta;
 }
 
-const links = kvStore<AuthSessionLink>("auth-session-links");
+// Routed through the storage factory (S3). Collection name unchanged.
+const links = resolveKvStore<AuthSessionLink>(
+  "auth-session-link",
+  "auth-session-links",
+);
 
 function linkKey(authId: string, accountId: string): string {
   return `${authId}__${accountId}`;

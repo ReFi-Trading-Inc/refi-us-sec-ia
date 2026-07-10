@@ -10,7 +10,8 @@
  * need this — they're naturally idempotent (set-on-write) or operate on
  * already-versioned objects.
  */
-import { kvStore, makePrototypeMeta, type PrototypeMeta } from "../store";
+import { makePrototypeMeta, type PrototypeMeta } from "../store";
+import { resolveKvStore } from "../../store";
 
 export interface ActivationIdempotencyRecord {
   idempotencyKey: string;
@@ -21,7 +22,12 @@ export interface ActivationIdempotencyRecord {
   meta: PrototypeMeta;
 }
 
-const records = kvStore<ActivationIdempotencyRecord>("activation-idempotency");
+// Routed through the storage factory (S3). Collection name unchanged so
+// existing prototype-store folders survive the abstraction migration.
+const records = resolveKvStore<ActivationIdempotencyRecord>(
+  "activation-idempotency",
+  "activation-idempotency",
+);
 
 export async function getActivationByIdempotencyKey(
   idempotencyKey: string,

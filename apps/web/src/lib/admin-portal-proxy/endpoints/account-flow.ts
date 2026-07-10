@@ -7,7 +7,14 @@
 import { z } from "zod";
 import { proxyRequest } from "../client";
 
-const wireFlowSchema = z
+export const WIRE_ADMIN_FIELDS = [
+  "admin",
+  "internal_notes",
+  "target_account_id",
+  "operator_flags",
+] as const;
+
+export const wireFlowSchema = z
   .object({
     account_id: z.string(),
     stage: z.string(),
@@ -30,7 +37,9 @@ export interface InvestorAccountFlow {
   lastUpdatedAt: string;
 }
 
-function project(wire: z.infer<typeof wireFlowSchema>): InvestorAccountFlow {
+export function project(
+  wire: z.infer<typeof wireFlowSchema>,
+): InvestorAccountFlow {
   const out: InvestorAccountFlow = {
     accountId: wire.account_id,
     stage: wire.stage,

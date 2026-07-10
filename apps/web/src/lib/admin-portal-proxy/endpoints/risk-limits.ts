@@ -7,7 +7,14 @@
 import { z } from "zod";
 import { proxyRequest } from "../client";
 
-const wireLimitsSchema = z
+export const WIRE_ADMIN_FIELDS = [
+  "admin",
+  "admin_override",
+  "target_account_id",
+  "internal_notes",
+] as const;
+
+export const wireLimitsSchema = z
   .object({
     account_id: z.string(),
     max_drawdown_pct: z.number(),
@@ -32,7 +39,9 @@ export interface InvestorRiskLimits {
   effectiveAt: string;
 }
 
-function project(wire: z.infer<typeof wireLimitsSchema>): InvestorRiskLimits {
+export function project(
+  wire: z.infer<typeof wireLimitsSchema>,
+): InvestorRiskLimits {
   return {
     accountId: wire.account_id,
     maxDrawdownPct: wire.max_drawdown_pct,

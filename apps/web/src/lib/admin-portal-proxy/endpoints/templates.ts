@@ -24,7 +24,14 @@ import { proxyRequest } from "../client";
 // z.unknown().optional() lets known admin fields pass strict-parse without
 // bleeding through the output. Unknown-shape fields still reject: a new
 // admin surface added upstream trips strict before it ever reaches here.
-const wireTemplateSchema = z
+export const WIRE_ADMIN_FIELDS = [
+  "admin",
+  "internal_notes",
+  "target_account_id",
+  "manual_rebalance",
+] as const;
+
+export const wireTemplateSchema = z
   .object({
     // Investor-visible fields
     id: z.string(),
@@ -58,7 +65,9 @@ export interface InvestorTemplate {
   disclosureId: string;
 }
 
-function project(wire: z.infer<typeof wireTemplateSchema>): InvestorTemplate {
+export function project(
+  wire: z.infer<typeof wireTemplateSchema>,
+): InvestorTemplate {
   const out: InvestorTemplate = {
     id: wire.id,
     version: wire.version,

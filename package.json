@@ -12,7 +12,8 @@
     "scan-copy": "tsx scripts/scan-copy.ts",
     "tripwire": "tsx scripts/tripwire-investor-boundary.ts",
     "contract-test": "tsx scripts/contract-assertions.ts",
-    "test": "pnpm contract-test && pnpm tripwire && pnpm --filter @refi/api-clients test",
+    "proxy-redaction-fuzz": "tsx scripts/proxy-redaction-fuzz.ts",
+    "test": "pnpm contract-test && pnpm tripwire && pnpm proxy-redaction-fuzz && pnpm --filter @refi/api-clients test",
     "e2e": "pnpm --filter @refi/web exec playwright test",
     "prepare": "husky"
   },

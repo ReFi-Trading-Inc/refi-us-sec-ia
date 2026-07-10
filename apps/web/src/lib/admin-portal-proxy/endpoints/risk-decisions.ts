@@ -8,7 +8,15 @@
 import { z } from "zod";
 import { proxyRequest } from "../client";
 
-const wireDecisionSchema = z
+export const WIRE_ADMIN_FIELDS = [
+  "admin",
+  "admin_notes",
+  "internal_notes",
+  "target_account_id",
+  "model_debug",
+] as const;
+
+export const wireDecisionSchema = z
   .object({
     id: z.string(),
     intent_id: z.string(),
@@ -42,7 +50,7 @@ export interface InvestorRiskDecision {
   snapshotHash?: string;
 }
 
-function project(
+export function project(
   wire: z.infer<typeof wireDecisionSchema>,
 ): InvestorRiskDecision {
   const out: InvestorRiskDecision = {

@@ -7,7 +7,15 @@
 import { z } from "zod";
 import { proxyRequest } from "../client";
 
-const wireAccountSchema = z
+export const WIRE_ADMIN_FIELDS = [
+  "admin",
+  "internal_notes",
+  "target_account_id",
+  "manual_rebalance",
+  "operator_flags",
+] as const;
+
+export const wireAccountSchema = z
   .object({
     id: z.string(),
     subscription_mode: z.enum(["signal", "managed"]),
@@ -31,7 +39,9 @@ export interface InvestorAccount {
   createdAt: string;
 }
 
-function project(wire: z.infer<typeof wireAccountSchema>): InvestorAccount {
+export function project(
+  wire: z.infer<typeof wireAccountSchema>,
+): InvestorAccount {
   const out: InvestorAccount = {
     id: wire.id,
     subscriptionMode: wire.subscription_mode,

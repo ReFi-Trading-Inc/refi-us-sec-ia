@@ -11,7 +11,16 @@
 import { z } from "zod";
 import { proxyRequest } from "../client";
 
-const wireIntentSchema = z
+export const WIRE_ADMIN_FIELDS = [
+  "admin",
+  "internal_notes",
+  "target_account_id",
+  "legs",
+  "notional_summary",
+  "equity_estimate",
+] as const;
+
+export const wireIntentSchema = z
   .object({
     intent_id: z.string(),
     action_id: z.string().optional(),
@@ -55,7 +64,9 @@ export interface InvestorIntent {
   correlationId?: string;
 }
 
-function project(wire: z.infer<typeof wireIntentSchema>): InvestorIntent {
+export function project(
+  wire: z.infer<typeof wireIntentSchema>,
+): InvestorIntent {
   const out: InvestorIntent = {
     intentId: wire.intent_id,
     intentKind: wire.intent_kind,

@@ -8,7 +8,14 @@
 import { z } from "zod";
 import { proxyRequest } from "../client";
 
-const wireRuleSchema = z
+export const WIRE_ADMIN_FIELDS = [
+  "admin",
+  "internal_notes",
+  "debug_only",
+  "target_account_id",
+] as const;
+
+export const wireRuleSchema = z
   .object({
     id: z.string(),
     template_id: z.string(),
@@ -37,7 +44,7 @@ export interface InvestorRule {
   methodology: string;
 }
 
-function project(wire: z.infer<typeof wireRuleSchema>): InvestorRule {
+export function project(wire: z.infer<typeof wireRuleSchema>): InvestorRule {
   const out: InvestorRule = {
     id: wire.id,
     templateId: wire.template_id,

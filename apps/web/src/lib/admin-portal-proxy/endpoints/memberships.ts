@@ -12,7 +12,14 @@
 import { z } from "zod";
 import { proxyRequest } from "../client";
 
-const wireMembershipSchema = z
+export const WIRE_ADMIN_FIELDS = [
+  "admin",
+  "internal_notes",
+  "target_account_id",
+  "manual_rebalance",
+] as const;
+
+export const wireMembershipSchema = z
   .object({
     id: z.string(),
     account_id: z.string(),
@@ -43,7 +50,7 @@ export interface InvestorMembership {
   leftAt?: string;
 }
 
-function project(
+export function project(
   wire: z.infer<typeof wireMembershipSchema>,
 ): InvestorMembership {
   const out: InvestorMembership = {

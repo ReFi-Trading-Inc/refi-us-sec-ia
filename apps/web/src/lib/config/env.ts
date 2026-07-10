@@ -33,6 +33,9 @@ const PROTOTYPE_DEFAULTS = {
   REFI_TRUSTED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000" as const,
   SESSION_JWT_ISSUER: "refi-us-sec-ia" as const,
   SESSION_JWT_AUDIENCE: "refi-us-sec-ia-bff" as const,
+  ADMIN_PORTAL_BASE_URL: "http://localhost:4000" as const,
+  ADMIN_PORTAL_SERVICE_TOKEN:
+    "prototype-only-upstream-service-token-32+chars" as const,
 };
 
 /**
@@ -92,6 +95,13 @@ const serverSchema = clientSchema.extend({
   // (Daniel's auth-siwe / D8 magic-link) and verify site.
   SESSION_JWT_ISSUER: z.string().min(1),
   SESSION_JWT_AUDIENCE: z.string().min(1),
+  // Upstream Admin Portal base URL (S4). Pinned at boot so the proxy
+  // client never accepts a request-derived host segment — closes the
+  // classic SSRF surface by construction rather than by validation.
+  ADMIN_PORTAL_BASE_URL: z.url(),
+  // Service-to-service token forwarded to the Admin Portal on every
+  // proxied call. Ratification is D4 in the Daniel Dependency Ledger.
+  ADMIN_PORTAL_SERVICE_TOKEN: z.string().min(1),
 });
 
 function formatError(error: z.ZodError): string {
@@ -183,6 +193,14 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     SESSION_JWT_AUDIENCE: withFallback(
       process.env["SESSION_JWT_AUDIENCE"],
       "SESSION_JWT_AUDIENCE",
+    ),
+    ADMIN_PORTAL_BASE_URL: withFallback(
+      process.env["ADMIN_PORTAL_BASE_URL"],
+      "ADMIN_PORTAL_BASE_URL",
+    ),
+    ADMIN_PORTAL_SERVICE_TOKEN: withFallback(
+      process.env["ADMIN_PORTAL_SERVICE_TOKEN"],
+      "ADMIN_PORTAL_SERVICE_TOKEN",
     ),
   });
 

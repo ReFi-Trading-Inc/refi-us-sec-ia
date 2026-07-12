@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://refi.trading/contract/v3/account-flow.schema.json",
+  "title": "account-flow",
+  "x-refi-contract": {
+    "contract": "Contract V3",
+    "section": "§5",
+    "wireExport": "wireFlowSchema",
+    "module": "apps/web/src/lib/admin-portal-proxy/endpoints/account-flow.ts",
+    "version": "v3.20260712"
+  },
+  "type": "object",
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "stage": {
+      "type": "string"
+    },
+    "completed_steps": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "blocked_reason": {
+      "type": "string"
+    },
+    "last_updated_at": {
+      "type": "string"
+    },
+    "admin": {},
+    "internal_notes": {},
+    "target_account_id": {},
+    "operator_flags": {}
+  },
+  "required": ["account_id", "stage", "completed_steps", "last_updated_at"],
+  "additionalProperties": false
+}

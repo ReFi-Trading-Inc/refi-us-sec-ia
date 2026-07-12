@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://refi.trading/contract/v3/orders-blocked.schema.json",
+  "title": "orders-blocked",
+  "x-refi-contract": {
+    "contract": "Contract V3",
+    "section": "§9",
+    "wireExport": "wireBlockedOrderSchema",
+    "module": "apps/web/src/lib/admin-portal-proxy/endpoints/orders-blocked.ts",
+    "version": "v3.20260712"
+  },
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "order_id": {
+      "type": "string"
+    },
+    "plan_id": {
+      "type": "string"
+    },
+    "account_id": {
+      "type": "string"
+    },
+    "symbol": {
+      "type": "string"
+    },
+    "side": {
+      "type": "string",
+      "enum": ["buy", "sell"]
+    },
+    "qty": {
+      "type": "string"
+    },
+    "block_reason": {
+      "type": "string"
+    },
+    "reason_code": {
+      "type": "string"
+    },
+    "blocked_at": {
+      "type": "string"
+    },
+    "admin": {},
+    "internal_notes": {},
+    "target_account_id": {},
+    "model_debug": {}
+  },
+  "required": [
+    "id",
+    "account_id",
+    "symbol",
+    "side",
+    "qty",
+    "block_reason",
+    "blocked_at"
+  ],
+  "additionalProperties": false
+}

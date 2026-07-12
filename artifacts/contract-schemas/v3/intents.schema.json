@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://refi.trading/contract/v3/intents.schema.json",
+  "title": "intents",
+  "x-refi-contract": {
+    "contract": "Contract V3",
+    "section": "§4a",
+    "wireExport": "wireIntentSchema",
+    "module": "apps/web/src/lib/admin-portal-proxy/endpoints/intents.ts",
+    "version": "v3.20260712"
+  },
+  "type": "object",
+  "properties": {
+    "intent_id": {
+      "type": "string"
+    },
+    "action_id": {
+      "type": "string"
+    },
+    "intent_kind": {
+      "type": "string"
+    },
+    "template_id": {
+      "type": "string"
+    },
+    "template_version": {
+      "type": "string"
+    },
+    "account_id": {
+      "type": "string"
+    },
+    "ts": {
+      "type": "string"
+    },
+    "base_currency": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string"
+    },
+    "blocked_reason": {
+      "type": "string"
+    },
+    "legs_hash": {
+      "type": "string"
+    },
+    "correlation_id": {
+      "type": "string"
+    },
+    "admin": {},
+    "internal_notes": {},
+    "target_account_id": {},
+    "legs": {},
+    "notional_summary": {},
+    "equity_estimate": {}
+  },
+  "required": ["intent_id", "intent_kind", "account_id", "ts", "status"],
+  "additionalProperties": false
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://refi.trading/contract/v3/risk-limits.schema.json",
+  "title": "risk-limits",
+  "x-refi-contract": {
+    "contract": "Contract V3",
+    "section": "§7",
+    "wireExport": "wireLimitsSchema",
+    "module": "apps/web/src/lib/admin-portal-proxy/endpoints/risk-limits.ts",
+    "version": "v3.20260712"
+  },
+  "type": "object",
+  "properties": {
+    "account_id": {
+      "type": "string"
+    },
+    "max_drawdown_pct": {
+      "type": "number"
+    },
+    "max_position_size_pct": {
+      "type": "number"
+    },
+    "max_leverage": {
+      "type": "number"
+    },
+    "currency": {
+      "type": "string"
+    },
+    "effective_at": {
+      "type": "string"
+    },
+    "admin": {},
+    "admin_override": {},
+    "target_account_id": {},
+    "internal_notes": {}
+  },
+  "required": [
+    "account_id",
+    "max_drawdown_pct",
+    "max_position_size_pct",
+    "max_leverage",
+    "currency",
+    "effective_at"
+  ],
+  "additionalProperties": false
+}

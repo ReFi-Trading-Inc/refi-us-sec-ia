@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://refi.trading/contract/v3/execution-plans.schema.json",
+  "title": "execution-plans",
+  "x-refi-contract": {
+    "contract": "Contract V3",
+    "section": "§8",
+    "wireExport": "wireExecutionPlanSchema",
+    "module": "apps/web/src/lib/admin-portal-proxy/endpoints/execution-plans.ts",
+    "version": "v3.20260712"
+  },
+  "type": "object",
+  "properties": {
+    "plan_id": {
+      "type": "string"
+    },
+    "intent_id": {
+      "type": "string"
+    },
+    "account_id": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "planned",
+        "pending_submit",
+        "waiting_on_cancels",
+        "blocked_by_conflict",
+        "in_flight",
+        "reconciled",
+        "terminal_failed"
+      ]
+    },
+    "planned_at": {
+      "type": "string"
+    },
+    "terminal_at": {
+      "type": "string"
+    },
+    "order_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "correlation_id": {
+      "type": "string"
+    },
+    "admin": {},
+    "internal_notes": {},
+    "target_account_id": {},
+    "operator_flags": {},
+    "debug_only": {}
+  },
+  "required": ["plan_id", "intent_id", "account_id", "status", "planned_at"],
+  "additionalProperties": false
+}

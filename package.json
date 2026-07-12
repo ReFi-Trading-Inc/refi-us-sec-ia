@@ -13,7 +13,8 @@
     "tripwire": "tsx scripts/tripwire-investor-boundary.ts",
     "contract-test": "tsx scripts/contract-assertions.ts",
     "proxy-redaction-fuzz": "tsx scripts/proxy-redaction-fuzz.ts",
-    "test": "pnpm contract-test && pnpm tripwire && pnpm proxy-redaction-fuzz && pnpm --filter @refi/api-clients test",
+    "export-schemas": "tsx scripts/export-contract-schemas.ts",
+    "test": "pnpm contract-test && pnpm tripwire && pnpm proxy-redaction-fuzz && pnpm export-schemas && pnpm --filter @refi/api-clients test",
     "e2e": "pnpm --filter @refi/web exec playwright test",
     "prepare": "husky"
   },

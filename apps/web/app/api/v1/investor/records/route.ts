@@ -4,10 +4,18 @@
  * Records Center index. Returns category counts + the most recent items in
  * each. Categories: disclosures, advisory, execution, broker, support, audit.
  *
- * This is a list endpoint, NOT a single-record fetch — so it does not emit a
- * RecordAccessLog entry. The /records/[id] route does.
+ * S4c completeness: every records/documents read path writes a
+ * RecordAccessLog entry, including the index browse. The recordRef marks
+ * the view as `records:index` so an auditor can distinguish index browses
+ * from single-record fetches under `/records/[id]`. Anonymous callers get
+ * an empty preview and no access-log entry, so unauthenticated hits never
+ * appear in the compliance log as "record accessed".
  */
-import { bffRead } from "@lib/bff/handler";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { bffReadWithAccessLog } from "@lib/bff/handler";
+import { correlationIdFrom } from "@lib/bff/correlation";
+import { getAuthContext } from "@lib/bff/auth";
 import {
   listDisclosureAcksForUser,
   listDecisionRecords,
@@ -26,22 +34,23 @@ interface RecordsSummary {
   audit: { count: number; recent: unknown[]; notice: string };
 }
 
-export const GET = bffRead<RecordsSummary>({
+const EMPTY: RecordsSummary = {
+  disclosures: { count: 0, recent: [] },
+  advisory: { count: 0, recent: [] },
+  actions: { count: 0, recent: [] },
+  accesses: { count: 0, recent: [] },
+  execution: { count: 0, recent: [], notice: "Available in preview." },
+  broker: { count: 0, recent: [], notice: "Available in preview." },
+  support: { count: 0, recent: [], notice: "Available in preview." },
+  audit: { count: 0, recent: [], notice: "Available in preview." },
+};
+
+const wrapped = bffReadWithAccessLog<RecordsSummary>({
+  action: "viewRecord",
   source: "prototype-bff",
   upstreamGap: ["G-001", "G-005", "G-009"],
+  recordRef: () => "records:index",
   fetch: async (ctx) => {
-    if (!ctx.auth) {
-      return {
-        disclosures: { count: 0, recent: [] },
-        advisory: { count: 0, recent: [] },
-        actions: { count: 0, recent: [] },
-        accesses: { count: 0, recent: [] },
-        execution: { count: 0, recent: [], notice: "Available in preview." },
-        broker: { count: 0, recent: [], notice: "Available in preview." },
-        support: { count: 0, recent: [], notice: "Available in preview." },
-        audit: { count: 0, recent: [], notice: "Available in preview." },
-      };
-    }
     const [acks, advisory, receipts, accesses] = await Promise.all([
       listDisclosureAcksForUser(ctx.auth.authId),
       ctx.auth.accountId
@@ -62,3 +71,15 @@ export const GET = bffRead<RecordsSummary>({
     };
   },
 });
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const auth = await getAuthContext(req);
+  if (!auth) {
+    const correlationId = correlationIdFrom(req);
+    return NextResponse.json(
+      { data: EMPTY, source: "prototype-bff", correlationId },
+      { status: 200 },
+    );
+  }
+  return wrapped(req);
+}

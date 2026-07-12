@@ -33,6 +33,10 @@ const flagDefinitions = {
   FLAG_ADMIN_PROXY_BROKER_INTERACTIONS: { default: "off" },
   FLAG_ADMIN_PROXY_RECONCILIATION: { default: "off" },
   FLAG_ADMIN_PROXY_TRADING_CONTROLS: { default: "off" },
+  // Sprint 2 SSE bridge.
+  FLAG_ADMIN_PROXY_STREAM: { default: "off" },
+  // Sprint 2 F-track on-domain signup.
+  FLAG_ALPHA_APPLICATION_ROUTE: { default: "off" },
   // Sprint 3 PR-F surfaces.
   FLAG_ACCOUNT_CONTROLS_CENTER: { default: "off" },
   FLAG_ACCOUNT_PREFS_PATCH: { default: "off" },

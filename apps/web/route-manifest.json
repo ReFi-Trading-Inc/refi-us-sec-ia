@@ -283,6 +283,18 @@
       "purpose": "Read-only projection of the caller's TradingControlStates (autopilot, reduce_only, halt). Writes go through /managed/pause and /managed/resume. Dark behind FLAG_ADMIN_PROXY_TRADING_CONTROLS.",
       "auth": "investor",
       "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/stream/route.ts",
+      "purpose": "Server-Sent Events bridge from Admin Portal /api/v1/stream to the investor client. Per-event account filtering, strict envelope, auth re-verify on 15s cadence. Dark behind FLAG_ADMIN_PROXY_STREAM.",
+      "auth": "investor",
+      "owner": "proxy"
+    },
+    {
+      "path": "app/api/v1/investor/alpha-application/route.ts",
+      "purpose": "On-domain two-step signup (F-track). POST step 1 captures email; PATCH step 2 fills qualification fields. Writes to the alpha-application entity on the durable driver. Dark behind FLAG_ALPHA_APPLICATION_ROUTE.",
+      "auth": "public",
+      "owner": "funnel"
     }
   ]
 }

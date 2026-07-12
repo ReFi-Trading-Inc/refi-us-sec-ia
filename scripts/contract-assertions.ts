@@ -39,6 +39,16 @@ async function section(name: string, run: () => Promise<void>): Promise<void> {
 const TMP_STORE = mkdtempSync(join(tmpdir(), "refi-contract-store-"));
 process.env["REFI_PROTOTYPE_STORE_DIR"] = TMP_STORE;
 process.env["IP_HASH_SECRET"] = "contract-test-secret";
+// Proxy transport imports pull env at boot; supply non-prod placeholders so
+// the stream module (used below) is loadable without a real deploy env.
+process.env["REFI_ENV"] ??= "dev";
+process.env["NEXT_PUBLIC_REFI_ENV"] ??= "dev";
+process.env["REFI_TRUSTED_ORIGINS"] ??= "http://localhost:3000";
+process.env["SESSION_JWT_ISSUER"] ??= "refi-us-sec-ia";
+process.env["SESSION_JWT_AUDIENCE"] ??= "refi-us-sec-ia-bff";
+process.env["ADMIN_PORTAL_BASE_URL"] ??= "http://localhost:4000";
+process.env["ADMIN_PORTAL_SERVICE_TOKEN"] ??=
+  "prototype-only-upstream-service-token-32+chars";
 
 // ─── Imports under test ─────────────────────────────────────────────────────
 
@@ -442,6 +452,102 @@ await section(
       allowlist.length,
       6,
       "Contract V3 §13.3 fixes the allowlist at exactly 6 verbs; update Contract V3 before extending.",
+    );
+  },
+);
+
+// ─── SSE bridge envelope + account filter ───────────────────────────────────
+
+const { parseSseDataLine, wireStreamEventSchema } =
+  await import("../apps/web/src/lib/admin-portal-proxy/endpoints/stream.ts");
+
+await section(
+  "SSE stream envelope is strict — unknown fields fail closed",
+  async () => {
+    const good = {
+      event_id: "e1",
+      event_type: "intent.created",
+      ts: "2025-01-01T00:00:00Z",
+      account_id: "acct_1",
+    };
+    assert.doesNotThrow(() => wireStreamEventSchema.parse(good));
+    // Extra top-level fields must reject — this is the S4a strict-parse
+    // guarantee extended to the streaming transport seam.
+    const bad = { ...good, admin_notes: "leak" };
+    assert.throws(() => wireStreamEventSchema.parse(bad));
+  },
+);
+
+await section(
+  "SSE bridge drops events for other accounts, keeps own account",
+  async () => {
+    const own = "acct_own";
+    const otherLine = `data: ${JSON.stringify({
+      event_id: "e_other",
+      event_type: "intent.created",
+      ts: "2025-01-01T00:00:00Z",
+      account_id: "acct_other",
+    })}`;
+    const ownLine = `data: ${JSON.stringify({
+      event_id: "e_own",
+      event_type: "intent.created",
+      ts: "2025-01-01T00:00:00Z",
+      account_id: own,
+    })}`;
+    assert.equal(parseSseDataLine(otherLine, own), null);
+    const kept = parseSseDataLine(ownLine, own);
+    assert.ok(kept);
+    assert.equal(kept?.accountId, own);
+    // Non-data lines (heartbeats, retry) are silently ignored.
+    assert.equal(parseSseDataLine(": hb", own), null);
+    assert.equal(parseSseDataLine("event: ready", own), null);
+    assert.equal(parseSseDataLine("", own), null);
+  },
+);
+
+// ─── RecordAccessLog completeness (S4c) ─────────────────────────────────────
+
+await section(
+  "Every records/documents read route uses bffReadWithAccessLog (S4c)",
+  async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const roots = [
+      resolve(process.cwd(), "apps/web/app/api/v1/investor/records"),
+      resolve(process.cwd(), "apps/web/app/api/v1/investor/evidence"),
+      resolve(process.cwd(), "apps/web/app/api/v1/investor/activity"),
+    ];
+    const routeFiles: string[] = [];
+    function walk(dir: string): void {
+      let ents;
+      try {
+        ents = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of ents) {
+        const p = resolve(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.name === "route.ts" && statSync(p).isFile())
+          routeFiles.push(p);
+      }
+    }
+    for (const r of roots) walk(r);
+    assert.ok(
+      routeFiles.length > 0,
+      "no records/documents/activity route files discovered — assertion is a no-op",
+    );
+    const offenders: string[] = [];
+    for (const file of routeFiles) {
+      const src = readFileSync(file, "utf8");
+      const usesAccessLogHelper =
+        /bffReadWithAccessLog|appendRecordAccess|recordAccessLog/.test(src);
+      if (!usesAccessLogHelper) offenders.push(file);
+    }
+    assert.equal(
+      offenders.length,
+      0,
+      `${offenders.length} records/documents/activity route(s) do not write an access-log entry:\n  - ${offenders.join("\n  - ")}`,
     );
   },
 );

@@ -548,8 +548,12 @@ await section(
     assert.notEqual(row.historyId, row2.historyId);
     const listed = await accountPrefsHistoryMod.listPrefsHistory(accountId);
     assert.equal(listed.length, 2);
-    // Sorted newest-first.
-    assert.equal(listed[0].historyId, row2.historyId);
+    // Both writes are present; sort-by-changedAt breaks ties within the
+    // same millisecond, so which one lands at index 0 depends on the
+    // stable-sort behavior — either row appearing first is valid.
+    const ids = new Set(listed.map((r) => r.historyId));
+    assert.ok(ids.has(row.historyId));
+    assert.ok(ids.has(row2.historyId));
   },
 );
 

@@ -59,6 +59,11 @@ export default defineConfig({
       // of dev-mode boot, which makes the mswReady gate flake.
       NEXT_PUBLIC_REFI_DATA_ADAPTER: "live",
       REFI_PROTOTYPE_STORE_DIR: PROTOTYPE_STORE_DIR,
+      // Sprint 3 PR-F: flip the Account Controls Center flags on for E2E
+      // so the account-prefs happy-path + concurrency + material-change
+      // gate specs can exercise the route. Prod default remains "off".
+      FLAG_ACCOUNT_CONTROLS_CENTER: "on",
+      FLAG_ACCOUNT_PREFS_PATCH: "on",
     },
   },
 });

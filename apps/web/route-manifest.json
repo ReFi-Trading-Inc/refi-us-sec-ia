@@ -301,6 +301,18 @@
       "purpose": "G-track sync point 1 (Sprint 3). Consumes an AlphaHandoffToken (ES256): iss/aud/exp pinned, strict claim schema, single-use jti consumed atomically, one-to-one binding of alphaPlayerId to alpha-application. Dark behind FLAG_ALPHA_CLAIM_ROUTE.",
       "auth": "public",
       "owner": "funnel"
+    },
+    {
+      "path": "app/api/v1/investor/account-prefs/route.ts",
+      "purpose": "PR-F Surface 4. GET returns current AccountPrefs + version. PATCH applies investor-editable knobs with S8 optimistic concurrency (409 on version mismatch), material-change consent gate, atomic history + receipt append. Dark behind FLAG_ACCOUNT_CONTROLS_CENTER + FLAG_ACCOUNT_PREFS_PATCH.",
+      "auth": "investor",
+      "owner": "surface-4"
+    },
+    {
+      "path": "app/api/v1/investor/account-prefs/history/route.ts",
+      "purpose": "PR-F Surface 4. AccountPrefs edit history scoped to the caller's account. Writes a RecordAccessLog entry on every read (S4c). Dark behind FLAG_ACCOUNT_CONTROLS_CENTER.",
+      "auth": "investor",
+      "owner": "surface-4"
     }
   ]
 }

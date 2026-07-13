@@ -85,6 +85,11 @@ const { appendExecutionPolicy, getLatestExecutionPolicy } =
 const { upsertRecommendation, getRecommendation } =
   await import("../apps/web/src/lib/prototype-store/entities/recommendation-projection.ts");
 
+const accountPrefsMod =
+  await import("../apps/web/src/lib/prototype-store/entities/account-prefs.ts");
+const accountPrefsHistoryMod =
+  await import("../apps/web/src/lib/prototype-store/entities/account-prefs-history.ts");
+
 // ─── Action taxonomy assertions ─────────────────────────────────────────────
 
 await section(
@@ -453,6 +458,98 @@ await section(
       6,
       "Contract V3 §13.3 fixes the allowlist at exactly 6 verbs; update Contract V3 before extending.",
     );
+  },
+);
+
+// ─── AccountPrefs history invariants (PR-F, S8) ─────────────────────────────
+
+await section(
+  "AccountPrefs diff detects each editable field independently",
+  async () => {
+    const base = accountPrefsMod.emptyPrefs("acct-diff");
+    const a = { ...base, driftThreshold: "0.05", excludedAssets: [] };
+    const b = { ...a, driftThreshold: "0.10" };
+    assert.deepEqual(accountPrefsMod.diffPrefs(a, b), ["driftThreshold"]);
+
+    const c = { ...a, excludedAssets: ["BTC"] };
+    assert.deepEqual(accountPrefsMod.diffPrefs(a, c), ["excludedAssets"]);
+
+    const d = { ...a, minOrder: "1.00", fractionalEnabled: true };
+    assert.deepEqual(
+      accountPrefsMod.diffPrefs(a, d).sort(),
+      ["fractionalEnabled", "minOrder"].sort(),
+    );
+
+    // Same excluded_assets contents in same order → not a diff.
+    const e = { ...a, excludedAssets: [] };
+    assert.deepEqual(accountPrefsMod.diffPrefs(a, e), []);
+  },
+);
+
+await section(
+  "AccountPrefs material-change detection matches docs §3 proposal",
+  async () => {
+    assert.equal(
+      accountPrefsMod.isMaterialDiff(["driftThreshold"]),
+      true,
+      "driftThreshold must be material per docs §3 proposal",
+    );
+    assert.equal(
+      accountPrefsMod.isMaterialDiff(["excludedAssets"]),
+      true,
+      "excludedAssets must be material per docs §3 proposal",
+    );
+    assert.equal(
+      accountPrefsMod.isMaterialDiff(["minOrder"]),
+      false,
+      "minOrder must be non-material per docs §3 proposal",
+    );
+    assert.equal(
+      accountPrefsMod.isMaterialDiff(["fractionalEnabled"]),
+      false,
+      "fractionalEnabled must be non-material per docs §3 proposal",
+    );
+    // A mixed diff with any material field is material.
+    assert.equal(
+      accountPrefsMod.isMaterialDiff(["minOrder", "driftThreshold"]),
+      true,
+    );
+  },
+);
+
+await section(
+  "AccountPrefs history rows are append-only and carry mock_state=true",
+  async () => {
+    const accountId = `prefs-hist-${String(Date.now())}`;
+    const row = await accountPrefsHistoryMod.appendPrefsHistory({
+      accountId,
+      changedByAuthId: "auth-1",
+      beforePayload: {},
+      afterPayload: { driftThreshold: "0.05" },
+      diffFields: ["driftThreshold"],
+      signedConsentRef: "consent-1",
+      correlationId: "cid-1",
+    });
+    assert.equal(row.mockState, true);
+    assert.equal(row.source, "investor_ui_prototype_phase2_6");
+    assert.equal(row.reasonCode, "investor_initiated");
+    // A second append with the same diff is a new row, not an overwrite —
+    // the entity is append-only. This is what makes per-write auditability
+    // work regardless of whether callers dedupe.
+    const row2 = await accountPrefsHistoryMod.appendPrefsHistory({
+      accountId,
+      changedByAuthId: "auth-1",
+      beforePayload: { driftThreshold: "0.05" },
+      afterPayload: { driftThreshold: "0.07" },
+      diffFields: ["driftThreshold"],
+      signedConsentRef: "consent-2",
+      correlationId: "cid-2",
+    });
+    assert.notEqual(row.historyId, row2.historyId);
+    const listed = await accountPrefsHistoryMod.listPrefsHistory(accountId);
+    assert.equal(listed.length, 2);
+    // Sorted newest-first.
+    assert.equal(listed[0].historyId, row2.historyId);
   },
 );
 

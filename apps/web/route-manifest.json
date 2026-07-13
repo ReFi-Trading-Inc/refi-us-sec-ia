@@ -295,6 +295,12 @@
       "purpose": "On-domain two-step signup (F-track). POST step 1 captures email; PATCH step 2 fills qualification fields. Writes to the alpha-application entity on the durable driver. Dark behind FLAG_ALPHA_APPLICATION_ROUTE.",
       "auth": "public",
       "owner": "funnel"
+    },
+    {
+      "path": "app/api/v1/investor/alpha-claim/route.ts",
+      "purpose": "G-track sync point 1 (Sprint 3). Consumes an AlphaHandoffToken (ES256): iss/aud/exp pinned, strict claim schema, single-use jti consumed atomically, one-to-one binding of alphaPlayerId to alpha-application. Dark behind FLAG_ALPHA_CLAIM_ROUTE.",
+      "auth": "public",
+      "owner": "funnel"
     }
   ]
 }

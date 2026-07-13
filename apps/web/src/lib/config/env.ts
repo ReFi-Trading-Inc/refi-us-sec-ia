@@ -36,6 +36,17 @@ const PROTOTYPE_DEFAULTS = {
   ADMIN_PORTAL_BASE_URL: "http://localhost:4000" as const,
   ADMIN_PORTAL_SERVICE_TOKEN:
     "prototype-only-upstream-service-token-32+chars" as const,
+  // Public key that verifies AlphaHandoffToken (ES256). JWK JSON string,
+  // server-only. In non-prod a placeholder P-256 public key is used so the
+  // envelope layer boots; production must set the real value.
+  ALPHA_HANDOFF_PUBLIC_KEY_JWK: JSON.stringify({
+    kty: "EC",
+    crv: "P-256",
+    x: "prototype-only-x-coord",
+    y: "prototype-only-y-coord",
+  }),
+  ALPHA_HANDOFF_ISSUER: "refi-alpha" as const,
+  ALPHA_HANDOFF_AUDIENCE: "refi-us-sec-ia" as const,
 };
 
 /**
@@ -102,6 +113,13 @@ const serverSchema = clientSchema.extend({
   // Service-to-service token forwarded to the Admin Portal on every
   // proxied call. Ratification is D4 in the Daniel Dependency Ledger.
   ADMIN_PORTAL_SERVICE_TOKEN: z.string().min(1),
+  // AlphaHandoffToken verification (§2.2 of the ReFi Alpha spec).
+  // Public key travels as a JWK JSON string; iss/aud are pinned so a
+  // token minted for another audience cannot pass this verify. Private
+  // key lives only in the game's Supabase Edge Function secret store.
+  ALPHA_HANDOFF_PUBLIC_KEY_JWK: z.string().min(1),
+  ALPHA_HANDOFF_ISSUER: z.string().min(1),
+  ALPHA_HANDOFF_AUDIENCE: z.string().min(1),
 });
 
 function formatError(error: z.ZodError): string {
@@ -201,6 +219,18 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     ADMIN_PORTAL_SERVICE_TOKEN: withFallback(
       process.env["ADMIN_PORTAL_SERVICE_TOKEN"],
       "ADMIN_PORTAL_SERVICE_TOKEN",
+    ),
+    ALPHA_HANDOFF_PUBLIC_KEY_JWK: withFallback(
+      process.env["ALPHA_HANDOFF_PUBLIC_KEY_JWK"],
+      "ALPHA_HANDOFF_PUBLIC_KEY_JWK",
+    ),
+    ALPHA_HANDOFF_ISSUER: withFallback(
+      process.env["ALPHA_HANDOFF_ISSUER"],
+      "ALPHA_HANDOFF_ISSUER",
+    ),
+    ALPHA_HANDOFF_AUDIENCE: withFallback(
+      process.env["ALPHA_HANDOFF_AUDIENCE"],
+      "ALPHA_HANDOFF_AUDIENCE",
     ),
   });
 

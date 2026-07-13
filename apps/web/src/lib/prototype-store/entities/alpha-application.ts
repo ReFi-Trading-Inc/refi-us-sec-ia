@@ -175,3 +175,102 @@ export async function listApplications(): Promise<AlphaApplication[]> {
   const rows = await store.list();
   return rows.map((r) => r.value);
 }
+
+/**
+ * Player-keyed storage key for game-first entrants who have not yet
+ * supplied an email. When the claim route arrives with a valid handoff
+ * token before step 1 of the funnel has been completed, we stash the
+ * game fields under `player:<alphaPlayerId>` so step 2 can merge on
+ * email later without losing the game context (§2.7 merge semantics).
+ */
+export function playerKey(alphaPlayerId: string): string {
+  return `player:${alphaPlayerId}`;
+}
+
+export async function findByAlphaPlayerId(
+  alphaPlayerId: string,
+): Promise<AlphaApplication | null> {
+  // Fast path: the direct player-keyed stub row.
+  const byPlayer = await store.get(playerKey(alphaPlayerId));
+  if (byPlayer) return byPlayer;
+  // Slow path: an email-keyed row that has already been bound.
+  const rows = await store.list();
+  for (const { value } of rows) {
+    if (value.alphaPlayerId === alphaPlayerId) return value;
+  }
+  return null;
+}
+
+/**
+ * Bind the game handoff to an application. Idempotent by design:
+ *   - If an existing row already carries `alphaPlayerId`, its identity
+ *     is preserved (one-to-one, permanent per §2.7).
+ *   - If not, we create a `player:<id>` stub row that later step-2
+ *     qualification can be merged into via email at the application
+ *     layer.
+ */
+export async function bindHandoff(args: {
+  alphaPlayerId: string;
+  progressSnapshotId: string;
+  completedArenas: string[];
+  machineBuilderUnlocked: boolean;
+  machineVersionCount: number;
+  machineBeatRate: number | null;
+  campaignSource?: string;
+}): Promise<{ application: AlphaApplication; storageKey: string }> {
+  const existing = await findByAlphaPlayerId(args.alphaPlayerId);
+  const now = new Date().toISOString();
+  if (existing) {
+    // Refresh game fields but do not change the row's storage key nor
+    // any qualification data; the token is authoritative only for the
+    // fields it carries.
+    const merged: AlphaApplication = {
+      ...existing,
+      alphaPlayerId: args.alphaPlayerId,
+      progressSnapshotId: args.progressSnapshotId,
+      completedArenas: args.completedArenas,
+      machineBuilderUnlocked: args.machineBuilderUnlocked,
+      machineVersionCount: args.machineVersionCount,
+      machineBeatRate: args.machineBeatRate,
+      ...(args.campaignSource !== undefined
+        ? { campaignSource: args.campaignSource }
+        : {}),
+      handoffClaimedAt: existing.handoffClaimedAt ?? now,
+      updatedAt: now,
+    };
+    const { score, breakdown } = scoreApplication(merged);
+    merged.score = score;
+    merged.scoreBreakdown = breakdown;
+    const key = existing.email
+      ? emailKey(existing.email)
+      : playerKey(args.alphaPlayerId);
+    await store.put(key, merged);
+    return { application: merged, storageKey: key };
+  }
+  const stub: AlphaApplication = {
+    // Placeholder email; will be replaced when step 1/2 supplies one.
+    // Kept empty-string rather than undefined so downstream Zod
+    // shapes stay uniform.
+    email: "",
+    capturedAt: now,
+    updatedAt: now,
+    alphaPlayerId: args.alphaPlayerId,
+    progressSnapshotId: args.progressSnapshotId,
+    completedArenas: args.completedArenas,
+    machineBuilderUnlocked: args.machineBuilderUnlocked,
+    machineVersionCount: args.machineVersionCount,
+    machineBeatRate: args.machineBeatRate,
+    ...(args.campaignSource !== undefined
+      ? { campaignSource: args.campaignSource }
+      : {}),
+    handoffClaimedAt: now,
+    score: 0,
+    scoreBreakdown: {},
+  };
+  const { score, breakdown } = scoreApplication(stub);
+  stub.score = score;
+  stub.scoreBreakdown = breakdown;
+  const key = playerKey(args.alphaPlayerId);
+  await store.put(key, stub);
+  return { application: stub, storageKey: key };
+}

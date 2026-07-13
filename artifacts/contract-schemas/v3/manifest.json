@@ -1,7 +1,7 @@
 {
   "contract": "refi-us-sec-ia Contract V3 (admin-portal-proxy wire projections)",
-  "version": "v3.20260712",
-  "generatedAt": "2026-07-12T16:09:32.420Z",
+  "version": "v3.20260713",
+  "generatedAt": "2026-07-13T05:32:09.088Z",
   "schemas": [
     {
       "name": "templates",

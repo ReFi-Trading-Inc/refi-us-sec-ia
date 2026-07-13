@@ -7,7 +7,7 @@
     "section": "§7.4",
     "wireExport": "wireTradingControlsSchema",
     "module": "apps/web/src/lib/admin-portal-proxy/endpoints/trading-controls.ts",
-    "version": "v3.20260712"
+    "version": "v3.20260713"
   },
   "type": "object",
   "properties": {

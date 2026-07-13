@@ -155,6 +155,12 @@ const SPECS: readonly SchemaSpec[] = [
     export: "wireStreamEventSchema",
     section: "§12 (SSE)",
   },
+  {
+    name: "order-lifecycle",
+    module: "order-lifecycle.ts",
+    export: "wireOrderLifecycleSchema",
+    section: "§7.10",
+  },
 ];
 
 async function loadZodExport(spec: SchemaSpec): Promise<z.ZodTypeAny> {

@@ -112,6 +112,11 @@ async function loadCases(): Promise<EndpointCase[]> {
     project: (w: unknown) => unknown;
     WIRE_ADMIN_FIELDS: readonly string[];
   };
+  const orderLifecycle = (await load("order-lifecycle.ts")) as {
+    wireOrderLifecycleSchema: import("zod").ZodTypeAny;
+    project: (w: unknown) => unknown;
+    WIRE_ADMIN_FIELDS: readonly string[];
+  };
 
   const mk = (
     name: string,
@@ -305,6 +310,26 @@ async function loadCases(): Promise<EndpointCase[]> {
         reduce_only: false,
         halted: false,
         last_changed_at: "2025-01-01T00:00:00Z",
+      },
+    ),
+    mk(
+      "order-lifecycle",
+      orderLifecycle.wireOrderLifecycleSchema,
+      orderLifecycle.project,
+      orderLifecycle.WIRE_ADMIN_FIELDS,
+      {
+        order_id: "ord_1",
+        client_order_id: "cli_1",
+        account_id: "acct_1",
+        asset_id: "AAPL",
+        status: "acknowledged",
+        intent_id: "int_1",
+        plan_id: "pln_1",
+        action_id: "act_1",
+        correlation_id: "cor_1",
+        events: [],
+        attempts: [],
+        fills: [],
       },
     ),
   ];

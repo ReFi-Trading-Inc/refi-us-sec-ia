@@ -29,6 +29,11 @@ apps/web/.refi-prototype-store-e2e/
 # committing individual dated runs adds churn without adding evidence.
 # See scripts/assemble-evidence-bundle.ts and docs/alpha-gate-checklist.md.
 artifacts/evidence-bundle/
+# Conformance reports are regenerated on demand from the current commit +
+# schemas manifest. Each nightly run writes a new dated file; committing
+# them would spam the log without adding evidence. The template at
+# docs/sprint5-conformance-report-template.md is authoritative.
+artifacts/conformance/
 
 # playwright
 apps/web/playwright-report/

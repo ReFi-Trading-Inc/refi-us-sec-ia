@@ -15,6 +15,7 @@
     "proxy-redaction-fuzz": "tsx scripts/proxy-redaction-fuzz.ts",
     "export-schemas": "tsx scripts/export-contract-schemas.ts",
     "evidence-bundle": "tsx scripts/assemble-evidence-bundle.ts",
+    "conformance-report": "tsx scripts/conformance-report.ts",
     "test": "pnpm contract-test && pnpm tripwire && pnpm proxy-redaction-fuzz && pnpm export-schemas && pnpm --filter @refi/api-clients test",
     "e2e": "pnpm --filter @refi/web exec playwright test",
     "prepare": "husky"

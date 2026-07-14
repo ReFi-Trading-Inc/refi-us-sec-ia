@@ -557,6 +557,61 @@ await section(
   },
 );
 
+// ─── Exception Review reframe boundary (PR-H) ───────────────────────────────
+
+const exceptionComposer =
+  await import("../apps/web/src/lib/exception-review/compose.ts");
+
+await section(
+  "Exception Review terminal kinds route to Records Center, never Exception Review",
+  async () => {
+    for (const kind of [
+      "out_of_policy_intent",
+      "risk_rejected_intent",
+      "risk_decision_terminal",
+    ]) {
+      assert.equal(
+        exceptionComposer.isRecordsCenterTerminal(kind),
+        true,
+        `kind "${kind}" must be excluded from Exception Review (Records Center terminal evidence)`,
+      );
+    }
+    // Sanity: an in-scope source kind is NOT terminal.
+    assert.equal(
+      exceptionComposer.isRecordsCenterTerminal("trading_controls"),
+      false,
+    );
+  },
+);
+
+await section(
+  "Exception Review resolution paths are strictly per source kind",
+  async () => {
+    // trading_controls cannot be resolved via reconnect_broker; that path
+    // belongs to reconciliation. The route rejects the mismatch.
+    assert.equal(
+      exceptionComposer.isValidResolutionFor(
+        "trading_controls",
+        "reconnect_broker",
+      ),
+      false,
+    );
+    // reconciliation cannot be resolved via pause_managed.
+    assert.equal(
+      exceptionComposer.isValidResolutionFor("reconciliation", "pause_managed"),
+      false,
+    );
+    // Each source has at least one valid resolution.
+    for (const kind of exceptionComposer.EXCEPTION_SOURCE_KINDS) {
+      const anyValid = exceptionComposer.RESOLUTION_PATHS_BY_SOURCE[kind];
+      assert.ok(
+        anyValid.length > 0,
+        `source kind ${kind} must have at least one valid resolution`,
+      );
+    }
+  },
+);
+
 // ─── SSE bridge envelope + account filter ───────────────────────────────────
 
 const { parseSseDataLine, wireStreamEventSchema } =

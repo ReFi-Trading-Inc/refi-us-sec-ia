@@ -9,6 +9,7 @@
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getAuthSessionLink } from "../prototype-store/entities/auth-link";
+import { isSessionRevoked } from "../prototype-store/entities/session-revocation";
 import { getServerEnv } from "../config/env";
 
 const SESSION_COOKIE = "us_session_v1";
@@ -88,6 +89,12 @@ export async function getAuthContext(
       );
       const sub = typeof payload.sub === "string" ? payload.sub : null;
       if (!sub) return null;
+      // S1 residual: check the revocation list. A jti hit is treated
+      // exactly like a verify failure — 401 at the caller. This is
+      // the seam that makes "logout means logged out" true even for
+      // a token an attacker copied five minutes ago.
+      const jti = typeof payload.jti === "string" ? payload.jti : null;
+      if (jti && (await isSessionRevoked(jti))) return null;
       const link = await getAuthSessionLink(sub);
       const ctx: AuthContext = { authId: sub, source: "prototype-bff" };
       if (link?.accountId) ctx.accountId = link.accountId;

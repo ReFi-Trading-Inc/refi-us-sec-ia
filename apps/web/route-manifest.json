@@ -313,6 +313,12 @@
       "purpose": "PR-F Surface 4. AccountPrefs edit history scoped to the caller's account. Writes a RecordAccessLog entry on every read (S4c). Dark behind FLAG_ACCOUNT_CONTROLS_CENTER.",
       "auth": "investor",
       "owner": "surface-4"
+    },
+    {
+      "path": "app/api/v1/investor/session/revoke/route.ts",
+      "purpose": "Session logout / revocation (S1 residual, alpha-gate). Adds current session jti to the durable revocation list; clears the session cookie. Every subsequent request bearing the same token fails auth verify at the jti-check seam in auth.ts.",
+      "auth": "public",
+      "owner": "platform"
     }
   ]
 }

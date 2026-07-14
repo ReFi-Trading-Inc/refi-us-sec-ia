@@ -36,6 +36,7 @@ export const ENTITY_MATRIX = {
   "account-prefs-history": ["prototype", "durable"],
   "alpha-application": ["prototype", "durable"],
   "alpha-handoff-jti": ["prototype", "durable"],
+  "session-revocation": ["prototype", "durable"],
 
   // Admin Portal-owned
   intents: ["msw", "backend"],

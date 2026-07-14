@@ -612,6 +612,49 @@ await section(
   },
 );
 
+// ─── Session revocation (S1 residual) ───────────────────────────────────────
+
+const sessionRevocation =
+  await import("../apps/web/src/lib/prototype-store/entities/session-revocation.ts");
+
+await section(
+  "Session revocation: revoked jti is reported revoked; unknown jti is not",
+  async () => {
+    const jti = `assert-jti-${String(Date.now())}`;
+    assert.equal(await sessionRevocation.isSessionRevoked(jti), false);
+    await sessionRevocation.revokeSession({
+      jti,
+      authId: "auth-assert",
+      reason: "logout",
+      tokenExp: Math.floor(Date.now() / 1000) + 3600, // +1h
+    });
+    assert.equal(await sessionRevocation.isSessionRevoked(jti), true);
+    // A different jti under the same authId is NOT revoked; scope is
+    // per-session, never per-user.
+    assert.equal(
+      await sessionRevocation.isSessionRevoked(`${jti}-other`),
+      false,
+    );
+  },
+);
+
+await section(
+  "Session revocation: entries past expiresAt are self-cleaning",
+  async () => {
+    const jti = `assert-expired-${String(Date.now())}`;
+    await sessionRevocation.revokeSession({
+      jti,
+      authId: "auth-assert",
+      reason: "logout",
+      tokenExp: Math.floor(Date.now() / 1000) - 60, // already past
+    });
+    // First read should surface the entry as NOT revoked (past expiry),
+    // and cleanup should remove it — a second read is also false.
+    assert.equal(await sessionRevocation.isSessionRevoked(jti), false);
+    assert.equal(await sessionRevocation.isSessionRevoked(jti), false);
+  },
+);
+
 // ─── Rate limiter policies (S6) ─────────────────────────────────────────────
 
 const rateLimit = await import("../apps/web/src/lib/bff/rate-limit.ts");

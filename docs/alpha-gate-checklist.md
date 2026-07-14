@@ -82,11 +82,12 @@ obligation the day the ADV files.
 
 ## 6. Incident response runbook reviewed
 
-| Requirement                                                                     | Evidence                            |
-| ------------------------------------------------------------------------------- | ----------------------------------- |
-| Threat model exists with STRIDE per surface                                     | `docs/security-threat-model.md`     |
-| IR runbook exists with notification tree, kill-switches, per-severity timeboxes | `docs/incident-response-runbook.md` |
-| Runbook reviewed within the last quarter                                        | (sign-off at bottom of this doc)    |
+| Requirement                                                                     | Evidence                                                                    |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Threat model exists with STRIDE per surface                                     | `docs/security-threat-model.md`                                             |
+| IR runbook exists with notification tree, kill-switches, per-severity timeboxes | `docs/incident-response-runbook.md`                                         |
+| Runbook reviewed within the last quarter                                        | (sign-off at bottom of this doc)                                            |
+| Deploy rollback drill runbook exists + last drill within this quarter           | `docs/deploy-rollback-drill.md`; drill logs at `artifacts/rollback-drills/` |
 
 ## 7. Rate limiting active
 

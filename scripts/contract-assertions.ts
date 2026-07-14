@@ -612,6 +612,73 @@ await section(
   },
 );
 
+// ─── Structured request log shape (Sprint 6) ────────────────────────────────
+
+const logMod = await import("../apps/web/src/lib/bff/log.ts");
+
+await section(
+  "BFF request log emits the stable field set (IR queries depend on it)",
+  async () => {
+    // Capture one line via console.log override. logRequest wraps in
+    // try/catch so a broken JSON.stringify never throws to callers —
+    // this test uses that same path.
+    const captured: string[] = [];
+    const originalLog = console.log;
+    console.log = (line: unknown): void => {
+      if (typeof line === "string") captured.push(line);
+    };
+    try {
+      logMod.logRequest({
+        correlationId: "cid-1",
+        method: "GET",
+        path: "/api/v1/investor/dashboard",
+        status: 200,
+        durationMs: 42,
+        authId: "auth-1",
+        accountId: "acct-1",
+        routeClass: "read",
+        outcome: "ok",
+      });
+    } finally {
+      console.log = originalLog;
+    }
+    assert.equal(captured.length, 1);
+    const parsed = JSON.parse(captured[0] ?? "{}") as Record<string, unknown>;
+    // Every field name in this list is queried by the IR runbook.
+    // Changing a name here is a breaking log-schema change and must
+    // update the runbook in the same PR.
+    for (const key of [
+      "event",
+      "ts",
+      "correlation_id",
+      "method",
+      "path",
+      "status",
+      "duration_ms",
+      "auth_id",
+      "account_id",
+      "route_class",
+      "outcome",
+    ]) {
+      assert.ok(key in parsed, `log line missing "${key}"`);
+    }
+    assert.equal(parsed["event"], "bff.request");
+    // No PII / query strings ever in the path field.
+    assert.equal(parsed["path"], "/api/v1/investor/dashboard");
+  },
+);
+
+await section(
+  "BFF request log path stripper drops query strings (no PII in logs)",
+  async () => {
+    assert.equal(
+      logMod.pathForLog("https://x/api/v1/investor/records?email=user@x.com"),
+      "/api/v1/investor/records",
+    );
+    assert.equal(logMod.pathForLog("not a url"), "unknown");
+  },
+);
+
 // ─── Session revocation (S1 residual) ───────────────────────────────────────
 
 const sessionRevocation =

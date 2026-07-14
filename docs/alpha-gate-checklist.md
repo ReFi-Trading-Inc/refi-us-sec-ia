@@ -39,13 +39,14 @@ independent defences must both hold.
 
 ## 3. Auth fails closed in production configuration
 
-| Requirement                                                                 | Evidence                                                                                                              |
-| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Invalid or forged token → 401, never dev-fallback                           | `apps/web/src/lib/bff/auth.ts:36-63`; `apps/web/e2e/auth.spec.ts` "forged token is rejected"                          |
-| Prod-vs-dev gate uses server-only `REFI_ENV`, not `NEXT_PUBLIC_REFI_ENV`    | `apps/web/src/lib/config/env.ts:72-77` (server-only twin comment); enforced at boot by Zod schema                     |
-| JWT algorithm pinned; iss/aud enforced; exp checked with 5s clock tolerance | `apps/web/src/lib/bff/auth.ts` (jose `jwtVerify` with pinned alg + iss + aud); Sprint 1 hardening commit `607d590`    |
-| Session secret in Secret Manager (prototype-only defaults documented)       | `apps/web/src/lib/config/env.ts:22-39` `PROTOTYPE_DEFAULTS` clearly marked; prod `REFI_ENV=prod` rejects the defaults |
-| CSRF middleware rejects cross-origin mutations                              | `apps/web/src/lib/bff/csrf.ts`; `apps/web/e2e/csrf.spec.ts`                                                           |
+| Requirement                                                                 | Evidence                                                                                                                                               |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Invalid or forged token → 401, never dev-fallback                           | `apps/web/src/lib/bff/auth.ts:36-63`; `apps/web/e2e/auth.spec.ts` "forged token is rejected"                                                           |
+| Prod-vs-dev gate uses server-only `REFI_ENV`, not `NEXT_PUBLIC_REFI_ENV`    | `apps/web/src/lib/config/env.ts:72-77` (server-only twin comment); enforced at boot by Zod schema                                                      |
+| JWT algorithm pinned; iss/aud enforced; exp checked with 5s clock tolerance | `apps/web/src/lib/bff/auth.ts` (jose `jwtVerify` with pinned alg + iss + aud); Sprint 1 hardening commit `607d590`                                     |
+| Session secret in Secret Manager (prototype-only defaults documented)       | `apps/web/src/lib/config/env.ts:22-39` `PROTOTYPE_DEFAULTS` clearly marked; prod `REFI_ENV=prod` rejects the defaults                                  |
+| CSRF middleware rejects cross-origin mutations                              | `apps/web/src/lib/bff/csrf.ts`; `apps/web/e2e/csrf.spec.ts`                                                                                            |
+| Session revocation cuts a stolen valid token before its `exp`               | `apps/web/src/lib/prototype-store/entities/session-revocation.ts`; jti check in `apps/web/src/lib/bff/auth.ts`; `POST /api/v1/investor/session/revoke` |
 
 ## 4. Feature flags accounted for, all with owners
 
@@ -127,15 +128,15 @@ obligation the day the ADV files.
 Items that must land before an Alpha 1 sign-off. Every gap is either
 on our side or a named Daniel dependency.
 
-| Gap                                                  | Owner  | Status                                            |
-| ---------------------------------------------------- | ------ | ------------------------------------------------- |
-| Session revocation list (S1 residual)                | us     | **open**, Sprint 6 hardening                      |
-| D4: staging Admin Portal URL + service auth          | Daniel | **open**                                          |
-| D5: parity sample payloads                           | Daniel | **open**                                          |
-| D6: canonical AccountPrefs writer in `apps/common`   | Daniel | **open**, blocks live PATCH                       |
-| D7: schema-validation job in refinity-main CI        | Daniel | **open**, blocks bidirectional enforcement        |
-| Verifiable-by-design public page                     | us     | **open**, F-track Sprint 6                        |
-| Distributed rate-limit tightener (Firestore counter) | us     | **open** if per-instance ceiling proves too loose |
+| Gap                                                  | Owner  | Status                                                                                                                                                                                        |
+| ---------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Session revocation list (S1 residual)                | us     | ✅ landed: `apps/web/src/lib/prototype-store/entities/session-revocation.ts` + jti check in `apps/web/src/lib/bff/auth.ts` + `POST /api/v1/investor/session/revoke` + two contract assertions |
+| D4: staging Admin Portal URL + service auth          | Daniel | **open**                                                                                                                                                                                      |
+| D5: parity sample payloads                           | Daniel | **open**                                                                                                                                                                                      |
+| D6: canonical AccountPrefs writer in `apps/common`   | Daniel | **open**, blocks live PATCH                                                                                                                                                                   |
+| D7: schema-validation job in refinity-main CI        | Daniel | **open**, blocks bidirectional enforcement                                                                                                                                                    |
+| Verifiable-by-design public page                     | us     | **open**, F-track Sprint 6                                                                                                                                                                    |
+| Distributed rate-limit tightener (Firestore counter) | us     | **open** if per-instance ceiling proves too loose                                                                                                                                             |
 
 An Alpha 1 signal-mode launch (10–25 invited users, read-only
 recommendations) does **not** require D3 (`reduce_only` mapping — that

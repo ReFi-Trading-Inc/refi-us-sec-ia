@@ -17,6 +17,7 @@ import { getAuthContext, type AuthContext } from "./auth";
 import { bffOk, BffErrors, type BffSource, type GapId } from "./envelope";
 import { enforceCsrfOrigin } from "./csrf";
 import { enforceRateLimit, sessionKey } from "./rate-limit";
+import { logRequest, pathForLog, type BffLogFields } from "./log";
 import type {
   InvestorActionName,
   RecordAccessAction,
@@ -65,34 +66,58 @@ export interface BffMutateHandler<T> {
 export function bffRead<T>(handler: BffReadHandler<T>) {
   return async (req: NextRequest): Promise<NextResponse> => {
     const correlationId = correlationIdFrom(req);
+    const started = Date.now();
+    const log: Partial<BffLogFields> = {
+      correlationId,
+      method: req.method,
+      path: pathForLog(req.url),
+      routeClass: "read",
+    };
+    const emit = (res: NextResponse, extra: Partial<BffLogFields>): void => {
+      logRequest({
+        ...log,
+        ...extra,
+        status: res.status,
+        durationMs: Date.now() - started,
+      } as BffLogFields);
+    };
     try {
       if (handler.allowAnonymous) {
-        const data = await handler.fetch({
-          req,
-          correlationId,
-          auth: null,
-        });
+        const data = await handler.fetch({ req, correlationId, auth: null });
         const opts: Parameters<typeof bffOk>[1] = {
           source: handler.source ?? "prototype-bff",
           correlationId,
         };
         if (handler.upstreamGap) opts.upstreamGap = handler.upstreamGap;
-        return bffOk(data, opts);
+        const res = bffOk(data, opts);
+        emit(res, { routeClass: "public", outcome: "ok" });
+        return res;
       }
       const auth = await getAuthContext(req);
-      if (!auth) return BffErrors.unauthorized(correlationId);
+      if (!auth) {
+        const res = BffErrors.unauthorized(correlationId);
+        emit(res, { outcome: "unauthorized" });
+        return res;
+      }
       const data = await handler.fetch({ req, auth, correlationId });
       const opts: Parameters<typeof bffOk>[1] = {
         source: handler.source ?? "prototype-bff",
         correlationId,
       };
       if (handler.upstreamGap) opts.upstreamGap = handler.upstreamGap;
-      return bffOk(data, opts);
+      const res = bffOk(data, opts);
+      emit(res, {
+        outcome: "ok",
+        authId: auth.authId,
+        accountId: auth.accountId ?? null,
+      });
+      return res;
     } catch (err) {
-      return BffErrors.internal(
-        correlationId,
-        err instanceof Error ? err.message : "Unhandled BFF error.",
-      );
+      const message =
+        err instanceof Error ? err.message : "Unhandled BFF error.";
+      const res = BffErrors.internal(correlationId, message);
+      emit(res, { outcome: "error", error: message });
+      return res;
     }
   };
 }
@@ -100,22 +125,35 @@ export function bffRead<T>(handler: BffReadHandler<T>) {
 export function bffMutate<T>(handler: BffMutateHandler<T>) {
   return async (req: NextRequest): Promise<NextResponse> => {
     const correlationId = correlationIdFrom(req);
+    const started = Date.now();
+    const emit = (res: NextResponse, extra: Partial<BffLogFields>): void => {
+      logRequest({
+        correlationId,
+        method: req.method,
+        path: pathForLog(req.url),
+        routeClass: "mutate",
+        status: res.status,
+        durationMs: Date.now() - started,
+        ...extra,
+      } as BffLogFields);
+    };
     try {
-      // CSRF check runs BEFORE auth. Rationale: rejecting cross-origin
-      // credentialed requests is a browser-level concern; it should not
-      // be conditional on whether the caller's cookie happens to verify.
-      // Rejecting before auth also avoids exposing an auth oracle to
-      // cross-origin probes.
       const csrfReject = enforceCsrfOrigin(req, correlationId);
-      if (csrfReject) return csrfReject;
-      // S6 rate limit: mutations are the highest-blast-radius class, so
-      // ceiling per session (or per hashed-IP for unauth). Runs after
-      // CSRF (a cross-origin flood is not the rate-limiter's problem)
-      // but before auth so an auth-oracle probe still consumes budget.
+      if (csrfReject) {
+        emit(csrfReject, { outcome: "rejected", reasonCode: "csrf" });
+        return csrfReject;
+      }
       const rateReject = enforceRateLimit(req, "mutate", sessionKey(req));
-      if (rateReject) return rateReject;
+      if (rateReject) {
+        emit(rateReject, { outcome: "rate_limited" });
+        return rateReject;
+      }
       const auth = await getAuthContext(req);
-      if (!auth) return BffErrors.unauthorized(correlationId);
+      if (!auth) {
+        const res = BffErrors.unauthorized(correlationId);
+        emit(res, { outcome: "unauthorized" });
+        return res;
+      }
 
       let input: T;
       if (handler.parse) {
@@ -123,7 +161,6 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
         try {
           input = await handler.parse(json);
         } catch (parseErr) {
-          // Receipt the rejected attempt for traceability.
           await appendActionReceipt({
             action: handler.action,
             actor: "user",
@@ -133,10 +170,17 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
             outcome: "rejected",
             reasonCode: "bad_request",
           });
-          return BffErrors.badRequest(
+          const res = BffErrors.badRequest(
             correlationId,
             parseErr instanceof Error ? parseErr.message : "Invalid body.",
           );
+          emit(res, {
+            outcome: "rejected",
+            reasonCode: "bad_request",
+            authId: auth.authId,
+            accountId: auth.accountId ?? null,
+          });
+          return res;
         }
       } else {
         input = undefined as unknown as T;
@@ -164,12 +208,20 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
         status: result.status ?? 200,
       };
       if (handler.upstreamGap) opts.upstreamGap = handler.upstreamGap;
-      return bffOk(result.data, opts);
+      const res = bffOk(result.data, opts);
+      emit(res, {
+        outcome: result.outcome ?? "ok",
+        ...(result.reasonCode ? { reasonCode: result.reasonCode } : {}),
+        authId: auth.authId,
+        accountId: auth.accountId ?? null,
+      });
+      return res;
     } catch (err) {
-      return BffErrors.internal(
-        correlationId,
-        err instanceof Error ? err.message : "Unhandled BFF error.",
-      );
+      const message =
+        err instanceof Error ? err.message : "Unhandled BFF error.";
+      const res = BffErrors.internal(correlationId, message);
+      emit(res, { outcome: "error", error: message });
+      return res;
     }
   };
 }

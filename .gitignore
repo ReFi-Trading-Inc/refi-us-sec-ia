@@ -24,6 +24,12 @@ packages/api-clients/src/generated/
 apps/web/.refi-prototype-store/
 apps/web/.refi-prototype-store-e2e/
 
+# Evidence bundles are regenerated on demand from CI artifacts + the
+# current commit. The manifest is deterministic given repo state, so
+# committing individual dated runs adds churn without adding evidence.
+# See scripts/assemble-evidence-bundle.ts and docs/alpha-gate-checklist.md.
+artifacts/evidence-bundle/
+
 # playwright
 apps/web/playwright-report/
 apps/web/test-results/

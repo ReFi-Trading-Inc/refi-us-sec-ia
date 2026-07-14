@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { correlationIdFrom } from "@lib/bff/correlation";
 import { enforceCsrfOrigin } from "@lib/bff/csrf";
+import { enforceRateLimit, ipKey } from "@lib/bff/rate-limit";
 import { isEnabled } from "@lib/feature-flags";
 import {
   upsertStep1,
@@ -82,6 +83,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return disabled(correlationId);
   const csrf = enforceCsrfOrigin(req, correlationId);
   if (csrf) return csrf;
+  // S6 signup class: 10/60s/hashed-IP. Absorbs mash-refresh; the
+  // waitlist scoring rubric handles finer-grained quality signal.
+  const rate = enforceRateLimit(req, "signup", ipKey(req));
+  if (rate) return rate;
   const body = await readJson(req);
   const parsed = step1Schema.safeParse(body);
   if (!parsed.success) {
@@ -116,6 +121,10 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     return disabled(correlationId);
   const csrf = enforceCsrfOrigin(req, correlationId);
   if (csrf) return csrf;
+  // S6 signup class: 10/60s/hashed-IP. Absorbs mash-refresh; the
+  // waitlist scoring rubric handles finer-grained quality signal.
+  const rate = enforceRateLimit(req, "signup", ipKey(req));
+  if (rate) return rate;
   const body = await readJson(req);
   const parsed = step2Schema.safeParse(body);
   if (!parsed.success) {

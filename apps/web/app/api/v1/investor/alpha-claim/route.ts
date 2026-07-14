@@ -27,6 +27,7 @@ import { z } from "zod";
 import { importJWK, jwtVerify } from "jose";
 import { correlationIdFrom } from "@lib/bff/correlation";
 import { enforceCsrfOrigin } from "@lib/bff/csrf";
+import { enforceRateLimit, ipKey } from "@lib/bff/rate-limit";
 import { isEnabled } from "@lib/feature-flags";
 import { getServerEnv } from "@lib/config/env";
 import { bindHandoff } from "@lib/prototype-store/entities/alpha-application";
@@ -88,6 +89,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const csrf = enforceCsrfOrigin(req, correlationId);
   if (csrf) return csrf;
+  // S6 claim class: 5/60s/hashed-IP. Cap the token-replay surface
+  // — a valid jti gets consumed atomically anyway, but the rate
+  // limit caps signature-verify CPU on invalid tokens.
+  const rate = enforceRateLimit(req, "claim", ipKey(req));
+  if (rate) return rate;
 
   let body: unknown = null;
   try {

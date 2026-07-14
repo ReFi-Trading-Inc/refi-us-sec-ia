@@ -24,6 +24,7 @@
 import type { NextRequest } from "next/server";
 import { correlationIdFrom } from "@lib/bff/correlation";
 import { getAuthContext } from "@lib/bff/auth";
+import { admit, sessionKey } from "@lib/bff/rate-limit";
 import { isEnabled } from "@lib/feature-flags";
 import {
   fixtureEvents,
@@ -66,6 +67,17 @@ export async function GET(req: NextRequest): Promise<Response> {
     return new Response("unauthorized", { status: 401 });
   }
   const accountId = auth.accountId;
+
+  // S6 rate limit: tighter on stream connects (3/60s/session). Cap
+  // reconnection stampedes after a deploy while leaving established
+  // streams untouched. Uses `admit` directly rather than the JSON
+  // NextResponse builder because SSE clients don't parse envelopes.
+  if (!admit("stream", sessionKey(req))) {
+    return new Response("rate_limited", {
+      status: 429,
+      headers: { "retry-after": "60" },
+    });
+  }
 
   const upstreamAbort = new AbortController();
   let closed = false;

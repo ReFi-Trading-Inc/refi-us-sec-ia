@@ -16,6 +16,7 @@ import { correlationIdFrom } from "./correlation";
 import { getAuthContext, type AuthContext } from "./auth";
 import { bffOk, BffErrors, type BffSource, type GapId } from "./envelope";
 import { enforceCsrfOrigin } from "./csrf";
+import { enforceRateLimit, sessionKey } from "./rate-limit";
 import type {
   InvestorActionName,
   RecordAccessAction,
@@ -107,6 +108,12 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
       // cross-origin probes.
       const csrfReject = enforceCsrfOrigin(req, correlationId);
       if (csrfReject) return csrfReject;
+      // S6 rate limit: mutations are the highest-blast-radius class, so
+      // ceiling per session (or per hashed-IP for unauth). Runs after
+      // CSRF (a cross-origin flood is not the rate-limiter's problem)
+      // but before auth so an auth-oracle probe still consumes budget.
+      const rateReject = enforceRateLimit(req, "mutate", sessionKey(req));
+      if (rateReject) return rateReject;
       const auth = await getAuthContext(req);
       if (!auth) return BffErrors.unauthorized(correlationId);
 

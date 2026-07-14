@@ -612,6 +612,51 @@ await section(
   },
 );
 
+// ─── Rate limiter policies (S6) ─────────────────────────────────────────────
+
+const rateLimit = await import("../apps/web/src/lib/bff/rate-limit.ts");
+
+await section(
+  "Rate limiter admits up to capacity and rejects the next request",
+  async () => {
+    rateLimit.__resetForTests();
+    // "mutate" class is 20/60s.
+    const key = "assert-mutate-1";
+    for (let i = 0; i < 20; i++) {
+      assert.equal(rateLimit.admit("mutate", key), true, `req ${String(i)}`);
+    }
+    assert.equal(
+      rateLimit.admit("mutate", key),
+      false,
+      "21st request must be rejected",
+    );
+  },
+);
+
+await section("Rate limiter isolates classes and keys", async () => {
+  rateLimit.__resetForTests();
+  // Different key: same class, independent bucket.
+  for (let i = 0; i < 20; i++) rateLimit.admit("mutate", "user-a");
+  assert.equal(rateLimit.admit("mutate", "user-b"), true);
+  // Different class: same key, independent bucket.
+  assert.equal(rateLimit.admit("stream", "user-a"), true);
+});
+
+await section(
+  "Rate limiter stream class is tighter than read class",
+  async () => {
+    rateLimit.__resetForTests();
+    // stream = 3/60s, read = 100/60s. If somebody accidentally swaps
+    // the policies this assertion catches it before the alpha gate.
+    const key = "assert-tightness";
+    for (let i = 0; i < 3; i++) assert.ok(rateLimit.admit("stream", key));
+    assert.equal(rateLimit.admit("stream", key), false);
+    // read still has plenty of budget.
+    for (let i = 0; i < 100; i++) assert.ok(rateLimit.admit("read", key));
+    assert.equal(rateLimit.admit("read", key), false);
+  },
+);
+
 // ─── SSE bridge envelope + account filter ───────────────────────────────────
 
 const { parseSseDataLine, wireStreamEventSchema } =

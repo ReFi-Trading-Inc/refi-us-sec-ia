@@ -30,6 +30,8 @@
 
 export interface BffLogFields {
   correlationId: string;
+  /** Inbound W3C traceparent, if any. Null when absent or malformed. */
+  traceparent?: string | null;
   method: string;
   path: string;
   status: number;
@@ -59,6 +61,7 @@ export function logRequest(fields: BffLogFields): void {
       event: "bff.request",
       ts: new Date().toISOString(),
       correlation_id: fields.correlationId,
+      ...(fields.traceparent ? { traceparent: fields.traceparent } : {}),
       method: fields.method,
       path: fields.path,
       status: fields.status,

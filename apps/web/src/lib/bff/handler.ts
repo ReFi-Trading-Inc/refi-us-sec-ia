@@ -12,7 +12,7 @@
  */
 import type { NextRequest } from "next/server";
 import type { NextResponse } from "next/server";
-import { correlationIdFrom } from "./correlation";
+import { correlationIdFrom, traceparentFrom } from "./correlation";
 import { getAuthContext, type AuthContext } from "./auth";
 import { bffOk, BffErrors, type BffSource, type GapId } from "./envelope";
 import { enforceCsrfOrigin } from "./csrf";
@@ -66,9 +66,11 @@ export interface BffMutateHandler<T> {
 export function bffRead<T>(handler: BffReadHandler<T>) {
   return async (req: NextRequest): Promise<NextResponse> => {
     const correlationId = correlationIdFrom(req);
+    const traceparent = traceparentFrom(req);
     const started = Date.now();
     const log: Partial<BffLogFields> = {
       correlationId,
+      traceparent,
       method: req.method,
       path: pathForLog(req.url),
       routeClass: "read",
@@ -125,10 +127,12 @@ export function bffRead<T>(handler: BffReadHandler<T>) {
 export function bffMutate<T>(handler: BffMutateHandler<T>) {
   return async (req: NextRequest): Promise<NextResponse> => {
     const correlationId = correlationIdFrom(req);
+    const traceparent = traceparentFrom(req);
     const started = Date.now();
     const emit = (res: NextResponse, extra: Partial<BffLogFields>): void => {
       logRequest({
         correlationId,
+        traceparent,
         method: req.method,
         path: pathForLog(req.url),
         routeClass: "mutate",

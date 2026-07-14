@@ -612,6 +612,63 @@ await section(
   },
 );
 
+// ─── W3C traceparent extractor (Sprint 6) ───────────────────────────────────
+
+const correlationMod = await import("../apps/web/src/lib/bff/correlation.ts");
+
+await section(
+  "traceparentFrom accepts well-formed W3C headers and rejects garbage",
+  async () => {
+    const mk = (
+      traceparent: string | null,
+    ): { headers: { get(k: string): string | null } } => ({
+      headers: {
+        get(k: string): string | null {
+          if (k.toLowerCase() === "traceparent") return traceparent;
+          return null;
+        },
+      },
+    });
+    // 00 + 32 hex + 16 hex + 01 = a valid traceparent.
+    const good = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+    assert.equal(
+      correlationMod.traceparentFrom(
+        mk(good) as unknown as Parameters<
+          typeof correlationMod.traceparentFrom
+        >[0],
+      ),
+      good,
+    );
+    // Missing header → null.
+    assert.equal(
+      correlationMod.traceparentFrom(
+        mk(null) as unknown as Parameters<
+          typeof correlationMod.traceparentFrom
+        >[0],
+      ),
+      null,
+    );
+    // Wrong segment lengths → null.
+    assert.equal(
+      correlationMod.traceparentFrom(
+        mk("00-notenough-b7ad6b7169203331-01") as unknown as Parameters<
+          typeof correlationMod.traceparentFrom
+        >[0],
+      ),
+      null,
+    );
+    // Non-hex → null.
+    assert.equal(
+      correlationMod.traceparentFrom(
+        mk(
+          "00-zz00000000000000000000000000000000-b7ad6b7169203331-01",
+        ) as unknown as Parameters<typeof correlationMod.traceparentFrom>[0],
+      ),
+      null,
+    );
+  },
+);
+
 // ─── Structured request log shape (Sprint 6) ────────────────────────────────
 
 const logMod = await import("../apps/web/src/lib/bff/log.ts");

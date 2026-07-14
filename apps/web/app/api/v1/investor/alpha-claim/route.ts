@@ -32,6 +32,11 @@ import { isEnabled } from "@lib/feature-flags";
 import { getServerEnv } from "@lib/config/env";
 import { bindHandoff } from "@lib/prototype-store/entities/alpha-application";
 import { consumeJtiIfAbsent } from "@lib/prototype-store/entities/alpha-handoff-jti";
+import {
+  aliasServer,
+  captureServerEvent,
+  handoffClaimedProperties,
+} from "@lib/analytics/posthog";
 
 const requestSchema = z
   .object({
@@ -170,6 +175,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     applicationRef: storageKey,
     correlationId,
   });
+
+  // PostHog identity stitching (spec §7). Fire-and-forget; a PostHog
+  // outage must never surface as a claim failure. Only emit on the
+  // first consumption so replays are analytics-idempotent.
+  if (firstConsumption) {
+    // Alias the game's anonymous distinct_id (alphaPlayerId) onto the
+    // storageKey used by the investor-shell application row. Downstream
+    // events (application_scored, activation) will use storageKey as
+    // the distinct_id; the alias makes the funnel a single person.
+    void aliasServer({
+      previousId: claims.sub,
+      distinctId: storageKey,
+    });
+    void captureServerEvent({
+      distinctId: storageKey,
+      event: "onboarding.handoff.claimed",
+      properties: handoffClaimedProperties({
+        alphaPlayerId: claims.sub,
+        progressSnapshotId: claims.progressSnapshotId,
+        completedArenas: claims.completedArenas,
+        machineBuilderUnlocked: claims.machineBuilderUnlocked,
+        machineVersionCount: claims.machineVersionCount,
+        machineBeatRate: claims.machineBeatRate,
+        ...(claims.campaignSource !== undefined
+          ? { campaignSource: claims.campaignSource }
+          : {}),
+      }),
+    });
+  }
 
   return NextResponse.json(
     {

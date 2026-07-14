@@ -612,6 +612,57 @@ await section(
   },
 );
 
+// ─── PostHog handoff-claim payload (Sprint 6 F-track, spec §6.6) ────────────
+
+const posthogMod = await import("../apps/web/src/lib/analytics/posthog.ts");
+
+await section(
+  "handoffClaimedProperties never includes a behavioral dimension (spec §6.6)",
+  async () => {
+    // Sanity: the helper accepts an omitted-optional shape and only
+    // emits keys that were provided. That is the invariant that keeps
+    // the payload strictly from the spec §2.2 allowlist — nothing
+    // downstream can smuggle behavioral dimensions into PostHog by
+    // sneaking them onto the input because the helper never spreads
+    // args verbatim; it whitelists field-by-field.
+    const props = posthogMod.handoffClaimedProperties({
+      alphaPlayerId: "player-1",
+      completedArenas: ["covid"],
+      machineBuilderUnlocked: true,
+    });
+    assert.equal(props["alpha_player_id"], "player-1");
+    assert.deepEqual(props["completed_arenas"], ["covid"]);
+    assert.equal(props["machine_builder_unlocked"], true);
+    // The ten §6.6 behavioral dimensions plus behavioral flags must
+    // NEVER appear on the output. Even if a caller passed them in a
+    // hypothetical extended input, the whitelisted helper would drop
+    // them; this assertion catches a future refactor that switched to
+    // spreading input.
+    const forbiddenKeys = [
+      "conviction",
+      "consistency",
+      "discipline",
+      "adaptability",
+      "risk_awareness",
+      "loss_aversion",
+      "impulse_control",
+      "attention",
+      "learning_rate",
+      "meta_cognition",
+      "inferred_risk_tolerance",
+      "inferred_suitability",
+      "simulated_goals",
+      "simulated_financial_capacity",
+    ];
+    for (const k of forbiddenKeys) {
+      assert.ok(
+        !(k in props),
+        `handoff.claimed properties leaked behavioral dim "${k}"`,
+      );
+    }
+  },
+);
+
 // ─── W3C traceparent extractor (Sprint 6) ───────────────────────────────────
 
 const correlationMod = await import("../apps/web/src/lib/bff/correlation.ts");

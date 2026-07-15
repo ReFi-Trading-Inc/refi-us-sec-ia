@@ -7,7 +7,7 @@
     "section": "§8",
     "wireExport": "wireExecutionPlanSchema",
     "module": "apps/web/src/lib/admin-portal-proxy/endpoints/execution-plans.ts",
-    "version": "v3.20260713"
+    "version": "v3.20260714"
   },
   "type": "object",
   "properties": {

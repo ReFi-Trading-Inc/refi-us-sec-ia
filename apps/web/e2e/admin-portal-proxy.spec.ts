@@ -17,7 +17,7 @@
  * signal these specs are skipped so CI stays deterministic before
  * Daniel's staging URL is wired.
  */
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 import { E2E_USERS } from "./global-setup";
 
 const PROXY_ROUTES = [

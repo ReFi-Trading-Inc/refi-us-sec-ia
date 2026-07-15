@@ -1,4 +1,5 @@
-import { test, expect, type BrowserContext } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
 // Dev-mode Next compilation per route on first hit can take 20–60s. The

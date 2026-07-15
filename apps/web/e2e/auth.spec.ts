@@ -1,4 +1,5 @@
-import { test, expect, request as playwrightRequest } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { request as playwrightRequest } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
 // Eligibility-only: the SIWE connect page is reached after the eligibility

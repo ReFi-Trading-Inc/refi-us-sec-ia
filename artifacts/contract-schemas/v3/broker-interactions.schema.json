@@ -7,7 +7,7 @@
     "section": "§10",
     "wireExport": "wireBrokerInteractionSchema",
     "module": "apps/web/src/lib/admin-portal-proxy/endpoints/broker-interactions.ts",
-    "version": "v3.20260713"
+    "version": "v3.20260714"
   },
   "type": "object",
   "properties": {

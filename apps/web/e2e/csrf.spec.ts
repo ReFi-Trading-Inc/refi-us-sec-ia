@@ -11,7 +11,8 @@
  * runs through the same bffMutate wrapper — the check is exercised once at
  * the wrapper level.
  */
-import { test, expect, request as playwrightRequest } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { request as playwrightRequest } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
 const ELIGIBILITY_BODY = {

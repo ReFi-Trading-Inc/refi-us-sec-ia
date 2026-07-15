@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { type Page } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
 const SIGNAL_COOKIE = E2E_USERS.signal.eligibilityCookie;

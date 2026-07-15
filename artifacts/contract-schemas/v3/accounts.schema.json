@@ -7,7 +7,7 @@
     "section": "§5",
     "wireExport": "wireAccountSchema",
     "module": "apps/web/src/lib/admin-portal-proxy/endpoints/accounts.ts",
-    "version": "v3.20260713"
+    "version": "v3.20260714"
   },
   "type": "object",
   "properties": {

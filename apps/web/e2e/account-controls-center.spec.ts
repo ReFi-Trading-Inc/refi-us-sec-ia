@@ -18,7 +18,8 @@
  * FLAG_ACCOUNT_CONTROLS_CENTER + FLAG_ACCOUNT_PREFS_PATCH are set to
  * "on" in playwright.config.ts webServer.env; production default is off.
  */
-import { test, expect, type APIRequestContext } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { type APIRequestContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
 const AUTH_COOKIE = `us_eligibility_v1=${E2E_USERS.signal.eligibilityCookie}`;

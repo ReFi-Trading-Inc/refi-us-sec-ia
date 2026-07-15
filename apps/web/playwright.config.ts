@@ -16,12 +16,17 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: !!process.env["CI"],
   retries: process.env["CI"] ? 2 : 1,
-  workers: process.env["CI"] ? 1 : undefined,
+  // Local: cap workers to keep Next.js dev on-demand compilation from
+  // saturating; unlimited parallelism produces `page.goto` load-event
+  // timeouts even when the page HTML is already interactive. CI runs
+  // serial (workers: 1).
+  workers: process.env["CI"] ? 1 : 4,
   reporter: process.env["CI"] ? "github" : "html",
   use: {
     baseURL: process.env["PLAYWRIGHT_BASE_URL"] ?? "http://localhost:3000",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+    navigationTimeout: 60_000,
   },
   projects: [
     {
@@ -33,8 +38,11 @@ export default defineConfig({
     command: "pnpm --filter @refi/web dev",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env["CI"],
-    timeout: 120_000,
+    // Dropbox-mounted repo path + Next.js dev cold start can take several
+    // minutes to reach a compileable state; give the boot enough headroom.
+    timeout: 600_000,
     env: {
+      NEXT_TELEMETRY_DISABLED: "1",
       NEXT_PUBLIC_REFI_ENV: "dev",
       NEXT_PUBLIC_API_BASE_URL: "http://localhost:3000",
       NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "test",

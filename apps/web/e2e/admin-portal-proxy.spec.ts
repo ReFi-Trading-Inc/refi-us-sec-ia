@@ -62,11 +62,14 @@ test.describe("admin-portal-proxy: dark-by-default behavior", () => {
       // projection key. If the flag turned on unintentionally, the shape
       // would still be a list but non-empty (fixture path) or an error
       // (real upstream absent), both of which trip this expectation.
-      const data = body.data;
-      // A route can return either an empty list or a null-ish state;
-      // both count as "did not call upstream".
-      const values = Object.values(data ?? {});
-      const emptyOrNull = values.every((v) => {
+      // `notice` is a UX-affordance string compiled into the BFF (rendered
+      // as an "Available in preview" chip), not upstream data — skip it.
+      const data = body.data ?? {};
+      const METADATA_KEYS = new Set(["notice"]);
+      const entries = Object.entries(data).filter(
+        ([k]) => !METADATA_KEYS.has(k),
+      );
+      const emptyOrNull = entries.every(([, v]) => {
         if (v === null || v === undefined) return true;
         if (Array.isArray(v)) return v.length === 0;
         if (typeof v === "object") return Object.keys(v).length === 0;

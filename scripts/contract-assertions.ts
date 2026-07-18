@@ -157,6 +157,21 @@ const {
   listFillsForAccount,
 } = fillEntity;
 
+const { ORDER_ID_MAP_IDENTITY_FIELDS, orderIdMapEntrySchema } =
+  await import("../apps/web/src/lib/sec203a/order-id-map.ts");
+
+const orderIdMapEntity =
+  await import("../apps/web/src/lib/prototype-store/entities/order-id-map.ts");
+const {
+  upsertOrderIdMap,
+  getOrderIdMap,
+  getOrderIdMapByBrokerOrderId,
+  getOrderIdMapByLatestAttempt,
+  listOrderIdMapsForPlan,
+  listOrderIdMapsForAccount,
+  listOrderIdMapsForOrder,
+} = orderIdMapEntity;
+
 const { appendProfileSnapshot, getLatestProfileSnapshot } =
   await import("../apps/web/src/lib/prototype-store/entities/advisory-profile.ts");
 
@@ -2827,6 +2842,350 @@ await section(
       "listFillsForOrder",
       "listFillsForBrokerOrder",
       "listFillsForAccount",
+    ];
+    for (const name of expected) {
+      assert.equal(
+        exported.has(name),
+        true,
+        `Expected entity export "${name}" missing.`,
+      );
+    }
+  },
+);
+
+// ─── OrderIdMap domain (DDL 341-361, db.py upsert_order_id_map) ───────────
+
+await section(
+  "OrderIdMap identity-field set covers Daniel's 8 set-once columns",
+  async () => {
+    assert.deepEqual(
+      [...ORDER_ID_MAP_IDENTITY_FIELDS].sort(),
+      [
+        "accountId",
+        "asset",
+        "brokerName",
+        "brokerOrderId",
+        "correlationId",
+        "firstAttemptId",
+        "orderId",
+        "planId",
+      ],
+      "ORDER_ID_MAP_IDENTITY_FIELDS drifted from contract.",
+    );
+    // latestAttemptId is freely mutable and MUST NOT be in the set-once set.
+    assert.equal(
+      (ORDER_ID_MAP_IDENTITY_FIELDS as readonly string[]).includes(
+        "latestAttemptId",
+      ),
+      false,
+      "latestAttemptId is mutable (retry rebinding) and must not be marked identity.",
+    );
+    // updatedAt is writer-stamped, not identity.
+    assert.equal(
+      (ORDER_ID_MAP_IDENTITY_FIELDS as readonly string[]).includes("updatedAt"),
+      false,
+      "updatedAt is writer-stamped and must not be marked identity.",
+    );
+  },
+);
+
+await section(
+  "OrderIdMap schema: clientOrderId required; all other fields optional",
+  async () => {
+    const noClient = orderIdMapEntrySchema.safeParse({});
+    assert.equal(
+      noClient.success,
+      false,
+      "Empty clientOrderId must be rejected.",
+    );
+    const emptyClient = orderIdMapEntrySchema.safeParse({ clientOrderId: "" });
+    assert.equal(
+      emptyClient.success,
+      false,
+      "Blank clientOrderId must be rejected.",
+    );
+    const bare = orderIdMapEntrySchema.safeParse({ clientOrderId: "c-1" });
+    assert.equal(bare.success, true, "Bare PK-only OrderIdMap must parse.");
+    const full = orderIdMapEntrySchema.safeParse({
+      clientOrderId: "c-1",
+      orderId: "o-1",
+      planId: "p-1",
+      accountId: "a-1",
+      asset: "ASSET",
+      brokerName: "broker-x",
+      brokerOrderId: "bo-1",
+      correlationId: "corr-1",
+      firstAttemptId: "att-0",
+      latestAttemptId: "att-3",
+      updatedAt: new Date().toISOString(),
+    });
+    assert.equal(full.success, true, "Fully-populated OrderIdMap must parse.");
+  },
+);
+
+await section(
+  "OrderIdMap schema: updatedAt must be ISO datetime when set",
+  async () => {
+    const bad = orderIdMapEntrySchema.safeParse({
+      clientOrderId: "c-iso",
+      updatedAt: "not-a-date",
+    });
+    assert.equal(bad.success, false, "Non-ISO updatedAt must be rejected.");
+    const ok = orderIdMapEntrySchema.safeParse({
+      clientOrderId: "c-iso",
+      updatedAt: new Date().toISOString(),
+    });
+    assert.equal(ok.success, true);
+  },
+);
+
+await section(
+  "OrderIdMap entity: upsert with no prior row INSERTs the entry verbatim",
+  async () => {
+    const cid = `c-ins-${Date.now()}`;
+    const stored = await upsertOrderIdMap({
+      entry: {
+        clientOrderId: cid,
+        orderId: "o-1",
+        planId: "p-1",
+        accountId: "a-1",
+        asset: "BTCUSD",
+        brokerName: "alpaca",
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    assert.equal(stored.orderId, "o-1");
+    assert.equal(stored.brokerOrderId, undefined);
+    const read = await getOrderIdMap(cid);
+    assert.ok(read);
+    assert.equal(read.planId, "p-1");
+  },
+);
+
+await section(
+  "OrderIdMap entity: enrichment fills previously-null identity fields",
+  async () => {
+    const cid = `c-enrich-${Date.now()}`;
+    await upsertOrderIdMap({
+      entry: {
+        clientOrderId: cid,
+        orderId: "o-1",
+        planId: "p-1",
+        accountId: "a-1",
+        asset: "BTCUSD",
+      },
+    });
+    // Broker ack: brokerOrderId + brokerName + latestAttemptId enrich.
+    const enriched = await upsertOrderIdMap({
+      entry: {
+        clientOrderId: cid,
+        brokerName: "alpaca",
+        brokerOrderId: "bo-XYZ",
+        latestAttemptId: "att-1",
+        updatedAt: new Date().toISOString(),
+      },
+    });
+    assert.equal(enriched.brokerOrderId, "bo-XYZ");
+    assert.equal(enriched.brokerName, "alpaca");
+    assert.equal(
+      enriched.orderId,
+      "o-1",
+      "Existing identity fields preserved.",
+    );
+    assert.equal(enriched.latestAttemptId, "att-1");
+  },
+);
+
+await section(
+  "OrderIdMap entity: identity-field rebinding is rejected (drift guard)",
+  async () => {
+    const cid = `c-drift-${Date.now()}`;
+    await upsertOrderIdMap({
+      entry: {
+        clientOrderId: cid,
+        orderId: "o-A",
+        accountId: "acct-A",
+        brokerOrderId: "bo-A",
+      },
+    });
+    await assert.rejects(
+      upsertOrderIdMap({
+        entry: { clientOrderId: cid, orderId: "o-B" },
+      }),
+      /identity drift/,
+      "orderId rebinding must be rejected.",
+    );
+    await assert.rejects(
+      upsertOrderIdMap({
+        entry: { clientOrderId: cid, brokerOrderId: "bo-B" },
+      }),
+      /identity drift/,
+      "brokerOrderId rebinding must be rejected.",
+    );
+    await assert.rejects(
+      upsertOrderIdMap({
+        entry: { clientOrderId: cid, accountId: "acct-B" },
+      }),
+      /identity drift/,
+      "accountId rebinding must be rejected.",
+    );
+    const read = await getOrderIdMap(cid);
+    assert.ok(read);
+    assert.equal(read.orderId, "o-A", "Original identity preserved.");
+    assert.equal(read.brokerOrderId, "bo-A");
+  },
+);
+
+await section(
+  "OrderIdMap entity: latestAttemptId is freely re-bindable on retry",
+  async () => {
+    const cid = `c-retry-${Date.now()}`;
+    await upsertOrderIdMap({
+      entry: { clientOrderId: cid, orderId: "o-1", latestAttemptId: "att-1" },
+    });
+    const r2 = await upsertOrderIdMap({
+      entry: { clientOrderId: cid, latestAttemptId: "att-2" },
+    });
+    assert.equal(r2.latestAttemptId, "att-2");
+    const r3 = await upsertOrderIdMap({
+      entry: { clientOrderId: cid, latestAttemptId: "att-3" },
+    });
+    assert.equal(r3.latestAttemptId, "att-3");
+    assert.equal(r3.orderId, "o-1", "Identity preserved across retries.");
+  },
+);
+
+await section(
+  "OrderIdMap entity: getOrderIdMapByBrokerOrderId requires broker+id pair",
+  async () => {
+    const cid = `c-bro-${Date.now()}`;
+    await upsertOrderIdMap({
+      entry: {
+        clientOrderId: cid,
+        brokerName: "alpaca",
+        brokerOrderId: "bo-unique",
+      },
+    });
+    const hit = await getOrderIdMapByBrokerOrderId("alpaca", "bo-unique");
+    assert.ok(hit);
+    assert.equal(hit.clientOrderId, cid);
+    const wrongBroker = await getOrderIdMapByBrokerOrderId(
+      "other",
+      "bo-unique",
+    );
+    assert.equal(
+      wrongBroker,
+      null,
+      "Same brokerOrderId under a different broker must not match (UX is (broker_name, broker_order_id)).",
+    );
+  },
+);
+
+await section(
+  "OrderIdMap entity: getOrderIdMapByLatestAttempt resolves via latest_attempt_id index",
+  async () => {
+    const cid = `c-att-${Date.now()}`;
+    const attId = `att-lookup-${Date.now()}`;
+    await upsertOrderIdMap({
+      entry: { clientOrderId: cid, latestAttemptId: attId },
+    });
+    const hit = await getOrderIdMapByLatestAttempt(attId);
+    assert.ok(hit);
+    assert.equal(hit.clientOrderId, cid);
+  },
+);
+
+await section(
+  "OrderIdMap entity: listOrderIdMapsForPlan + ForOrder + ForAccount filter correctly",
+  async () => {
+    const stamp = Date.now();
+    const planId = `p-list-${stamp}`;
+    const orderId = `o-list-${stamp}`;
+    const accountId = `acc-list-${stamp}`;
+    for (let i = 0; i < 3; i++) {
+      await upsertOrderIdMap({
+        entry: {
+          clientOrderId: `c-list-${stamp}-${i}`,
+          planId,
+          orderId: `${orderId}-${i}`,
+          accountId,
+          asset: "ETHUSD",
+          updatedAt: new Date(stamp + i).toISOString(),
+        },
+      });
+    }
+    const byPlan = await listOrderIdMapsForPlan(planId);
+    assert.equal(byPlan.length, 3, "All 3 rows must surface by plan_id.");
+    const byAccount = await listOrderIdMapsForAccount(accountId, "ETHUSD");
+    assert.equal(
+      byAccount.length,
+      3,
+      "All 3 rows must surface by account+asset.",
+    );
+    const byAccountOtherAsset = await listOrderIdMapsForAccount(
+      accountId,
+      "BTCUSD",
+    );
+    assert.equal(byAccountOtherAsset.length, 0, "asset filter must apply.");
+    const byOrder = await listOrderIdMapsForOrder(`${orderId}-1`);
+    assert.equal(byOrder.length, 1);
+    assert.equal(byOrder[0]?.orderId, `${orderId}-1`);
+  },
+);
+
+await section(
+  "OrderIdMap entity: exports NO Order-mutation, OrderEvent-create, BrokerAttempt-create, Fill-create, or broker-submission helpers",
+  async () => {
+    const forbidden = [
+      // Order mutation
+      "updateOrder",
+      "transitionOrder",
+      "mutateOrder",
+      "patchOrder",
+      // OrderEvents
+      "createOrderEvent",
+      "appendOrderEvent",
+      "recordOrderEvent",
+      // BrokerOrderAttempts
+      "createBrokerAttempt",
+      "appendBrokerAttempt",
+      "completeBrokerAttempt",
+      // Fills
+      "createFill",
+      "appendFill",
+      "recordFill",
+      // Broker submission
+      "submit",
+      "submitOrder",
+      "submitToBroker",
+      "placeOrder",
+      "sendToBroker",
+      "executeOrder",
+      "callBroker",
+    ];
+    const exported = Object.keys(orderIdMapEntity);
+    for (const name of forbidden) {
+      assert.equal(
+        exported.includes(name),
+        false,
+        `OrderIdMap entity exports forbidden symbol "${name}" — id-correspondence only.`,
+      );
+    }
+  },
+);
+
+await section(
+  "OrderIdMap entity: exports exactly the expected upsert + lookup surface",
+  async () => {
+    const exported = new Set(Object.keys(orderIdMapEntity));
+    const expected = [
+      "upsertOrderIdMap",
+      "getOrderIdMap",
+      "getOrderIdMapByBrokerOrderId",
+      "getOrderIdMapByLatestAttempt",
+      "listOrderIdMapsForPlan",
+      "listOrderIdMapsForAccount",
+      "listOrderIdMapsForOrder",
     ];
     for (const name of expected) {
       assert.equal(

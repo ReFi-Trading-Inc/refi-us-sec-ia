@@ -2838,6 +2838,341 @@ await section(
   },
 );
 
+// ─── Alpha game handoff route (/api/v1/investor/alpha-claim) ────────────────
+//
+// End-to-end behavioral assertions for the narrow alpha-claim port. Unlike the
+// entity-only sections above, this drives the real Next route handler. Setup
+// order matters:
+//   1. `jose` and `next/server` resolve only under apps/web (pnpm workspace),
+//      so we anchor resolution there with createRequire and dynamic-import the
+//      resolved absolute paths.
+//   2. We generate a real ES256 keypair, export the PUBLIC JWK, and set every
+//      required env var (public key + iss/aud) and FLAG_ALPHA_CLAIM_ROUTE=on
+//      BEFORE importing the route/env module. getServerEnv() caches on first
+//      call, so the public key must be set before the first request; the
+//      private key is never placed in the environment.
+{
+  const { createRequire } = await import("node:module");
+  const requireFromWeb = createRequire(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const jose = (await import(
+    requireFromWeb.resolve("jose")
+  )) as typeof import("jose");
+  const { SignJWT, generateKeyPair, exportJWK } = jose;
+  const nextServer = (await import(
+    requireFromWeb.resolve("next/server")
+  )) as typeof import("next/server");
+  const { NextRequest } = nextServer;
+
+  // Real signing keypair (extractable so the public half can be exported).
+  const { publicKey, privateKey } = await generateKeyPair("ES256", {
+    extractable: true,
+  });
+  const publicJwk = await exportJWK(publicKey);
+  // A DIFFERENT keypair, used only to produce a validly-shaped but
+  // wrong-signature token for the invalid-signature assertion.
+  const wrong = await generateKeyPair("ES256", { extractable: true });
+
+  process.env["ALPHA_HANDOFF_PUBLIC_KEY_JWK"] = JSON.stringify(publicJwk);
+  process.env["ALPHA_HANDOFF_ISSUER"] = "refi-alpha";
+  process.env["ALPHA_HANDOFF_AUDIENCE"] = "refi-us-sec-ia";
+  process.env["FLAG_ALPHA_CLAIM_ROUTE"] = "on";
+  // getServerEnv() validates the whole server schema (min-32 secrets). The
+  // harness header sets a short IP_HASH_SECRET for the entity sections; the
+  // route path reaches getServerEnv, so widen it to a valid length here. This
+  // block runs after every other section, so the override affects nothing else.
+  process.env["IP_HASH_SECRET"] = "contract-test-ip-hash-secret-0123456789";
+
+  const { POST } =
+    (await import("../apps/web/app/api/v1/investor/alpha-claim/route.ts")) as {
+      POST: (req: unknown) => Promise<Response>;
+    };
+  const { findByAlphaPlayerId, playerKey } =
+    await import("../apps/web/src/lib/prototype-store/entities/alpha-application.ts");
+
+  const ORIGIN = "http://localhost:3000";
+  const ROUTE_URL = `${ORIGIN}/api/v1/investor/alpha-claim`;
+
+  let seq = 0;
+  const uid = (p: string): string => `${p}-${Date.now()}-${seq++}`;
+
+  type Claims = Record<string, unknown>;
+  function baseClaims(overrides: Claims = {}): Claims {
+    const now = Math.floor(Date.now() / 1000);
+    return {
+      iss: "refi-alpha",
+      aud: "refi-us-sec-ia",
+      sub: uid("player"),
+      jti: uid("jti"),
+      iat: now,
+      exp: now + 300,
+      progressSnapshotId: "snap-1",
+      completedArenas: ["arena-1", "arena-2"],
+      machineBuilderUnlocked: true,
+      machineVersionCount: 3,
+      machineBeatRate: 0.5,
+      intendedDestination: "ELIGIBILITY",
+      ...overrides,
+    };
+  }
+
+  async function mint(
+    claims: Claims,
+    signWith: CryptoKey = privateKey as CryptoKey,
+  ): Promise<string> {
+    return new SignJWT(claims)
+      .setProtectedHeader({ alg: "ES256" })
+      .sign(signWith);
+  }
+
+  interface ReqOpts {
+    origin?: string | null; // undefined → default same-origin; null → omit
+    referer?: string;
+    rawBody?: string; // overrides JSON body (for malformed-body test)
+  }
+  function makeReq(body: unknown, opts: ReqOpts = {}): unknown {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    if (opts.origin === undefined) headers["origin"] = ORIGIN;
+    else if (opts.origin !== null) headers["origin"] = opts.origin;
+    if (opts.referer) headers["referer"] = opts.referer;
+    const init: RequestInit = { method: "POST", headers };
+    if (opts.rawBody !== undefined) init.body = opts.rawBody;
+    else if (body !== undefined) init.body = JSON.stringify(body);
+    return new NextRequest(
+      ROUTE_URL,
+      init as ConstructorParameters<typeof NextRequest>[1],
+    );
+  }
+
+  async function call(
+    body: unknown,
+    opts: ReqOpts = {},
+  ): Promise<{ status: number; json: Record<string, unknown> }> {
+    const res = await POST(makeReq(body, opts));
+    const json = (await res.json()) as Record<string, unknown>;
+    return { status: res.status, json };
+  }
+
+  await section("alpha-claim: flag off returns 404", async () => {
+    const saved = process.env["FLAG_ALPHA_CLAIM_ROUTE"];
+    process.env["FLAG_ALPHA_CLAIM_ROUTE"] = "off";
+    try {
+      const token = await mint(baseClaims());
+      const { status } = await call({ token });
+      assert.equal(status, 404, "flag off must return 404");
+    } finally {
+      process.env["FLAG_ALPHA_CLAIM_ROUTE"] = saved;
+    }
+  });
+
+  await section("alpha-claim: malformed JSON body returns 400", async () => {
+    const { status } = await call(undefined, { rawBody: "{not valid json" });
+    assert.equal(status, 400, "malformed body must return 400");
+  });
+
+  await section("alpha-claim: wrong-shape body returns 400", async () => {
+    const { status } = await call({ notToken: "x" });
+    assert.equal(status, 400, "body without token must return 400");
+  });
+
+  await section(
+    "alpha-claim: missing declared origin returns 403",
+    async () => {
+      const token = await mint(baseClaims());
+      const { status } = await call({ token }, { origin: null });
+      assert.equal(status, 403, "missing origin must return 403");
+    },
+  );
+
+  await section("alpha-claim: cross-origin request returns 403", async () => {
+    const token = await mint(baseClaims());
+    const { status } = await call({ token }, { origin: "http://evil.example" });
+    assert.equal(status, 403, "cross-origin must return 403");
+  });
+
+  await section("alpha-claim: invalid signature returns 401", async () => {
+    const token = await mint(baseClaims(), wrong.privateKey as CryptoKey);
+    const { status } = await call({ token });
+    assert.equal(status, 401, "wrong-key signature must return 401");
+  });
+
+  await section("alpha-claim: wrong issuer returns 401", async () => {
+    const token = await mint(baseClaims({ iss: "not-refi-alpha" }));
+    const { status } = await call({ token });
+    assert.equal(status, 401, "wrong issuer must return 401");
+  });
+
+  await section("alpha-claim: wrong audience returns 401", async () => {
+    const token = await mint(baseClaims({ aud: "someone-else" }));
+    const { status } = await call({ token });
+    assert.equal(status, 401, "wrong audience must return 401");
+  });
+
+  await section("alpha-claim: expired token returns 401", async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const token = await mint(baseClaims({ iat: now - 600, exp: now - 300 }));
+    const { status } = await call({ token });
+    assert.equal(status, 401, "expired token must return 401");
+  });
+
+  await section("alpha-claim: unknown private claim returns 401", async () => {
+    // Valid signature + iss/aud/exp, but a smuggled behavioral dimension the
+    // strict claim schema forbids (spec §6.6).
+    const token = await mint(baseClaims({ dimensionCode: "AGGRESSION" }));
+    const { status } = await call({ token });
+    assert.equal(status, 401, "unknown claim must return 401");
+  });
+
+  await section(
+    "alpha-claim: valid same-origin token returns 201",
+    async () => {
+      const token = await mint(baseClaims());
+      const { status, json } = await call({ token });
+      assert.equal(status, 201, "first valid consumption must return 201");
+      const data = json["data"] as Record<string, unknown>;
+      assert.equal(
+        data["firstConsumption"],
+        true,
+        "first consumption flag must be true",
+      );
+    },
+  );
+
+  await section(
+    "alpha-claim: same jti replay returns 200 with original binding",
+    async () => {
+      const claims = baseClaims();
+      const token = await mint(claims);
+      const first = await call({ token });
+      assert.equal(first.status, 201, "first call must be 201");
+      const firstData = first.json["data"] as Record<string, unknown>;
+
+      const second = await call({ token });
+      assert.equal(second.status, 200, "replay must return 200");
+      const secondData = second.json["data"] as Record<string, unknown>;
+      assert.equal(
+        secondData["firstConsumption"],
+        false,
+        "replay firstConsumption must be false",
+      );
+      // Test 12: replay returns the ORIGINAL application reference + player.
+      assert.equal(
+        secondData["applicationRef"],
+        firstData["applicationRef"],
+        "replay must return the original applicationRef",
+      );
+      assert.equal(
+        secondData["alphaPlayerId"],
+        firstData["alphaPlayerId"],
+        "replay must return the original alphaPlayerId",
+      );
+    },
+  );
+
+  await section(
+    "alpha-claim: new jti for same alphaPlayerId updates the same application",
+    async () => {
+      const sub = uid("player");
+      const token1 = await mint(baseClaims({ sub, jti: uid("jti") }));
+      const first = await call({ token: token1 });
+      assert.equal(first.status, 201, "first player claim must be 201");
+      const bound1 = await findByAlphaPlayerId(sub);
+      assert.ok(bound1, "player application must exist after first claim");
+      const claimedAt1 = bound1.handoffClaimedAt;
+
+      const token2 = await mint(
+        baseClaims({ sub, jti: uid("jti"), progressSnapshotId: "snap-2" }),
+      );
+      const second = await call({ token: token2 });
+      assert.equal(
+        second.status,
+        201,
+        "a new jti is a first consumption → 201",
+      );
+      const d1 = first.json["data"] as Record<string, unknown>;
+      const d2 = second.json["data"] as Record<string, unknown>;
+      // Same player → same application storage key, not a second row.
+      assert.equal(
+        d2["applicationRef"],
+        d1["applicationRef"],
+        "second claim must reuse the same application reference",
+      );
+      assert.equal(
+        d2["applicationRef"],
+        playerKey(sub),
+        "application must be keyed by player for an email-less entrant",
+      );
+      const bound2 = await findByAlphaPlayerId(sub);
+      assert.ok(bound2, "player application must still exist");
+      // handoffClaimedAt preserved from the first successful handoff; game
+      // progress + updatedAt advanced.
+      assert.equal(
+        bound2.handoffClaimedAt,
+        claimedAt1,
+        "handoffClaimedAt must be preserved from the first handoff",
+      );
+      assert.equal(
+        bound2.progressSnapshotId,
+        "snap-2",
+        "game progress fields must be updated on re-claim",
+      );
+    },
+  );
+
+  await section(
+    "alpha-claim: only the public JWK is read by the shell",
+    async () => {
+      const configured = JSON.parse(
+        process.env["ALPHA_HANDOFF_PUBLIC_KEY_JWK"] ?? "{}",
+      ) as Record<string, unknown>;
+      assert.equal(
+        "d" in configured,
+        false,
+        "configured JWK must be public-only (no private scalar 'd')",
+      );
+      assert.equal(
+        process.env["ALPHA_HANDOFF_PRIVATE_KEY_JWK"],
+        undefined,
+        "no private JWK env var may be set",
+      );
+      assert.equal(
+        process.env["ALPHA_HANDOFF_PRIVATE_KEY"],
+        undefined,
+        "no private key env var may be set",
+      );
+    },
+  );
+
+  await section(
+    "alpha-claim: 201 response matches the AlphaClaimClient contract",
+    async () => {
+      const token = await mint(baseClaims());
+      const { status, json } = await call({ token });
+      assert.equal(status, 201);
+      assert.equal(typeof json["correlationId"], "string");
+      const data = json["data"] as Record<string, unknown>;
+      assert.ok(data, "response must carry a data object");
+      assert.equal(typeof data["alphaPlayerId"], "string");
+      assert.equal(typeof data["applicationRef"], "string");
+      assert.equal(typeof data["intendedDestination"], "string");
+      assert.equal(typeof data["firstConsumption"], "boolean");
+      // AlphaClaimClient types score as number | null.
+      assert.ok(
+        typeof data["score"] === "number" || data["score"] === null,
+        "score must be number | null",
+      );
+      assert.equal(
+        json["error"],
+        undefined,
+        "successful response must not carry an error envelope",
+      );
+    },
+  );
+}
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

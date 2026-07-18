@@ -29,6 +29,21 @@ const PROTOTYPE_DEFAULTS = {
   IP_HASH_SECRET: "prototype-only-ip-hash-secret-32+chars",
   ELIGIBILITY_JWT_SECRET: "prototype-only-eligibility-jwt-32+chars",
   REFI_DATA_ADAPTER: "mock" as const,
+  // AlphaHandoffToken verification (ReFi Alpha spec §2.2). The public key
+  // verifies the game-minted ES256 token; iss/aud are pinned so a token
+  // minted for another audience cannot pass this verify. Server-only.
+  // In non-prod a placeholder P-256 public JWK is substituted so the env
+  // layer boots deterministically; it is NOT a valid curve point and any
+  // real token fails verification until production sets the real value.
+  // The private key never lives here — it stays in the game's secret store.
+  ALPHA_HANDOFF_PUBLIC_KEY_JWK: JSON.stringify({
+    kty: "EC",
+    crv: "P-256",
+    x: "prototype-only-x-coord",
+    y: "prototype-only-y-coord",
+  }),
+  ALPHA_HANDOFF_ISSUER: "refi-alpha" as const,
+  ALPHA_HANDOFF_AUDIENCE: "refi-us-sec-ia" as const,
 };
 
 /**
@@ -62,6 +77,11 @@ const serverSchema = clientSchema.extend({
   IP_HASH_SECRET: z.string().min(32),
   ELIGIBILITY_JWT_SECRET: z.string().min(32),
   REFI_DATA_ADAPTER: z.enum(["mock", "live"]).default("mock"),
+  // AlphaHandoffToken verification (§2.2). Public key travels as a JWK JSON
+  // string; iss/aud are pinned. Only the public half is ever read here.
+  ALPHA_HANDOFF_PUBLIC_KEY_JWK: z.string().min(1),
+  ALPHA_HANDOFF_ISSUER: z.string().min(1),
+  ALPHA_HANDOFF_AUDIENCE: z.string().min(1),
 });
 
 function formatError(error: z.ZodError): string {
@@ -140,6 +160,18 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
       "ELIGIBILITY_JWT_SECRET",
     ),
     REFI_DATA_ADAPTER: process.env["REFI_DATA_ADAPTER"],
+    ALPHA_HANDOFF_PUBLIC_KEY_JWK: withFallback(
+      process.env["ALPHA_HANDOFF_PUBLIC_KEY_JWK"],
+      "ALPHA_HANDOFF_PUBLIC_KEY_JWK",
+    ),
+    ALPHA_HANDOFF_ISSUER: withFallback(
+      process.env["ALPHA_HANDOFF_ISSUER"],
+      "ALPHA_HANDOFF_ISSUER",
+    ),
+    ALPHA_HANDOFF_AUDIENCE: withFallback(
+      process.env["ALPHA_HANDOFF_AUDIENCE"],
+      "ALPHA_HANDOFF_AUDIENCE",
+    ),
   });
 
   if (!parsed.success) {

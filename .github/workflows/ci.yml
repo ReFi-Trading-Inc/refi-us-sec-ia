@@ -10,6 +10,10 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Least-privilege default; jobs opt into more only if needed.
+permissions:
+  contents: read
+
 env:
   PNPM_VERSION: "11.1.2"
   NODE_VERSION: "22"
@@ -19,11 +23,13 @@ jobs:
     name: Typecheck / Lint / Scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      # Actions are pinned by commit SHA (supply-chain hardening); the trailing
+      # comment records the human-readable tag the SHA corresponds to.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -46,6 +52,34 @@ jobs:
         env:
           CI: true
 
+  security:
+    name: Security scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+      # Secret scanning (blocking). gitleaks-action is free for public repos.
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # Dependency audit. REPORT-ONLY for now: the repo carries a known advisory
+      # backlog (see Dependabot). Renovate (renovate.json) burns it down; once
+      # clear, drop `continue-on-error` to make this a blocking gate (#29).
+      - name: Dependency audit (report-only)
+        continue-on-error: true
+        run: pnpm audit --prod
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -57,11 +91,11 @@ jobs:
       NEXT_PUBLIC_SENTRY_DSN: https://placeholder@o0.ingest.sentry.io/0
       NEXT_PUBLIC_REFI_ENV: staging
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
         with:
           version: ${{ env.PNPM_VERSION }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm

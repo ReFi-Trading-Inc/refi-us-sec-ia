@@ -117,6 +117,12 @@ export const BffErrors = {
       source: "prototype-bff",
       correlationId,
     }),
+  forbidden: (correlationId: string, message = "Request not allowed.") =>
+    bffError("forbidden", message, {
+      status: 403,
+      source: "prototype-bff",
+      correlationId,
+    }),
   precondition: (correlationId: string, message: string) =>
     bffError("precondition_failed", message, {
       status: 412,

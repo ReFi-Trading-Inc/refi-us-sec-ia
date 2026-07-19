@@ -14,6 +14,7 @@ import type { NextRequest } from "next/server";
 import type { NextResponse } from "next/server";
 import { correlationIdFrom } from "./correlation";
 import { getAuthContext, type AuthContext } from "./auth";
+import { isSameOrigin } from "./origin";
 import { bffOk, BffErrors, type BffSource, type GapId } from "./envelope";
 import type {
   InvestorActionName,
@@ -99,6 +100,16 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
   return async (req: NextRequest): Promise<NextResponse> => {
     const correlationId = correlationIdFrom(req);
     try {
+      // CSRF: every mutating investor route is same-origin only. Rejected
+      // before auth so a forged cross-origin request never rides the session
+      // cookie into a state change.
+      if (!isSameOrigin(req)) {
+        return BffErrors.forbidden(
+          correlationId,
+          "Cross-origin or origin-less request rejected.",
+        );
+      }
+
       const auth = await getAuthContext(req);
       if (!auth) return BffErrors.unauthorized(correlationId);
 

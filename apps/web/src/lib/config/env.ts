@@ -28,6 +28,13 @@ const PROTOTYPE_DEFAULTS = {
   SESSION_SECRET: "prototype-only-session-secret-32+chars",
   IP_HASH_SECRET: "prototype-only-ip-hash-secret-32+chars",
   ELIGIBILITY_JWT_SECRET: "prototype-only-eligibility-jwt-32+chars",
+  // HS256 secret the BFF uses to verify the us_session_v1 cookie. Must match
+  // the session mint site (MSW today, auth-siwe later). Server-only.
+  SESSION_JWT_SECRET: "prototype-only-session-jwt-secret-32+chars",
+  // Server-only deployment tier. This — never the client-visible
+  // NEXT_PUBLIC_REFI_ENV — gates security behaviour (e.g. the auth dev
+  // fallback). Only "dev" enables the fallback; "staging"/"prod" fail closed.
+  REFI_ENV: "dev" as const,
   REFI_DATA_ADAPTER: "mock" as const,
   // AlphaHandoffToken verification (ReFi Alpha spec §2.2). The public key
   // verifies the game-minted ES256 token; iss/aud are pinned so a token
@@ -76,6 +83,14 @@ const serverSchema = clientSchema.extend({
   SESSION_SECRET: z.string().min(32),
   IP_HASH_SECRET: z.string().min(32),
   ELIGIBILITY_JWT_SECRET: z.string().min(32),
+  // Session cookie verification secret (see PROTOTYPE_DEFAULTS). Required in
+  // prod; a present-but-invalid session token is rejected, never downgraded.
+  SESSION_JWT_SECRET: z.string().min(32),
+  // Server-only deployment tier. Security decisions gate on this, not on the
+  // public NEXT_PUBLIC_REFI_ENV build constant. No schema default: in prod
+  // withFallback yields undefined so a missing value fails boot rather than
+  // silently degrading to "dev"; non-prod fills "dev" via PROTOTYPE_DEFAULTS.
+  REFI_ENV: z.enum(["dev", "staging", "prod"]),
   REFI_DATA_ADAPTER: z.enum(["mock", "live"]).default("mock"),
   // AlphaHandoffToken verification (§2.2). Public key travels as a JWK JSON
   // string; iss/aud are pinned. Only the public half is ever read here.
@@ -160,6 +175,11 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
       "ELIGIBILITY_JWT_SECRET",
     ),
     REFI_DATA_ADAPTER: process.env["REFI_DATA_ADAPTER"],
+    SESSION_JWT_SECRET: withFallback(
+      process.env["SESSION_JWT_SECRET"],
+      "SESSION_JWT_SECRET",
+    ),
+    REFI_ENV: withFallback(process.env["REFI_ENV"], "REFI_ENV"),
     ALPHA_HANDOFF_PUBLIC_KEY_JWK: withFallback(
       process.env["ALPHA_HANDOFF_PUBLIC_KEY_JWK"],
       "ALPHA_HANDOFF_PUBLIC_KEY_JWK",

@@ -17,6 +17,7 @@
 import { z } from "zod";
 import { createHash, createHmac } from "node:crypto";
 import { bffMutate } from "@lib/bff/handler";
+import { getServerEnv } from "@lib/config/env";
 import {
   appendExecutionPolicy,
   getActivationByIdempotencyKey,
@@ -47,7 +48,7 @@ const activateBody = z.object({
 type ActivateBody = z.infer<typeof activateBody>;
 
 function safeHash(input: string | null | undefined): string {
-  const secret = process.env["IP_HASH_SECRET"] ?? "dev-hash-secret";
+  const secret = getServerEnv().IP_HASH_SECRET;
   return createHmac("sha256", secret)
     .update(input ?? "")
     .digest("hex");

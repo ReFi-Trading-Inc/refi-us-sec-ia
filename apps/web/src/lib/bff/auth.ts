@@ -8,6 +8,7 @@
  */
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
+import { getServerEnv } from "../config/env";
 import { getAuthSessionLink } from "../prototype-store/entities/auth-link";
 
 const SESSION_COOKIE = "us_session_v1";
@@ -21,11 +22,12 @@ export interface AuthContext {
 }
 
 async function devFallback(req: NextRequest): Promise<AuthContext | null> {
-  // In non-production environments without a real signed session, allow a
-  // deterministic dev identity derived from the eligibility cookie if present.
-  // This keeps the BFF testable end-to-end without a live SIWE backend.
-  const env = process.env["NEXT_PUBLIC_REFI_ENV"];
-  if (env === "prod" || env === "production") return null;
+  // Local-dev-only escape hatch: without a real signed session, allow a
+  // deterministic dev identity derived from the eligibility cookie. Gated on
+  // the SERVER-ONLY REFI_ENV (never the client-visible NEXT_PUBLIC_REFI_ENV):
+  // only "dev" enables it, so "staging" and "prod" fail closed. This keeps the
+  // BFF testable end-to-end locally without a live SIWE backend.
+  if (getServerEnv().REFI_ENV !== "dev") return null;
 
   const eligibility = req.cookies.get("us_eligibility_v1")?.value;
   if (!eligibility) return null;
@@ -52,28 +54,29 @@ export async function getAuthContext(
   req: NextRequest,
 ): Promise<AuthContext | null> {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
+
+  // A PRESENT session cookie must verify. A present-but-invalid token is a hard
+  // rejection (null → 401 upstream) — never a silent downgrade to the dev
+  // fallback. Algorithm is pinned; the secret is the validated server env, so a
+  // missing secret fails boot in prod rather than disabling verification here.
   if (token) {
-    const secret = process.env["SESSION_JWT_SECRET"];
-    if (secret) {
-      try {
-        const { payload } = await jwtVerify(
-          token,
-          new TextEncoder().encode(secret),
-        );
-        const sub = typeof payload.sub === "string" ? payload.sub : null;
-        if (sub) {
-          const link = await getAuthSessionLink(sub);
-          const ctx: AuthContext = {
-            authId: sub,
-            source: "prototype-bff",
-          };
-          if (link?.accountId) ctx.accountId = link.accountId;
-          return ctx;
-        }
-      } catch {
-        // fall through to dev fallback
-      }
+    try {
+      const { payload } = await jwtVerify(
+        token,
+        new TextEncoder().encode(getServerEnv().SESSION_JWT_SECRET),
+        { algorithms: ["HS256"] },
+      );
+      const sub = typeof payload.sub === "string" ? payload.sub : null;
+      if (!sub) return null;
+      const link = await getAuthSessionLink(sub);
+      const ctx: AuthContext = { authId: sub, source: "prototype-bff" };
+      if (link?.accountId) ctx.accountId = link.accountId;
+      return ctx;
+    } catch {
+      return null;
     }
   }
+
+  // No session cookie at all: only then may the local dev fallback apply.
   return await devFallback(req);
 }

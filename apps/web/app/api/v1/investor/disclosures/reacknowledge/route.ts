@@ -20,6 +20,7 @@
 import { z } from "zod";
 import { createHmac } from "node:crypto";
 import { bffMutate } from "@lib/bff/handler";
+import { getServerEnv } from "@lib/config/env";
 import {
   appendDisclosureAck,
   getDisclosureAck,
@@ -40,7 +41,7 @@ const reackBody = z.object({
 type ReackBody = z.infer<typeof reackBody>;
 
 function safeHash(input: string | null | undefined): string {
-  const secret = process.env["IP_HASH_SECRET"] ?? "dev-hash-secret";
+  const secret = getServerEnv().IP_HASH_SECRET;
   return createHmac("sha256", secret)
     .update(input ?? "")
     .digest("hex");

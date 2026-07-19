@@ -3270,6 +3270,71 @@ await section(
   );
 }
 
+// ─── BFF mutate: same-origin CSRF guard ─────────────────────────────────────
+//
+// Every bffMutate route must reject cross-origin and origin-less requests
+// (403) before auth, and let same-origin requests through to the auth gate.
+{
+  const { createRequire } = await import("node:module");
+  const requireFromWeb = createRequire(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const nextServer = (await import(
+    requireFromWeb.resolve("next/server")
+  )) as typeof import("next/server");
+  const { NextRequest } = nextServer;
+
+  const { bffMutate } = await import("../apps/web/src/lib/bff/handler.ts");
+  const mutate = bffMutate({
+    action: "refreshProfile",
+    apply: () => ({ data: { ok: true } }),
+  });
+
+  const ORIGIN = "http://localhost:3000";
+  function post(headers: Record<string, string>): unknown {
+    return new NextRequest(`${ORIGIN}/api/v1/investor/profile`, {
+      method: "POST",
+      headers,
+    });
+  }
+
+  await section("bffMutate: cross-origin request is rejected 403", async () => {
+    const res = await mutate(post({ origin: "http://evil.example" }) as never);
+    assert.equal(res.status, 403, "cross-origin mutation must be 403");
+  });
+
+  await section("bffMutate: origin-less request is rejected 403", async () => {
+    const res = await mutate(post({}) as never);
+    assert.equal(res.status, 403, "origin-less mutation must be 403");
+  });
+
+  await section(
+    "bffMutate: same-origin request passes CSRF and reaches the auth gate (401 unauth)",
+    async () => {
+      const res = await mutate(post({ origin: ORIGIN }) as never);
+      assert.equal(
+        res.status,
+        401,
+        "same-origin unauthenticated mutation must reach auth and 401",
+      );
+    },
+  );
+
+  await section(
+    "bffMutate: same-origin via Referer fallback is accepted past CSRF",
+    async () => {
+      const res = await mutate(
+        post({ referer: `${ORIGIN}/us/app/settings` }) as never,
+      );
+      assert.equal(
+        res.status,
+        401,
+        "same-origin Referer must pass CSRF then hit the auth gate",
+      );
+    },
+  );
+}
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

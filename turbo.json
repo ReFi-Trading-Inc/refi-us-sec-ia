@@ -3,7 +3,25 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"],
+      "env": [
+        "NEXT_PUBLIC_API_BASE_URL",
+        "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID",
+        "NEXT_PUBLIC_POSTHOG_KEY",
+        "NEXT_PUBLIC_SENTRY_DSN",
+        "NEXT_PUBLIC_REFI_ENV",
+        "REFI_ENV",
+        "REFI_DATA_ADAPTER",
+        "REFI_PROTOTYPE_STORE_DIR",
+        "FLAG_ALPHA_CLAIM_ROUTE",
+        "ALPHA_HANDOFF_ISSUER",
+        "ALPHA_HANDOFF_AUDIENCE",
+        "ALPHA_HANDOFF_PUBLIC_KEY_JWK",
+        "SESSION_SECRET",
+        "IP_HASH_SECRET",
+        "ELIGIBILITY_JWT_SECRET",
+        "SESSION_JWT_SECRET"
+      ]
     },
     "dev": {
       "cache": false,

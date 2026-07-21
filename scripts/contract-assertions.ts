@@ -3173,6 +3173,168 @@ await section(
   );
 }
 
+// ─── BFF auth: fail closed ──────────────────────────────────────────────────
+//
+// getAuthContext must reject a PRESENT-but-invalid session cookie (never
+// downgrade it to the dev-fallback identity), accept a validly signed token,
+// and allow the dev fallback only under REFI_ENV=dev. The test env resolves
+// REFI_ENV=dev and the placeholder SESSION_JWT_SECRET via non-prod defaults.
+{
+  const { createRequire } = await import("node:module");
+  const requireFromWeb = createRequire(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const jose = (await import(
+    requireFromWeb.resolve("jose")
+  )) as typeof import("jose");
+  const nextServer = (await import(
+    requireFromWeb.resolve("next/server")
+  )) as typeof import("next/server");
+  const { NextRequest } = nextServer;
+
+  const { getAuthContext } = await import("../apps/web/src/lib/bff/auth.ts");
+  const { getServerEnv } = await import("../apps/web/src/lib/config/env.ts");
+  const sessionSecret = getServerEnv().SESSION_JWT_SECRET;
+
+  function reqWithCookies(cookies: Record<string, string>): unknown {
+    const cookie = Object.entries(cookies)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("; ");
+    return new NextRequest("http://localhost:3000/api/v1/investor/status", {
+      headers: { cookie },
+    });
+  }
+
+  await section(
+    "auth: valid signed session token resolves the authId",
+    async () => {
+      const token = await new jose.SignJWT({ sub: "user-valid-1" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setExpirationTime("1h")
+        .sign(new TextEncoder().encode(sessionSecret));
+      const ctx = await getAuthContext(
+        reqWithCookies({ us_session_v1: token }) as never,
+      );
+      assert.ok(ctx, "valid token must resolve a context");
+      assert.equal(ctx.authId, "user-valid-1");
+    },
+  );
+
+  await section(
+    "auth: present-but-invalid session token fails closed (no dev downgrade)",
+    async () => {
+      // A forged/garbage session cookie, plus an attacker-mintable eligibility
+      // cookie. The old behavior downgraded to a dev-* identity; it must not.
+      const ctx = await getAuthContext(
+        reqWithCookies({
+          us_session_v1: "not.a.valid.jwt",
+          us_eligibility_v1: "attacker-minted",
+        }) as never,
+      );
+      assert.equal(
+        ctx,
+        null,
+        "invalid session token must yield null, never a dev fallback identity",
+      );
+    },
+  );
+
+  await section(
+    "auth: token signed with the wrong secret is rejected",
+    async () => {
+      const token = await new jose.SignJWT({ sub: "user-forged" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setExpirationTime("1h")
+        .sign(
+          new TextEncoder().encode("a-different-secret-not-the-configured"),
+        );
+      const ctx = await getAuthContext(
+        reqWithCookies({ us_session_v1: token }) as never,
+      );
+      assert.equal(ctx, null, "wrong-secret token must be rejected");
+    },
+  );
+
+  await section(
+    "auth: dev fallback applies only when no session cookie is present (REFI_ENV=dev)",
+    async () => {
+      const ctx = await getAuthContext(
+        reqWithCookies({ us_eligibility_v1: "elig-abc" }) as never,
+      );
+      assert.ok(ctx, "dev env must allow eligibility-cookie fallback");
+      assert.ok(
+        ctx.authId.startsWith("dev-"),
+        "fallback identity must be a dev-* id",
+      );
+    },
+  );
+}
+
+// ─── BFF mutate: same-origin CSRF guard ─────────────────────────────────────
+//
+// Every bffMutate route must reject cross-origin and origin-less requests
+// (403) before auth, and let same-origin requests through to the auth gate.
+{
+  const { createRequire } = await import("node:module");
+  const requireFromWeb = createRequire(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const nextServer = (await import(
+    requireFromWeb.resolve("next/server")
+  )) as typeof import("next/server");
+  const { NextRequest } = nextServer;
+
+  const { bffMutate } = await import("../apps/web/src/lib/bff/handler.ts");
+  const mutate = bffMutate({
+    action: "refreshProfile",
+    apply: () => ({ data: { ok: true } }),
+  });
+
+  const ORIGIN = "http://localhost:3000";
+  function post(headers: Record<string, string>): unknown {
+    return new NextRequest(`${ORIGIN}/api/v1/investor/profile`, {
+      method: "POST",
+      headers,
+    });
+  }
+
+  await section("bffMutate: cross-origin request is rejected 403", async () => {
+    const res = await mutate(post({ origin: "http://evil.example" }) as never);
+    assert.equal(res.status, 403, "cross-origin mutation must be 403");
+  });
+
+  await section("bffMutate: origin-less request is rejected 403", async () => {
+    const res = await mutate(post({}) as never);
+    assert.equal(res.status, 403, "origin-less mutation must be 403");
+  });
+
+  await section(
+    "bffMutate: same-origin request passes CSRF and reaches the auth gate (401 unauth)",
+    async () => {
+      const res = await mutate(post({ origin: ORIGIN }) as never);
+      assert.equal(
+        res.status,
+        401,
+        "same-origin unauthenticated mutation must reach auth and 401",
+      );
+    },
+  );
+
+  await section(
+    "bffMutate: same-origin via Referer fallback is accepted past CSRF",
+    async () => {
+      const res = await mutate(
+        post({ referer: `${ORIGIN}/us/app/settings` }) as never,
+      );
+      assert.equal(
+        res.status,
+        401,
+        "same-origin Referer must pass CSRF then hit the auth gate",
+      );
+    },
+  );
+}
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

@@ -5,6 +5,10 @@ const nextConfig: NextConfig = {
   output: "standalone",
   outputFileTracingRoot: path.join(__dirname, "../../"),
   transpilePackages: ["@refi/ui", "@refi/api-clients"],
+  // The Firestore SDK is a heavy gRPC/native Node package (durable-store
+  // driver). Keep it external so Next doesn't bundle it into the serverless
+  // function — bundling breaks its dynamic requires and inflates the lambda.
+  serverExternalPackages: ["@google-cloud/firestore"],
   typedRoutes: true,
   headers: () => [
     {

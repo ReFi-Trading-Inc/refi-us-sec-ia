@@ -14,7 +14,7 @@
  * intake and only populated by the claim route, so the binding is purely
  * additive over a future email-first row.
  */
-import { kvStore } from "../store";
+import { resolveKvStore } from "../../store";
 
 export interface AlphaApplication {
   email: string;
@@ -48,7 +48,12 @@ export interface AlphaApplication {
   scoreBreakdown: Record<string, number>;
 }
 
-const store = kvStore<AlphaApplication>("alpha-applications");
+// Backing selected per-entity via REFI_BACKING__ALPHA_APPLICATION
+// (prototype filesystem by default; durable Firestore in provisioned envs).
+const store = resolveKvStore<AlphaApplication>(
+  "alpha-application",
+  "alpha-applications",
+);
 
 /**
  * Deterministic email → storage key. Lower-cased, trimmed, and any `+`

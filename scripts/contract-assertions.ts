@@ -3335,6 +3335,120 @@ await section(
   );
 }
 
+// ─── Storage backing resolver (REFI_BACKING) ────────────────────────────────
+//
+// The resolver flips alpha-application / alpha-handoff-jti between the
+// prototype (filesystem) and durable (Firestore) drivers per REFI_BACKING__*.
+// Defaults to prototype; fails closed on an invalid mode. The durable driver's
+// live behaviour is covered by the emulator-gated section below.
+{
+  const { backingFor } = await import("../apps/web/src/lib/config/backing.ts");
+  const { resolveKvStore } = await import("../apps/web/src/lib/store/index.ts");
+
+  await section("backing: defaults to prototype when unset", async () => {
+    delete process.env["REFI_BACKING__ALPHA_HANDOFF_JTI"];
+    assert.equal(backingFor("alpha-handoff-jti"), "prototype");
+  });
+
+  await section("backing: honors durable when explicitly set", async () => {
+    process.env["REFI_BACKING__ALPHA_APPLICATION"] = "durable";
+    try {
+      assert.equal(backingFor("alpha-application"), "durable");
+    } finally {
+      delete process.env["REFI_BACKING__ALPHA_APPLICATION"];
+    }
+  });
+
+  await section("backing: rejects an invalid mode (fail-closed)", async () => {
+    process.env["REFI_BACKING__ALPHA_APPLICATION"] = "sqlite";
+    try {
+      assert.throws(
+        () => backingFor("alpha-application"),
+        /Invalid REFI_BACKING__ALPHA_APPLICATION/,
+      );
+    } finally {
+      delete process.env["REFI_BACKING__ALPHA_APPLICATION"];
+    }
+  });
+
+  await section(
+    "backing: prototype resolver reads/writes + putIfAbsent semantics",
+    async () => {
+      delete process.env["REFI_BACKING__ALPHA_APPLICATION"];
+      const kv = resolveKvStore<{ v: number }>(
+        "alpha-application",
+        "backing-smoke",
+      );
+      assert.equal(await kv.putIfAbsent("k1", { v: 1 }), true);
+      assert.equal(
+        await kv.putIfAbsent("k1", { v: 2 }),
+        false,
+        "second putIfAbsent must return false",
+      );
+      assert.deepEqual(await kv.get("k1"), { v: 1 });
+    },
+  );
+
+  await section(
+    "backing: durable selection constructs a store without a Firestore call",
+    async () => {
+      process.env["REFI_BACKING__ALPHA_APPLICATION"] = "durable";
+      try {
+        const kv = resolveKvStore<{ v: number }>(
+          "alpha-application",
+          "alpha-applications",
+        );
+        // Construction is lazy — the Firestore client is only created on the
+        // first method call, so this asserts wiring without touching GCP.
+        assert.equal(typeof kv.putIfAbsent, "function");
+      } finally {
+        delete process.env["REFI_BACKING__ALPHA_APPLICATION"];
+      }
+    },
+  );
+
+  await section(
+    "durable: Firestore driver end-to-end (emulator-gated)",
+    async () => {
+      if (!process.env["FIRESTORE_EMULATOR_HOST"]) {
+        console.log(
+          "  ↳ skipped: set FIRESTORE_EMULATOR_HOST (+ GCP_PROJECT_ID) to run the durable driver against the Firestore emulator",
+        );
+        return;
+      }
+      if (!process.env["GCP_PROJECT_ID"])
+        process.env["GCP_PROJECT_ID"] = "demo-refi";
+      const { durableKvStore, __resetDurableClientForTests } =
+        await import("../apps/web/src/lib/durable-store/store.ts");
+      __resetDurableClientForTests();
+      const kv = durableKvStore<{ v: number }>(
+        `durable-smoke-${String(Date.now())}`,
+      );
+      assert.equal(await kv.get("x"), null, "absent get → null");
+      assert.equal(
+        await kv.putIfAbsent("x", { v: 1 }),
+        true,
+        "first create → true",
+      );
+      assert.equal(
+        await kv.putIfAbsent("x", { v: 2 }),
+        false,
+        "atomic create on existing → false (distributed replay guard)",
+      );
+      assert.deepEqual(await kv.get("x"), { v: 1 });
+      await kv.put("x", { v: 3 });
+      assert.deepEqual(await kv.get("x"), { v: 3 });
+      const listed = await kv.list();
+      assert.ok(
+        listed.some((e) => e.key === "x"),
+        "list returns the doc",
+      );
+      await kv.delete("x");
+      assert.equal(await kv.get("x"), null, "deleted → null");
+    },
+  );
+}
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

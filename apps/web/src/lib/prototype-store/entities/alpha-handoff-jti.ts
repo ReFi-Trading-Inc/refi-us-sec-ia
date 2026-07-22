@@ -20,7 +20,7 @@
  * Behavioral contract source: commit 6dbeb7c. Adapted to the current-main
  * `kvStore`; the Phase 2.6 backing resolver / durable driver are not ported.
  */
-import { kvStore } from "../store";
+import { resolveKvStore } from "../../store";
 
 export interface AlphaHandoffJtiRecord {
   jti: string;
@@ -30,7 +30,14 @@ export interface AlphaHandoffJtiRecord {
   correlationId: string;
 }
 
-const store = kvStore<AlphaHandoffJtiRecord>("alpha-handoff-jti");
+// Backing selected per-entity via REFI_BACKING__ALPHA_HANDOFF_JTI. In durable
+// (Firestore) mode putIfAbsent is a real atomic create() — replay protection
+// is distributed-safe. In prototype (filesystem) mode it is single-process
+// only (see the grade note above).
+const store = resolveKvStore<AlphaHandoffJtiRecord>(
+  "alpha-handoff-jti",
+  "alpha-handoff-jti",
+);
 
 export async function getConsumedJti(
   jti: string,

@@ -20,7 +20,13 @@
         "SESSION_SECRET",
         "IP_HASH_SECRET",
         "ELIGIBILITY_JWT_SECRET",
-        "SESSION_JWT_SECRET"
+        "SESSION_JWT_SECRET",
+        "REFI_BACKING__ALPHA_APPLICATION",
+        "REFI_BACKING__ALPHA_HANDOFF_JTI",
+        "GCP_PROJECT_ID",
+        "GOOGLE_CLOUD_PROJECT",
+        "GCP_SERVICE_ACCOUNT_KEY",
+        "FIRESTORE_EMULATOR_HOST"
       ]
     },
     "dev": {

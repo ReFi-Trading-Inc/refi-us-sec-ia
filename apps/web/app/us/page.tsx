@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { landingCopy } from "./_content/landing";
 import { usBrand } from "./_content/brand";
+import { BrandMark } from "./_components/BrandMark";
 
 export const metadata: Metadata = {
   title: usBrand.productSurface,
@@ -13,9 +14,7 @@ export default function UsLandingPage() {
   return (
     <div className="min-h-screen bg-charcoal-950 text-charcoal-100 font-sans">
       <header className="border-b border-charcoal-800 px-8 py-4 flex items-center justify-between">
-        <span className="text-sm font-semibold text-charcoal-200">
-          {usBrand.productSurface}
-        </span>
+        <BrandMark />
         <nav className="flex items-center gap-4 text-sm">
           <Link
             href="/us/disclosures"

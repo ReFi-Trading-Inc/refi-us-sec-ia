@@ -18,7 +18,7 @@ import {
 } from "@ui/components";
 import type { SelectOption } from "@ui/components";
 import { eligibilityCopy } from "../_content/eligibility";
-import { usBrand } from "../_content/brand";
+import { BrandMark } from "../_components/BrandMark";
 import { US_STATES } from "../_content/us-states";
 
 const stateOptions: SelectOption[] = US_STATES.map((s) => ({
@@ -118,9 +118,7 @@ export default function EligibilityPage() {
   return (
     <div className="min-h-screen bg-charcoal-950 text-charcoal-100 font-sans">
       <header className="border-b border-charcoal-800 px-8 py-4">
-        <Link href="/us" className="text-sm font-semibold text-charcoal-200">
-          {usBrand.productSurface}
-        </Link>
+        <BrandMark />
       </header>
 
       <main className="max-w-lg mx-auto px-8 py-16">

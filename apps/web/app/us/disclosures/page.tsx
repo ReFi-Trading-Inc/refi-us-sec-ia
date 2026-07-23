@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { Badge, Card, CardContent, StatusBanner } from "@ui/components";
 import { disclosureDocuments } from "../_content/disclosures";
 import { usBrand } from "../_content/brand";
+import { BrandMark } from "../_components/BrandMark";
 
 export const metadata: Metadata = { title: "Disclosures" };
 
@@ -10,9 +10,7 @@ export default function DisclosuresPage() {
   return (
     <div className="min-h-screen bg-charcoal-950 text-charcoal-100 font-sans">
       <header className="border-b border-charcoal-800 px-8 py-4 flex items-center justify-between">
-        <Link href="/us" className="text-sm font-semibold text-charcoal-200">
-          {usBrand.productSurface}
-        </Link>
+        <BrandMark />
       </header>
 
       <main className="max-w-3xl mx-auto px-8 py-16">

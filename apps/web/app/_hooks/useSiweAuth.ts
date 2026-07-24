@@ -25,6 +25,11 @@ export type SiweFlowState =
  *   3. wagmi signMessage
  *   4. POST /siwe/verify
  *   5. Refetch session (handled by hook consumer via AuthProvider invalidation)
+ *
+ * REAL/MOCK BOUNDARY: the wallet interaction (step 3) is real; the /siwe
+ * endpoints (steps 1 + 4) exist only as MSW browser mocks — no identity
+ * service is deployed, so production fails closed here (roadmap 1.5 / D8).
+ * See docs/mock-boundary-map.md.
  */
 export function useSiweAuth() {
   const { address } = useAccount();

@@ -33,3 +33,5 @@ apps/web/test-results/
 *.log
 coverage
 .nyc_output
+.vercel
+.env*

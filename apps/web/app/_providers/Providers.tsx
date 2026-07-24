@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ToastProvider } from "@refi/ui/components";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initMsw } from "../_msw/init";
+import { MockModeBanner } from "../_components/MockModeBanner";
 import { PostHogProvider } from "./analytics/PostHogProvider";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -33,7 +34,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   if (!mswReady) {
     return (
       <PostHogProvider>
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          <MockModeBanner />
+          {children}
+        </ToastProvider>
       </PostHogProvider>
     );
   }
@@ -41,7 +45,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <PostHogProvider>
       <QueryClientProvider client={queryClient}>
-        <ToastProvider>{children}</ToastProvider>
+        <ToastProvider>
+          <MockModeBanner />
+          {children}
+        </ToastProvider>
       </QueryClientProvider>
     </PostHogProvider>
   );

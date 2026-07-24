@@ -16,6 +16,14 @@
 
 ## Daniel ratifications folded into this register (2026-05-30)
 
+> **Provenance caveat (2026-07-24):** these ratifications carry no linked
+> email/message source, and Daniel's verifiable 2026-05-29 message stated only
+> a _preference_ for Option 3 ("likely best"), not a ratification of the 3c
+> hybrid. Treat items below as **recorded, pending Daniel's written
+> confirmation**; PR-D's ratification gate is the enforcement point. Note
+> also: "on-chain audit infra" below is this register's term for Daniel's
+> merkle-builder summary-audit pipeline (his 2026-05-29 wording).
+
 1. **AccountPrefs History architecture — Option 3c ratified** (Contract V3 §13.1). `apps/common` canonical writer (Python). TS port for reads + validation. Parity fixtures. BFF must not invent a separate write procedure. → moves `GAP-PREFS-HISTORY-001`, `GAP-PREFS-WRITE-002`, `GAP-PREFS-AUDIT-003` from "needs Daniel ratification" to **"architecture ratified, implementation still blocked pending final Contract V3 + AccountPrefs History Contract."** Surface 4 remains blocked.
 2. **Admin Portal API ACL strategy — patterns 1 + 2 ratified for Phase 2.6** (Contract V3 §13.2). BFF asserts authenticated `account_id`, injects it into list routes, rejects mismatched values, redacts admin-only fields. Phase 3 migrates to `/api/v1/investor/*` projections owned by Daniel. → `GAP-ACL-005` moves to **"decision recorded, implementation required in PR-E."**
 3. **Investor-side `/admin-actions` verb allowlist confirmed** (Contract V3 §13.3): `pause_autopilot`, `resume_autopilot`, `join_template`, `leave_template`, `update_prefs`, `liquidate_all` (gated). All other verbs forbidden; tripwire enforced. → tracked in `GAP-EXCEPTION-010` / `GAP-SURFACE4-009` scope.

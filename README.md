@@ -257,16 +257,17 @@ The documentation is organized as a **control-plane archive**: each doc either c
 
 ## Phase status
 
-| Phase                                   | Status                                                                                                                                             |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 1                                 | Boundary, taxonomy, and tripwire established. Shipped.                                                                                             |
-| Phase 2                                 | Surfaces 1–3 + Exception Review + Disclosure Re-ack + Profile Reactivation + Managed Pause/Resume. Shipped.                                        |
-| **Phase 2.5**                           | **GitLab backend alignment, Contract V2, Gap Register V2, full E2E green. Shipped on `main`.**                                                     |
-| Phase 3 (Surface 4 / Automation Center) | Blocked on four Daniel-confirmation items + adapter implementation.                                                                                |
-| Phase 4 (Adapter implementation)        | Blocked on Daniel-confirmation items.                                                                                                              |
-| Production                              | Blocked on adapter implementation, durable BFF storage, audit-writer + compliance-adapter completion, broker integration, legal/compliance review. |
+| Phase                                   | Status                                                                                                                                                                                                                                                               |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Phase 1                                 | Boundary, taxonomy, and tripwire established. Shipped.                                                                                                                                                                                                               |
+| Phase 2                                 | Surfaces 1–3 + Exception Review + Disclosure Re-ack + Profile Reactivation + Managed Pause/Resume. Shipped.                                                                                                                                                          |
+| **Phase 2.5**                           | **GitLab backend alignment, Contract V2, Gap Register V2, full E2E green. Shipped on `main`.**                                                                                                                                                                       |
+| **Phase 2.6**                           | **Backend source-of-truth realignment to `refinity-main main @ 9f9dfc9` + `docs/authoritative/*`: Contract V3, Gap Register V3, 16-surface reframing, Admin Portal outbound proxy. Docs on `main`; proxy + PR-D (AccountPrefs History Contract) branches unmerged.** |
+| Phase 3 (Surface 4 / Automation Center) | Blocked on PR-D (AccountPrefs History Contract, Daniel ratification gate) + PR-E (Admin Portal proxy). The four Phase 2.5 Daniel-confirmation items were resolved in Phase 2.6 (see below).                                                                          |
+| Phase 4 (Adapter implementation)        | Blocked on Phase 2.6 PR sequence (PR-E onward).                                                                                                                                                                                                                      |
+| Production                              | Blocked on adapter implementation, durable BFF storage, broker integration, legal/compliance review. (audit-writer + compliance-adapter were de-classified as shell blockers in Gap Register V3 — on-chain audit infra, deferred.)                                   |
 
-The four Daniel-confirmation items are detailed in [Gap Register V2 §10](docs/phase2-5-gap-register-v2-against-gitlab.md) and [Contract V2 §7.2](docs/phase2-5-signal-to-investor-product-contract.md).
+The four Phase 2.5 Daniel-confirmation items are resolved in [Phase 2.6 Daniel answer resolution](docs/phase2-6-daniel-answer-resolution.md) (risk verdicts binary ALLOW\|DENY; Spanner-backed template registry; `signal: 0` preserved; no backend per-account ExecutionPolicy). Historical context: [Gap Register V2 §10](docs/phase2-5-gap-register-v2-against-gitlab.md), [Contract V2 §7.2](docs/phase2-5-signal-to-investor-product-contract.md). For how the alpha funnel, the game, and this product connect, see the [system integration map](docs/system-integration-map.md).
 
 ---
 

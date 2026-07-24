@@ -2930,10 +2930,14 @@ await section(
     origin?: string | null; // undefined → default same-origin; null → omit
     referer?: string;
     rawBody?: string; // overrides JSON body (for malformed-body test)
+    ip?: string; // rate-limit bucket key; unique per call unless overridden
   }
   function makeReq(body: unknown, opts: ReqOpts = {}): unknown {
     const headers: Record<string, string> = {
       "content-type": "application/json",
+      // Unique per request so the per-IP limiter doesn't accumulate across
+      // unrelated tests; the rate-limit test passes a fixed ip to trip it.
+      "x-forwarded-for": opts.ip ?? uid("ip"),
     };
     if (opts.origin === undefined) headers["origin"] = ORIGIN;
     else if (opts.origin !== null) headers["origin"] = opts.origin;
@@ -3169,6 +3173,35 @@ await section(
         undefined,
         "successful response must not carry an error envelope",
       );
+    },
+  );
+
+  await section(
+    "alpha-claim: over-long-lived token (> 10 min) returns 401 (#21)",
+    async () => {
+      const now = Math.floor(Date.now() / 1000);
+      const token = await mint(baseClaims({ iat: now, exp: now + 3600 }));
+      const { status, json } = await call({ token });
+      assert.equal(status, 401, "1-hour token must be rejected");
+      assert.equal(
+        (json["error"] as Record<string, unknown>)["code"],
+        "token_lifetime_exceeded",
+      );
+    },
+  );
+
+  await section(
+    "alpha-claim: per-IP rate limit returns 429 after the cap (#19)",
+    async () => {
+      const ip = "203.0.113.7";
+      let last = 0;
+      for (let i = 0; i < 31; i++) {
+        last = (await call({}, { ip })).status;
+      }
+      assert.equal(last, 429, "31st request from one IP must be rate-limited");
+      // A different IP is unaffected (per-key window).
+      const fresh = (await call({}, { ip: "203.0.113.8" })).status;
+      assert.notEqual(fresh, 429, "a different IP is not rate-limited");
     },
   );
 }

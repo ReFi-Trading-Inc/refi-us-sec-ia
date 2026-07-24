@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useForm, useWatch } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
 import { z } from "zod";
 import {
@@ -18,7 +18,8 @@ import {
 } from "@ui/components";
 import type { SelectOption } from "@ui/components";
 import { eligibilityCopy } from "../_content/eligibility";
-import { usBrand } from "../_content/brand";
+import { BrandMark } from "../_components/BrandMark";
+import { SiteFooter } from "../_components/SiteFooter";
 import { US_STATES } from "../_content/us-states";
 
 const stateOptions: SelectOption[] = US_STATES.map((s) => ({
@@ -63,27 +64,31 @@ export default function EligibilityPage() {
   const router = useRouter();
   const [decision, setDecision] = useState<Decision | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Upper-bound the date picker at "today" so a future DOB is unselectable.
+  // The server snapshot is empty so server and hydration renders match (the
+  // browser ignores an empty max); the client snapshot fills in after mount.
+  const todayIso = useSyncExternalStore(
+    subscribeNever,
+    () => new Date().toISOString().slice(0, 10),
+    () => "",
+  );
 
   const {
     register,
     handleSubmit,
-    setValue,
     control,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: standardSchemaResolver(eligibilitySchema),
     defaultValues: { state: "", isUsPerson: undefined, dob: "" },
+    mode: "onTouched",
   });
 
-  // useWatch is the memo-safe variant of watch(); plain watch() returns a
-  // non-memoizable function and triggers react-hooks/incompatible-library.
-  const stateValue = useWatch({ control, name: "state" });
-  const usPersonValue = useWatch({ control, name: "isUsPerson" });
-
-  function onSubmitForm(event: React.SyntheticEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    void handleSubmit(onSubmit)(event);
-  }
+  // The native <select> and radio group are controlled components, so they are
+  // wired through RHF's Controller (below). Controller registers each field and
+  // routes its value/onChange through the form state, so the resolver validates
+  // the values the user actually sees — the earlier setValue()/useWatch() wiring
+  // left these fields unregistered and validated a stale/empty snapshot.
 
   async function onSubmit(values: FormValues): Promise<void> {
     setSubmitError(null);
@@ -116,14 +121,12 @@ export default function EligibilityPage() {
   }
 
   return (
-    <div className="min-h-screen bg-charcoal-950 text-charcoal-100 font-sans">
+    <div className="min-h-screen bg-charcoal-950 text-charcoal-100 font-sans flex flex-col">
       <header className="border-b border-charcoal-800 px-8 py-4">
-        <Link href="/us" className="text-sm font-semibold text-charcoal-200">
-          {usBrand.productSurface}
-        </Link>
+        <BrandMark />
       </header>
 
-      <main className="max-w-lg mx-auto px-8 py-16">
+      <main className="w-full max-w-lg mx-auto px-8 py-16 flex-1">
         <h1 className="text-2xl font-semibold text-charcoal-50 mb-2">
           {eligibilityCopy.heading}
         </h1>
@@ -133,39 +136,54 @@ export default function EligibilityPage() {
 
         {decision === null ? (
           <form
-            onSubmit={onSubmitForm}
+            onSubmit={(event) => {
+              void handleSubmit(onSubmit)(event);
+            }}
             className="flex flex-col gap-6"
             noValidate
           >
-            <Select
-              label={eligibilityCopy.fields.state.label}
-              placeholder={eligibilityCopy.fields.state.placeholder}
-              options={stateOptions}
-              value={stateValue}
-              onChange={(e) => {
-                setValue("state", e.target.value);
-              }}
-              error={errors.state?.message}
-              required
+            <Controller
+              control={control}
+              name="state"
+              render={({ field }) => (
+                <Select
+                  label={eligibilityCopy.fields.state.label}
+                  placeholder={eligibilityCopy.fields.state.placeholder}
+                  options={stateOptions}
+                  value={field.value}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  error={errors.state?.message}
+                  required
+                />
+              )}
             />
 
-            <RadioGroup
+            <Controller
+              control={control}
               name="isUsPerson"
-              label={eligibilityCopy.fields.usPerson.label}
-              options={[
-                { value: "yes", label: eligibilityCopy.fields.yes },
-                { value: "no", label: eligibilityCopy.fields.no },
-              ]}
-              value={usPersonValue}
-              onChange={(v) => {
-                setValue("isUsPerson", v as FormValues["isUsPerson"]);
-              }}
-              error={errors.isUsPerson?.message}
+              render={({ field }) => (
+                <RadioGroup
+                  name="isUsPerson"
+                  label={eligibilityCopy.fields.usPerson.label}
+                  options={[
+                    { value: "yes", label: eligibilityCopy.fields.yes },
+                    { value: "no", label: eligibilityCopy.fields.no },
+                  ]}
+                  value={field.value}
+                  onChange={field.onChange}
+                  error={errors.isUsPerson?.message}
+                />
+              )}
             />
 
             <Input
               label={eligibilityCopy.fields.dob.label}
               type="date"
+              autoComplete="bday"
+              max={todayIso}
+              min="1900-01-01"
+              hint={eligibilityCopy.fields.dob.hint}
               error={errors.dob?.message}
               {...register("dob")}
             />
@@ -190,8 +208,15 @@ export default function EligibilityPage() {
           <EligibilityResult decision={decision} />
         )}
       </main>
+
+      <SiteFooter />
     </div>
   );
+}
+
+// A no-op subscription for useSyncExternalStore: "today" never notifies.
+function subscribeNever() {
+  return () => {};
 }
 
 function EligibilityResult({ decision }: { decision: Decision }) {

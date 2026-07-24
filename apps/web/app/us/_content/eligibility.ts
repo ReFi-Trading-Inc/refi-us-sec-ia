@@ -9,7 +9,10 @@ export const eligibilityCopy = {
       label: "Account purpose",
       options: ["Personal", "Family", "Household"],
     },
-    dob: { label: "Date of birth" },
+    dob: {
+      label: "Date of birth",
+      hint: "You must be 18 or older to open an account.",
+    },
     usPerson: { label: "Are you a US person or US tax resident?" },
     yes: "Yes",
     no: "No",

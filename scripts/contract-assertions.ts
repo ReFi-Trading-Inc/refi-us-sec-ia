@@ -39,6 +39,16 @@ async function section(name: string, run: () => Promise<void>): Promise<void> {
 const TMP_STORE = mkdtempSync(join(tmpdir(), "refi-contract-store-"));
 process.env["REFI_PROTOTYPE_STORE_DIR"] = TMP_STORE;
 process.env["IP_HASH_SECRET"] = "contract-test-secret";
+// Proxy transport imports pull env at boot; supply non-prod placeholders so
+// the stream module (used below) is loadable without a real deploy env.
+process.env["REFI_ENV"] ??= "dev";
+process.env["NEXT_PUBLIC_REFI_ENV"] ??= "dev";
+process.env["REFI_TRUSTED_ORIGINS"] ??= "http://localhost:3000";
+process.env["SESSION_JWT_ISSUER"] ??= "refi-us-sec-ia";
+process.env["SESSION_JWT_AUDIENCE"] ??= "refi-us-sec-ia-bff";
+process.env["ADMIN_PORTAL_BASE_URL"] ??= "http://localhost:4000";
+process.env["ADMIN_PORTAL_SERVICE_TOKEN"] ??=
+  "prototype-only-upstream-service-token-32+chars";
 
 // ─── Imports under test ─────────────────────────────────────────────────────
 
@@ -177,6 +187,11 @@ const { appendExecutionPolicy, getLatestExecutionPolicy } =
 
 const { upsertRecommendation, getRecommendation } =
   await import("../apps/web/src/lib/prototype-store/entities/recommendation-projection.ts");
+
+const accountPrefsMod =
+  await import("../apps/web/src/lib/prototype-store/entities/account-prefs.ts");
+const accountPrefsHistoryMod =
+  await import("../apps/web/src/lib/prototype-store/entities/account-prefs-history.ts");
 
 // ─── Action taxonomy assertions ─────────────────────────────────────────────
 
@@ -648,6 +663,31 @@ await section(
   },
 );
 
+// ─── AccountPrefs history invariants (PR-F, S8) ─────────────────────────────
+
+await section(
+  "AccountPrefs diff detects each editable field independently",
+  async () => {
+    const base = accountPrefsMod.emptyPrefs("acct-diff");
+    const a = { ...base, driftThreshold: "0.05", excludedAssets: [] };
+    const b = { ...a, driftThreshold: "0.10" };
+    assert.deepEqual(accountPrefsMod.diffPrefs(a, b), ["driftThreshold"]);
+
+    const c = { ...a, excludedAssets: ["BTC"] };
+    assert.deepEqual(accountPrefsMod.diffPrefs(a, c), ["excludedAssets"]);
+
+    const d = { ...a, minOrder: "1.00", fractionalEnabled: true };
+    assert.deepEqual(
+      accountPrefsMod.diffPrefs(a, d).sort(),
+      ["fractionalEnabled", "minOrder"].sort(),
+    );
+
+    // Same excluded_assets contents in same order → not a diff.
+    const e = { ...a, excludedAssets: [] };
+    assert.deepEqual(accountPrefsMod.diffPrefs(a, e), []);
+  },
+);
+
 await section(
   "RiskSnapshot enforces reasons/decision invariant via Zod",
   async () => {
@@ -711,6 +751,37 @@ await section(
       reasons: [],
     });
     assert.equal(ok.success, true, "Valid approved snapshot must parse.");
+  },
+);
+
+await section(
+  "AccountPrefs material-change detection matches docs §3 proposal",
+  async () => {
+    assert.equal(
+      accountPrefsMod.isMaterialDiff(["driftThreshold"]),
+      true,
+      "driftThreshold must be material per docs §3 proposal",
+    );
+    assert.equal(
+      accountPrefsMod.isMaterialDiff(["excludedAssets"]),
+      true,
+      "excludedAssets must be material per docs §3 proposal",
+    );
+    assert.equal(
+      accountPrefsMod.isMaterialDiff(["minOrder"]),
+      false,
+      "minOrder must be non-material per docs §3 proposal",
+    );
+    assert.equal(
+      accountPrefsMod.isMaterialDiff(["fractionalEnabled"]),
+      false,
+      "fractionalEnabled must be non-material per docs §3 proposal",
+    );
+    // A mixed diff with any material field is material.
+    assert.equal(
+      accountPrefsMod.isMaterialDiff(["minOrder", "driftThreshold"]),
+      true,
+    );
   },
 );
 
@@ -1970,6 +2041,101 @@ await section(
 );
 
 await section(
+  "AccountPrefs history rows are append-only and carry mock_state=true",
+  async () => {
+    const accountId = `prefs-hist-${String(Date.now())}`;
+    const row = await accountPrefsHistoryMod.appendPrefsHistory({
+      accountId,
+      changedByAuthId: "auth-1",
+      beforePayload: {},
+      afterPayload: { driftThreshold: "0.05" },
+      diffFields: ["driftThreshold"],
+      signedConsentRef: "consent-1",
+      correlationId: "cid-1",
+    });
+    assert.equal(row.mockState, true);
+    assert.equal(row.source, "investor_ui_prototype_phase2_6");
+    assert.equal(row.reasonCode, "investor_initiated");
+    // A second append with the same diff is a new row, not an overwrite —
+    // the entity is append-only. This is what makes per-write auditability
+    // work regardless of whether callers dedupe.
+    const row2 = await accountPrefsHistoryMod.appendPrefsHistory({
+      accountId,
+      changedByAuthId: "auth-1",
+      beforePayload: { driftThreshold: "0.05" },
+      afterPayload: { driftThreshold: "0.07" },
+      diffFields: ["driftThreshold"],
+      signedConsentRef: "consent-2",
+      correlationId: "cid-2",
+    });
+    assert.notEqual(row.historyId, row2.historyId);
+    const listed = await accountPrefsHistoryMod.listPrefsHistory(accountId);
+    assert.equal(listed.length, 2);
+    // Both writes are present; sort-by-changedAt breaks ties within the
+    // same millisecond, so which one lands at index 0 depends on the
+    // stable-sort behavior — either row appearing first is valid.
+    const ids = new Set(listed.map((r) => r.historyId));
+    assert.ok(ids.has(row.historyId));
+    assert.ok(ids.has(row2.historyId));
+  },
+);
+
+// ─── Exception Review reframe boundary (PR-H) ───────────────────────────────
+
+const exceptionComposer =
+  await import("../apps/web/src/lib/exception-review/compose.ts");
+
+await section(
+  "Exception Review terminal kinds route to Records Center, never Exception Review",
+  async () => {
+    for (const kind of [
+      "out_of_policy_intent",
+      "risk_rejected_intent",
+      "risk_decision_terminal",
+    ]) {
+      assert.equal(
+        exceptionComposer.isRecordsCenterTerminal(kind),
+        true,
+        `kind "${kind}" must be excluded from Exception Review (Records Center terminal evidence)`,
+      );
+    }
+    // Sanity: an in-scope source kind is NOT terminal.
+    assert.equal(
+      exceptionComposer.isRecordsCenterTerminal("trading_controls"),
+      false,
+    );
+  },
+);
+
+await section(
+  "Exception Review resolution paths are strictly per source kind",
+  async () => {
+    // trading_controls cannot be resolved via reconnect_broker; that path
+    // belongs to reconciliation. The route rejects the mismatch.
+    assert.equal(
+      exceptionComposer.isValidResolutionFor(
+        "trading_controls",
+        "reconnect_broker",
+      ),
+      false,
+    );
+    // reconciliation cannot be resolved via pause_managed.
+    assert.equal(
+      exceptionComposer.isValidResolutionFor("reconciliation", "pause_managed"),
+      false,
+    );
+    // Each source has at least one valid resolution.
+    for (const kind of exceptionComposer.EXCEPTION_SOURCE_KINDS) {
+      const anyValid = exceptionComposer.RESOLUTION_PATHS_BY_SOURCE[kind];
+      assert.ok(
+        anyValid.length > 0,
+        `source kind ${kind} must have at least one valid resolution`,
+      );
+    }
+  },
+);
+
+await section(
   "BrokerOrderAttempt http_method enum includes standard HTTP + SDK markers (8 values)",
   async () => {
     assert.deepEqual([...ATTEMPT_HTTP_METHODS].sort(), [
@@ -2884,6 +3050,12 @@ await section(
   // block runs after every other section, so the override affects nothing else.
   process.env["IP_HASH_SECRET"] = "contract-test-ip-hash-secret-0123456789";
 
+  // Flags are boot-resolved and cached; an earlier section may have latched
+  // FLAG_ALPHA_CLAIM_ROUTE=off before the env override above. Reset so the
+  // route reads the value this section just set.
+  const flagsMod = await import("../apps/web/src/lib/feature-flags/index.ts");
+  flagsMod.__resetFlagsForTests();
+
   const { POST } =
     (await import("../apps/web/app/api/v1/investor/alpha-claim/route.ts")) as {
       POST: (req: unknown) => Promise<Response>;
@@ -2963,12 +3135,14 @@ await section(
   await section("alpha-claim: flag off returns 404", async () => {
     const saved = process.env["FLAG_ALPHA_CLAIM_ROUTE"];
     process.env["FLAG_ALPHA_CLAIM_ROUTE"] = "off";
+    flagsMod.__resetFlagsForTests();
     try {
       const token = await mint(baseClaims());
       const { status } = await call({ token });
       assert.equal(status, 404, "flag off must return 404");
     } finally {
       process.env["FLAG_ALPHA_CLAIM_ROUTE"] = saved;
+      flagsMod.__resetFlagsForTests();
     }
   });
 
@@ -3241,8 +3415,13 @@ await section(
   await section(
     "auth: valid signed session token resolves the authId",
     async () => {
+      // iss/aud/iat are REQUIRED by the S1-hardened verify (pinned issuer +
+      // audience, requiredClaims). Values match the dev-default env policy.
       const token = await new jose.SignJWT({ sub: "user-valid-1" })
         .setProtectedHeader({ alg: "HS256" })
+        .setIssuedAt()
+        .setIssuer("refi-us-sec-ia")
+        .setAudience("refi-us-sec-ia-bff")
         .setExpirationTime("1h")
         .sign(new TextEncoder().encode(sessionSecret));
       const ctx = await getAuthContext(
@@ -3375,32 +3554,38 @@ await section(
 // Defaults to prototype; fails closed on an invalid mode. The durable driver's
 // live behaviour is covered by the emulator-gated section below.
 {
-  const { backingFor } = await import("../apps/web/src/lib/config/backing.ts");
+  const backingMod = await import("../apps/web/src/lib/config/backing.ts");
+  const { backingFor } = backingMod;
   const { resolveKvStore } = await import("../apps/web/src/lib/store/index.ts");
 
   await section("backing: defaults to prototype when unset", async () => {
     delete process.env["REFI_BACKING__ALPHA_HANDOFF_JTI"];
+    backingMod.__resetBackingForTests();
     assert.equal(backingFor("alpha-handoff-jti"), "prototype");
   });
 
   await section("backing: honors durable when explicitly set", async () => {
     process.env["REFI_BACKING__ALPHA_APPLICATION"] = "durable";
+    backingMod.__resetBackingForTests();
     try {
       assert.equal(backingFor("alpha-application"), "durable");
     } finally {
       delete process.env["REFI_BACKING__ALPHA_APPLICATION"];
+      backingMod.__resetBackingForTests();
     }
   });
 
   await section("backing: rejects an invalid mode (fail-closed)", async () => {
     process.env["REFI_BACKING__ALPHA_APPLICATION"] = "sqlite";
+    backingMod.__resetBackingForTests();
     try {
       assert.throws(
         () => backingFor("alpha-application"),
-        /Invalid REFI_BACKING__ALPHA_APPLICATION/,
+        /REFI_BACKING__ALPHA_APPLICATION.*not a valid backing mode/,
       );
     } finally {
       delete process.env["REFI_BACKING__ALPHA_APPLICATION"];
+      backingMod.__resetBackingForTests();
     }
   });
 
@@ -3481,6 +3666,364 @@ await section(
     },
   );
 }
+// ─── PostHog handoff-claim payload (Sprint 6 F-track, spec §6.6) ────────────
+
+const posthogMod = await import("../apps/web/src/lib/analytics/posthog.ts");
+
+await section(
+  "handoffClaimedProperties never includes a behavioral dimension (spec §6.6)",
+  async () => {
+    // Sanity: the helper accepts an omitted-optional shape and only
+    // emits keys that were provided. That is the invariant that keeps
+    // the payload strictly from the spec §2.2 allowlist — nothing
+    // downstream can smuggle behavioral dimensions into PostHog by
+    // sneaking them onto the input because the helper never spreads
+    // args verbatim; it whitelists field-by-field.
+    const props = posthogMod.handoffClaimedProperties({
+      alphaPlayerId: "player-1",
+      completedArenas: ["covid"],
+      machineBuilderUnlocked: true,
+    });
+    assert.equal(props["alpha_player_id"], "player-1");
+    assert.deepEqual(props["completed_arenas"], ["covid"]);
+    assert.equal(props["machine_builder_unlocked"], true);
+    // The ten §6.6 behavioral dimensions plus behavioral flags must
+    // NEVER appear on the output. Even if a caller passed them in a
+    // hypothetical extended input, the whitelisted helper would drop
+    // them; this assertion catches a future refactor that switched to
+    // spreading input.
+    const forbiddenKeys = [
+      "conviction",
+      "consistency",
+      "discipline",
+      "adaptability",
+      "risk_awareness",
+      "loss_aversion",
+      "impulse_control",
+      "attention",
+      "learning_rate",
+      "meta_cognition",
+      "inferred_risk_tolerance",
+      "inferred_suitability",
+      "simulated_goals",
+      "simulated_financial_capacity",
+    ];
+    for (const k of forbiddenKeys) {
+      assert.ok(
+        !(k in props),
+        `handoff.claimed properties leaked behavioral dim "${k}"`,
+      );
+    }
+  },
+);
+
+// ─── W3C traceparent extractor (Sprint 6) ───────────────────────────────────
+
+const correlationMod = await import("../apps/web/src/lib/bff/correlation.ts");
+
+await section(
+  "traceparentFrom accepts well-formed W3C headers and rejects garbage",
+  async () => {
+    const mk = (
+      traceparent: string | null,
+    ): { headers: { get(k: string): string | null } } => ({
+      headers: {
+        get(k: string): string | null {
+          if (k.toLowerCase() === "traceparent") return traceparent;
+          return null;
+        },
+      },
+    });
+    // 00 + 32 hex + 16 hex + 01 = a valid traceparent.
+    const good = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+    assert.equal(
+      correlationMod.traceparentFrom(
+        mk(good) as unknown as Parameters<
+          typeof correlationMod.traceparentFrom
+        >[0],
+      ),
+      good,
+    );
+    // Missing header → null.
+    assert.equal(
+      correlationMod.traceparentFrom(
+        mk(null) as unknown as Parameters<
+          typeof correlationMod.traceparentFrom
+        >[0],
+      ),
+      null,
+    );
+    // Wrong segment lengths → null.
+    assert.equal(
+      correlationMod.traceparentFrom(
+        mk("00-notenough-b7ad6b7169203331-01") as unknown as Parameters<
+          typeof correlationMod.traceparentFrom
+        >[0],
+      ),
+      null,
+    );
+    // Non-hex → null.
+    assert.equal(
+      correlationMod.traceparentFrom(
+        mk(
+          "00-zz00000000000000000000000000000000-b7ad6b7169203331-01",
+        ) as unknown as Parameters<typeof correlationMod.traceparentFrom>[0],
+      ),
+      null,
+    );
+  },
+);
+
+// ─── Structured request log shape (Sprint 6) ────────────────────────────────
+
+const logMod = await import("../apps/web/src/lib/bff/log.ts");
+
+await section(
+  "BFF request log emits the stable field set (IR queries depend on it)",
+  async () => {
+    // Capture one line via console.log override. logRequest wraps in
+    // try/catch so a broken JSON.stringify never throws to callers —
+    // this test uses that same path.
+    const captured: string[] = [];
+    const originalLog = console.log;
+    console.log = (line: unknown): void => {
+      if (typeof line === "string") captured.push(line);
+    };
+    try {
+      logMod.logRequest({
+        correlationId: "cid-1",
+        method: "GET",
+        path: "/api/v1/investor/dashboard",
+        status: 200,
+        durationMs: 42,
+        authId: "auth-1",
+        accountId: "acct-1",
+        routeClass: "read",
+        outcome: "ok",
+      });
+    } finally {
+      console.log = originalLog;
+    }
+    assert.equal(captured.length, 1);
+    const parsed = JSON.parse(captured[0] ?? "{}") as Record<string, unknown>;
+    // Every field name in this list is queried by the IR runbook.
+    // Changing a name here is a breaking log-schema change and must
+    // update the runbook in the same PR.
+    for (const key of [
+      "event",
+      "ts",
+      "correlation_id",
+      "method",
+      "path",
+      "status",
+      "duration_ms",
+      "auth_id",
+      "account_id",
+      "route_class",
+      "outcome",
+    ]) {
+      assert.ok(key in parsed, `log line missing "${key}"`);
+    }
+    assert.equal(parsed["event"], "bff.request");
+    // No PII / query strings ever in the path field.
+    assert.equal(parsed["path"], "/api/v1/investor/dashboard");
+  },
+);
+
+await section(
+  "BFF request log path stripper drops query strings (no PII in logs)",
+  async () => {
+    assert.equal(
+      logMod.pathForLog("https://x/api/v1/investor/records?email=user@x.com"),
+      "/api/v1/investor/records",
+    );
+    assert.equal(logMod.pathForLog("not a url"), "unknown");
+  },
+);
+
+// ─── Session revocation (S1 residual) ───────────────────────────────────────
+
+const sessionRevocation =
+  await import("../apps/web/src/lib/prototype-store/entities/session-revocation.ts");
+
+await section(
+  "Session revocation: revoked jti is reported revoked; unknown jti is not",
+  async () => {
+    const jti = `assert-jti-${String(Date.now())}`;
+    assert.equal(await sessionRevocation.isSessionRevoked(jti), false);
+    await sessionRevocation.revokeSession({
+      jti,
+      authId: "auth-assert",
+      reason: "logout",
+      tokenExp: Math.floor(Date.now() / 1000) + 3600, // +1h
+    });
+    assert.equal(await sessionRevocation.isSessionRevoked(jti), true);
+    // A different jti under the same authId is NOT revoked; scope is
+    // per-session, never per-user.
+    assert.equal(
+      await sessionRevocation.isSessionRevoked(`${jti}-other`),
+      false,
+    );
+  },
+);
+
+await section(
+  "Session revocation: entries past expiresAt are self-cleaning",
+  async () => {
+    const jti = `assert-expired-${String(Date.now())}`;
+    await sessionRevocation.revokeSession({
+      jti,
+      authId: "auth-assert",
+      reason: "logout",
+      tokenExp: Math.floor(Date.now() / 1000) - 60, // already past
+    });
+    // First read should surface the entry as NOT revoked (past expiry),
+    // and cleanup should remove it — a second read is also false.
+    assert.equal(await sessionRevocation.isSessionRevoked(jti), false);
+    assert.equal(await sessionRevocation.isSessionRevoked(jti), false);
+  },
+);
+
+// ─── Rate limiter policies (S6) ─────────────────────────────────────────────
+
+const rateLimit = await import("../apps/web/src/lib/bff/rate-limit.ts");
+
+await section(
+  "Rate limiter admits up to capacity and rejects the next request",
+  async () => {
+    rateLimit.__resetForTests();
+    // "mutate" class is 20/60s.
+    const key = "assert-mutate-1";
+    for (let i = 0; i < 20; i++) {
+      assert.equal(rateLimit.admit("mutate", key), true, `req ${String(i)}`);
+    }
+    assert.equal(
+      rateLimit.admit("mutate", key),
+      false,
+      "21st request must be rejected",
+    );
+  },
+);
+
+await section("Rate limiter isolates classes and keys", async () => {
+  rateLimit.__resetForTests();
+  // Different key: same class, independent bucket.
+  for (let i = 0; i < 20; i++) rateLimit.admit("mutate", "user-a");
+  assert.equal(rateLimit.admit("mutate", "user-b"), true);
+  // Different class: same key, independent bucket.
+  assert.equal(rateLimit.admit("stream", "user-a"), true);
+});
+
+await section(
+  "Rate limiter stream class is tighter than read class",
+  async () => {
+    rateLimit.__resetForTests();
+    // stream = 3/60s, read = 100/60s. If somebody accidentally swaps
+    // the policies this assertion catches it before the alpha gate.
+    const key = "assert-tightness";
+    for (let i = 0; i < 3; i++) assert.ok(rateLimit.admit("stream", key));
+    assert.equal(rateLimit.admit("stream", key), false);
+    // read still has plenty of budget.
+    for (let i = 0; i < 100; i++) assert.ok(rateLimit.admit("read", key));
+    assert.equal(rateLimit.admit("read", key), false);
+  },
+);
+
+// ─── SSE bridge envelope + account filter ───────────────────────────────────
+
+const { parseSseDataLine, wireStreamEventSchema } =
+  await import("../apps/web/src/lib/admin-portal-proxy/endpoints/stream.ts");
+
+await section(
+  "SSE stream envelope is strict — unknown fields fail closed",
+  async () => {
+    const good = {
+      event_id: "e1",
+      event_type: "intent.created",
+      ts: "2025-01-01T00:00:00Z",
+      account_id: "acct_1",
+    };
+    assert.doesNotThrow(() => wireStreamEventSchema.parse(good));
+    // Extra top-level fields must reject — this is the S4a strict-parse
+    // guarantee extended to the streaming transport seam.
+    const bad = { ...good, admin_notes: "leak" };
+    assert.throws(() => wireStreamEventSchema.parse(bad));
+  },
+);
+
+await section(
+  "SSE bridge drops events for other accounts, keeps own account",
+  async () => {
+    const own = "acct_own";
+    const otherLine = `data: ${JSON.stringify({
+      event_id: "e_other",
+      event_type: "intent.created",
+      ts: "2025-01-01T00:00:00Z",
+      account_id: "acct_other",
+    })}`;
+    const ownLine = `data: ${JSON.stringify({
+      event_id: "e_own",
+      event_type: "intent.created",
+      ts: "2025-01-01T00:00:00Z",
+      account_id: own,
+    })}`;
+    assert.equal(parseSseDataLine(otherLine, own), null);
+    const kept = parseSseDataLine(ownLine, own);
+    assert.ok(kept);
+    assert.equal(kept?.accountId, own);
+    // Non-data lines (heartbeats, retry) are silently ignored.
+    assert.equal(parseSseDataLine(": hb", own), null);
+    assert.equal(parseSseDataLine("event: ready", own), null);
+    assert.equal(parseSseDataLine("", own), null);
+  },
+);
+
+// ─── RecordAccessLog completeness (S4c) ─────────────────────────────────────
+
+await section(
+  "Every records/documents read route uses bffReadWithAccessLog (S4c)",
+  async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const roots = [
+      resolve(process.cwd(), "apps/web/app/api/v1/investor/records"),
+      resolve(process.cwd(), "apps/web/app/api/v1/investor/evidence"),
+      resolve(process.cwd(), "apps/web/app/api/v1/investor/activity"),
+    ];
+    const routeFiles: string[] = [];
+    function walk(dir: string): void {
+      let ents;
+      try {
+        ents = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const e of ents) {
+        const p = resolve(dir, e.name);
+        if (e.isDirectory()) walk(p);
+        else if (e.name === "route.ts" && statSync(p).isFile())
+          routeFiles.push(p);
+      }
+    }
+    for (const r of roots) walk(r);
+    assert.ok(
+      routeFiles.length > 0,
+      "no records/documents/activity route files discovered — assertion is a no-op",
+    );
+    const offenders: string[] = [];
+    for (const file of routeFiles) {
+      const src = readFileSync(file, "utf8");
+      const usesAccessLogHelper =
+        /bffReadWithAccessLog|appendRecordAccess|recordAccessLog/.test(src);
+      if (!usesAccessLogHelper) offenders.push(file);
+    }
+    assert.equal(
+      offenders.length,
+      0,
+      `${offenders.length} records/documents/activity route(s) do not write an access-log entry:\n  - ${offenders.join("\n  - ")}`,
+    );
+  },
+);
 
 // ─── Done ───────────────────────────────────────────────────────────────────
 

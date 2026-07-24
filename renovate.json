@@ -1,26 +1,43 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":semanticCommits", ":dependencyDashboard"],
-  "timezone": "America/Denver",
+  "extends": [
+    "config:recommended",
+    ":semanticCommits",
+    ":pinGitHubActionDigests",
+    ":dependencyDashboard"
+  ],
   "schedule": ["before 6am on monday"],
   "prConcurrentLimit": 5,
-  "labels": ["dependencies"],
-  "lockFileMaintenance": { "enabled": true },
+  "prHourlyLimit": 2,
+  "labels": ["dependencies", "renovate"],
   "packageRules": [
     {
-      "description": "Group non-major npm updates into one PR to reduce churn",
-      "matchManagers": ["npm"],
-      "matchUpdateTypes": ["minor", "patch"],
-      "groupName": "npm non-major"
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "pinDigests": true
     },
     {
-      "description": "Keep GitHub Actions pinned to commit SHAs (supply chain)",
-      "matchManagers": ["github-actions"],
-      "pinDigests": true
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["patch", "minor"],
+      "groupName": "devDependencies (non-major)"
+    },
+    {
+      "matchPackagePatterns": ["^@refi/"],
+      "enabled": false
+    },
+    {
+      "matchPackageNames": ["next", "react", "react-dom", "typescript"],
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "renovate", "framework-major"],
+      "dependencyDashboardApproval": true
     }
   ],
   "vulnerabilityAlerts": {
-    "labels": ["security"],
-    "automerge": false
+    "enabled": true,
+    "labels": ["security"]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 6am on the first day of the month"]
   }
 }

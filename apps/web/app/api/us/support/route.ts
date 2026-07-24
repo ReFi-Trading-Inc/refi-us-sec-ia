@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { createRateLimiter } from "@app/_lib/rateLimit";
+import { correlationIdFrom } from "@lib/bff/correlation";
+import { enforceCsrfOrigin } from "@lib/bff/csrf";
 
 const limiter = createRateLimiter({ windowMs: 60 * 60_000, max: 3 });
 
@@ -11,6 +13,9 @@ const bodySchema = z.object({
 });
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const csrfReject = enforceCsrfOrigin(request, correlationIdFrom(request));
+  if (csrfReject) return csrfReject;
+
   const ip =
     request.headers.get("x-real-ip") ??
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??

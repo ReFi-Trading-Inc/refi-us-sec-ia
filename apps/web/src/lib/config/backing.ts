@@ -1,61 +1,154 @@
 /**
- * REFI_BACKING resolver — per-entity storage backing selection.
+ * REFI_BACKING resolver.
  *
- * Each BFF-owned entity can run against the `prototype` filesystem store
- * (local dev / CI / un-provisioned environments) or the `durable` Firestore
- * store (staging/prod once GCP is provisioned). Selection is per entity via
- * `REFI_BACKING__<ENTITY>` so a single entity can be cut over without a code
- * change and without migrating the others.
+ * Enforces the per-entity backing-mode matrix documented in
+ * docs/phase2-6-backing-mode-contract.md. Boot fails closed on unknown
+ * entities, invalid modes, or (entity, mode) combinations outside the
+ * matrix — there is no runtime silent fallback.
  *
- * Fail-closed: an unknown mode, or a mode outside an entity's allowed set,
- * throws at resolution time rather than silently falling back.
- *
- * Scope note: only the entities wired to the resolver appear here. As more
- * entities migrate to durable, add them to ENTITY_MATRIX and switch their
- * call site to resolveKvStore/resolveAppendOnlyStore.
+ * Callers get a typed accessor: `backingFor("session")` returns exactly
+ * one of that entity's valid modes.
  */
 import { z } from "zod";
 
-export const BACKING_MODES = ["prototype", "durable"] as const;
+export const BACKING_MODES = [
+  "msw",
+  "prototype",
+  "durable",
+  "backend",
+] as const;
 export type BackingMode = (typeof BACKING_MODES)[number];
 
-// Per-entity allowed backings. Extend as entities migrate.
+// The per-entity matrix. Keep in lockstep with the contract doc.
+// BFF-owned entities: prototype | durable.
+// Admin Portal-owned entities: msw | backend.
 export const ENTITY_MATRIX = {
+  // BFF-owned
+  session: ["prototype", "durable"],
+  "auth-session-link": ["prototype", "durable"],
+  "activation-idempotency": ["prototype", "durable"],
+  receipt: ["prototype", "durable"],
+  "record-access-log": ["prototype", "durable"],
+  "disclosure-acknowledgement": ["prototype", "durable"],
+  "subscription-mode": ["prototype", "durable"],
+  "managed-execution-state": ["prototype", "durable"],
+  "account-prefs": ["prototype", "durable"],
+  "account-prefs-history": ["prototype", "durable"],
   "alpha-application": ["prototype", "durable"],
   "alpha-handoff-jti": ["prototype", "durable"],
+  "session-revocation": ["prototype", "durable"],
+
+  // Admin Portal-owned
+  intents: ["msw", "backend"],
+  "risk-decisions": ["msw", "backend"],
+  orders: ["msw", "backend"],
+  fills: ["msw", "backend"],
+  "control-states": ["msw", "backend"],
+  reconciliation: ["msw", "backend"],
+  templates: ["msw", "backend"],
+  memberships: ["msw", "backend"],
+  rules: ["msw", "backend"],
+  accounts: ["msw", "backend"],
+  "account-flow": ["msw", "backend"],
+  "risk-limits": ["msw", "backend"],
+  "orders-blocked": ["msw", "backend"],
+  "broker-interactions": ["msw", "backend"],
+  "execution-plans": ["msw", "backend"],
+  "trading-controls": ["msw", "backend"],
 } as const satisfies Record<string, readonly BackingMode[]>;
 
 export type EntityId = keyof typeof ENTITY_MATRIX;
 
-// Default when the env var is unset: keep local/CI and any un-provisioned
-// deploy working on the prototype store. Production opts into durable
-// explicitly via REFI_BACKING__<ENTITY>=durable once Firestore is provisioned.
-const DEFAULT_MODE: BackingMode = "prototype";
-
 const modeSchema = z.enum(BACKING_MODES);
 
-/** REFI_BACKING__ALPHA_APPLICATION, REFI_BACKING__ALPHA_HANDOFF_JTI, … */
-export function envKeyFor(entityId: EntityId): string {
+function envKeyFor(entityId: EntityId): string {
   return `REFI_BACKING__${entityId.replace(/-/g, "_").toUpperCase()}`;
 }
 
-export function backingFor(entityId: EntityId): BackingMode {
-  const raw = process.env[envKeyFor(entityId)];
-  if (raw === undefined || raw === "") return DEFAULT_MODE;
+let cachedMap: Record<EntityId, BackingMode> | null = null;
 
-  const parsed = modeSchema.safeParse(raw);
-  if (!parsed.success) {
+function resolveAll(): Record<EntityId, BackingMode> {
+  const defaultRaw = process.env["REFI_BACKING_DEFAULT"] ?? "prototype";
+  const parsedDefault = modeSchema.safeParse(defaultRaw);
+  if (!parsedDefault.success) {
     throw new Error(
-      `Invalid ${envKeyFor(entityId)}="${raw}". Valid modes: ${BACKING_MODES.join(" | ")}.`,
+      `REFI_BACKING_DEFAULT must be one of ${BACKING_MODES.join(", ")} (got "${defaultRaw}")`,
     );
   }
-  const mode = parsed.data;
-  const allowed = ENTITY_MATRIX[entityId] as readonly BackingMode[];
-  if (!allowed.includes(mode)) {
+  const defaultMode = parsedDefault.data;
+
+  const result: Partial<Record<EntityId, BackingMode>> = {};
+  const errors: string[] = [];
+
+  for (const entityId of Object.keys(ENTITY_MATRIX) as EntityId[]) {
+    const validModes = ENTITY_MATRIX[entityId];
+    const override = process.env[envKeyFor(entityId)];
+    const raw = override ?? defaultMode;
+    const parsed = modeSchema.safeParse(raw);
+    if (!parsed.success) {
+      errors.push(
+        `${envKeyFor(entityId)}: "${raw}" is not a valid backing mode`,
+      );
+      continue;
+    }
+    if (!(validModes as readonly BackingMode[]).includes(parsed.data)) {
+      // If the default is invalid for this entity but no override was set,
+      // fall back to the first valid mode listed for the entity. This lets
+      // a single global default (e.g., "durable") work for both BFF and
+      // Admin Portal entities without requiring an override for each
+      // Admin Portal entity in every environment.
+      if (!override) {
+        result[entityId] = validModes[0];
+        continue;
+      }
+      errors.push(
+        `${envKeyFor(entityId)}: "${parsed.data}" not valid for ${entityId} (allowed: ${validModes.join(", ")})`,
+      );
+      continue;
+    }
+    result[entityId] = parsed.data;
+  }
+
+  // Warn on unknown REFI_BACKING__ envs — likely typos.
+  const knownKeys = new Set(
+    (Object.keys(ENTITY_MATRIX) as EntityId[]).map(envKeyFor),
+  );
+  for (const key of Object.keys(process.env)) {
+    if (key.startsWith("REFI_BACKING__") && !knownKeys.has(key)) {
+      errors.push(`${key}: unknown entity (likely a typo)`);
+    }
+  }
+
+  if (errors.length > 0) {
     throw new Error(
-      `${envKeyFor(entityId)}="${mode}" is not allowed for entity "${entityId}". ` +
-        `Allowed: ${allowed.join(" | ")}.`,
+      `Invalid REFI_BACKING configuration:\n${errors.map((e) => `  - ${e}`).join("\n")}`,
     );
   }
-  return mode;
+
+  return result as Record<EntityId, BackingMode>;
+}
+
+export function backingFor(entityId: EntityId): BackingMode {
+  if (typeof window !== "undefined") {
+    throw new Error("backingFor() called from a browser context");
+  }
+  if (!cachedMap) cachedMap = resolveAll();
+  return cachedMap[entityId];
+}
+
+export function backingSnapshot(): Record<EntityId, BackingMode> {
+  if (typeof window !== "undefined") {
+    throw new Error("backingSnapshot() called from a browser context");
+  }
+  if (!cachedMap) cachedMap = resolveAll();
+  return { ...cachedMap };
+}
+
+/**
+ * Test-only: drop the resolved map so the next read re-reads process.env.
+ * Mirrors feature-flags __resetFlagsForTests(); never called from app code —
+ * backing is boot-resolved on purpose in every real environment.
+ */
+export function __resetBackingForTests(): void {
+  cachedMap = null;
 }

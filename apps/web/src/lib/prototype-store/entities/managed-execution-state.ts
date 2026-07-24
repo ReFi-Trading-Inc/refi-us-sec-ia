@@ -16,7 +16,8 @@
  *   review_required → exception present; managed execution gated until
  *                     the investor resolves
  */
-import { kvStore, makePrototypeMeta, type PrototypeMeta } from "../store";
+import { makePrototypeMeta, type PrototypeMeta } from "../store";
+import { resolveKvStore } from "../../store";
 
 export type ManagedExecutionStatus =
   | "inactive"
@@ -36,7 +37,13 @@ export interface ManagedExecutionState {
   meta: PrototypeMeta;
 }
 
-const states = kvStore<ManagedExecutionState>("managed-execution-states");
+// Routed through the S3 factory. The state machine here is what the
+// pause/resume UI reads on every render — durable backing keeps the
+// projection consistent across redeploys.
+const states = resolveKvStore<ManagedExecutionState>(
+  "managed-execution-state",
+  "managed-execution-states",
+);
 
 export async function getManagedExecutionState(
   accountId: string,

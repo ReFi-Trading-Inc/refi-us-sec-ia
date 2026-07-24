@@ -10,7 +10,7 @@
  *   - GET /api/v1/investor/evidence/*
  *   - Future record download/export endpoints.
  */
-import { appendOnlyStore } from "../store";
+import { resolveAppendOnlyStore } from "../../store";
 import type { RecordAccessAction } from "../../sec203a/actions";
 
 export interface RecordAccessEvent {
@@ -26,7 +26,12 @@ export interface RecordAccessEvent {
   source: "prototype-bff";
 }
 
-const log = appendOnlyStore<RecordAccessEvent>("record-access-log");
+// Routed through the S3 factory. Rule 204-2 book-and-record post-ADV;
+// durable backing (Firestore, S3 follow-up) is what survives redeploys.
+const log = resolveAppendOnlyStore<RecordAccessEvent>(
+  "record-access-log",
+  "record-access-log",
+);
 
 export async function appendRecordAccess(args: {
   action: RecordAccessAction;

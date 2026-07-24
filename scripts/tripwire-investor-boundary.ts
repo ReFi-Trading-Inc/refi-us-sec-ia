@@ -140,6 +140,14 @@ const ALLOWED_PATHS: ReadonlyArray<string> = [
   "packages/config/blocked-terms.ts",
   "apps/web/src/lib/sec203a/actions.ts",
   "apps/web/src/lib/sec203a/admin-verbs.ts",
+  // Feature flags that gate the admin-portal-proxy layer (Sprint 1+). Naming
+  // the upstream in flag identifiers is the point of the module; the app
+  // never renders these names to users.
+  "apps/web/src/lib/feature-flags/",
+  // Route manifest declares every /api route including proxy endpoints; the
+  // scanner runs against JSON files with route paths that mention
+  // admin-portal by design.
+  "apps/web/route-manifest.json",
   "docs/",
   // Tests may name forbidden things in negative assertions.
   "/__tests__/",

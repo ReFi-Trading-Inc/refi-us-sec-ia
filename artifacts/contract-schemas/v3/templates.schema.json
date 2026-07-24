@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://refi.trading/contract/v3/templates.schema.json",
+  "title": "templates",
+  "x-refi-contract": {
+    "contract": "Contract V3",
+    "section": "§4",
+    "wireExport": "wireTemplateSchema",
+    "module": "apps/web/src/lib/admin-portal-proxy/endpoints/templates.ts",
+    "version": "v3.20260724"
+  },
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string"
+    },
+    "version": {
+      "type": "string"
+    },
+    "name": {
+      "type": "string"
+    },
+    "methodology": {
+      "type": "string"
+    },
+    "description": {
+      "type": "string"
+    },
+    "disclosure_id": {
+      "type": "string"
+    },
+    "admin": {},
+    "internal_notes": {},
+    "target_account_id": {},
+    "manual_rebalance": {}
+  },
+  "required": ["id", "version", "name", "methodology", "disclosure_id"],
+  "additionalProperties": false
+}

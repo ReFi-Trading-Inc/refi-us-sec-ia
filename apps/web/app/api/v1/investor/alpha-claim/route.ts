@@ -1,59 +1,42 @@
 /**
- * POST /api/v1/investor/alpha-claim
+ * POST /api/v1/investor/alpha-claim  —  G-track sync point 1 (Sprint 3).
  *
- * Consumes a single AlphaHandoffToken minted by the ReFi Alpha game and binds
- * the caller's game progress to the on-domain waitlist application layer.
+ * Consumes a single AlphaHandoffToken from the ReFi Alpha game and binds
+ * the caller's game progress to the waitlist application layer.
  *
- * Narrow manual port onto current main. The behavioral contract is commit
- * 6dbeb7c; this route reproduces that behavior WITHOUT the Phase 2.6
- * dependency surface:
- *   - the feature flag is read directly from process.env (no feature-flag
- *     module);
- *   - origin protection is a route-local same-origin check (no @lib/bff/csrf);
- *   - per-IP rate limiting is in-memory (#19); a distributed limiter (#26) and
- *     PostHog identity stitching (#20) are follow-ons.
+ * Contract (ReFi Alpha spec §2.2/§2.3, folded into Sprint Plan v3 Sprint 3):
+ *   - JWT is ES256, iss=`refi-alpha`, aud=`refi-us-sec-ia`, exp ≤ 10 min.
+ *   - Signature verified with the game's public key (server env, never
+ *     NEXT_PUBLIC).
+ *   - jti is single-use; consumed via a durable atomic put-if-absent.
+ *     Second and later attempts against the same jti return the existing
+ *     binding (idempotent), never a duplicate row.
+ *   - Behavioural dimensions (§6.6) MUST NOT appear on the token; strict
+ *     Zod parse rejects any private claim outside the allowlist.
+ *   - CSRF-exempt because the token *is* the credential — but origin is
+ *     checked so a browser-issued cross-origin POST still fails.
+ *   - Rate limiting arrives with Sprint 6's global limits.
  *
- * Contract (ReFi Alpha spec §2.2/§2.3):
- *   - JWT is ES256; iss/aud pinned via env; exp enforced with 5s tolerance,
- *     plus a max-age check so a token cannot live longer than 10 min (#21).
- *   - jti is single-use; consumed via a prototype-grade put-if-absent. Replays
- *     of the same jti return the original binding (idempotent), never a
- *     duplicate row. See alpha-handoff-jti.ts for the replay-grade caveat.
- *   - The token IS the credential, so the route is CSRF-exempt by design — but
- *     a same-origin check still rejects browser-issued cross-origin POSTs.
- *   - Unknown/behavioral claims (spec §6.6) are rejected by a strict Zod parse.
- *
- * Imports are relative (not the @lib alias) so the route is loadable both by
- * the Next build and by the repo-root tsx contract-assertion harness, which
- * has no @lib path mapping.
+ * Response shape is uniform across first-consumption and idempotent
+ * replays so the game and future funnel screens can call the same code
+ * path on refresh/reload without observing different states.
  */
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { importJWK, jwtVerify } from "jose";
 import { correlationIdFrom } from "../../../../../src/lib/bff/correlation";
+import { enforceCsrfOrigin } from "../../../../../src/lib/bff/csrf";
+import { enforceRateLimit, ipKey } from "../../../../../src/lib/bff/rate-limit";
+import { isEnabled } from "../../../../../src/lib/feature-flags/index";
 import { getServerEnv } from "../../../../../src/lib/config/env";
 import { bindHandoff } from "../../../../../src/lib/prototype-store/entities/alpha-application";
 import { consumeJtiIfAbsent } from "../../../../../src/lib/prototype-store/entities/alpha-handoff-jti";
-import { createRateLimiter } from "../../../../_lib/rateLimit";
-
-// Per-IP rate limit (#19). In-memory / per-instance — a first layer; a
-// distributed limiter (#26) is the follow-on for multi-instance coverage.
-const claimLimiter = createRateLimiter({ windowMs: 10 * 60_000, max: 30 });
-
-// Spec §2.2: the token's lifetime must be <= 10 minutes from mint. jose enforces
-// exp is in the future; this additionally rejects an over-long-lived token.
-const MAX_TOKEN_AGE_SECONDS = 600;
-const CLOCK_TOLERANCE_SECONDS = 5;
-
-/** Best-effort client IP for rate-limit keying (behind Vercel's proxy). */
-function clientIp(req: NextRequest): string {
-  return (
-    req.headers.get("x-real-ip") ??
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown"
-  );
-}
+import {
+  aliasServer,
+  captureServerEvent,
+  handoffClaimedProperties,
+} from "../../../../../src/lib/analytics/posthog";
 
 const requestSchema = z
   .object({
@@ -61,10 +44,17 @@ const requestSchema = z
   })
   .strict();
 
+// Spec §2.2: the token's lifetime must be <= 10 minutes from mint. jose
+// enforces exp is in the future; this additionally rejects an over-long-lived
+// token (main's roadmap-1.4 hardening).
+const MAX_TOKEN_AGE_SECONDS = 600;
+const CLOCK_TOLERANCE_SECONDS = 5;
+
 /**
- * Strict claim schema. Every field allowed on the token appears here; anything
- * else — including the behavioral dimensions permanently excluded by spec §6.6
- * — is a strict-parse rejection and a 401.
+ * Strict claim schema. Every field allowed on the token appears here.
+ * Anything else — including the behavioural dimensions listed as
+ * permanently excluded in spec §6.6 — is a strict-parse rejection and a
+ * 401 response.
  */
 const claimSchema = z
   .object({
@@ -90,127 +80,58 @@ const claimSchema = z
   })
   .strict();
 
-function errorResponse(
-  correlationId: string,
-  code: string,
-  message: string,
-  status: number,
-): NextResponse {
+function forbidden(correlationId: string, code: string): NextResponse {
   return NextResponse.json(
-    { error: { code, message }, correlationId },
-    { status },
+    { error: { code, message: "handoff verification failed" }, correlationId },
+    { status: 401 },
   );
-}
-
-/**
- * The origin declared by the request: the Origin header when present (and not
- * the literal "null"), otherwise the origin of a valid Referer. Returns null
- * when neither yields a usable origin.
- */
-function declaredOrigin(req: NextRequest): string | null {
-  const origin = req.headers.get("origin");
-  if (origin && origin !== "null") return origin;
-  const referer = req.headers.get("referer");
-  if (!referer) return null;
-  try {
-    return new URL(referer).origin;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Route-local same-origin guard. The expected origin is the request's own
- * origin (`req.nextUrl.origin`) — derived from the server-resolved URL, not
- * from client-supplied forwarded headers, which are not trusted as the sole
- * authority. A browser-issued mutation without a declared origin, or from a
- * different origin, is the classic CSRF fingerprint and is rejected 403.
- */
-function enforceSameOrigin(
-  req: NextRequest,
-  correlationId: string,
-): NextResponse | null {
-  const declared = declaredOrigin(req);
-  if (!declared) {
-    return errorResponse(
-      correlationId,
-      "origin_missing",
-      "origin required",
-      403,
-    );
-  }
-  let normalizedDeclared: string;
-  try {
-    normalizedDeclared = new URL(declared).origin;
-  } catch {
-    return errorResponse(
-      correlationId,
-      "origin_untrusted",
-      "origin not allowed",
-      403,
-    );
-  }
-  if (normalizedDeclared !== req.nextUrl.origin) {
-    return errorResponse(
-      correlationId,
-      "origin_untrusted",
-      "origin not allowed",
-      403,
-    );
-  }
-  return null;
 }
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const correlationId = correlationIdFrom(req);
-
-  // Feature flag, read directly from the environment (no feature-flag module).
-  // Any value other than the exact string "on" disables the route with a 404
-  // so an unshipped surface is indistinguishable from a nonexistent one.
-  if (process.env["FLAG_ALPHA_CLAIM_ROUTE"] !== "on") {
-    return errorResponse(
-      correlationId,
-      "flag_off",
-      "alpha claim disabled",
-      404,
+  if (!isEnabled("FLAG_ALPHA_CLAIM_ROUTE")) {
+    return NextResponse.json(
+      {
+        error: { code: "flag_off", message: "alpha claim disabled" },
+        correlationId,
+      },
+      { status: 404 },
     );
   }
-
-  const originReject = enforceSameOrigin(req, correlationId);
-  if (originReject) return originReject;
-
-  if (!claimLimiter(clientIp(req)).allowed) {
-    return errorResponse(
-      correlationId,
-      "rate_limited",
-      "too many requests",
-      429,
-    );
-  }
+  const csrf = enforceCsrfOrigin(req, correlationId);
+  if (csrf) return csrf;
+  // S6 claim class: 5/60s/hashed-IP. Cap the token-replay surface
+  // — a valid jti gets consumed atomically anyway, but the rate
+  // limit caps signature-verify CPU on invalid tokens.
+  const rate = enforceRateLimit(req, "claim", ipKey(req));
+  if (rate) return rate;
 
   let body: unknown = null;
   try {
     body = await req.json();
   } catch {
-    return errorResponse(
-      correlationId,
-      "invalid_input",
-      "body must be JSON",
-      400,
+    return NextResponse.json(
+      {
+        error: { code: "invalid_input", message: "body must be JSON" },
+        correlationId,
+      },
+      { status: 400 },
     );
   }
   const parsedReq = requestSchema.safeParse(body);
   if (!parsedReq.success) {
-    return errorResponse(
-      correlationId,
-      "invalid_input",
-      "token is required",
-      400,
+    return NextResponse.json(
+      {
+        error: { code: "invalid_input", message: "token is required" },
+        correlationId,
+      },
+      { status: 400 },
     );
   }
 
-  // Verify signature + iss/aud/exp/alg. jose enforces exp automatically and
-  // rejects any algorithm outside `algorithms`; pinning ES256 matches §2.2.
+  // Verify signature + iss/aud/exp/alg. jose enforces exp automatically
+  // and rejects any algorithm outside `algorithms`. Pinning to ES256
+  // matches spec §2.2 exactly.
   const env = getServerEnv();
   let payload: unknown;
   try {
@@ -227,43 +148,30 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     });
     payload = verified.payload;
   } catch {
-    return errorResponse(
-      correlationId,
-      "signature_or_claims_invalid",
-      "handoff verification failed",
-      401,
-    );
+    return forbidden(correlationId, "signature_or_claims_invalid");
   }
 
-  // Strict claim parse. Any unknown key — including a smuggled behavioral
-  // dimension — fails the request outright.
+  // Strict claim parse. Any unknown key here — including a smuggled
+  // DimensionCode field — fails the request outright.
   const parsedClaims = claimSchema.safeParse(payload);
   if (!parsedClaims.success) {
-    return errorResponse(
-      correlationId,
-      "unrecognized_claim",
-      "handoff verification failed",
-      401,
-    );
+    return forbidden(correlationId, "unrecognized_claim");
   }
   const claims = parsedClaims.data;
 
-  // Max-age (#21): reject an over-long-lived token even if its signature and
-  // exp are otherwise valid. Uses iat when present; else bounds exp against now.
+  // Max-age (#21, spec §2.2): reject an over-long-lived token even if its
+  // signature and exp are otherwise valid. Uses iat when present; else
+  // bounds exp against now. Ported from main's roadmap-1.4 hardening.
   const nowSeconds = Math.floor(Date.now() / 1000);
   const mintedAt = claims.iat ?? nowSeconds;
   if (claims.exp - mintedAt > MAX_TOKEN_AGE_SECONDS + CLOCK_TOLERANCE_SECONDS) {
-    return errorResponse(
-      correlationId,
-      "token_lifetime_exceeded",
-      "handoff verification failed",
-      401,
-    );
+    return forbidden(correlationId, "token_lifetime_exceeded");
   }
 
-  // Bind first so we have an applicationRef to embed in the jti record, then
-  // consume. On replay, consumeJtiIfAbsent returns the ORIGINAL stored record,
-  // so the response carries the first binding's applicationRef.
+  // Bind first so we have an applicationRef to embed in the jti record,
+  // then consume. `consumeJtiIfAbsent` is atomic; if a concurrent claim
+  // arrives, the second caller reads the existing record and returns
+  // the same binding rather than double-writing.
   const { application, storageKey } = await bindHandoff({
     alphaPlayerId: claims.sub,
     progressSnapshotId: claims.progressSnapshotId,
@@ -283,10 +191,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     correlationId,
   });
 
-  // Reused-jti decision (#17): §2.3's "409 on reuse" is reconciled with §2.7's
-  // "idempotent" and the shipped client's refresh-safe contract — a replay
-  // returns the ORIGINAL binding (200), and is LOGGED so it is never silently
-  // accepted. A durable, distributed jti guard is the hardening follow-on (#18).
+  // Reused-jti decision (#17): a replay returns the ORIGINAL binding (200)
+  // and is LOGGED so it is never silently accepted. Ported from main's
+  // roadmap-1.4 hardening.
   if (!firstConsumption) {
     console.info(
       JSON.stringify({
@@ -296,6 +203,35 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         correlationId,
       }),
     );
+  }
+
+  // PostHog identity stitching (spec §7). Fire-and-forget; a PostHog
+  // outage must never surface as a claim failure. Only emit on the
+  // first consumption so replays are analytics-idempotent.
+  if (firstConsumption) {
+    // Alias the game's anonymous distinct_id (alphaPlayerId) onto the
+    // storageKey used by the investor-shell application row. Downstream
+    // events (application_scored, activation) will use storageKey as
+    // the distinct_id; the alias makes the funnel a single person.
+    void aliasServer({
+      previousId: claims.sub,
+      distinctId: storageKey,
+    });
+    void captureServerEvent({
+      distinctId: storageKey,
+      event: "onboarding.handoff.claimed",
+      properties: handoffClaimedProperties({
+        alphaPlayerId: claims.sub,
+        progressSnapshotId: claims.progressSnapshotId,
+        completedArenas: claims.completedArenas,
+        machineBuilderUnlocked: claims.machineBuilderUnlocked,
+        machineVersionCount: claims.machineVersionCount,
+        machineBeatRate: claims.machineBeatRate,
+        ...(claims.campaignSource !== undefined
+          ? { campaignSource: claims.campaignSource }
+          : {}),
+      }),
+    });
   }
 
   return NextResponse.json(

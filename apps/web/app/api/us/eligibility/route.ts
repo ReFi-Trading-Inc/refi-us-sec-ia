@@ -5,6 +5,8 @@ import { createHmac } from "node:crypto";
 import { SignJWT } from "jose";
 import { z } from "zod";
 import { getServerEnv } from "@lib/config/env";
+import { correlationIdFrom } from "@lib/bff/correlation";
+import { enforceCsrfOrigin } from "@lib/bff/csrf";
 import { createRateLimiter } from "@app/_lib/rateLimit";
 import {
   eligibilityRules,
@@ -44,6 +46,9 @@ function hmac(secret: string, input: string): string {
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  const csrfReject = enforceCsrfOrigin(request, correlationIdFrom(request));
+  if (csrfReject) return csrfReject;
+
   const ip =
     request.headers.get("x-real-ip") ??
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??

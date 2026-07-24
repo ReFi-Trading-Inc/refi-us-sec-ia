@@ -18,10 +18,17 @@ function sentryHost(dsn: string | undefined): string | null {
   }
 }
 
-function buildCsp(nonce: string): string {
+function buildCsp(): string {
+  // No nonces here, deliberately: pages are statically prerendered, so
+  // Next's emitted <script> tags can never carry a per-request nonce — and
+  // with 'strict-dynamic', browsers ignore 'self', which shipped production
+  // with ALL JavaScript blocked (no hydration; forms fell back to native
+  // GET submits). Same-origin + inline is the strongest policy that works
+  // until pages are rendered dynamically with the nonce threaded through
+  // Next via request headers.
   const scriptSrc = isProd
-    ? `'nonce-${nonce}' 'strict-dynamic'`
-    : `'nonce-${nonce}' 'strict-dynamic' 'unsafe-eval'`;
+    ? `'self' 'unsafe-inline'`
+    : `'self' 'unsafe-inline' 'unsafe-eval'`;
 
   const sHost = sentryHost(sentryDsn);
   const extraConnect = [
@@ -58,9 +65,6 @@ export function proxy(request: NextRequest) {
     if (realIp) requestHeaders.set("x-real-ip", realIp);
   }
 
-  const nonce = crypto.randomUUID().replace(/-/g, "");
-  requestHeaders.set("x-csp-nonce", nonce);
-
   const needsEligibility =
     pathname.startsWith("/us/auth/connect") ||
     (pathname.startsWith("/us/onboarding/") && pathname !== "/us/onboarding");
@@ -92,8 +96,7 @@ export function proxy(request: NextRequest) {
   const response = NextResponse.next({ request: { headers: requestHeaders } });
 
   response.headers.set("x-correlation-id", correlationId);
-  response.headers.set("x-csp-nonce", nonce);
-  response.headers.set("Content-Security-Policy", buildCsp(nonce));
+  response.headers.set("Content-Security-Policy", buildCsp());
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");

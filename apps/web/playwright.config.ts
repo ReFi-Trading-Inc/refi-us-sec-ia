@@ -1,8 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
-import { resolve, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+// This package is CJS since #34 dropped type:module, so Playwright transpiles
+// this config to CJS where import.meta is illegal — use CJS __dirname instead.
 
 // Pinned prototype-store path so the e2e seeder (global-setup) and the dev
 // webServer subprocess agree on a single store location, distinct from local

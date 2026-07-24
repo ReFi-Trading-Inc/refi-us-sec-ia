@@ -10,10 +10,10 @@
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const __filename = fileURLToPath(import.meta.url);
-const APP_ROOT = resolve(dirname(__filename), "..");
+// CJS package since #34 (no type:module): Playwright transpiles this file to
+// CJS where import.meta is illegal, so use the CJS __dirname global.
+const APP_ROOT = resolve(__dirname, "..");
 
 // FNV-1a (matches apps/web/src/lib/bff/auth.ts). Keep in sync.
 function fnv1a(input: string): string {

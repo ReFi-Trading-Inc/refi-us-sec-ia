@@ -3,7 +3,7 @@
  * investor action. Owned by the frontend even after backend lands; surfaces in
  * the Records Center.
  */
-import { appendOnlyStore } from "../store";
+import { resolveAppendOnlyStore } from "../../store";
 import type { InvestorActionName } from "../../sec203a/actions";
 import {
   adminVerbFor,
@@ -32,7 +32,13 @@ export interface InvestorActionReceipt {
   source: "prototype-bff";
 }
 
-const receipts = appendOnlyStore<InvestorActionReceipt>("action-receipts");
+// Routed through the S3 factory. Becomes a Rule 204-2 book-and-record once
+// the ADV files; the durable backing (Firestore, S3 follow-up) is what
+// makes it survive redeploys. Collection name unchanged.
+const receipts = resolveAppendOnlyStore<InvestorActionReceipt>(
+  "receipt",
+  "action-receipts",
+);
 
 export async function appendActionReceipt(args: {
   action: InvestorActionName;

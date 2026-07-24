@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
 import { E2E_USERS } from "./global-setup";
 
 const SIGNAL_COOKIE = E2E_USERS.signal.eligibilityCookie;
@@ -9,12 +9,6 @@ const SIGNAL_COOKIE = E2E_USERS.signal.eligibilityCookie;
 const authCookies = [
   {
     name: "us_eligibility_v1",
-    value: SIGNAL_COOKIE,
-    domain: "localhost",
-    path: "/",
-  },
-  {
-    name: "us_session_v1",
     value: SIGNAL_COOKIE,
     domain: "localhost",
     path: "/",

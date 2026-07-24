@@ -1,7 +1,15 @@
 /**
  * GET /api/v1/investor/activity/[id]
+ *
+ * S4c completeness: every single-record fetch emits a RecordAccessLog
+ * entry keyed to `activity:<id>` before the fetch runs, so the intent
+ * to view is logged even when the id resolves to no record (404).
  */
-import { bffRead } from "@lib/bff/handler";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { bffReadWithAccessLog } from "@lib/bff/handler";
+import { correlationIdFrom } from "@lib/bff/correlation";
+import { getAuthContext } from "@lib/bff/auth";
 import { listActionReceipts, listDecisionRecords } from "@lib/prototype-store";
 
 function idFromUrl(url: string): string | null {
@@ -11,11 +19,12 @@ function idFromUrl(url: string): string | null {
   return parts[i + 1] ?? null;
 }
 
-export const GET = bffRead({
+const wrapped = bffReadWithAccessLog<{ item: unknown }>({
+  action: "viewRecord",
   source: "prototype-bff",
   upstreamGap: "G-001",
+  recordRef: (ctx) => `activity:${idFromUrl(ctx.req.url) ?? "unknown"}`,
   fetch: async (ctx) => {
-    if (!ctx.auth) return { item: null };
     const id = idFromUrl(ctx.req.url);
     if (!id) return { item: null };
     const receipts = await listActionReceipts({ authId: ctx.auth.authId });
@@ -29,3 +38,15 @@ export const GET = bffRead({
     return { item: null };
   },
 });
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const auth = await getAuthContext(req);
+  if (!auth) {
+    const correlationId = correlationIdFrom(req);
+    return NextResponse.json(
+      { data: { item: null }, source: "prototype-bff", correlationId },
+      { status: 200 },
+    );
+  }
+  return wrapped(req);
+}

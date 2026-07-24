@@ -1,4 +1,5 @@
-import { test, expect } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { request as playwrightRequest } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
 // Eligibility-only: the SIWE connect page is reached after the eligibility
@@ -41,5 +42,62 @@ test.describe("SIWE auth", () => {
     await expect(
       page.getByText(/uses your Ethereum wallet as your login/i),
     ).toBeVisible();
+  });
+});
+
+// S1 fail-closed: an invalid session cookie must NOT degrade to devFallback.
+// The plan pins this behavior — a forged token is a security decision, not a
+// UX one, and the code path that used to catch the verify error and return a
+// dev identity is exactly what we removed. Hitting an investor route with a
+// garbage token must resolve to 401, never to a seeded identity.
+test.describe("BFF auth fail-closed (S1)", () => {
+  test("forged session token is rejected with 401", async ({ baseURL }) => {
+    const ctx = await playwrightRequest.newContext({
+      baseURL,
+      extraHTTPHeaders: {
+        // No SESSION_SECRET on the request side; the cookie is the credential.
+      },
+    });
+    const res = await ctx.get("/api/v1/investor/recommendations", {
+      headers: {
+        cookie: [
+          `us_eligibility_v1=${E2E_USERS.signal.eligibilityCookie}`,
+          // Structurally-valid-looking JWT (header.payload.sig) that will fail
+          // signature verification. Pre-fix, this triggered devFallback and
+          // resolved to the seeded signal identity; post-fix, it must 401.
+          `us_session_v1=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmb3JnZWQifQ.not-a-valid-signature`,
+        ].join("; "),
+      },
+    });
+    expect(res.status()).toBe(401);
+    await ctx.dispose();
+  });
+
+  test("absent session cookie in dev resolves to dev identity via eligibility", async ({
+    baseURL,
+  }) => {
+    const ctx = await playwrightRequest.newContext({ baseURL });
+    const res = await ctx.get("/api/v1/investor/recommendations", {
+      headers: {
+        cookie: `us_eligibility_v1=${E2E_USERS.signal.eligibilityCookie}`,
+      },
+    });
+    // Dev fallback fires because REFI_ENV is not "prod" and no session token
+    // was presented. The seeded signal user has a recommendation projection,
+    // so this must be a 200 — proving the dev path is still reachable via
+    // absence, not degradation.
+    expect(res.status()).toBe(200);
+    await ctx.dispose();
+  });
+
+  test("absent session cookie AND absent eligibility yields no auth context", async ({
+    baseURL,
+  }) => {
+    const ctx = await playwrightRequest.newContext({ baseURL });
+    const res = await ctx.get("/api/v1/investor/recommendations");
+    // No credentials at all → devFallback has nothing to hash → null auth
+    // context → caller returns 401.
+    expect(res.status()).toBe(401);
+    await ctx.dispose();
   });
 });

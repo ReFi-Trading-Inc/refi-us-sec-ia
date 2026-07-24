@@ -4,5 +4,10 @@ if (process.env["NEXT_PUBLIC_REFI_ENV"] === "prod") {
   Sentry.init({
     dsn: process.env["NEXT_PUBLIC_SENTRY_DSN"],
     tracesSampleRate: 0.1,
+    release:
+      process.env["SENTRY_RELEASE"] ??
+      process.env["NEXT_PUBLIC_APP_VERSION"] ??
+      undefined,
+    environment: process.env["NEXT_PUBLIC_REFI_ENV"],
   });
 }

@@ -4,6 +4,13 @@ const ELIGIBILITY_COOKIE = "us_eligibility_v1";
 const SESSION_COOKIE = "us_session_v1";
 const CSRF_COOKIE = "csrf_v1";
 
+// S1 principle: security decisions gate on REFI_ENV (server-only), never on
+// NEXT_PUBLIC_REFI_ENV (public build-time). NEXT_PUBLIC_REFI_ENV is kept
+// only for public/marketing surface behavior; the two must be able to
+// disagree so operators can force fail-closed without a marketing-visible
+// env flip. In edge runtime this env value is available at request time.
+const serverEnv = process.env["REFI_ENV"];
+const isProdServer = serverEnv === "prod" || serverEnv === "production";
 const isProd = process.env["NEXT_PUBLIC_REFI_ENV"] === "prod";
 const posthogHost =
   process.env["NEXT_PUBLIC_POSTHOG_HOST"] ?? "app.posthog.com";
@@ -80,9 +87,18 @@ export function proxy(request: NextRequest) {
     (pathname.startsWith("/us/onboarding/") && pathname !== "/us/onboarding");
 
   if (needsSession && !request.cookies.get(SESSION_COOKIE)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/us/auth/connect";
-    return NextResponse.redirect(url);
+    // Dev/preview: mirror the BFF's devFallback (auth.ts) — an eligibility
+    // cookie is sufficient to render app pages when REFI_ENV is non-prod.
+    // Prod still requires a real session cookie. This keeps E2E flows and
+    // local dev from bouncing to the wallet connect page while a real
+    // session mint (auth-siwe / D8 magic-link) is still Daniel-owned.
+    const devEligible =
+      !isProdServer && request.cookies.get(ELIGIBILITY_COOKIE);
+    if (!devEligible) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/us/auth/connect";
+      return NextResponse.redirect(url);
+    }
   }
 
   // Admin surfaces do not exist in this investor app. Operator commands live

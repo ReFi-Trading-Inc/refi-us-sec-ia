@@ -5,7 +5,8 @@
  * has an execution policy or managed execution state; a `managed` account
  * has both.
  */
-import { kvStore, makePrototypeMeta, type PrototypeMeta } from "../store";
+import { makePrototypeMeta, type PrototypeMeta } from "../store";
+import { resolveKvStore } from "../../store";
 
 export type SubscriptionMode = "signal" | "managed";
 
@@ -16,7 +17,13 @@ export interface SubscriptionModeState {
   meta: PrototypeMeta;
 }
 
-const states = kvStore<SubscriptionModeState>("subscription-modes");
+// Routed through the S3 factory. Mode selection is a state-machine
+// input that many downstream contract assertions depend on — durable
+// backing is what keeps the projection consistent across redeploys.
+const states = resolveKvStore<SubscriptionModeState>(
+  "subscription-mode",
+  "subscription-modes",
+);
 
 export async function getSubscriptionMode(
   accountId: string,

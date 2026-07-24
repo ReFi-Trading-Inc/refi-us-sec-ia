@@ -36,6 +36,12 @@ const PROTOTYPE_DEFAULTS = {
   // fallback). Only "dev" enables the fallback; "staging"/"prod" fail closed.
   REFI_ENV: "dev" as const,
   REFI_DATA_ADAPTER: "mock" as const,
+  REFI_TRUSTED_ORIGINS: "http://localhost:3000,http://127.0.0.1:3000" as const,
+  SESSION_JWT_ISSUER: "refi-us-sec-ia" as const,
+  SESSION_JWT_AUDIENCE: "refi-us-sec-ia-bff" as const,
+  ADMIN_PORTAL_BASE_URL: "http://localhost:4000" as const,
+  ADMIN_PORTAL_SERVICE_TOKEN:
+    "prototype-only-upstream-service-token-32+chars" as const,
   // AlphaHandoffToken verification (ReFi Alpha spec §2.2). The public key
   // verifies the game-minted ES256 token; iss/aud are pinned so a token
   // minted for another audience cannot pass this verify. Server-only.
@@ -92,6 +98,33 @@ const serverSchema = clientSchema.extend({
   // silently degrading to "dev"; non-prod fills "dev" via PROTOTYPE_DEFAULTS.
   REFI_ENV: z.enum(["dev", "staging", "prod"]),
   REFI_DATA_ADAPTER: z.enum(["mock", "live"]).default("mock"),
+  // Backing-mode contract, per docs/phase2-6-backing-mode-contract.md.
+  // Global default; individual entities can override via
+  // REFI_BACKING__<ENTITY>. The four modes are enforced by the resolver
+  // in lib/config/backing.ts, which knows which modes are valid per entity.
+  REFI_BACKING_DEFAULT: z
+    .enum(["msw", "prototype", "durable", "backend"])
+    .default("prototype"),
+  // Comma-separated allowlist of origins permitted to make mutating BFF
+  // calls (S2 CSRF, lib/bff/csrf.ts). No wildcards; each preview/staging
+  // origin must be listed explicitly. A misconfigured deploy fails loud
+  // rather than silently trusting a broader set.
+  REFI_TRUSTED_ORIGINS: z.string().min(1),
+  // Session JWT iss/aud policy (S1). Any token that verifies against
+  // SESSION_JWT_SECRET is additionally required to declare these values,
+  // so a token issued for another audience (a different service sharing
+  // the secret in a future misconfiguration) is rejected. Both are
+  // documented values, not secrets; they must be stable across mint site
+  // (Daniel's auth-siwe / D8 magic-link) and verify site.
+  SESSION_JWT_ISSUER: z.string().min(1),
+  SESSION_JWT_AUDIENCE: z.string().min(1),
+  // Upstream Admin Portal base URL (S4). Pinned at boot so the proxy
+  // client never accepts a request-derived host segment — closes the
+  // classic SSRF surface by construction rather than by validation.
+  ADMIN_PORTAL_BASE_URL: z.url(),
+  // Service-to-service token forwarded to the Admin Portal on every
+  // proxied call. Ratification is D4 in the Daniel Dependency Ledger.
+  ADMIN_PORTAL_SERVICE_TOKEN: z.string().min(1),
   // AlphaHandoffToken verification (§2.2). Public key travels as a JWK JSON
   // string; iss/aud are pinned. Only the public half is ever read here.
   ALPHA_HANDOFF_PUBLIC_KEY_JWK: z.string().min(1),
@@ -180,6 +213,27 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
       "SESSION_JWT_SECRET",
     ),
     REFI_ENV: withFallback(process.env["REFI_ENV"], "REFI_ENV"),
+    REFI_BACKING_DEFAULT: process.env["REFI_BACKING_DEFAULT"],
+    REFI_TRUSTED_ORIGINS: withFallback(
+      process.env["REFI_TRUSTED_ORIGINS"],
+      "REFI_TRUSTED_ORIGINS",
+    ),
+    SESSION_JWT_ISSUER: withFallback(
+      process.env["SESSION_JWT_ISSUER"],
+      "SESSION_JWT_ISSUER",
+    ),
+    SESSION_JWT_AUDIENCE: withFallback(
+      process.env["SESSION_JWT_AUDIENCE"],
+      "SESSION_JWT_AUDIENCE",
+    ),
+    ADMIN_PORTAL_BASE_URL: withFallback(
+      process.env["ADMIN_PORTAL_BASE_URL"],
+      "ADMIN_PORTAL_BASE_URL",
+    ),
+    ADMIN_PORTAL_SERVICE_TOKEN: withFallback(
+      process.env["ADMIN_PORTAL_SERVICE_TOKEN"],
+      "ADMIN_PORTAL_SERVICE_TOKEN",
+    ),
     ALPHA_HANDOFF_PUBLIC_KEY_JWK: withFallback(
       process.env["ALPHA_HANDOFF_PUBLIC_KEY_JWK"],
       "ALPHA_HANDOFF_PUBLIC_KEY_JWK",

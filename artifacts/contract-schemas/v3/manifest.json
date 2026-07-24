@@ -1,0 +1,103 @@
+{
+  "contract": "refi-us-sec-ia Contract V3 (admin-portal-proxy wire projections)",
+  "version": "v3.20260724",
+  "generatedAt": "2026-07-24T23:27:15.865Z",
+  "schemas": [
+    {
+      "name": "templates",
+      "section": "§4",
+      "file": "templates.schema.json",
+      "sha256": "cd490e684cc86891724742e8601f6a01ed1350b2538307baae118fe5e3701987"
+    },
+    {
+      "name": "memberships",
+      "section": "§4",
+      "file": "memberships.schema.json",
+      "sha256": "0156d614d63f2d74324245832d8bfefce4a674ac0a5b4a2524612e050c31fde6"
+    },
+    {
+      "name": "rules",
+      "section": "§4",
+      "file": "rules.schema.json",
+      "sha256": "812396542b10d9a4916b2b0bc791a4fee3d9e0004ff05aae5893c1750ae75131"
+    },
+    {
+      "name": "accounts",
+      "section": "§5",
+      "file": "accounts.schema.json",
+      "sha256": "420f88c057fb834a5d5a8b88c9eddbae022fb16659f1b65ef88d47aa28906588"
+    },
+    {
+      "name": "account-flow",
+      "section": "§5",
+      "file": "account-flow.schema.json",
+      "sha256": "9887f36737cc5e64b3c25474fcc4e66cc60e14245ed32474384be9e9e4284b4f"
+    },
+    {
+      "name": "risk-limits",
+      "section": "§7",
+      "file": "risk-limits.schema.json",
+      "sha256": "f81e9fa44da17fe316fa3502acd969452d79cc3e0673b9f08495aedce64dae55"
+    },
+    {
+      "name": "intents",
+      "section": "§4a",
+      "file": "intents.schema.json",
+      "sha256": "ca9f6c85a9f99f4b8cdfa95c39ac7cecd69976897301db9072dd0ca13a928208"
+    },
+    {
+      "name": "risk-decisions",
+      "section": "§7",
+      "file": "risk-decisions.schema.json",
+      "sha256": "4da1f40b2748d6994efbb4752ea5d6fa7d3e7d075e94831796a3afd57b43db46"
+    },
+    {
+      "name": "execution-plans",
+      "section": "§8",
+      "file": "execution-plans.schema.json",
+      "sha256": "1dc909422bc211c8d0159556c8afaa324c065b4df942bf102e6decc5e1947450"
+    },
+    {
+      "name": "orders",
+      "section": "§9",
+      "file": "orders.schema.json",
+      "sha256": "fbd4c42fd4b5d53c75fd54463b80558a012faa66d57d5d43657bab140249f5ff"
+    },
+    {
+      "name": "orders-blocked",
+      "section": "§9",
+      "file": "orders-blocked.schema.json",
+      "sha256": "0af2da07bd935202631d28fad583bb8bc084f0ecf05356814af216f0afc9dc0b"
+    },
+    {
+      "name": "broker-interactions",
+      "section": "§10",
+      "file": "broker-interactions.schema.json",
+      "sha256": "17c48f69df90b0bc85d870c08c73f806a809b7fadd8ffd97ad263e68828a9f4f"
+    },
+    {
+      "name": "reconciliation",
+      "section": "§11",
+      "file": "reconciliation.schema.json",
+      "sha256": "d8535a050e52e65cbafc7ad8b64703fa4f2d5be4c0bf28b0bbe04e848d11bcab"
+    },
+    {
+      "name": "trading-controls",
+      "section": "§7.4",
+      "file": "trading-controls.schema.json",
+      "sha256": "9db43af1a6974866368cdbb72bca35212b74097ebc2031974630428fd1de2532"
+    },
+    {
+      "name": "stream-event",
+      "section": "§12 (SSE)",
+      "file": "stream-event.schema.json",
+      "sha256": "e4de31bc5d147161d7027d74680bfff51d43e359e89630d82517a85f142c4901"
+    },
+    {
+      "name": "order-lifecycle",
+      "section": "§7.10",
+      "file": "order-lifecycle.schema.json",
+      "sha256": "3c9d5290a48840aafeb3eda47a1d2742c035b71b3a87e2f3875b4069655fc0ce"
+    }
+  ]
+}

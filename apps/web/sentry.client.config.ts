@@ -7,5 +7,10 @@ if (process.env["NEXT_PUBLIC_REFI_ENV"] === "prod") {
     replaysOnErrorSampleRate: 1.0,
     replaysSessionSampleRate: 0.01,
     integrations: [Sentry.replayIntegration()],
+    release:
+      process.env["NEXT_PUBLIC_APP_VERSION"] ??
+      process.env["NEXT_PUBLIC_SENTRY_RELEASE"] ??
+      undefined,
+    environment: process.env["NEXT_PUBLIC_REFI_ENV"],
   });
 }

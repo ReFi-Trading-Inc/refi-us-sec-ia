@@ -3,17 +3,19 @@
 **Date:** 2026-05-30
 **Source of truth:** [`phase2-6-authoritative-source-of-truth.md`](phase2-6-authoritative-source-of-truth.md)
 **Gap:** `GAP-PREFS-HISTORY-001`, `GAP-PREFS-WRITE-002`, `GAP-PREFS-AUDIT-003`
-**Status:** **Architecture recorded as ratified (2026-05-30): Option 3c — hybrid TS/Python split — PENDING WRITTEN CONFIRMATION FROM DANIEL.** Implementation still blocked pending final Contract V3 + AccountPrefs History Contract (PR-D). Surface 4 remains blocked.
+**Status:** **Architecture recorded as ratified (2026-05-30): Option 3c — hybrid TS/Python split — PENDING WRITTEN CONFIRMATION FROM DANIEL.** Implementation still blocked pending final Contract V3 + AccountPrefs History Contract (PR-D). Production Surface 4 remains blocked; mock Surface 4 is allowed after PR-D lands.
 
-> **Provenance caveat (2026-07-24):** the ratification below is dated one day
+> **Provenance caveat (2026-07-24):** the ratifications below are dated one day
 > after Daniel's 2026-05-29 message, but no email/message source is linked, and
 > Daniel's own words only said Option 3 (`apps/common` shared funcs) "is likely
 > best." Option 3c materially extends that (it adds a Python sidecar service
-> for writes — closer to his Option 1). Until Daniel confirms 3c in writing,
-> treat this as **proposed**, not ratified. PR-D's merge gate (Daniel
+> for writes — closer to his Option 1). Until Daniel confirms in writing,
+> treat these as **proposed**, not ratified. PR-D's merge gate (Daniel
 > ratification) stands either way.
 
 > **Recorded decision (2026-05-30, source unconfirmed):** Option 3c is ratified. `apps/common` is the canonical backend procedure location. Python is the authoritative write path. TypeScript handles reads + validation in the BFF. Parity fixtures hold TS and Python to identical payload shape, diff logic, validation, and hash behavior. The BFF must not invent a separate AccountPrefs write procedure. See Contract V3 §13.1.
+>
+> **Recorded decision (2026-05-30, source unconfirmed) — backend ownership:** `AccountPrefsHistory` lives in Daniel's Spanner / backend path. Daniel will set up the table and the backend wiring so the frontend can later call the canonical read/write paths. In the meantime, frontend mock interfaces are authorized, using the existing `AccountPrefs` table fields as the data-shape guide and the Admin Portal account settings screen as the UX guide. The BFF must not become the long-term system of record for `AccountPrefsHistory`, must not invent a production writer, and must not pretend the mock state is canonical. See `phase2-6-account-prefs-history-contract.md` §1.
 
 This doc captures Daniel's stated requirement, current backend state, the missing history ledger, candidate architectures, the recommended approach, open questions for Daniel, SEC 203A-2(e) implications, test/deploy strategy, and production-blocker classification.
 
@@ -206,16 +208,19 @@ If Option 3c lands:
 
 ## 11. Open questions for Daniel
 
-| #   | Question                                                                                                           | Why it matters                                                                           |
-| --- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| 1   | ~~Confirm or counter-propose the Option 3c hybrid architecture~~ **Resolved 2026-05-30: Option 3c ratified.**      | Drives PR-D and PR-F design                                                              |
-| 2   | Should `AccountPrefsHistory` live in your Spanner instance?                                                        | Strong preference: yes — keeps audit trail unified with rest of trade-lifecycle evidence |
-| 3   | Confirm the DDL shape proposed in §4, or counter-propose                                                           | Locks the contract                                                                       |
-| 4   | Confirm `apps/common.account_prefs_history.writer` is the canonical writer for ALL writers (admin-portal included) | Otherwise drift                                                                          |
-| 5   | Add `AccountPrefsHistory` to retention scope at `apps/common/trade_lifecycle/retention.py`?                        | Required for SEC compliance                                                              |
-| 6   | List of "material change" fields requiring fresh consent re-ack (e.g. all? only `excluded_assets`? config-driven?) | Affects the write procedure                                                              |
-| 7   | Should `admin_portal` writes carry an `intervention_id` linking to `AdminInterventions`?                           | Required to distinguish investor-initiated vs operator-assisted                          |
-| 8   | What's the timeline for shipping the backend table? Phase 3? Sooner?                                               | Drives BFF prototype-store interim scope                                                 |
+| #   | Question                                                                                                                                                                                                                               | Why it matters                                                            |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| 1   | ~~Confirm or counter-propose the Option 3c hybrid architecture~~ **Resolved 2026-05-30: Option 3c ratified.**                                                                                                                          | Drives PR-D and PR-F design                                               |
+| 2   | ~~Should `AccountPrefsHistory` live in your Spanner instance?~~ **Resolved 2026-05-30: yes — Daniel backend / Spanner. Daniel will set up the table and backend wiring. Frontend mock interfaces authorized in the interim per PR-D.** | Settles backend ownership; closes the BFF-as-system-of-record question    |
+| 3   | Confirm the DDL shape proposed in §4, or counter-propose — **still open**                                                                                                                                                              | Locks the contract                                                        |
+| 4   | Confirm exact canonical table name (`AccountPrefsHistory` vs `account_prefs_history` vs other) — **still open**                                                                                                                        | Naming alignment with the rest of Daniel's tables                         |
+| 5   | Confirm canonical writer module path under `apps/common/account_prefs_history/*` — **still open**                                                                                                                                      | Frontend / BFF integration target                                         |
+| 6   | Add `AccountPrefsHistory` to retention scope at `apps/common/trade_lifecycle/retention.py` — **still open**                                                                                                                            | Required for SEC compliance                                               |
+| 7   | Final material-change field list requiring fresh consent re-ack — **still open**                                                                                                                                                       | Affects the write procedure and the prototype consent gate                |
+| 8   | Consent re-ack trigger list (which `UserConsents` versions count as fresh) — **still open**                                                                                                                                            | Material-change gate semantics                                            |
+| 9   | Should `admin_portal` writes carry an `intervention_id` linking to `AdminInterventions`? — **still open**                                                                                                                              | Required to distinguish investor-initiated vs operator-assisted           |
+| 10  | Read/write API shape exposed to the BFF (REST / gRPC sidecar / typed Cloud Run endpoint) — **still open**                                                                                                                              | Frontend client shape                                                     |
+| 11  | Timeline for Daniel backend wiring — **still open**                                                                                                                                                                                    | Drives Surface 4 production unblock and BFF prototype-store interim scope |
 
 ## 12. Production-blocker classification
 

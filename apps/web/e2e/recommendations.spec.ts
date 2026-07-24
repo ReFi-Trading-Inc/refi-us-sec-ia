@@ -1,4 +1,5 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "./fixtures";
+import { type Page } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 
 // Seeded cookie value drives the BFF dev-fallback to a real authId with a
@@ -8,12 +9,6 @@ function cookiesFor(cookieValue: string) {
   return [
     {
       name: "us_eligibility_v1",
-      value: cookieValue,
-      domain: "localhost",
-      path: "/",
-    },
-    {
-      name: "us_session_v1",
       value: cookieValue,
       domain: "localhost",
       path: "/",

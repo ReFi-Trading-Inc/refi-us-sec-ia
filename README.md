@@ -271,6 +271,37 @@ The four Phase 2.5 Daniel-confirmation items are resolved in [Phase 2.6 Daniel a
 
 ---
 
+## Admin Portal integration scoreboard
+
+Per-endpoint status against Daniel's staging Admin Portal. Every row starts **RED**; a row flips **GREEN** the first time the endpoint's `@live`-tagged Playwright spec passes in the nightly job scheduled to activate once **D4** (staging URL + service auth credentials) lands. This scoreboard is the pressure mechanism from [Sprint Plan v3](docs/phase2-6-sprint-plan-v3.md) and becomes bidirectional at Sprint 5 once **D7** (Daniel's GitLab job validating against the [Contract V3 JSON Schemas](artifacts/contract-schemas/v3/manifest.json)) is armed.
+
+Legend: 🔴 red — never observed live · 🟢 green — last `@live` run passed on the date shown · ⏸️ paused — flag off pending contract ratification
+
+| Endpoint                          | Contract V3 § | Investor route(s)                                | Flag                                   | Fixture | Live @ staging |
+| --------------------------------- | ------------- | ------------------------------------------------ | -------------------------------------- | ------- | -------------- |
+| `GET /api/v1/templates`           | §4            | `/investor/templates`                            | `FLAG_ADMIN_PROXY_TEMPLATES`           | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/memberships`         | §4            | `/investor/memberships`                          | `FLAG_ADMIN_PROXY_MEMBERSHIPS`         | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/rules`               | §4            | `/investor/rules`                                | `FLAG_ADMIN_PROXY_RULES`               | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/accounts`            | §5            | `/investor/accounts`                             | `FLAG_ADMIN_PROXY_ACCOUNTS`            | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/account-flow`        | §5            | `/investor/account-flow`                         | `FLAG_ADMIN_PROXY_ACCOUNT_FLOW`        | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/risk-limits`         | §7            | `/investor/risk-limits`                          | `FLAG_ADMIN_PROXY_RISK_LIMITS`         | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/intents`             | §4a           | `/investor/intents`, `/investor/recommendations` | `FLAG_ADMIN_PROXY_INTENTS`             | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/risk-decisions`      | §7            | `/investor/risk-decisions`                       | `FLAG_ADMIN_PROXY_RISK_DECISIONS`      | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/execution-plans`     | §8            | `/investor/execution-plans`                      | `FLAG_ADMIN_PROXY_EXECUTION_PLANS`     | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/orders`              | §9            | `/investor/orders`                               | `FLAG_ADMIN_PROXY_ORDERS`              | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/orders-blocked`      | §9            | `/investor/orders-blocked`                       | `FLAG_ADMIN_PROXY_ORDERS_BLOCKED`      | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/broker-interactions` | §10           | `/investor/broker-interactions`                  | `FLAG_ADMIN_PROXY_BROKER_INTERACTIONS` | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/reconciliation`      | §11           | `/investor/reconciliation`                       | `FLAG_ADMIN_PROXY_RECONCILIATION`      | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/trading-controls`    | §7.4          | `/investor/trading-controls-state`               | `FLAG_ADMIN_PROXY_TRADING_CONTROLS`    | 🟢      | 🔴 pending D4  |
+| `GET /api/v1/stream` (SSE)        | §12           | `/investor/stream`                               | `FLAG_ADMIN_PROXY_STREAM`              | 🟢      | 🔴 pending D4  |
+| `PATCH /api/v1/account-prefs`     | §13.1         | `/investor/account-prefs`                        | `FLAG_ACCOUNT_PREFS_PATCH`             | ⏸️      | ⏸️ pending D1  |
+
+**How this table updates.** The `pnpm scoreboard-run` job (Sprint 4) runs the `@live`-tagged subset of `apps/web/e2e/admin-portal-proxy.spec.ts` against `ADMIN_PORTAL_BASE_URL`; each spec's pass/fail rewrites the corresponding row plus its last-observed date. Until D4 lands, rows stay 🔴 by construction — this is what "fixture-first, never blocked" looks like in the plan.
+
+**Contract V3 JSON Schemas.** `pnpm export-schemas` regenerates [`artifacts/contract-schemas/v3/`](artifacts/contract-schemas/v3/) from the strict Zod projections. Hand the `manifest.json` sha256 set to Daniel for the D7 GitLab CI job so his outbound Admin Portal responses validate on his side.
+
+---
+
 ## License
 
 UNLICENSED — proprietary to ReFi Trading Inc.

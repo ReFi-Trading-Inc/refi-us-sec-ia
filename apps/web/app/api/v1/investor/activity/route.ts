@@ -4,8 +4,17 @@
  * Returns recent investor-visible activity. Today: projection from
  * InvestorActionReceipt + DecisionRecord. When Daniel's lifecycle tables
  * are reachable, this folds in real order / intent events.
+ *
+ * S4c completeness: authed reads emit a RecordAccessLog entry keyed to
+ * `activity:index`; anonymous callers receive an empty projection and
+ * leave no entry, so unauthenticated hits never appear in the compliance
+ * log as "record accessed".
  */
-import { bffRead } from "@lib/bff/handler";
+import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
+import { bffReadWithAccessLog } from "@lib/bff/handler";
+import { correlationIdFrom } from "@lib/bff/correlation";
+import { getAuthContext } from "@lib/bff/auth";
 import { listActionReceipts, listDecisionRecords } from "@lib/prototype-store";
 
 interface ActivityItem {
@@ -16,11 +25,12 @@ interface ActivityItem {
   references: string[];
 }
 
-export const GET = bffRead({
+const wrapped = bffReadWithAccessLog<{ items: ActivityItem[] }>({
+  action: "viewRecord",
   source: "prototype-bff",
   upstreamGap: "G-001",
+  recordRef: () => "activity:index",
   fetch: async (ctx) => {
-    if (!ctx.auth) return { items: [] as ActivityItem[] };
     const [receipts, advisory] = await Promise.all([
       listActionReceipts({ authId: ctx.auth.authId, limit: 100 }),
       ctx.auth.accountId
@@ -54,3 +64,15 @@ export const GET = bffRead({
     return { items: items.slice(0, 200) };
   },
 });
+
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const auth = await getAuthContext(req);
+  if (!auth) {
+    const correlationId = correlationIdFrom(req);
+    return NextResponse.json(
+      { data: { items: [] }, source: "prototype-bff", correlationId },
+      { status: 200 },
+    );
+  }
+  return wrapped(req);
+}

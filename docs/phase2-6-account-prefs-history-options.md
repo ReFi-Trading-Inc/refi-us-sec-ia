@@ -3,9 +3,17 @@
 **Date:** 2026-05-30
 **Source of truth:** [`phase2-6-authoritative-source-of-truth.md`](phase2-6-authoritative-source-of-truth.md)
 **Gap:** `GAP-PREFS-HISTORY-001`, `GAP-PREFS-WRITE-002`, `GAP-PREFS-AUDIT-003`
-**Status:** **Architecture ratified by Daniel (2026-05-30): Option 3c — hybrid TS/Python split.** Implementation still blocked pending final Contract V3 + AccountPrefs History Contract (PR-D). Surface 4 remains blocked.
+**Status:** **Architecture recorded as ratified (2026-05-30): Option 3c — hybrid TS/Python split — PENDING WRITTEN CONFIRMATION FROM DANIEL.** Implementation still blocked pending final Contract V3 + AccountPrefs History Contract (PR-D). Surface 4 remains blocked.
 
-> **Daniel decision (2026-05-30):** Option 3c is ratified. `apps/common` is the canonical backend procedure location. Python is the authoritative write path. TypeScript handles reads + validation in the BFF. Parity fixtures hold TS and Python to identical payload shape, diff logic, validation, and hash behavior. The BFF must not invent a separate AccountPrefs write procedure. See Contract V3 §13.1.
+> **Provenance caveat (2026-07-24):** the ratification below is dated one day
+> after Daniel's 2026-05-29 message, but no email/message source is linked, and
+> Daniel's own words only said Option 3 (`apps/common` shared funcs) "is likely
+> best." Option 3c materially extends that (it adds a Python sidecar service
+> for writes — closer to his Option 1). Until Daniel confirms 3c in writing,
+> treat this as **proposed**, not ratified. PR-D's merge gate (Daniel
+> ratification) stands either way.
+
+> **Recorded decision (2026-05-30, source unconfirmed):** Option 3c is ratified. `apps/common` is the canonical backend procedure location. Python is the authoritative write path. TypeScript handles reads + validation in the BFF. Parity fixtures hold TS and Python to identical payload shape, diff logic, validation, and hash behavior. The BFF must not invent a separate AccountPrefs write procedure. See Contract V3 §13.1.
 
 This doc captures Daniel's stated requirement, current backend state, the missing history ledger, candidate architectures, the recommended approach, open questions for Daniel, SEC 203A-2(e) implications, test/deploy strategy, and production-blocker classification.
 

@@ -40,7 +40,7 @@ function buildCsp(): string {
 
   return [
     "default-src 'self'",
-    `script-src 'self' ${scriptSrc}`,
+    `script-src ${scriptSrc}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     `connect-src 'self' wss: https:${extraConnect ? " " + extraConnect : ""}`,

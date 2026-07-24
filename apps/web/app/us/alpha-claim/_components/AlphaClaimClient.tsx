@@ -32,7 +32,10 @@ const DESTINATIONS = new Set([
   "MANAGED_INFO",
 ]);
 const CONTINUE_ROUTE = "/us/eligibility";
-const WAITLIST_ROUTE = "/us/alpha-signup";
+// Expired/invalid tokens are re-mintable in the game; the on-domain waitlist
+// page (F-track, FLAG_ALPHA_APPLICATION_ROUTE) does not exist yet, so the
+// failure path must not point there.
+const GAME_URL = "https://play.refi.trading";
 
 function capture(name: string, props?: Record<string, unknown>): void {
   const ph = posthog as unknown as {
@@ -135,10 +138,14 @@ export function AlphaClaimClient(): React.ReactElement {
       </h2>
       <p className="text-charcoal-300 text-sm">
         Handoff links are single-use and short-lived. You can{" "}
-        <a className="text-mint-400 hover:underline" href={WAITLIST_ROUTE}>
-          join the waitlist directly
+        <a className="text-mint-400 hover:underline" href={GAME_URL}>
+          return to the game for a fresh link
         </a>{" "}
-        or return to the game and try again.
+        or{" "}
+        <a className="text-mint-400 hover:underline" href={CONTINUE_ROUTE}>
+          continue to eligibility
+        </a>{" "}
+        without your game progress.
       </p>
     </div>
   );

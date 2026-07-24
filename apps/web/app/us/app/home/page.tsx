@@ -31,8 +31,8 @@ function formatPct(value: number): string {
 export default function HomePage() {
   const { positions, portfolioMetrics, history } = useSimulation();
   const { totalValue, dayPl, dayPlPct, totalPl, totalPlPct } = portfolioMetrics;
-  const dayPlClass = dayPl >= 0 ? "text-mint-400" : "text-rose-400";
-  const totalPlClass = totalPl >= 0 ? "text-mint-400" : "text-rose-400";
+  const dayPlClass = dayPl >= 0 ? "text-mint-400" : "text-status-rejected";
+  const totalPlClass = totalPl >= 0 ? "text-mint-400" : "text-status-rejected";
 
   const kpis = [
     {
@@ -93,17 +93,17 @@ export default function HomePage() {
               >
                 <defs>
                   <linearGradient id="homeArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#34d399" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#0CD4A0" stopOpacity={0.5} />
+                    <stop offset="100%" stopColor="#0CD4A0" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="t" hide />
                 <YAxis domain={["auto", "auto"]} hide />
                 <Tooltip
-                  cursor={{ stroke: "#52525b" }}
+                  cursor={{ stroke: "#47566A" }}
                   contentStyle={{
-                    background: "#0a0a0a",
-                    border: "1px solid #27272a",
+                    background: "#0A0F14",
+                    border: "1px solid #2D3A47",
                     fontSize: 12,
                   }}
                   formatter={(value) => formatCurrency(Number(value))}
@@ -112,7 +112,7 @@ export default function HomePage() {
                 <Area
                   type="monotone"
                   dataKey="value"
-                  stroke="#34d399"
+                  stroke="#0CD4A0"
                   fill="url(#homeArea)"
                   strokeWidth={2}
                   isAnimationActive={false}
@@ -153,7 +153,9 @@ export default function HomePage() {
                   </p>
                   <p
                     className={`text-xs font-mono tabular-nums ${
-                      p.unrealized_pl >= 0 ? "text-mint-400" : "text-rose-400"
+                      p.unrealized_pl >= 0
+                        ? "text-mint-400"
+                        : "text-status-rejected"
                     }`}
                   >
                     {formatCurrency(p.unrealized_pl)} (

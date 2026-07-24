@@ -176,7 +176,7 @@ export default function AccountPage() {
               )}
 
               {confirmDisconnect ? (
-                <div className="flex flex-col gap-2 p-3 rounded-md border border-rose-800 bg-rose-950/30">
+                <div className="flex flex-col gap-2 p-3 rounded-md border border-status-rejected/40 bg-status-rejected/10">
                   <p className="text-xs text-charcoal-300">
                     Disconnecting will stop managed execution. You can reconnect
                     at any time.

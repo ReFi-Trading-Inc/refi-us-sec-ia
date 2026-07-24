@@ -5,11 +5,11 @@ export function SimulatedDataBadge() {
     <span
       role="status"
       aria-label="Data mode: simulated"
-      className="inline-flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1 text-xs font-medium text-amber-300"
+      className="inline-flex items-center gap-2 rounded-full border border-status-warning/40 bg-status-warning/10 px-3 py-1 text-xs font-medium text-status-warning"
     >
       <span
         aria-hidden="true"
-        className="inline-block h-2 w-2 rounded-full bg-amber-400 motion-safe:animate-pulse"
+        className="inline-block h-2 w-2 rounded-full bg-status-warning motion-safe:animate-pulse"
       />
       Simulated Data
     </span>

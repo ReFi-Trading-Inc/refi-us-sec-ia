@@ -3,17 +3,18 @@ import { Badge, Card, CardContent, StatusBanner } from "@ui/components";
 import { disclosureDocuments } from "../_content/disclosures";
 import { usBrand } from "../_content/brand";
 import { BrandMark } from "../_components/BrandMark";
+import { SiteFooter } from "../_components/SiteFooter";
 
 export const metadata: Metadata = { title: "Disclosures" };
 
 export default function DisclosuresPage() {
   return (
-    <div className="min-h-screen bg-charcoal-950 text-charcoal-100 font-sans">
+    <div className="min-h-screen bg-charcoal-950 text-charcoal-100 font-sans flex flex-col">
       <header className="border-b border-charcoal-800 px-8 py-4 flex items-center justify-between">
         <BrandMark />
       </header>
 
-      <main className="max-w-3xl mx-auto px-8 py-16">
+      <main className="w-full max-w-3xl mx-auto px-8 py-16 flex-1">
         <h1 className="text-2xl font-semibold text-charcoal-50 mb-2">
           Regulatory disclosures
         </h1>
@@ -76,6 +77,8 @@ export default function DisclosuresPage() {
           ReFi.Trading.
         </p>
       </main>
+
+      <SiteFooter />
     </div>
   );
 }

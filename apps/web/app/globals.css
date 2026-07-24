@@ -17,6 +17,19 @@
   }
 }
 
+@layer components {
+  /* Ported from the marketing site (refi-landing-latest/src/index.css); the
+     dot color is mint-400 #0CD4A0 at low alpha. */
+  .grid-pattern {
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      rgba(12, 212, 160, 0.15) 1px,
+      transparent 0
+    );
+    background-size: 24px 24px;
+  }
+}
+
 @keyframes shimmer {
   from {
     transform: translateX(-100%);

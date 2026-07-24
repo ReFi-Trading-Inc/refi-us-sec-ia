@@ -44,31 +44,43 @@ plumbing advanced. This doc puts it on the plan.
 - [x] Replaced the plain-text headers on `/us`, `/us/eligibility`,
       `/us/disclosures` with `BrandMark`.
 - [x] `pnpm --filter @refi/web build` green.
+- [x] **Typographic scale + spacing rhythm** — hero h1 now uses the marketing
+      display scale (`text-4xl/5xl/6xl font-bold tracking-tight`), section
+      headings use `text-3xl md:text-4xl font-bold tracking-tight`
+      (marketing `.section-title`), sections use `py-20 md:py-24` rhythm.
+- [x] **Hero treatment** — ported the marketing background treatment in the
+      buttoned-down register: `.grid-pattern` dot grid (mint at 15% alpha, from
+      marketing `index.css`) + charcoal gradient + soft mint glow blurs. No
+      photo, no animation — deliberately quieter than refi.trading's hero.
+- [x] **Trust row / "how it works" cards** — both grids now use the marketing
+      card treatment: `rounded-lg border-charcoal-500/60 bg-charcoal-700/40 p-6`
+      with `hover:border-mint-400/30` (from marketing `.card` / `FeaturePill`).
+- [x] **Footer** — shared `SiteFooter` lockup (`_components/SiteFooter.tsx`):
+      BrandMark + entity/status line + nav + the disclaimer in a bordered panel
+      (marketing footer's compliance-box treatment). Applied on `/us`,
+      `/us/eligibility`, `/us/disclosures`; copy unchanged (counsel-owned).
+- [x] **`@refi/ui` audit** — grepped `packages/ui/src` for hard-coded hex:
+      none. All components go through the token layer, so the re-anchored
+      palette reaches them automatically.
+- [x] **Investor portal sweep (code level)** — grepped `apps/web/app` for
+      hard-coded hex and off-token Tailwind palette classes; fixed everything
+      found: chart colors on `/us/app/home` + `/us/app/portfolio` (emerald/zinc
+      → mint/charcoal tokens), `text-rose-*` P&L colors → `text-status-rejected`,
+      the disconnect-confirm panel on `/us/app/account`, the amber
+      `SimulatedDataBadge` → `status-warning`, `text-red-400` on the alpha-claim
+      error state, and the RainbowKit wallet-modal accent (was old teal
+      `#2dd4bf` → `#0CD4A0` on `#0A0F14`).
+- [x] **OG/favicon** — `app/icon.png` (mark at 128px, Next app-router favicon
+      convention) and `app/opengraph-image.tsx` (1200×630 via `next/og`: mark +
+      wordmark + counsel-confirmed hero headline on charcoal with the dot
+      grid). The game's SVG assets weren't reachable from this repo, so the
+      shell's treatment is authored from the same tokens instead.
 
 ## Backlog — "it goes deeper than the logo"
 
-Ordered by visible signal. None of these are on other tracks; they belong here.
-
-1. **Typographic scale + spacing rhythm** — the marketing site uses a tighter
-   display scale and generous section spacing. The shell's hero/section spacing
-   is functional but flat. Port the display sizes and section vertical rhythm.
-2. **Hero treatment** — marketing has a gradient/graphic hero; the shell hero is
-   text-only on flat charcoal. Add the marketing hero background treatment
-   (respecting the buttoned-down, no-ASCII register — this is the hedge-fund
-   surface, deliberately contrasting the retro game).
-3. **Trust row / "how it works" cards** — align card styling (border, radius,
-   hover) to the marketing component library rather than ad-hoc utility classes.
-4. **Footer** — port the marketing footer lockup (mark + legal + nav) in place
-   of the current text-only footer.
-5. **`@refi/ui` audit** — confirm `Button`, `Card`, `Badge`, `StatusBanner`
-   render on-brand with the re-anchored tokens; fix any component with
-   hard-coded hex that bypasses the token layer.
-6. **Investor portal + admin sweep** — the token change reaches these surfaces
-   automatically, but they have not been visually reviewed against the brand.
-   Walk each once tokens land.
-7. **OG/favicon** — shell favicon + Open Graph image using the mark, matching
-   the game's `public/favicon.svg` / `og-image.svg` treatment for the shell
-   register.
+1. **Investor portal + admin visual walk** — the token fixes above are
+   code-level; each portal/admin screen still needs one human visual pass
+   against the brand once deployed.
 
 ## Non-goals
 

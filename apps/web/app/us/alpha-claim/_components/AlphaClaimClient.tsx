@@ -125,7 +125,7 @@ export function AlphaClaimClient(): React.ReactElement {
   // invalid | error
   return (
     <div className="rounded-md bg-charcoal-900 border border-charcoal-800 p-6">
-      <p className="text-red-400 font-mono text-xs uppercase tracking-widest mb-2">
+      <p className="text-status-rejected font-mono text-xs uppercase tracking-widest mb-2">
         {phase === "invalid" ? "Link expired" : "Something went wrong"}
       </p>
       <h2 className="text-xl font-semibold text-charcoal-50 mb-3">

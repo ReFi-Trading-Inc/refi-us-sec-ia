@@ -2,6 +2,24 @@ packages:
   - "apps/*"
   - "packages/*"
 
+# Security floor for transitive deps (Dependabot high-severity burn-down).
+# Each entry pins the minimum patched version; parents' own ranges stay intact.
+overrides:
+  ws: ">=8.21.0"
+  axios: ">=1.18.0"
+  sharp: ">=0.35.0"
+  postcss: ">=8.5.18"
+  "brace-expansion@1": ">=1.1.16 <2"
+  "brace-expansion@2": ">=2.1.2 <3"
+  "brace-expansion@5": ">=5.0.8"
+  "@opentelemetry/exporter-prometheus": ">=0.217.0"
+  "@opentelemetry/sdk-node": ">=0.217.0"
+  "@opentelemetry/auto-instrumentations-node": ">=0.75.0"
+  "@opentelemetry/propagator-jaeger": ">=2.9.0"
+  "@grpc/grpc-js": ">=1.14.4"
+  protobufjs: ">=7.6.1"
+  hono: ">=4.12.25"
+
 allowBuilds:
   "@sentry/cli": true
   bufferutil: true

@@ -16,7 +16,21 @@
 
 ## Daniel ratifications folded into this register (2026-05-30)
 
-> **Provenance caveat (2026-07-24):** these ratifications carry no linked
+> ⛔ **PARTIALLY OVERTURNED (2026-07-28).** Daniel's written direction arrived
+> and contradicts several items below. See
+> [`phase2-7-daniel-direction-resolution.md`](phase2-7-daniel-direction-resolution.md)
+> for the authoritative replacement and §6 there for the full gap delta table.
+>
+> | Item below                               | Outcome                                                                                                             |
+> | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+> | 1. AccountPrefs Option 3c                | **Rewritten** — backend-owned, same Spanner DB, atomic canonical writer; no TS port, no parity fixtures, no sidecar |
+> | 2. Admin Portal ACL patterns 1+2         | **Overturned** — Admin Portal rejected as the investor boundary; dedicated `investor-api` service instead           |
+> | 3. `/admin-actions` verb allowlist       | **Membership changed** — `liquidate_all` deferred; investor `reduce_only` added                                     |
+> | 4. Investor-initiable control modes      | **Survives**, and `reduce_only` mapping now resolved                                                                |
+> | 5. Investor self-cancel `pending_submit` | **Survives** — deferred, on ownership-boundary grounds                                                              |
+> | 6. Investor audit-packet download        | **Narrowed** — full packet not exposed; decision receipts only                                                      |
+
+> **Provenance caveat (2026-07-24) — since vindicated:** these ratifications carry no linked
 > email/message source, and Daniel's verifiable 2026-05-29 message stated only
 > a _preference_ for Option 3 ("likely best"), not a ratification of the 3c
 > hybrid. Treat items below as **recorded, pending Daniel's written

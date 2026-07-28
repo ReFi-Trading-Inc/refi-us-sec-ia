@@ -510,19 +510,21 @@ await section(
 );
 
 await section(
-  "INVESTOR_ADMIN_VERBS matches Contract V3 §13.3 exactly",
+  "INVESTOR_ADMIN_VERBS matches Daniel's 2026-07-28 approved action set",
   async () => {
-    // Contract V3 §13.3 — the only investor-side admin-action verbs the BFF
-    // may accept. Any string outside this set must be a 403 + tripwire hit.
-    // Imported from apps/web/src/lib/sec203a/admin-verbs.ts so the literal
-    // cannot drift from the source-of-truth module.
+    // Daniel's written direction 2026-07-28 — the only investor-originable
+    // verbs the BFF may accept at
+    // POST /api/v1/investor/accounts/{account_id}/actions. Any string outside
+    // this set must be a 403 + tripwire hit. Imported from
+    // apps/web/src/lib/sec203a/admin-verbs.ts so the literal cannot drift from
+    // the source-of-truth module.
     const expected = [
       "pause_autopilot",
       "resume_autopilot",
       "join_template",
       "leave_template",
       "update_prefs",
-      "liquidate_all",
+      "reduce_only",
     ];
     const forbidden = [
       "force_rebuild",
@@ -533,11 +535,17 @@ await section(
       "founder_approve",
       "support_advise",
       "investor_accept",
+      // Deferred by Daniel 2026-07-28 until the confirmation, position-preview,
+      // step-up-auth, idempotency, partial-fill, unknown-state, and
+      // lifecycle-evidence scenarios pass in paper testing. Distinct from
+      // ACCOUNT_INTENT_KINDS.liquidate_all, which is a backend intent kind and
+      // correctly still exists (see the canary below).
+      "liquidate_all",
     ];
     assert.deepEqual(
       [...INVESTOR_ADMIN_VERBS].sort(),
       [...expected].sort(),
-      "INVESTOR_ADMIN_VERBS drifted from Contract V3 §13.3 — update Contract V3 and Daniel's authoritative spec before changing.",
+      "INVESTOR_ADMIN_VERBS drifted from Daniel's approved action set — update docs/phase2-7-daniel-direction-resolution.md §5 and obtain written backend confirmation before changing.",
     );
     for (const v of forbidden) {
       assert.equal(
@@ -549,7 +557,7 @@ await section(
     assert.equal(
       INVESTOR_ADMIN_VERBS.length,
       6,
-      "Contract V3 §13.3 fixes the allowlist at exactly 6 verbs.",
+      "Daniel's 2026-07-28 direction fixes the allowlist at exactly 6 verbs.",
     );
   },
 );

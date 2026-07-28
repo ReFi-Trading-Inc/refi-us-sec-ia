@@ -197,6 +197,14 @@ Zero. Docs + one stub entity.
 
 ## PR-E — Admin Portal API proxy / BFF ACL design
 
+> ⛔ **CANCELLED (2026-07-28).** Daniel rejected the Admin Portal as the investor
+> boundary; the ACL moves into a dedicated backend `investor-api` service. This
+> PR is replaced by **PR-E′** (typed investor-api client) and **PR-E″**
+> (identity-ccid session exchange + multi-account) in
+> [`phase2-7-daniel-direction-resolution.md`](phase2-7-daniel-direction-resolution.md) §7.
+> Nothing below was implemented — `apps/web/src/lib/admin-portal-proxy/` does not
+> exist — so the cancellation costs no code. Retained as historical record.
+
 **Branch**: `phase2-6-admin-portal-proxy`
 
 ### Objective

@@ -19,6 +19,25 @@ export type SiweFlowState =
   | { phase: "error"; code: SiweErrorCode };
 
 /**
+ * NOT THE PRIMARY LOGIN PATH (Daniel 2026-07-28).
+ *
+ * `auth-siwe` is not the investor identity integration. `identity-ccid` is:
+ * email-first onboarding (magic link or verification code) that must not
+ * require a wallet, exchanged for a BFF-owned session. See
+ * `apps/web/src/lib/bff/auth.ts` for the boundary this swaps to.
+ *
+ * SIWE's remaining approved purpose is to verify a wallet signature in order
+ * to LINK an address to an existing `user_id`, where there is a defined
+ * authorization purpose. A wallet address is a linked identifier — never a
+ * user id, never an account id.
+ *
+ * Until identity-ccid deploys (`GAP-IDENTITY-018`, blocked on the §8
+ * connection package) this flow is also what mints a local session for
+ * development, because the email-first exchange cannot be built without
+ * Daniel's JWKS URL, issuer, and audience. That is an interim local-dev
+ * stand-in, not the product's login design. Retire the MSW `/siwe/*` handlers
+ * with PR-E″ rather than swapping them to a backend.
+ *
  * Orchestrates the full SIWE flow:
  *   1. POST /siwe/nonce
  *   2. Build EIP-4361 message

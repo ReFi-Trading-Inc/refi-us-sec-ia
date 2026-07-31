@@ -14,32 +14,39 @@ const ELIGIBILITY_COOKIE_ONLY = [
   },
 ];
 
-test.describe("SIWE auth", () => {
+test.describe("Wallet linking", () => {
   test("connect page renders wallet button", async ({ page }) => {
     await page.context().addCookies(ELIGIBILITY_COOKIE_ONLY);
     await page.goto("/us/auth/connect");
     // Wait for H1 before further assertions — Next.js dev compiles routes
     // on-demand and the first parallel navigation can hit a transient 404.
     await expect(
-      page.getByRole("heading", { level: 1, name: /verify your identity/i }),
+      page.getByRole("heading", { level: 1, name: /link a wallet/i }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: /connect wallet/i }),
     ).toBeVisible();
   });
 
-  test("shows SIWE copy on the connect page", async ({ page }) => {
+  test("presents wallet linking as optional, not as the login", async ({
+    page,
+  }) => {
     await page.context().addCookies(ELIGIBILITY_COOKIE_ONLY);
     await page.goto("/us/auth/connect");
     await expect(
-      page.getByRole("heading", { level: 1, name: /verify your identity/i }),
+      page.getByRole("heading", { level: 1, name: /link a wallet/i }),
     ).toBeVisible();
-    // Anchor to the unique body sentence on the connect card. The earlier
-    // regex `/ethereum wallet|sign in|wallet/i` resolved to both the
-    // "Connect your wallet to continue" heading and this paragraph and
-    // tripped strict-mode.
+    // Anchor to the unique body sentence on the connect card.
+    await expect(page.getByText(/linking a wallet is optional/i)).toBeVisible();
+
+    // Daniel 2026-07-28: onboarding is email-first and must not require a
+    // wallet; a wallet address is a linked identifier, never the account id.
+    // The page must not claim otherwise.
     await expect(
       page.getByText(/uses your Ethereum wallet as your login/i),
-    ).toBeVisible();
+    ).toHaveCount(0);
+    await expect(
+      page.getByText(/your wallet address is your account/i),
+    ).toHaveCount(0);
   });
 });

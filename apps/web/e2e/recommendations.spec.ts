@@ -1,25 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
-
-// Seeded cookie value drives the BFF dev-fallback to a real authId with a
-// matching auth-session-link, so /api/v1/investor/recommendations resolves
-// to the seeded RecommendationProjection rows (see global-setup.ts).
-function cookiesFor(cookieValue: string) {
-  return [
-    {
-      name: "us_eligibility_v1",
-      value: cookieValue,
-      domain: "localhost",
-      path: "/",
-    },
-    {
-      name: "us_session_v1",
-      value: cookieValue,
-      domain: "localhost",
-      path: "/",
-    },
-  ];
-}
+import { e2eAuthCookies } from "./session";
 
 // The recommendation detail hook (`useRecommendation`) targets
 // `/v1/recommendations/{id}`, which is upstream-owned and not provided by
@@ -50,7 +31,7 @@ test.describe("Recommendations — Signal user", () => {
   test.beforeEach(async ({ page }) => {
     await page
       .context()
-      .addCookies(cookiesFor(E2E_USERS.signal.eligibilityCookie));
+      .addCookies(await e2eAuthCookies(E2E_USERS.signal.eligibilityCookie));
   });
 
   test("list renders seeded recommendations", async ({ page }) => {
@@ -105,7 +86,7 @@ test.describe("Recommendations — Managed user", () => {
   test.beforeEach(async ({ page }) => {
     await page
       .context()
-      .addCookies(cookiesFor(E2E_USERS.managed.eligibilityCookie));
+      .addCookies(await e2eAuthCookies(E2E_USERS.managed.eligibilityCookie));
   });
 
   test("list renders managed banner and review-required CTA when blocked", async ({

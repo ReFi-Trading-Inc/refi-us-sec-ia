@@ -25,7 +25,12 @@ function fnv1a(input: string): string {
   return h.toString(16).padStart(8, "0");
 }
 
-function authIdFor(cookieValue: string): string {
+/**
+ * Derive the deterministic dev auth id for a seeded user. Exported so
+ * `./session.ts` mints session tokens whose `sub` matches what the seeder
+ * wrote, rather than duplicating the hash and drifting from it.
+ */
+export function authIdFor(cookieValue: string): string {
   return `dev-${fnv1a(cookieValue).slice(0, 16)}`;
 }
 

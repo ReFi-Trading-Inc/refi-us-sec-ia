@@ -1,5 +1,6 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
+import { e2eAuthCookies } from "./session";
 
 // Dev-mode Next compilation per route on first hit can take 20–60s. The
 // mode-aware strip and recommendation list both go through SSR so the
@@ -13,24 +14,7 @@ async function seedCookies(
   context: BrowserContext,
   eligibilityValue: string,
 ): Promise<void> {
-  // path "/" so server-side routes under /api/v1/* receive the cookies.
-  // The proxy middleware gates /us/app/* on the session cookie's presence;
-  // its value is opaque to the proxy and falls through to the BFF dev-fallback,
-  // which keys off the eligibility cookie.
-  await context.addCookies([
-    {
-      name: "us_eligibility_v1",
-      value: eligibilityValue,
-      domain: "localhost",
-      path: "/",
-    },
-    {
-      name: "us_session_v1",
-      value: "e2e-placeholder-session-token",
-      domain: "localhost",
-      path: "/",
-    },
-  ]);
+  await context.addCookies(await e2eAuthCookies(eligibilityValue));
 }
 
 test.describe("Signal mode happy path", () => {

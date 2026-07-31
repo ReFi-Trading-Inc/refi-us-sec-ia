@@ -1,5 +1,6 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
+import { e2eAuthCookies } from "./session";
 
 interface BffJsonBody {
   data: {
@@ -31,20 +32,7 @@ async function seedCookies(
   context: BrowserContext,
   eligibilityValue: string,
 ): Promise<void> {
-  await context.addCookies([
-    {
-      name: "us_eligibility_v1",
-      value: eligibilityValue,
-      domain: "localhost",
-      path: "/",
-    },
-    {
-      name: "us_session_v1",
-      value: "e2e-placeholder-session-token",
-      domain: "localhost",
-      path: "/",
-    },
-  ]);
+  await context.addCookies(await e2eAuthCookies(eligibilityValue));
 }
 
 // Several tests mutate the prototype store for the user under test. Serial

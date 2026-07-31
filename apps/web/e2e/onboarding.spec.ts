@@ -1,22 +1,8 @@
 import { test, expect, type Page } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
+import { e2eAuthCookies } from "./session";
 
 const SIGNAL_COOKIE = E2E_USERS.signal.eligibilityCookie;
-
-const authCookies = [
-  {
-    name: "us_eligibility_v1",
-    value: SIGNAL_COOKIE,
-    domain: "localhost",
-    path: "/",
-  },
-  {
-    name: "us_session_v1",
-    value: SIGNAL_COOKIE,
-    domain: "localhost",
-    path: "/",
-  },
-];
 
 // The investor BFF does not currently expose `/v1/brokers/*` routes; the
 // broker registry + connection + key-submission paths are upstream-owned
@@ -61,7 +47,7 @@ async function mockBrokerRoutes(page: Page) {
 
 test.describe("Broker onboarding", () => {
   test.beforeEach(async ({ page }) => {
-    await page.context().addCookies(authCookies);
+    await page.context().addCookies(await e2eAuthCookies(SIGNAL_COOKIE));
     await mockBrokerRoutes(page);
   });
 
@@ -125,7 +111,7 @@ test.describe("Advisory profile", () => {
   // inside the advisory profile (the surface mounted at
   // `/us/onboarding/profile`).
   test.beforeEach(async ({ page }) => {
-    await page.context().addCookies(authCookies);
+    await page.context().addCookies(await e2eAuthCookies(SIGNAL_COOKIE));
   });
 
   test("renders advisory profile with risk tolerance field", async ({

@@ -410,10 +410,19 @@ components:
         filled_avg_price: { type: number }
         created_at: { type: string, format: date-time }
     OrderPreviewResult:
+      # Binary by construction. Daniel's Q1 answer (2026-05-30, upheld
+      # 2026-07-28): every persisted RiskDecision.decision = "rejected" is a
+      # backend hard stop, and Exec Gateway builds plans only from approved
+      # decisions. A risk verdict is therefore never clearable from a frontend,
+      # so this gate must not offer a "request manual review" escalation.
+      # Retryable operational conditions (STALE_PRICES, BROKER_UNAVAILABLE,
+      # RETRY_PRICES) surface as the UNAVAILABLE client state with a retry
+      # affordance, not as a review request. See
+      # docs/phase2-6-daniel-answer-resolution.md Q1 (GAP-RISK-BINARY-006).
       type: object
       required: [status, reasons, source]
       properties:
-        status: { type: string, enum: [ALLOW, REVIEW, DENY] }
+        status: { type: string, enum: [ALLOW, DENY] }
         reasons:
           type: array
           items:

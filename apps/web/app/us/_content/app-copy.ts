@@ -235,12 +235,9 @@ export const compliancePreviewCopy = {
     tone: "success" as const,
     body: "Compliance review passed. You may submit this order.",
   },
-  REVIEW: {
-    label: "Manual review required",
-    tone: "warning" as const,
-    body: "This order requires manual compliance review before submission.",
-    cta: "Request manual review",
-  },
+  // No REVIEW entry: the risk verdict is binary and a DENY is a backend hard
+  // stop, so there is no manual-review escalation to offer. See
+  // docs/phase2-6-daniel-answer-resolution.md Q1 (GAP-RISK-BINARY-006).
   DENY: {
     label: "Not approved",
     tone: "error" as const,

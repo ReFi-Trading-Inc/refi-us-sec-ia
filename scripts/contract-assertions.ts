@@ -17,9 +17,12 @@
  * and exit non-zero.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const failures: string[] = [];
 
@@ -1185,6 +1188,73 @@ await section(
         `Forbidden status "${v}" was accepted — would re-introduce REVIEW/DENY partition.`,
       );
     }
+  },
+);
+
+await section("Exception Review carries no risk-derived kind", async () => {
+  const { EXCEPTION_KINDS, isExceptionKind } =
+    await import("../apps/web/src/lib/prototype-store/entities/exception-review.ts");
+  // A backend risk rejection is terminal for its intent. An exception
+  // implies a resolution path, so a risk denial must never become one —
+  // that would be an investor risk override in disguise.
+  for (const forbidden of [
+    "risk_rejected",
+    "risk_denied",
+    "risk_review",
+    "risk_override",
+    "denied_by_risk",
+    "risk_limit_breach",
+    "needs_review",
+    "manual_review",
+  ]) {
+    assert.equal(
+      isExceptionKind(forbidden),
+      false,
+      `Forbidden exception kind "${forbidden}" was accepted — a risk rejection is terminal and has no investor resolution path.`,
+    );
+  }
+  // Daniel's resolvable non-risk conditions must each have a home.
+  for (const required of [
+    "missing_consent",
+    "stale_profile",
+    "broker_disconnected",
+    "reconciliation_block",
+  ]) {
+    assert.ok(
+      (EXCEPTION_KINDS as readonly string[]).includes(required),
+      `Resolvable non-risk condition "${required}" has no ExceptionKind.`,
+    );
+  }
+});
+
+await section(
+  "OpenAPI OrderPreviewResult.status is binary (ALLOW | DENY)",
+  async () => {
+    // Guards the wire contract itself, not just the TS types: the generated
+    // client is gitignored and rebuilt from this yaml, so a REVIEW value
+    // re-added here would silently re-introduce the partition Daniel's Q1
+    // answer forbids (GAP-RISK-BINARY-006). Regex rather than a YAML parser
+    // to keep this script dependency-free.
+    const spec = readFileSync(
+      join(REPO_ROOT, "packages/api-clients/openapi/refi-api.yaml"),
+      "utf8",
+    );
+    const match = /OrderPreviewResult:[\s\S]*?status:\s*\{[^}]*\}/.exec(spec);
+    assert.ok(
+      match,
+      "Could not locate OrderPreviewResult.status in refi-api.yaml — the assertion below is vacuous, fix the locator.",
+    );
+    const statusLine = match[0].slice(match[0].lastIndexOf("status:"));
+    const enumValues = /enum:\s*\[([^\]]*)\]/
+      .exec(statusLine)?.[1]
+      .split(",")
+      .map((v) => v.trim())
+      .sort();
+    assert.deepEqual(
+      enumValues,
+      ["ALLOW", "DENY"],
+      `OrderPreviewResult.status enum drifted to [${enumValues?.join(", ")}] — a risk verdict is a backend hard stop with no frontend escalation. Retryable operational failures belong in the UNAVAILABLE client state.`,
+    );
   },
 );
 

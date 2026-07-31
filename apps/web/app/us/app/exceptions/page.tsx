@@ -92,6 +92,26 @@ const KIND_COPY: Record<ExceptionKind, KindCopy> = {
     resolutions: ["dismiss_exception", "pause_managed"],
     severity: "blocked",
   },
+  missing_consent: {
+    title: "A consent is missing",
+    why: "Automation paused this item because a consent your active policy depends on has not been given. Review and accept it to keep automation eligible.",
+    resolutions: ["acknowledge_disclosure", "dismiss_exception"],
+    primaryRoute: "/us/app/settings/automation/disclosures",
+    severity: "blocked",
+  },
+  broker_disconnected: {
+    title: "Broker connection is disconnected",
+    why: "Automation paused this item because your brokerage connection is no longer active. Reconnect your broker to resume.",
+    resolutions: ["reconnect_broker", "pause_managed", "dismiss_exception"],
+    primaryRoute: "/us/app/account",
+    severity: "blocked",
+  },
+  reconciliation_block: {
+    title: "Account is being reconciled",
+    why: "Automation paused this item while ReFi reconciles your account records with your broker. This clears on its own once reconciliation completes; no action is needed from you.",
+    resolutions: ["dismiss_exception", "pause_managed"],
+    severity: "warning",
+  },
 };
 
 const RESOLUTION_LABEL: Record<UiResolution, string> = {

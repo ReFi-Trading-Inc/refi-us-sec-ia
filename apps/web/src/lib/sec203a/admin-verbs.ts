@@ -33,6 +33,24 @@
 import { z } from "zod";
 import type { InvestorActionName } from "./actions";
 
+// ─── Route ──────────────────────────────────────────────────────────────────
+
+/**
+ * The account-scoped investor-api actions route. Daniel scopes by account in
+ * the PATH; a session-implicit path is not acceptable outbound.
+ *
+ * Naming collision to keep straight: our browser-facing BFF routes are also
+ * namespaced `/api/v1/investor/*`, and so is Daniel's service-facing prefix.
+ * They are different hops. This constant is the OUTBOUND (investor-api) one.
+ */
+export function investorActionsRoute(accountId: string): string {
+  return `/api/v1/investor/accounts/${encodeURIComponent(accountId)}/actions`;
+}
+
+/** Template form of the route above, for docs and assertions. */
+export const INVESTOR_ACTIONS_ROUTE_TEMPLATE =
+  "/api/v1/investor/accounts/{account_id}/actions";
+
 // ─── Allowlist ──────────────────────────────────────────────────────────────
 
 /**

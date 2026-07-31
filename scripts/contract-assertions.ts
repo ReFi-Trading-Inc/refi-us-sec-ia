@@ -60,7 +60,9 @@ const { decimalStringRefiner } =
 const {
   INVESTOR_ADMIN_VERBS,
   INVESTOR_ACTION_TO_ADMIN_VERB,
+  INVESTOR_ACTIONS_ROUTE_TEMPLATE,
   adminVerbFor,
+  investorActionsRoute,
   isInvestorAdminVerb,
 } = await import("../apps/web/src/lib/sec203a/admin-verbs.ts");
 
@@ -1271,6 +1273,29 @@ await section(
   },
 );
 
+await section(
+  "Investor actions route is account-scoped in the path",
+  async () => {
+    assert.equal(
+      INVESTOR_ACTIONS_ROUTE_TEMPLATE,
+      "/api/v1/investor/accounts/{account_id}/actions",
+      "Investor-api actions route drifted from Daniel's §5 contract.",
+    );
+    assert.equal(
+      investorActionsRoute("acct_123"),
+      "/api/v1/investor/accounts/acct_123/actions",
+      "investorActionsRoute() must interpolate the account into the path.",
+    );
+    // Account id must be encoded — it is a claim to be verified, and a raw
+    // value could otherwise alter the path shape.
+    assert.equal(
+      investorActionsRoute("a/b"),
+      "/api/v1/investor/accounts/a%2Fb/actions",
+      "Account id must be URL-encoded so it cannot escape its path segment.",
+    );
+  },
+);
+
 await section("Exception Review carries no risk-derived kind", async () => {
   const { EXCEPTION_KINDS, isExceptionKind } =
     await import("../apps/web/src/lib/prototype-store/entities/exception-review.ts");
@@ -1306,6 +1331,73 @@ await section("Exception Review carries no risk-derived kind", async () => {
     );
   }
 });
+
+await section(
+  "Signal-only: no broker submission or cancel path is exported",
+  async () => {
+    // The first dev release is Signal-only and exposes no path from investor
+    // actions to broker submission; investor cancellation of pending_submit
+    // orders is deferred on ownership-boundary grounds.
+    const src = readFileSync(
+      join(REPO_ROOT, "packages/api-clients/src/index.ts"),
+      "utf8",
+    );
+    for (const forbidden of ["useSubmitOrder", "useCancelOrder"]) {
+      assert.equal(
+        new RegExp(
+          `^\\s*(export\\s*\\{[^}]*\\b${forbidden}\\b|\\s*${forbidden},)`,
+          "m",
+        ).test(src),
+        false,
+        `${forbidden} is exported from @refi/api-clients — that is a live path from the investor product to broker submission/cancellation.`,
+      );
+    }
+
+    // And the wire contract must not offer the operations either.
+    const spec = readFileSync(
+      join(REPO_ROOT, "packages/api-clients/openapi/refi-api.yaml"),
+      "utf8",
+    );
+    for (const op of ["submitOrder", "cancelOrder"]) {
+      assert.equal(
+        new RegExp(`operationId:\\s*${op}\\b`).test(spec),
+        false,
+        `refi-api.yaml still declares operationId ${op}.`,
+      );
+    }
+  },
+);
+
+await section(
+  "Integration target is refinity-dev, not staging or production",
+  async () => {
+    const spec = readFileSync(
+      join(REPO_ROOT, "packages/api-clients/openapi/refi-api.yaml"),
+      "utf8",
+    );
+    // refinity-dev is the only active deployment, intentionally. Staging is
+    // out of scope until the dev release is reproducible, and the production
+    // host does not resolve.
+    //
+    // Check declared `url:` entries, not raw text: the prose above the servers
+    // block legitimately names the retired hosts to explain why they are gone.
+    const declaredUrls = [...spec.matchAll(/^\s*-?\s*url:\s*(\S+)/gm)].map(
+      (m) => m[1] ?? "",
+    );
+    for (const host of ["api-staging.refi.trading", "api.refi.trading"]) {
+      const hit = declaredUrls.find((u) => u.includes(host));
+      assert.equal(
+        hit,
+        undefined,
+        `refi-api.yaml declares a server at ${String(hit)}. The integration target is refinity-dev; the dev base URL arrives with Daniel's connection package and must not be guessed.`,
+      );
+    }
+    assert.ok(
+      declaredUrls.length > 0,
+      "No server url found in refi-api.yaml — the assertion above would be vacuous.",
+    );
+  },
+);
 
 await section(
   "OpenAPI OrderPreviewResult.status is binary (ALLOW | DENY)",

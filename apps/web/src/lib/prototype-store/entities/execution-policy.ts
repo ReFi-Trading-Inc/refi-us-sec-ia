@@ -19,8 +19,10 @@
  *     downstream lifecycle evidence.
  *   - NOT an `exec-gateway` policy contract. Do not pass this artifact (or
  *     its `policyId` / `policyVersion`) downstream as a backend trust input.
- *   - NOT a broker-driver `ExecutionPolicy`. The broker submission path
- *     uses Admin Portal projections of `Orders` / `OrderEvents`.
+ *   - NOT a broker-driver `ExecutionPolicy`. The broker submission path is
+ *     backend-owned; the investor product reads order lifecycle state through
+ *     `investor-api` projections, never through the Admin Portal (rejected as
+ *     the investor boundary, Daniel 2026-07-28).
  *   - NOT `ManagedExecutionState` (see managed-execution-state.ts), which
  *     answers "under the current authorization, what is automation doing
  *     right now?"

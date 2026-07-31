@@ -64,6 +64,12 @@ const {
   isInvestorAdminVerb,
 } = await import("../apps/web/src/lib/sec203a/admin-verbs.ts");
 
+const {
+  INVESTOR_EDITABLE_ACCOUNT_PREFS,
+  INVESTOR_EDITABLE_ACCOUNT_PREF_FIELDS,
+  READ_ONLY_CONTROL_NAMES,
+} = await import("../apps/web/src/lib/sec203a/account-prefs.ts");
+
 const { RISK_DECISIONS, isRiskDecision, riskSnapshotSchema, riskLimitsSchema } =
   await import("../apps/web/src/lib/sec203a/risk.ts");
 
@@ -1188,6 +1194,80 @@ await section(
         `Forbidden status "${v}" was accepted — would re-introduce REVIEW/DENY partition.`,
       );
     }
+  },
+);
+
+await section(
+  "AccountPrefs: exactly four investor-editable fields",
+  async () => {
+    assert.deepEqual(
+      [...INVESTOR_EDITABLE_ACCOUNT_PREFS].sort(),
+      ["drift_threshold", "excluded_assets", "fractional_enabled", "min_order"],
+      "Investor-editable AccountPrefs drifted from Daniel's approved four (docs/phase2-7-daniel-direction-resolution.md §4).",
+    );
+    assert.equal(
+      INVESTOR_EDITABLE_ACCOUNT_PREF_FIELDS.length,
+      INVESTOR_EDITABLE_ACCOUNT_PREFS.length,
+      "camelCase mirror and snake_case wire list must stay the same length.",
+    );
+  },
+);
+
+await section(
+  "No investor-editable capital-allocation or risk-limit control (camelCase + snake_case)",
+  async () => {
+    // The Phase 2.7 doc recorded this area as "confirmed clean" on the basis
+    // of a grep for `capital_allocation`, `allocation_pct`, and
+    // `capital_usage`. That grep was snake_case-only and this repo names
+    // fields in camelCase, so it missed seven live editable controls in the
+    // Automation Center: maxPositionSizeBps and minimumCashReserveBps (capital
+    // allocation) plus maxSingleOrderUsd, dailyOrderLimit, dailyLossPauseBps,
+    // drawdownPauseBps, and maxOpenOrders (risk limits). They were removed on
+    // 2026-07-30.
+    //
+    // This assertion scans BOTH spellings, and scans for the semantic control
+    // names rather than a fixed literal list, so the same class of miss cannot
+    // recur. It targets the investor-editable write surfaces specifically:
+    // read-only DISPLAY of backend-owned limits is expected and allowed.
+    // Covers the storage entity, both BFF write routes, the typed DTO, and the
+    // rendering surfaces. Including the UI pages is what makes `data-testid`
+    // attributes and visible control labels part of the check, not just field
+    // declarations.
+    //
+    // Deliberately NOT scanned: apps/web/e2e/automation-center.spec.ts, which
+    // names all seven controls in negative assertions proving their absence.
+    const editableSurfaces = [
+      "apps/web/src/lib/prototype-store/entities/execution-policy-draft.ts",
+      "apps/web/app/api/v1/investor/execution-policy/draft/route.ts",
+      "apps/web/app/api/v1/investor/execution-policy/route.ts",
+      "apps/web/app/api/v1/investor/execution-policy/activate/route.ts",
+      "packages/api-clients/src/hooks/execution-policy.ts",
+      "apps/web/app/us/app/settings/automation/page.tsx",
+      "apps/web/app/us/app/settings/automation/activate/page.tsx",
+    ];
+
+    const offenders: string[] = [];
+    for (const rel of editableSurfaces) {
+      const src = readFileSync(join(REPO_ROOT, rel), "utf8");
+      for (const [i, rawLine] of src.split("\n").entries()) {
+        // Only flag real declarations/uses, not the comments explaining the
+        // removal. A line that is purely a comment is documentation.
+        const line = rawLine.trim();
+        if (line.startsWith("*") || line.startsWith("//") || line === "")
+          continue;
+        for (const name of READ_ONLY_CONTROL_NAMES) {
+          if (new RegExp(`\\b${name}\\b`).test(line)) {
+            offenders.push(`${rel}:${String(i + 1)} → ${name}`);
+          }
+        }
+      }
+    }
+
+    assert.deepEqual(
+      offenders,
+      [],
+      `Backend-owned control(s) reappeared on an investor-editable surface:\n    ${offenders.join("\n    ")}\n  RiskLimits, template risk settings, broker state, and operator controls are read-only to the investor, and capital-allocation percentage controls are not an AccountPrefs capability.`,
+    );
   },
 );
 

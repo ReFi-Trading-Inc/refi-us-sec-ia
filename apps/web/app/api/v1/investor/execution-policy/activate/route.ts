@@ -243,14 +243,15 @@ export const POST = bffMutate<ActivateBody>({
     // Derive evidence hashes server-side from the draft. The draft is the
     // single source of truth; the client cannot smuggle different policy
     // contents through the activation body.
+    // Covers the investor-authorized preference set plus the stale-data pause
+    // windows. It deliberately does NOT cover backend risk limits: those are
+    // operator-owned and read-only, so hashing them here would misrepresent
+    // them as something the investor authorized at signing time.
     const riskGuardrailHash = stableHash({
-      maxSingleOrderUsd: draft.maxSingleOrderUsd,
-      maxPositionSizeBps: draft.maxPositionSizeBps,
-      minimumCashReserveBps: draft.minimumCashReserveBps,
-      dailyOrderLimit: draft.dailyOrderLimit,
-      dailyLossPauseBps: draft.dailyLossPauseBps,
-      drawdownPauseBps: draft.drawdownPauseBps,
-      maxOpenOrders: draft.maxOpenOrders,
+      driftThreshold: draft.driftThreshold,
+      minOrder: draft.minOrder,
+      excludedAssets: [...draft.excludedAssets].sort(),
+      fractionalEnabled: draft.fractionalEnabled,
       staleBrokerDataPauseAfter: draft.staleBrokerDataPauseAfter,
       staleProfilePauseAfter: draft.staleProfilePauseAfter,
     });

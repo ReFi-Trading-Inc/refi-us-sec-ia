@@ -216,25 +216,27 @@ export default function ActivatePage() {
                 <dd className="text-charcoal-100">{draft.accountScope}</dd>
               </div>
               <div>
-                <dt className="text-xs text-charcoal-500">Max single order</dt>
+                <dt className="text-xs text-charcoal-500">Drift threshold</dt>
                 <dd className="text-charcoal-100">
-                  ${draft.maxSingleOrderUsd}
+                  {(Number(draft.driftThreshold) * 100).toFixed(2)}%
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-charcoal-500">Daily order limit</dt>
-                <dd className="text-charcoal-100">{draft.dailyOrderLimit}</dd>
+                <dt className="text-xs text-charcoal-500">Minimum order</dt>
+                <dd className="text-charcoal-100">${draft.minOrder}</dd>
               </div>
               <div>
-                <dt className="text-xs text-charcoal-500">Max position size</dt>
+                <dt className="text-xs text-charcoal-500">
+                  Fractional trading
+                </dt>
                 <dd className="text-charcoal-100">
-                  {(draft.maxPositionSizeBps / 100).toFixed(2)}%
+                  {draft.fractionalEnabled ? "Enabled" : "Disabled"}
                 </dd>
               </div>
               <div>
-                <dt className="text-xs text-charcoal-500">Drawdown pause</dt>
+                <dt className="text-xs text-charcoal-500">Excluded assets</dt>
                 <dd className="text-charcoal-100">
-                  {(draft.drawdownPauseBps / 100).toFixed(2)}%
+                  {draft.excludedAssets.join(", ") || "—"}
                 </dd>
               </div>
               <div className="sm:col-span-2">

@@ -322,6 +322,68 @@ render backend-supplied classification — it must not reimplement the rule.
   and `capital_usage` in `.ts`/`.tsx` returns **no matches**. No control needs
   removing; the constraint is forward-looking only.
 
+> ### ⚠️ CORRECTION — 2026-07-30: the "confirmed clean" finding above was wrong
+>
+> The bullet immediately above is **retained as written** for provenance. It is
+> incorrect, and this correction supersedes it.
+>
+> **What went wrong.** The check searched only snake_case identifiers —
+> `capital_allocation`, `allocation_pct`, `capital_usage`. Those are backend
+> `AccountPrefs` column spellings. The frontend does not name fields that way;
+> it uses camelCase. The grep therefore could not have matched a frontend
+> control no matter how many existed, and its "no matches" result carried no
+> information about the thing it was asked to check.
+>
+> **What was actually there.** Seven investor-editable controls were live in the
+> Automation Center (`/us/app/settings/automation`), persisted through
+> `ExecutionPolicyDraft`, re-validated by the BFF draft route, hashed into the
+> signed policy at activation, and covered by E2E specs:
+>
+> | Control                 | Category           | Daniel's rule                  |
+> | ----------------------- | ------------------ | ------------------------------ |
+> | `maxPositionSizeBps`    | Capital allocation | Must not exist on the frontend |
+> | `minimumCashReserveBps` | Capital allocation | Must not exist on the frontend |
+> | `maxSingleOrderUsd`     | Risk limit         | Backend-owned, read-only       |
+> | `dailyOrderLimit`       | Risk limit         | Backend-owned, read-only       |
+> | `dailyLossPauseBps`     | Risk limit         | Backend-owned, read-only       |
+> | `drawdownPauseBps`      | Risk limit         | Backend-owned, read-only       |
+> | `maxOpenOrders`         | Risk limit         | Backend-owned, read-only       |
+>
+> So §4's constraint was **not** forward-looking only. It required removals, and
+> the incorrect finding is why they were not made on 2026-07-28.
+>
+> **Resolution (2026-07-30).** All seven were removed from the investor-editable
+> surface and replaced by exactly the four approved `AccountPrefs` fields —
+> `drift_threshold`, `min_order`, `excluded_assets`, `fractional_enabled` —
+> across the draft entity, the BFF draft and policy routes, the Automation
+> Center UI, the activation summary, the typed DTO, and the E2E fixtures. The
+> backend-owned categories now render as a read-only panel rather than inputs.
+> The activation `riskGuardrailHash` no longer covers backend risk limits, since
+> hashing them would misrepresent them as investor-authorized.
+>
+> **Why it cannot recur.** The canonical field list lives in
+> `apps/web/src/lib/sec203a/account-prefs.ts`, and a contract assertion — "No
+> investor-editable capital-allocation or risk-limit control (camelCase +
+> snake_case)" — now searches, across the storage entity, both BFF write
+> routes, the activation route, the typed DTO, and the two rendering pages:
+>
+> - **snake_case** wire spellings (`max_position_size_bps`, …)
+> - **camelCase** frontend field names (`maxPositionSizeBps`, …)
+> - **`data-testid` attributes** (`draft-maxPositionSizeBps`, …) and visible
+>   **control labels**, because the UI pages are in the scanned set
+> - **semantic control names** by category — capital allocation and risk
+>   limits — rather than a fixed literal list
+>
+> It was verified to fail on a reintroduced control rather than passing
+> vacuously. The E2E spec carries the matching negative assertions that each
+> removed control renders zero elements.
+>
+> **Durable lesson.** This is the same failure mode as the provenance caveat in
+> §0, one layer down: a check was recorded as passing without confirming it
+> could fail. A negative grep result is evidence only if the pattern would have
+> matched the thing being looked for. Search the vocabulary the code actually
+> uses, and prove the check fails before trusting that it passed.
+
 ---
 
 ## 5. Investor-safe backend actions (changes §13.3 membership)

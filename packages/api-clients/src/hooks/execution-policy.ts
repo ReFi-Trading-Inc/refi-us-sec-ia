@@ -70,9 +70,10 @@ export interface ExecutionPolicySummary {
   accountScope: string;
   assetUniverse: string[];
   driftThreshold?: string;
+  minOrder?: string;
+  excludedAssets?: string[];
+  fractionalEnabled?: boolean;
   rebalanceFrequency?: string;
-  maxOrderSize?: string;
-  maxTurnover?: string;
   pauseRules: string[];
   notificationPreferences: string[];
   signedAt: string;
@@ -84,13 +85,13 @@ export interface ExecutionPolicyDraftDto {
   accountScope: string;
   assetUniverse: string[];
   restrictedSectors: string[];
-  maxSingleOrderUsd: string;
-  maxPositionSizeBps: number;
-  minimumCashReserveBps: number;
-  dailyOrderLimit: number;
-  dailyLossPauseBps: number;
-  drawdownPauseBps: number;
-  maxOpenOrders: number;
+  // The four investor-editable backend `AccountPrefs` fields. Capital
+  // allocation and risk limits are backend-owned and read-only — they are
+  // deliberately absent from this DTO (Daniel 2026-07-28).
+  driftThreshold: string;
+  minOrder: string;
+  excludedAssets: string[];
+  fractionalEnabled: boolean;
   staleBrokerDataPauseAfter: StaleBrokerDataDuration;
   staleProfilePauseAfter: StaleProfileDuration;
   pauseOnDisclosureSuperseded: boolean;

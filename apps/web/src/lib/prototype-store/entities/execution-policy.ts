@@ -57,11 +57,16 @@ export interface ExecutionPolicy {
   accountScope: string;
   assetUniverse: string[];
 
-  // Investor-set thresholds (decimal strings, never JS numbers).
+  // Investor-set preferences (decimal strings, never JS numbers). These mirror
+  // the four investor-editable backend `AccountPrefs` fields and nothing more —
+  // see apps/web/src/lib/sec203a/account-prefs.ts. `maxOrderSize` and
+  // `maxTurnover` were removed on 2026-07-30: they are backend `RiskLimits`
+  // concerns, read-only to the investor.
   driftThreshold?: DecimalString;
+  minOrder?: DecimalString;
+  excludedAssets?: string[];
+  fractionalEnabled?: boolean;
   rebalanceFrequency?: string;
-  maxOrderSize?: DecimalString;
-  maxTurnover?: DecimalString;
 
   // Guardrails + restrictions (hashes preserved for audit).
   riskGuardrailHash: string;

@@ -99,10 +99,10 @@ test.describe("Automation Center — Managed user", () => {
       timeout: 30_000,
     });
 
-    const usd = page.getByTestId("draft-maxSingleOrderUsd");
-    await usd.fill("1500.00");
-    const dailyLimit = page.getByTestId("draft-dailyOrderLimit");
-    await dailyLimit.fill("7");
+    const drift = page.getByTestId("draft-driftThreshold");
+    await drift.fill("0.08");
+    const minOrder = page.getByTestId("draft-minOrder");
+    await minOrder.fill("50.00");
 
     await page.getByTestId("automation-save-draft").click();
     await expect(page.getByTestId("automation-save-success")).toBeVisible({
@@ -119,7 +119,7 @@ test.describe("Automation Center — Managed user", () => {
     ).toHaveText("1");
   });
 
-  test("Invalid guardrail values block save and surface field-level errors", async ({
+  test("Invalid preference values block save and surface field-level errors", async ({
     page,
   }) => {
     await page.goto("/us/app/settings/automation", {
@@ -129,11 +129,39 @@ test.describe("Automation Center — Managed user", () => {
       timeout: 30_000,
     });
 
-    // 50_000 USD is outside the 25..25000 USD range.
-    await page.getByTestId("draft-maxSingleOrderUsd").fill("50000.00");
+    // 0.9 is outside the 0.001..0.25 drift-threshold range.
+    await page.getByTestId("draft-driftThreshold").fill("0.9");
     await page.getByTestId("automation-save-draft").click();
     await expect(page.getByTestId("automation-save-error")).toBeVisible();
     await expect(page.getByTestId("automation-save-success")).toHaveCount(0);
+  });
+
+  test("Capital-allocation and risk-limit controls are not editable", async ({
+    page,
+  }) => {
+    await page.goto("/us/app/settings/automation", {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId("draft-strategyId")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // Daniel 2026-07-28: RiskLimits, template risk settings, and capital
+    // allocation are backend-owned and read-only to the investor.
+    for (const removed of [
+      "draft-maxSingleOrderUsd",
+      "draft-maxPositionSizeBps",
+      "draft-minimumCashReserveBps",
+      "draft-dailyOrderLimit",
+      "draft-dailyLossPauseBps",
+      "draft-drawdownPauseBps",
+      "draft-maxOpenOrders",
+    ]) {
+      await expect(page.getByTestId(removed)).toHaveCount(0);
+    }
+
+    // They are explained as backend-owned rather than silently dropped.
+    await expect(page.getByTestId("backend-owned-limits")).toBeVisible();
   });
 
   test("No forbidden per-trade Accept or Approve controls anywhere on the page", async ({

@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { resolve } from "node:path";
+import { E2E_SESSION_JWT_SECRET } from "./e2e/session";
 
 // This package is CJS since #34 dropped type:module, so Playwright transpiles
 // this config to CJS where import.meta is illegal — use CJS __dirname instead.
@@ -43,6 +44,12 @@ export default defineConfig({
       SESSION_SECRET: "playwright-test-session-secret-minimum-32-chars",
       IP_HASH_SECRET: "playwright-test-ip-hash-secret-minimum-32-chars",
       ELIGIBILITY_JWT_SECRET: "playwright-test-jwt-secret-minimum-32-chars!",
+      // Session-cookie signing secret, shared explicitly with the token helper
+      // in ./e2e/session.ts so the server verifies exactly what the fixtures
+      // sign. Set here rather than relying on the application's non-prod
+      // PROTOTYPE_DEFAULTS fallback: that coupling is implicit and would break
+      // silently if the default ever changed.
+      SESSION_JWT_SECRET: E2E_SESSION_JWT_SECRET,
       REFI_DATA_ADAPTER: "mock",
       // Disable browser MSW in e2e. Surface 1 only needs the BFF route, and
       // service-worker registration in headless Chromium is the slowest part

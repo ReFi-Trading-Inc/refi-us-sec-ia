@@ -9,6 +9,34 @@
  * appends a new version.
  *
  * Single draft per account: latest write wins.
+ *
+ * ─── Investor-editable field set (Daniel 2026-07-28) ───────────────────────
+ *
+ * The editable numeric guardrails are EXACTLY the four backend
+ * `AccountPrefs` fields Daniel approved:
+ *
+ *   drift_threshold | min_order | excluded_assets | fractional_enabled
+ *
+ * `RiskLimits`, template risk settings, broker state, and operator/system
+ * controls are READ-ONLY to the investor, and the frontend must not offer a
+ * capital-allocation percentage control — it is not a current `AccountPrefs`
+ * capability. See docs/phase2-7-daniel-direction-resolution.md §4.
+ *
+ * Removed 2026-07-30 for that reason (previously editable here):
+ *   maxPositionSizeBps, minimumCashReserveBps  — capital allocation
+ *   maxSingleOrderUsd, dailyOrderLimit, dailyLossPauseBps,
+ *   drawdownPauseBps, maxOpenOrders            — risk limits
+ *
+ * Those seven had no backend `AccountPrefs` equivalent, so persisting them
+ * would have made the frontend the system of record for guardrails the
+ * backend actually enforces — precisely the outcome Daniel's "the frontend's
+ * interim history should not become the long-term system of record" warns
+ * against. The stale-data pause toggles below are retained: they govern when
+ * the BFF stops acting, not how much capital moves or what risk is accepted.
+ *
+ * Values are carried in the same units the backend `AccountPrefs` uses:
+ * `driftThreshold` and `minOrder` as DecimalString (never float),
+ * `excludedAssets` as opaque asset ids, `fractionalEnabled` as a boolean.
  */
 import { kvStore, makePrototypeMeta, type PrototypeMeta } from "../store";
 import type { DecimalString } from "../../sec203a/decimal";
@@ -31,15 +59,16 @@ export interface ExecutionPolicyDraft {
   assetUniverse: string[];
   restrictedSectors: string[];
 
-  // Numeric guardrails. USD as DecimalString; percentages as basis points
-  // (integers); durations as preset ISO-8601 enums. No FLOAT64 anywhere.
-  maxSingleOrderUsd: DecimalString;
-  maxPositionSizeBps: number;
-  minimumCashReserveBps: number;
-  dailyOrderLimit: number;
-  dailyLossPauseBps: number;
-  drawdownPauseBps: number;
-  maxOpenOrders: number;
+  // Investor-editable AccountPrefs mirror — exactly four fields. No FLOAT64
+  // anywhere; money and thresholds carry as DecimalString.
+  /** `drift_threshold` — rebalance trigger band, as a decimal fraction. */
+  driftThreshold: DecimalString;
+  /** `min_order` — minimum order notional (USD). */
+  minOrder: DecimalString;
+  /** `excluded_assets` — opaque asset ids the investor will not hold. */
+  excludedAssets: string[];
+  /** `fractional_enabled` — whether fractional quantities are permitted. */
+  fractionalEnabled: boolean;
 
   // Stale-data pauses.
   staleBrokerDataPauseAfter: StaleBrokerDataDuration;
@@ -70,13 +99,10 @@ export function defaultExecutionPolicyDraft(
     accountScope: "primary",
     assetUniverse: ["US_LARGE_CAP_EQUITY"],
     restrictedSectors: [],
-    maxSingleOrderUsd: "1000.00" as DecimalString,
-    maxPositionSizeBps: 1000,
-    minimumCashReserveBps: 500,
-    dailyOrderLimit: 5,
-    dailyLossPauseBps: 300,
-    drawdownPauseBps: 1000,
-    maxOpenOrders: 5,
+    driftThreshold: "0.05" as DecimalString,
+    minOrder: "25.00" as DecimalString,
+    excludedAssets: [],
+    fractionalEnabled: false,
     staleBrokerDataPauseAfter: "PT15M",
     staleProfilePauseAfter: "P90D",
     pauseOnDisclosureSuperseded: true,

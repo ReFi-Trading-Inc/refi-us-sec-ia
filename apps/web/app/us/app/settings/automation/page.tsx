@@ -61,6 +61,11 @@ const STALE_PROFILE_OPTIONS: { value: StaleProfileDuration; label: string }[] =
     { value: "P365D", label: "365 days" },
   ];
 
+const FRACTIONAL_OPTIONS = [
+  { value: "false", label: "Disabled" },
+  { value: "true", label: "Enabled" },
+];
+
 // Same range/shape as the BFF schema in
 // apps/web/app/api/v1/investor/execution-policy/draft/route.ts. Kept here so
 // invalid input is rejected client-side before round-tripping.
@@ -70,19 +75,22 @@ const draftSchema = z.object({
   accountScope: z.string().min(1, "Required").max(64),
   assetUniverse: z.array(z.string().min(1)).min(1, "At least one asset class"),
   restrictedSectors: z.array(z.string().min(1)),
-  maxSingleOrderUsd: z
+  driftThreshold: z
     .string()
-    .refine((s) => decimalRe.test(s), "Use decimal format, e.g. 1000.00")
+    .refine((s) => decimalRe.test(s), "Use decimal format, e.g. 0.05")
     .refine((s) => {
       const n = Number(s);
-      return Number.isFinite(n) && n >= 25 && n <= 25000;
-    }, "Must be between 25.00 and 25000.00 USD"),
-  maxPositionSizeBps: z.number().int().min(100).max(2500),
-  minimumCashReserveBps: z.number().int().min(0).max(5000),
-  dailyOrderLimit: z.number().int().min(1).max(25),
-  dailyLossPauseBps: z.number().int().min(100).max(1000),
-  drawdownPauseBps: z.number().int().min(300).max(3000),
-  maxOpenOrders: z.number().int().min(1).max(20),
+      return Number.isFinite(n) && n >= 0.001 && n <= 0.25;
+    }, "Must be between 0.001 and 0.25 (0.1% to 25%)"),
+  minOrder: z
+    .string()
+    .refine((s) => decimalRe.test(s), "Use decimal format, e.g. 25.00")
+    .refine((s) => {
+      const n = Number(s);
+      return Number.isFinite(n) && n >= 1 && n <= 25000;
+    }, "Must be between 1.00 and 25000.00 USD"),
+  excludedAssets: z.array(z.string().min(1)),
+  fractionalEnabled: z.boolean(),
   staleBrokerDataPauseAfter: z.enum(["PT5M", "PT15M", "PT30M", "PT1H", "PT4H"]),
   staleProfilePauseAfter: z.enum(["P30D", "P60D", "P90D", "P180D", "P365D"]),
   pauseOnDisclosureSuperseded: z.boolean(),
@@ -98,13 +106,10 @@ function toForm(draft: ExecutionPolicyDraftDto): DraftForm {
     accountScope: draft.accountScope,
     assetUniverse: draft.assetUniverse,
     restrictedSectors: draft.restrictedSectors,
-    maxSingleOrderUsd: draft.maxSingleOrderUsd,
-    maxPositionSizeBps: draft.maxPositionSizeBps,
-    minimumCashReserveBps: draft.minimumCashReserveBps,
-    dailyOrderLimit: draft.dailyOrderLimit,
-    dailyLossPauseBps: draft.dailyLossPauseBps,
-    drawdownPauseBps: draft.drawdownPauseBps,
-    maxOpenOrders: draft.maxOpenOrders,
+    driftThreshold: draft.driftThreshold,
+    minOrder: draft.minOrder,
+    excludedAssets: draft.excludedAssets,
+    fractionalEnabled: draft.fractionalEnabled,
     staleBrokerDataPauseAfter: draft.staleBrokerDataPauseAfter,
     staleProfilePauseAfter: draft.staleProfilePauseAfter,
     pauseOnDisclosureSuperseded: draft.pauseOnDisclosureSuperseded,
@@ -599,99 +604,50 @@ export default function AutomationCenterPage() {
                     update("restrictedSectors", csvToArray(e.target.value));
                   }}
                 />
+                {/*
+                  Investor-editable preferences: exactly the four backend
+                  `AccountPrefs` fields (Daniel 2026-07-28). Capital-allocation
+                  and risk-limit inputs were removed on 2026-07-30 — they are
+                  backend-owned and surface read-only below.
+                */}
                 <Input
-                  label="Max single order (USD)"
-                  data-testid="draft-maxSingleOrderUsd"
+                  label="Drift threshold"
+                  data-testid="draft-driftThreshold"
                   inputMode="decimal"
-                  value={form.maxSingleOrderUsd}
-                  error={errors.maxSingleOrderUsd}
-                  hint="25.00 to 25000.00"
+                  value={form.driftThreshold}
+                  error={errors.driftThreshold}
+                  hint="0.001 to 0.25 (0.1% to 25%)"
                   onChange={(e) => {
-                    update("maxSingleOrderUsd", e.target.value);
+                    update("driftThreshold", e.target.value);
                   }}
                 />
                 <Input
-                  label="Max position size (basis points)"
-                  data-testid="draft-maxPositionSizeBps"
-                  type="number"
-                  value={form.maxPositionSizeBps}
-                  error={errors.maxPositionSizeBps}
-                  hint="100 to 2500"
+                  label="Minimum order (USD)"
+                  data-testid="draft-minOrder"
+                  inputMode="decimal"
+                  value={form.minOrder}
+                  error={errors.minOrder}
+                  hint="1.00 to 25000.00"
                   onChange={(e) => {
-                    update(
-                      "maxPositionSizeBps",
-                      Number.parseInt(e.target.value, 10) || 0,
-                    );
+                    update("minOrder", e.target.value);
                   }}
                 />
                 <Input
-                  label="Minimum cash reserve (basis points)"
-                  data-testid="draft-minimumCashReserveBps"
-                  type="number"
-                  value={form.minimumCashReserveBps}
-                  error={errors.minimumCashReserveBps}
-                  hint="0 to 5000"
+                  label="Excluded assets (comma-separated)"
+                  data-testid="draft-excludedAssets"
+                  value={form.excludedAssets.join(", ")}
+                  error={errors.excludedAssets}
                   onChange={(e) => {
-                    update(
-                      "minimumCashReserveBps",
-                      Number.parseInt(e.target.value, 10) || 0,
-                    );
+                    update("excludedAssets", csvToArray(e.target.value));
                   }}
                 />
-                <Input
-                  label="Daily order limit"
-                  data-testid="draft-dailyOrderLimit"
-                  type="number"
-                  value={form.dailyOrderLimit}
-                  error={errors.dailyOrderLimit}
-                  hint="1 to 25"
+                <Select
+                  label="Fractional trading"
+                  data-testid="draft-fractionalEnabled"
+                  value={form.fractionalEnabled ? "true" : "false"}
+                  options={FRACTIONAL_OPTIONS}
                   onChange={(e) => {
-                    update(
-                      "dailyOrderLimit",
-                      Number.parseInt(e.target.value, 10) || 0,
-                    );
-                  }}
-                />
-                <Input
-                  label="Daily loss pause (basis points)"
-                  data-testid="draft-dailyLossPauseBps"
-                  type="number"
-                  value={form.dailyLossPauseBps}
-                  error={errors.dailyLossPauseBps}
-                  hint="100 to 1000"
-                  onChange={(e) => {
-                    update(
-                      "dailyLossPauseBps",
-                      Number.parseInt(e.target.value, 10) || 0,
-                    );
-                  }}
-                />
-                <Input
-                  label="Drawdown pause (basis points)"
-                  data-testid="draft-drawdownPauseBps"
-                  type="number"
-                  value={form.drawdownPauseBps}
-                  error={errors.drawdownPauseBps}
-                  hint="300 to 3000"
-                  onChange={(e) => {
-                    update(
-                      "drawdownPauseBps",
-                      Number.parseInt(e.target.value, 10) || 0,
-                    );
-                  }}
-                />
-                <Input
-                  label="Max open orders"
-                  data-testid="draft-maxOpenOrders"
-                  type="number"
-                  value={form.maxOpenOrders}
-                  error={errors.maxOpenOrders}
-                  hint="1 to 20"
-                  onChange={(e) => {
-                    update(
-                      "maxOpenOrders",
-                      Number.parseInt(e.target.value, 10) || 0,
-                    );
+                    update("fractionalEnabled", e.target.value === "true");
                   }}
                 />
                 <Select
@@ -736,6 +692,30 @@ export default function AutomationCenterPage() {
                     update("pauseOnProfileSuperseded", e.target.checked);
                   }}
                 />
+              </div>
+
+              {/*
+                Backend-owned limits, read-only by design. Position sizing,
+                cash reserve, order caps, loss and drawdown limits live in the
+                backend `RiskLimits` / template settings and are enforced
+                there. They were editable here until 2026-07-30; Daniel's
+                direction makes them read-only, so they render as values —
+                never inputs — and only once investor-api supplies them.
+              */}
+              <div
+                className="rounded-md border border-charcoal-700 bg-charcoal-900 p-3 mt-1"
+                data-testid="backend-owned-limits"
+              >
+                <p className="text-xs font-medium uppercase tracking-wider text-charcoal-500 mb-1">
+                  Limits set by ReFi
+                </p>
+                <p className="text-xs text-charcoal-400">
+                  Position sizing, cash reserve, order caps, and loss and
+                  drawdown limits are set and enforced by ReFi under your
+                  strategy&rsquo;s risk limits. They are not editable here.
+                  Current values appear on this page once your account is
+                  connected to live risk data.
+                </p>
               </div>
             </>
           )}

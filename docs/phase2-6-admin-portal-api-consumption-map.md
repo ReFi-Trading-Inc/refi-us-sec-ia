@@ -3,8 +3,22 @@
 **Date:** 2026-05-30
 **Source of truth:** [`phase2-6-authoritative-source-of-truth.md`](phase2-6-authoritative-source-of-truth.md)
 **Gap:** `GAP-ADMIN-API-004`, `GAP-ACL-005`
-**Status:** Per-endpoint mapping of Admin Portal API routes to investor-product surfaces, with ACL / scoping / caching rules.
-**Daniel ratification (2026-05-30):** Phase 2.6 ACL strategy ratified as **patterns 1 + 2** (route-scoped filtering + account-filtered list filtering). Phase 3 migrates to **pattern 3** — dedicated `/api/v1/investor/*` projections owned by Daniel. `GAP-ACL-005` remains open for implementation in PR-E. See Contract V3 §13.2.
+**Status:** ⛔ **SUPERSEDED (2026-07-28) — NOT THE INTEGRATION PATH.** See [`phase2-7-daniel-direction-resolution.md`](phase2-7-daniel-direction-resolution.md) §3.
+
+> **Daniel, 2026-07-28 (written):** "I dont want the investor BFF to use the
+> broad Admin Portal API as an interim investor boundary." The Admin Portal is a
+> privileged operator surface. A dedicated **`investor-api`** service is being
+> built instead, enforcing account ownership, field allowlists, redaction, rate
+> limits, and investor action auditing **at the backend boundary**.
+>
+> This overturns the 2026-05-30 record below (Contract V3 §13.2), which had no
+> linked source. **No BFF route may target an Admin Portal endpoint.** The
+> endpoint inventory in this doc is retained only as a _projection-shape
+> reference_ for what investor-api will expose; its ACL, caching, scoping, and
+> BFF-route-candidate columns are obsolete. The `/api/v1/stream` SSE bridge is
+> replaced by `GET /api/v1/investor/accounts/{account_id}/events`.
+
+**Superseded ratification (2026-05-30, source unconfirmed):** Phase 2.6 ACL strategy ratified as **patterns 1 + 2** (route-scoped filtering + account-filtered list filtering). Phase 3 migrates to **pattern 3** — dedicated `/api/v1/investor/*` projections owned by Daniel. `GAP-ACL-005` remains open for implementation in PR-E. See Contract V3 §13.2.
 
 This doc identifies, for every Admin Portal endpoint that's relevant to the investor product, the source table, investor-safe status, fields to redact, account-id scoping requirement, cacheability, BFF route candidate, surface served, production readiness, and security notes.
 

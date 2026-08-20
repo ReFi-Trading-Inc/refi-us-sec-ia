@@ -17,9 +17,12 @@
  * and exit non-zero.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, sep } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const failures: string[] = [];
 
@@ -57,9 +60,21 @@ const { decimalStringRefiner } =
 const {
   INVESTOR_ADMIN_VERBS,
   INVESTOR_ACTION_TO_ADMIN_VERB,
+  INVESTOR_ACTIONS_ROUTE_TEMPLATE,
+  MANAGED_PAPER_GATED_ADMIN_VERBS,
+  RECEIPT_ONLY_ADMIN_VERBS,
+  SIGNAL_RELEASE_ADMIN_VERBS,
   adminVerbFor,
+  investorActionsRoute,
   isInvestorAdminVerb,
+  receiptVerbFor,
 } = await import("../apps/web/src/lib/sec203a/admin-verbs.ts");
+
+const {
+  INVESTOR_EDITABLE_ACCOUNT_PREFS,
+  INVESTOR_EDITABLE_ACCOUNT_PREF_FIELDS,
+  READ_ONLY_CONTROL_NAMES,
+} = await import("../apps/web/src/lib/sec203a/account-prefs.ts");
 
 const { RISK_DECISIONS, isRiskDecision, riskSnapshotSchema, riskLimitsSchema } =
   await import("../apps/web/src/lib/sec203a/risk.ts");
@@ -510,19 +525,24 @@ await section(
 );
 
 await section(
-  "INVESTOR_ADMIN_VERBS matches Contract V3 §13.3 exactly",
+  "INVESTOR_ADMIN_VERBS matches Daniel's approved, client-emittable action set",
   async () => {
-    // Contract V3 §13.3 — the only investor-side admin-action verbs the BFF
-    // may accept. Any string outside this set must be a 403 + tripwire hit.
-    // Imported from apps/web/src/lib/sec203a/admin-verbs.ts so the literal
-    // cannot drift from the source-of-truth module.
+    // Daniel's written direction 2026-07-28, narrowed by his 2026-08-17 reply —
+    // the only investor-originable verbs the BFF may emit at
+    // POST /api/v1/investor/accounts/{account_id}/actions. Any string outside
+    // this set must be a 403 + tripwire hit. Imported from
+    // apps/web/src/lib/sec203a/admin-verbs.ts so the literal cannot drift from
+    // the source-of-truth module.
+    //
+    // `update_prefs` is deliberately absent: preference updates travel the
+    // dedicated PATCH /preferences route and "should not be exposed as a second
+    // public write path through /actions" (2026-08-17 §6).
     const expected = [
       "pause_autopilot",
       "resume_autopilot",
       "join_template",
       "leave_template",
-      "update_prefs",
-      "liquidate_all",
+      "reduce_only",
     ];
     const forbidden = [
       "force_rebuild",
@@ -533,11 +553,22 @@ await section(
       "founder_approve",
       "support_advise",
       "investor_accept",
+      // Deferred by Daniel 2026-07-28 until the confirmation, position-preview,
+      // step-up-auth, idempotency, partial-fill, unknown-state, and
+      // lifecycle-evidence scenarios pass in paper testing. Distinct from
+      // ACCOUNT_INTENT_KINDS.liquidate_all, which is a backend intent kind and
+      // correctly still exists (see the canary below).
+      "liquidate_all",
     ];
     assert.deepEqual(
       [...INVESTOR_ADMIN_VERBS].sort(),
       [...expected].sort(),
-      "INVESTOR_ADMIN_VERBS drifted from Contract V3 §13.3 — update Contract V3 and Daniel's authoritative spec before changing.",
+      "INVESTOR_ADMIN_VERBS drifted from Daniel's approved action set — update docs/phase2-7-daniel-contract-mechanics-resolution.md §6 and obtain written backend confirmation before changing.",
+    );
+    assert.equal(
+      isInvestorAdminVerb("update_prefs"),
+      false,
+      "update_prefs must not be client-emittable at /actions — preference updates travel PATCH /preferences (Daniel 2026-08-17 §6).",
     );
     for (const v of forbidden) {
       assert.equal(
@@ -548,11 +579,146 @@ await section(
     }
     assert.equal(
       INVESTOR_ADMIN_VERBS.length,
-      6,
-      "Contract V3 §13.3 fixes the allowlist at exactly 6 verbs.",
+      5,
+      "Daniel's 2026-08-17 reply fixes the client-emittable allowlist at exactly 5 verbs (update_prefs moved to the dedicated preferences route).",
     );
   },
 );
+
+await section(
+  "every route file outside app/api/ is a declared public route",
+  async () => {
+    // A route handler outside apps/web/app/api/ never passes through
+    // bffRead/bffMutate, so nothing else in this suite would notice it. Each
+    // one must be declared in src/lib/bff/public-routes.ts with a reason.
+    const { PUBLIC_ROUTE_FILES } =
+      await import("../apps/web/src/lib/bff/public-routes.ts");
+    const { readdirSync, statSync } = await import("node:fs");
+    const appDir = join(REPO_ROOT, "apps/web/app");
+
+    const found: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        if (entry === "node_modules" || entry === ".next") continue;
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) {
+          walk(full);
+        } else if (entry === "route.ts" || entry === "route.tsx") {
+          const rel = full
+            .slice(join(REPO_ROOT, "apps/web").length + 1)
+            .split(sep)
+            .join("/");
+          if (!rel.startsWith("app/api/")) found.push(rel);
+        }
+      }
+    };
+    walk(appDir);
+
+    for (const file of found) {
+      assert.ok(
+        PUBLIC_ROUTE_FILES.includes(file),
+        `Route "${file}" sits outside app/api/ and is therefore unauthenticated by ` +
+          `default, but is not declared in apps/web/src/lib/bff/public-routes.ts. ` +
+          `Declare it with a reason, or move it under app/api/ so it goes through ` +
+          `the BFF handler.`,
+      );
+    }
+    // The declaration list must not rot either: every declared file must exist.
+    for (const declared of PUBLIC_ROUTE_FILES) {
+      if (declared.startsWith("app/api/")) continue;
+      assert.ok(
+        found.includes(declared),
+        `public-routes.ts declares "${declared}" but no such route file exists.`,
+      );
+    }
+  },
+);
+
+await section(
+  "Signal-only release subset matches Daniel's 2026-08-17 reply",
+  async () => {
+    // v1.0.0-dev.1 enables join_template and leave_template only. Preference
+    // updates are enabled too, but through PATCH /preferences, not /actions.
+    assert.deepEqual(
+      [...SIGNAL_RELEASE_ADMIN_VERBS].sort(),
+      ["join_template", "leave_template"],
+      "SIGNAL_RELEASE_ADMIN_VERBS drifted from Daniel's 2026-08-17 §6 Signal-only surface.",
+    );
+    assert.deepEqual(
+      [...MANAGED_PAPER_GATED_ADMIN_VERBS].sort(),
+      ["pause_autopilot", "reduce_only", "resume_autopilot"],
+      "pause/resume/reduce_only stay unavailable until Managed paper (Daniel 2026-08-17 §6).",
+    );
+    // The two sets partition the emittable allowlist — no verb may be in both,
+    // and none may be in neither.
+    assert.deepEqual(
+      [
+        ...SIGNAL_RELEASE_ADMIN_VERBS,
+        ...MANAGED_PAPER_GATED_ADMIN_VERBS,
+      ].sort(),
+      [...INVESTOR_ADMIN_VERBS].sort(),
+      "Every emittable verb must be either Signal-enabled or Managed-paper-gated, and none may be both.",
+    );
+  },
+);
+
+await section(
+  "release gate refuses Managed verbs during the Signal release",
+  async () => {
+    const { isGatedUntilManagedPaper, GATED_UNTIL_MANAGED_PAPER } =
+      await import("../apps/web/src/lib/sec203a/admin-verbs.ts");
+
+    assert.equal(GATED_UNTIL_MANAGED_PAPER, "gated_until_managed_paper");
+
+    // Gated in Signal, allowed at Managed paper.
+    for (const action of ["pauseManaged", "resumeManaged"] as const) {
+      assert.equal(
+        isGatedUntilManagedPaper(action, "signal"),
+        true,
+        `"${action}" must be refused during the Signal release (Daniel 2026-08-17 §6).`,
+      );
+      assert.equal(
+        isGatedUntilManagedPaper(action, "managed_paper"),
+        false,
+        `"${action}" must be available once Managed paper is enabled.`,
+      );
+    }
+
+    // Preference updates travel their own route and are enabled in Signal, so
+    // the gate must never catch them.
+    assert.equal(
+      isGatedUntilManagedPaper("updateAccountPrefs", "signal"),
+      false,
+      "Preference updates are enabled in the Signal release.",
+    );
+    // BFF-only actions map to no verb and are never gated by this rule.
+    assert.equal(
+      isGatedUntilManagedPaper("acknowledgeDisclosure", "signal"),
+      false,
+    );
+  },
+);
+
+await section("update_prefs is receipt-only, never emittable", async () => {
+  assert.deepEqual(
+    [...RECEIPT_ONLY_ADMIN_VERBS],
+    ["update_prefs"],
+    "RECEIPT_ONLY_ADMIN_VERBS drifted from Daniel's 2026-08-17 §6.",
+  );
+  // Preference updates still produce action receipts carrying the backend
+  // vocabulary — the audit trail keeps update_prefs even though no route may
+  // POST it to /actions.
+  assert.equal(
+    receiptVerbFor("updateAccountPrefs"),
+    "update_prefs",
+    "Preference updates must still record an update_prefs action receipt.",
+  );
+  assert.equal(
+    adminVerbFor("updateAccountPrefs"),
+    undefined,
+    "updateAccountPrefs must NOT map to an /actions verb — that would re-open the second public write path Daniel closed on 2026-08-17.",
+  );
+});
 
 await section(
   "InvestorActionName → InvestorAdminVerb mapping is consistent",
@@ -570,7 +736,6 @@ await section(
     // Spot-check the three actions Phase 2.6 wires up.
     assert.equal(adminVerbFor("pauseManaged"), "pause_autopilot");
     assert.equal(adminVerbFor("resumeManaged"), "resume_autopilot");
-    assert.equal(adminVerbFor("updateAccountPrefs"), "update_prefs");
     // BFF-only actions must NOT map (no backend admin-actions call exists).
     assert.equal(
       adminVerbFor("acknowledgeDisclosure"),
@@ -1177,6 +1342,237 @@ await section(
         `Forbidden status "${v}" was accepted — would re-introduce REVIEW/DENY partition.`,
       );
     }
+  },
+);
+
+await section(
+  "AccountPrefs: exactly four investor-editable fields",
+  async () => {
+    assert.deepEqual(
+      [...INVESTOR_EDITABLE_ACCOUNT_PREFS].sort(),
+      ["drift_threshold", "excluded_assets", "fractional_enabled", "min_order"],
+      "Investor-editable AccountPrefs drifted from Daniel's approved four (docs/phase2-7-daniel-direction-resolution.md §4).",
+    );
+    assert.equal(
+      INVESTOR_EDITABLE_ACCOUNT_PREF_FIELDS.length,
+      INVESTOR_EDITABLE_ACCOUNT_PREFS.length,
+      "camelCase mirror and snake_case wire list must stay the same length.",
+    );
+  },
+);
+
+await section(
+  "No investor-editable capital-allocation or risk-limit control (camelCase + snake_case)",
+  async () => {
+    // The Phase 2.7 doc recorded this area as "confirmed clean" on the basis
+    // of a grep for `capital_allocation`, `allocation_pct`, and
+    // `capital_usage`. That grep was snake_case-only and this repo names
+    // fields in camelCase, so it missed seven live editable controls in the
+    // Automation Center: maxPositionSizeBps and minimumCashReserveBps (capital
+    // allocation) plus maxSingleOrderUsd, dailyOrderLimit, dailyLossPauseBps,
+    // drawdownPauseBps, and maxOpenOrders (risk limits). They were removed on
+    // 2026-07-30.
+    //
+    // This assertion scans BOTH spellings, and scans for the semantic control
+    // names rather than a fixed literal list, so the same class of miss cannot
+    // recur. It targets the investor-editable write surfaces specifically:
+    // read-only DISPLAY of backend-owned limits is expected and allowed.
+    // Covers the storage entity, both BFF write routes, the typed DTO, and the
+    // rendering surfaces. Including the UI pages is what makes `data-testid`
+    // attributes and visible control labels part of the check, not just field
+    // declarations.
+    //
+    // Deliberately NOT scanned: apps/web/e2e/automation-center.spec.ts, which
+    // names all seven controls in negative assertions proving their absence.
+    const editableSurfaces = [
+      "apps/web/src/lib/prototype-store/entities/execution-policy-draft.ts",
+      "apps/web/app/api/v1/investor/execution-policy/draft/route.ts",
+      "apps/web/app/api/v1/investor/execution-policy/route.ts",
+      "apps/web/app/api/v1/investor/execution-policy/activate/route.ts",
+      "packages/api-clients/src/hooks/execution-policy.ts",
+      "apps/web/app/us/app/settings/automation/page.tsx",
+      "apps/web/app/us/app/settings/automation/activate/page.tsx",
+    ];
+
+    const offenders: string[] = [];
+    for (const rel of editableSurfaces) {
+      const src = readFileSync(join(REPO_ROOT, rel), "utf8");
+      for (const [i, rawLine] of src.split("\n").entries()) {
+        // Only flag real declarations/uses, not the comments explaining the
+        // removal. A line that is purely a comment is documentation.
+        const line = rawLine.trim();
+        if (line.startsWith("*") || line.startsWith("//") || line === "")
+          continue;
+        for (const name of READ_ONLY_CONTROL_NAMES) {
+          if (new RegExp(`\\b${name}\\b`).test(line)) {
+            offenders.push(`${rel}:${String(i + 1)} → ${name}`);
+          }
+        }
+      }
+    }
+
+    assert.deepEqual(
+      offenders,
+      [],
+      `Backend-owned control(s) reappeared on an investor-editable surface:\n    ${offenders.join("\n    ")}\n  RiskLimits, template risk settings, broker state, and operator controls are read-only to the investor, and capital-allocation percentage controls are not an AccountPrefs capability.`,
+    );
+  },
+);
+
+await section(
+  "Investor actions route is account-scoped in the path",
+  async () => {
+    assert.equal(
+      INVESTOR_ACTIONS_ROUTE_TEMPLATE,
+      "/api/v1/investor/accounts/{account_id}/actions",
+      "Investor-api actions route drifted from Daniel's §5 contract.",
+    );
+    assert.equal(
+      investorActionsRoute("acct_123"),
+      "/api/v1/investor/accounts/acct_123/actions",
+      "investorActionsRoute() must interpolate the account into the path.",
+    );
+    // Account id must be encoded — it is a claim to be verified, and a raw
+    // value could otherwise alter the path shape.
+    assert.equal(
+      investorActionsRoute("a/b"),
+      "/api/v1/investor/accounts/a%2Fb/actions",
+      "Account id must be URL-encoded so it cannot escape its path segment.",
+    );
+  },
+);
+
+await section("Exception Review carries no risk-derived kind", async () => {
+  const { EXCEPTION_KINDS, isExceptionKind } =
+    await import("../apps/web/src/lib/prototype-store/entities/exception-review.ts");
+  // A backend risk rejection is terminal for its intent. An exception
+  // implies a resolution path, so a risk denial must never become one —
+  // that would be an investor risk override in disguise.
+  for (const forbidden of [
+    "risk_rejected",
+    "risk_denied",
+    "risk_review",
+    "risk_override",
+    "denied_by_risk",
+    "risk_limit_breach",
+    "needs_review",
+    "manual_review",
+  ]) {
+    assert.equal(
+      isExceptionKind(forbidden),
+      false,
+      `Forbidden exception kind "${forbidden}" was accepted — a risk rejection is terminal and has no investor resolution path.`,
+    );
+  }
+  // Daniel's resolvable non-risk conditions must each have a home.
+  for (const required of [
+    "missing_consent",
+    "stale_profile",
+    "broker_disconnected",
+    "reconciliation_block",
+  ]) {
+    assert.ok(
+      (EXCEPTION_KINDS as readonly string[]).includes(required),
+      `Resolvable non-risk condition "${required}" has no ExceptionKind.`,
+    );
+  }
+});
+
+await section(
+  "Signal-only: no broker submission or cancel path is exported",
+  async () => {
+    // The first dev release is Signal-only and exposes no path from investor
+    // actions to broker submission; investor cancellation of pending_submit
+    // orders is deferred on ownership-boundary grounds.
+    const src = readFileSync(
+      join(REPO_ROOT, "packages/api-clients/src/index.ts"),
+      "utf8",
+    );
+    for (const forbidden of ["useSubmitOrder", "useCancelOrder"]) {
+      assert.equal(
+        new RegExp(
+          `^\\s*(export\\s*\\{[^}]*\\b${forbidden}\\b|\\s*${forbidden},)`,
+          "m",
+        ).test(src),
+        false,
+        `${forbidden} is exported from @refi/api-clients — that is a live path from the investor product to broker submission/cancellation.`,
+      );
+    }
+
+    // And the wire contract must not offer the operations either.
+    const spec = readFileSync(
+      join(REPO_ROOT, "packages/api-clients/openapi/refi-api.yaml"),
+      "utf8",
+    );
+    for (const op of ["submitOrder", "cancelOrder"]) {
+      assert.equal(
+        new RegExp(`operationId:\\s*${op}\\b`).test(spec),
+        false,
+        `refi-api.yaml still declares operationId ${op}.`,
+      );
+    }
+  },
+);
+
+await section(
+  "Integration target is refinity-dev, not staging or production",
+  async () => {
+    const spec = readFileSync(
+      join(REPO_ROOT, "packages/api-clients/openapi/refi-api.yaml"),
+      "utf8",
+    );
+    // refinity-dev is the only active deployment, intentionally. Staging is
+    // out of scope until the dev release is reproducible, and the production
+    // host does not resolve.
+    //
+    // Check declared `url:` entries, not raw text: the prose above the servers
+    // block legitimately names the retired hosts to explain why they are gone.
+    const declaredUrls = [...spec.matchAll(/^\s*-?\s*url:\s*(\S+)/gm)].map(
+      (m) => m[1] ?? "",
+    );
+    for (const host of ["api-staging.refi.trading", "api.refi.trading"]) {
+      const hit = declaredUrls.find((u) => u.includes(host));
+      assert.equal(
+        hit,
+        undefined,
+        `refi-api.yaml declares a server at ${String(hit)}. The integration target is refinity-dev; the dev base URL arrives with Daniel's connection package and must not be guessed.`,
+      );
+    }
+    assert.ok(
+      declaredUrls.length > 0,
+      "No server url found in refi-api.yaml — the assertion above would be vacuous.",
+    );
+  },
+);
+
+await section(
+  "OpenAPI OrderPreviewResult.status is binary (ALLOW | DENY)",
+  async () => {
+    // Guards the wire contract itself, not just the TS types: the generated
+    // client is gitignored and rebuilt from this yaml, so a REVIEW value
+    // re-added here would silently re-introduce the partition Daniel's Q1
+    // answer forbids (GAP-RISK-BINARY-006). Regex rather than a YAML parser
+    // to keep this script dependency-free.
+    const spec = readFileSync(
+      join(REPO_ROOT, "packages/api-clients/openapi/refi-api.yaml"),
+      "utf8",
+    );
+    const match = /OrderPreviewResult:[\s\S]*?status:\s*\{[^}]*\}/.exec(spec);
+    assert.ok(
+      match,
+      "Could not locate OrderPreviewResult.status in refi-api.yaml — the assertion below is vacuous, fix the locator.",
+    );
+    const statusLine = match[0].slice(match[0].lastIndexOf("status:"));
+    const enumValues = /enum:\s*\[([^\]]*)\]/
+      .exec(statusLine)?.[1]
+      .split(",")
+      .map((v) => v.trim())
+      .sort();
+    assert.deepEqual(
+      enumValues,
+      ["ALLOW", "DENY"],
+      `OrderPreviewResult.status enum drifted to [${enumValues?.join(", ")}] — a risk verdict is a backend hard stop with no frontend escalation. Retryable operational failures belong in the UNAVAILABLE client state.`,
+    );
   },
 );
 
@@ -3480,6 +3876,344 @@ await section(
       assert.equal(await kv.get("x"), null, "deleted → null");
     },
   );
+}
+
+// ─── BFF→investor-api user assertion (D-017, Daniel 2026-08-17) ─────────────
+//
+// Runs last, like the alpha-claim block: it mutates process.env and relies on
+// getServerEnv()'s cache having been primed by earlier sections.
+{
+  const { createRequire } = await import("node:module");
+  const requireFromWeb = createRequire(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const jose = (await import(
+    requireFromWeb.resolve("jose")
+  )) as typeof import("jose");
+
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const assertionMod =
+    await import("../apps/web/src/lib/investor-api/user-assertion.ts");
+  const {
+    USER_ASSERTION_HEADER,
+    USER_ASSERTION_ALG,
+    USER_ASSERTION_MAX_TTL_SECONDS,
+    USER_ASSERTION_TTL_SECONDS,
+    INVESTOR_API_DEV_AUDIENCE,
+    REQUIRED_ASSERTION_CLAIMS,
+    REQUIRED_AUTH_METHOD_CLAIM,
+    OPTIONAL_AUTH_METHOD_CLAIM,
+    MissingAuthMethodError,
+    assertPublishableIssuer,
+    jwksUrlFor,
+    mintUserAssertion,
+    getPublicJwks,
+    resetSigningKeyCache,
+  } = assertionMod;
+
+  await section(
+    "user assertion: contract constants match Daniel's §2",
+    async () => {
+      assert.equal(USER_ASSERTION_HEADER, "X-Refinity-User-Assertion");
+      assert.equal(USER_ASSERTION_ALG, "ES256");
+      assert.equal(
+        USER_ASSERTION_MAX_TTL_SECONDS,
+        120,
+        "Daniel 2026-08-17: 'The maximum TTL is two minutes.'",
+      );
+      assert.ok(
+        USER_ASSERTION_TTL_SECONDS <= USER_ASSERTION_MAX_TTL_SECONDS,
+        "Minted TTL must never exceed the contract maximum.",
+      );
+      assert.equal(INVESTOR_API_DEV_AUDIENCE, "urn:refinity:investor-api:dev");
+      assert.deepEqual(
+        [...REQUIRED_ASSERTION_CLAIMS],
+        ["iss", "aud", "sub", "iat", "nbf", "exp", "jti", "sid", "auth_time"],
+        "Required claim list drifted from Daniel's §2.",
+      );
+      // Daniel 2026-08-19 narrowed the 2026-08-17 "amr or acr": `amr` is the
+      // required v1 method claim and arrives non-empty; `acr` "may be added
+      // later" and is therefore additive, never a substitute. An assertion
+      // carrying only `acr` must not be mintable.
+      assert.equal(REQUIRED_AUTH_METHOD_CLAIM, "amr");
+      assert.equal(OPTIONAL_AUTH_METHOD_CLAIM, "acr");
+      assert.equal(
+        jwksUrlFor("https://app.example.com/"),
+        "https://app.example.com/.well-known/jwks.json",
+      );
+    },
+  );
+
+  await section(
+    "user assertion: preview-shaped issuers are rejected outside dev",
+    async () => {
+      // Daniel: "The BFF should use a stable environment-specific issuer, not a
+      // Vercel preview URL, and publish a JWKS."
+      for (const issuer of [
+        "https://refi-us-sec-ia-abc123.vercel.app",
+        "https://refi-git-feature-branch.example.com",
+        "http://localhost:3000",
+      ]) {
+        assert.throws(
+          () => assertPublishableIssuer(issuer, "prod"),
+          /not a stable environment issuer/,
+          `Issuer "${issuer}" must be rejected in prod.`,
+        );
+        assert.throws(
+          () => assertPublishableIssuer(issuer, "staging"),
+          /not a stable environment issuer/,
+          `Issuer "${issuer}" must be rejected in staging.`,
+        );
+      }
+      // Stable hosts and URN issuers pass; localhost passes in dev only.
+      assertPublishableIssuer("https://app.refi.trading", "prod");
+      assertPublishableIssuer("urn:refinity:bff:dev", "prod");
+      assertPublishableIssuer("http://localhost:3000", "dev");
+      assert.throws(
+        () => assertPublishableIssuer("not a url", "prod"),
+        /not a valid absolute URL or URN/,
+      );
+    },
+  );
+
+  await section(
+    "signing key: ephemeral fallback needs an explicit opt-in",
+    async () => {
+      // A deployed dev tier runs multiple Cloud Run instances; a per-process
+      // key would sign under a kid absent from the JWKS another instance
+      // serves. REFI_ENV=dev alone must NOT be enough to enable it.
+      resetSigningKeyCache();
+      delete process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"];
+      delete process.env["BFF_ASSERTION_ALLOW_EPHEMERAL_KEY"];
+      process.env["REFI_ENV"] = "dev";
+      resetServerEnvCacheForTests();
+      await assert.rejects(
+        assertionMod.getSigningKey(),
+        /BFF_ASSERTION_PRIVATE_KEY_JWK is not configured/,
+        "REFI_ENV=dev alone must not enable the per-process ephemeral key.",
+      );
+
+      // Explicit opt-in enables it for a single-process local/CI run.
+      process.env["BFF_ASSERTION_ALLOW_EPHEMERAL_KEY"] = "1";
+      resetServerEnvCacheForTests();
+      resetSigningKeyCache();
+      const key = await assertionMod.getSigningKey();
+      assert.ok(
+        key.kid.startsWith("dev-ephemeral-"),
+        "Opted-in local runs get a clearly-labelled ephemeral key.",
+      );
+
+      // Opt-in must not rescue a non-dev tier.
+      process.env["REFI_ENV"] = "staging";
+      resetServerEnvCacheForTests();
+      resetSigningKeyCache();
+      await assert.rejects(
+        assertionMod.getSigningKey(),
+        /BFF_ASSERTION_PRIVATE_KEY_JWK is not configured/,
+        "The ephemeral opt-in must never apply outside REFI_ENV=dev.",
+      );
+      process.env["REFI_ENV"] = "dev";
+      resetServerEnvCacheForTests();
+    },
+  );
+
+  await section(
+    "user assertion: minted token carries every required claim",
+    async () => {
+      resetSigningKeyCache();
+      const { publicKey, privateKey } = await jose.generateKeyPair("ES256", {
+        extractable: true,
+      });
+      const privateJwk = await jose.exportJWK(privateKey);
+      process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"] = JSON.stringify({
+        ...privateJwk,
+        kid: "test-key-1",
+      });
+      process.env["BFF_ASSERTION_ISSUER"] = "https://app.refi.trading";
+      process.env["INVESTOR_API_AUDIENCE"] = INVESTOR_API_DEV_AUDIENCE;
+      // getServerEnv() memoises on first call and earlier sections already
+      // primed it, so the new values need an explicit re-parse.
+      resetServerEnvCacheForTests();
+
+      const authTime = Math.floor(Date.now() / 1000) - 42;
+      const minted = await mintUserAssertion({
+        userId: "user-opaque-1",
+        sid: "sid-1",
+        authTime,
+        amr: ["otp"],
+      });
+
+      const { payload, protectedHeader } = await jose.jwtVerify(
+        minted.token,
+        publicKey,
+        {
+          algorithms: ["ES256"],
+          issuer: "https://app.refi.trading",
+          audience: INVESTOR_API_DEV_AUDIENCE,
+        },
+      );
+
+      assert.equal(protectedHeader.alg, "ES256");
+      assert.equal(
+        protectedHeader.kid,
+        "test-key-1",
+        "kid must be in the header — investor-api selects the key by kid.",
+      );
+      for (const claim of REQUIRED_ASSERTION_CLAIMS) {
+        assert.notEqual(
+          payload[claim],
+          undefined,
+          `Required claim "${claim}" is missing from the minted assertion.`,
+        );
+      }
+      assert.ok(
+        Array.isArray(payload["amr"]) &&
+          (payload["amr"] as unknown[]).length > 0,
+        "`amr` must be present and non-empty — the required v1 method claim.",
+      );
+      assert.equal(payload.sub, "user-opaque-1");
+      assert.equal(payload["sid"], "sid-1");
+      assert.equal(
+        payload["auth_time"],
+        authTime,
+        "auth_time must be the UNDERLYING authentication time, not the mint time.",
+      );
+      assert.notEqual(
+        payload["auth_time"],
+        payload.iat,
+        "auth_time must not collapse onto iat — that would defeat step-up (D-015).",
+      );
+      assert.equal(
+        payload["account_id"],
+        undefined,
+        "Account ids must NOT ride in the assertion — investor-api re-authorizes ownership server-side.",
+      );
+      const ttl = (payload.exp ?? 0) - (payload.iat ?? 0);
+      assert.ok(
+        ttl > 0 && ttl <= USER_ASSERTION_MAX_TTL_SECONDS,
+        `TTL ${ttl}s must be within the 2-minute contract maximum.`,
+      );
+    },
+  );
+
+  await section("user assertion: each mint gets a unique jti", async () => {
+    const base = {
+      userId: "user-opaque-1",
+      sid: "sid-1",
+      authTime: Math.floor(Date.now() / 1000) - 10,
+      amr: ["otp"],
+    };
+    const a = await mintUserAssertion(base);
+    const b = await mintUserAssertion(base);
+    assert.notEqual(
+      a.jti,
+      b.jti,
+      "Daniel: 'Mint an assertion per BFF-to-backend call with a unique jti.'",
+    );
+  });
+
+  await section(
+    "user assertion: fails closed without auth_time or amr",
+    async () => {
+      await assert.rejects(
+        mintUserAssertion({
+          userId: "u",
+          sid: "s",
+          authTime: 0,
+          amr: ["otp"],
+        }),
+        /underlying auth_time/,
+        "A missing auth_time must throw, never fall back to now.",
+      );
+      await assert.rejects(
+        mintUserAssertion({
+          userId: "u",
+          sid: "s",
+          authTime: Math.floor(Date.now() / 1000),
+        }),
+        MissingAuthMethodError,
+        "An assertion with no `amr` must be refused.",
+      );
+      await assert.rejects(
+        mintUserAssertion({
+          userId: "u",
+          sid: "s",
+          authTime: Math.floor(Date.now() / 1000),
+          amr: [],
+        }),
+        MissingAuthMethodError,
+        "An EMPTY `amr` is not a method claim. Daniel 2026-08-19 specifies a " +
+          "non-empty array, and `[]` would assert that authentication happened " +
+          "by no method at all.",
+      );
+      // `acr` is additive, never a substitute (Daniel 2026-08-19). This is the
+      // case the previous "amr or acr" reading would have let through.
+      await assert.rejects(
+        mintUserAssertion({
+          userId: "u",
+          sid: "s",
+          authTime: Math.floor(Date.now() / 1000),
+          acr: "urn:example:loa2",
+        }),
+        MissingAuthMethodError,
+        "`acr` alone must not satisfy the method requirement.",
+      );
+    },
+  );
+
+  await section("jwks: publishes public material only, with kid", async () => {
+    const jwks = await getPublicJwks();
+    assert.ok(jwks.keys.length >= 1, "JWKS must publish at least one key.");
+    for (const key of jwks.keys) {
+      assert.equal(
+        (key as Record<string, unknown>)["d"],
+        undefined,
+        "A private component `d` must never appear in the published JWKS.",
+      );
+      assert.equal(key.kty, "EC");
+      assert.equal(key.crv, "P-256");
+      assert.equal(key.alg, "ES256");
+      assert.equal(key.use, "sig");
+      assert.ok(
+        typeof key.kid === "string" && key.kid.length > 0,
+        "Every published key needs a kid for rotation.",
+      );
+    }
+  });
+
+  await section("jwks: rotation overlap publishes both keys", async () => {
+    const other = await jose.generateKeyPair("ES256", { extractable: true });
+    const otherPublic = await jose.exportJWK(other.publicKey);
+    process.env["BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"] = JSON.stringify({
+      ...otherPublic,
+      kid: "retiring-key-0",
+      alg: "ES256",
+      use: "sig",
+    });
+    resetServerEnvCacheForTests();
+    const jwks = await getPublicJwks();
+    const kids = jwks.keys.map((k) => k.kid).sort();
+    assert.deepEqual(
+      kids,
+      ["retiring-key-0", "test-key-1"],
+      "During a rotation overlap the retiring key must stay published until investor-api's JWKS cache expires.",
+    );
+    // A private key smuggled into the PREVIOUS slot must be refused outright.
+    const otherPrivate = await jose.exportJWK(other.privateKey);
+    process.env["BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"] = JSON.stringify({
+      ...otherPrivate,
+      kid: "retiring-key-0",
+    });
+    resetServerEnvCacheForTests();
+    await assert.rejects(
+      getPublicJwks(),
+      /private component/,
+      "A private JWK in the previous-key slot must be rejected, not published.",
+    );
+    delete process.env["BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"];
+    resetServerEnvCacheForTests();
+  });
 }
 
 // ─── Done ───────────────────────────────────────────────────────────────────

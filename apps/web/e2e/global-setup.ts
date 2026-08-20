@@ -25,7 +25,12 @@ function fnv1a(input: string): string {
   return h.toString(16).padStart(8, "0");
 }
 
-function authIdFor(cookieValue: string): string {
+/**
+ * Derive the deterministic dev auth id for a seeded user. Exported so
+ * `./session.ts` mints session tokens whose `sub` matches what the seeder
+ * wrote, rather than duplicating the hash and drifting from it.
+ */
+export function authIdFor(cookieValue: string): string {
   return `dev-${fnv1a(cookieValue).slice(0, 16)}`;
 }
 
@@ -172,13 +177,10 @@ async function seedReadyActivationFor(authId: string, accountId: string) {
       accountScope: "primary",
       assetUniverse: ["US_LARGE_CAP_EQUITY"],
       restrictedSectors: [],
-      maxSingleOrderUsd: "1000.00",
-      maxPositionSizeBps: 1000,
-      minimumCashReserveBps: 500,
-      dailyOrderLimit: 5,
-      dailyLossPauseBps: 300,
-      drawdownPauseBps: 1000,
-      maxOpenOrders: 5,
+      driftThreshold: "0.05",
+      minOrder: "25.00",
+      excludedAssets: [],
+      fractionalEnabled: false,
       staleBrokerDataPauseAfter: "PT15M",
       staleProfilePauseAfter: "P90D",
       pauseOnDisclosureSuperseded: true,

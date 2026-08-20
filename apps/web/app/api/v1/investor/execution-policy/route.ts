@@ -26,19 +26,21 @@ const updateBody = z.object({
   strategyId: z.string().min(1),
   accountScope: z.string().min(1),
   assetUniverse: z.array(z.string().min(1)).min(1),
+  // Investor-editable AccountPrefs mirror only. `maxOrderSize` and
+  // `maxTurnover` were removed on 2026-07-30: risk limits are backend-owned
+  // and read-only to the investor (Daniel 2026-07-28, §4 of
+  // docs/phase2-7-daniel-direction-resolution.md).
   driftThreshold: z
     .string()
     .refine(decimalStringRefiner, decimalStringMessage("driftThreshold"))
     .optional(),
+  minOrder: z
+    .string()
+    .refine(decimalStringRefiner, decimalStringMessage("minOrder"))
+    .optional(),
+  excludedAssets: z.array(z.string().min(1)).max(64).optional(),
+  fractionalEnabled: z.boolean().optional(),
   rebalanceFrequency: z.string().optional(),
-  maxOrderSize: z
-    .string()
-    .refine(decimalStringRefiner, decimalStringMessage("maxOrderSize"))
-    .optional(),
-  maxTurnover: z
-    .string()
-    .refine(decimalStringRefiner, decimalStringMessage("maxTurnover"))
-    .optional(),
   pauseRules: z.array(z.string()).default([]),
   notificationPreferences: z.array(z.string()).default([]),
   restrictionsHash: z.string().min(1),

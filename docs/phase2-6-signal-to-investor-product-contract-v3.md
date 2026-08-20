@@ -1014,6 +1014,17 @@ The BFF does not invent state; it only composes, filters, redacts, and translate
 
 ## 13. Daniel Ratified Decisions
 
+> ⛔ **PARTIALLY SUPERSEDED (2026-07-28).** §13.1, §13.2, §13.3 and §13.6 below
+> are overturned or materially rewritten by Daniel's written direction. See
+> [`phase2-7-daniel-direction-resolution.md`](phase2-7-daniel-direction-resolution.md).
+> In summary: §13.1 AccountPrefs history is backend-owned in the same Spanner DB
+> with one atomic canonical writer (no TS port / parity fixtures / sidecar);
+> §13.2 the Admin Portal is **rejected** as the investor boundary in favour of a
+> dedicated `investor-api` service; §13.3 drops `liquidate_all` (deferred) and
+> adds investor `reduce_only`; §13.6 exposes decision receipts only, not the full
+> audit packet. §13.4 and §13.5 survive. The decisions below were recorded
+> without a linked source — retained as historical record only.
+
 These are Daniel's explicit decisions, recorded at the date of this contract. Each row carries the decision, the implications for the BFF/contract, and the gap-register entry tracking implementation.
 
 ### 13.1 AccountPrefs History architecture

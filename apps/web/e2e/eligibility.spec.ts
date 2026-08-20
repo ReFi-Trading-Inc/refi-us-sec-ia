@@ -23,12 +23,14 @@ test.describe("Eligibility flow", () => {
     // selecting "Yes" satisfies the schema's `isUsPerson: "yes"`.
     await page.getByRole("radio", { name: "Yes" }).check();
     await page.getByRole("button", { name: /check eligibility/i }).click();
-    // The page renders an in-page result card with a "Continue to wallet
-    // connect" CTA link; navigation happens only when the user clicks the CTA.
-    const cta = page.getByRole("link", {
-      name: /continue to wallet connect/i,
-    });
-    await expect(cta).toBeVisible();
+    // The page renders an in-page result card with a "Continue" CTA link;
+    // navigation happens only when the user clicks the CTA. The CTA is no
+    // longer wallet-specific: onboarding is email-first and must not require
+    // a wallet (Daniel 2026-07-28).
+    const cta = page.getByRole("link", { name: /^continue$/i });
+    // Explicit timeout: the result card renders after submit, and Next.js dev
+    // compiles the route on demand, so the default 5s can lose the race.
+    await expect(cta).toBeVisible({ timeout: 30_000 });
     await cta.click();
     await expect(page).toHaveURL(/\/us\/auth\/connect/);
   });

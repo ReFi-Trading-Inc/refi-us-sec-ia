@@ -128,8 +128,14 @@ const FORBIDDEN_LABELS: ReadonlyArray<string> = [
 /**
  * Directories whose contents are scanned. Anything outside these is ignored
  * (intentional — Daniel's repo, node_modules, dist, etc. are not in scope).
+ *
+ * `packages/api-clients` was added 2026-07-30. It had been out of scope, which
+ * is how an exported `useCancelOrder` survived there despite `cancelOrder`
+ * being a forbidden identifier — the investor app was clean, but the client
+ * package it imports from was never checked. The typed investor-api client
+ * lands in packages/, so this is where the boundary now needs enforcing.
  */
-const SCAN_ROOTS: ReadonlyArray<string> = ["apps/web"];
+const SCAN_ROOTS: ReadonlyArray<string> = ["apps/web", "packages/api-clients"];
 
 /**
  * Files & directories whose contents are exempted (boundary-enforcing files
@@ -140,6 +146,11 @@ const ALLOWED_PATHS: ReadonlyArray<string> = [
   "packages/config/blocked-terms.ts",
   "apps/web/src/lib/sec203a/actions.ts",
   "apps/web/src/lib/sec203a/admin-verbs.ts",
+  "apps/web/src/lib/sec203a/account-prefs.ts",
+  // The single documented home of the legacy UI→backend resolution alias
+  // mapping. Same rationale as actions.ts / admin-verbs.ts: it must name the
+  // forbidden spellings in order to keep them out of the UI layer.
+  "packages/api-clients/src/hooks/exceptions.ts",
   "docs/",
   // Tests may name forbidden things in negative assertions.
   "/__tests__/",
@@ -157,6 +168,9 @@ const SKIP_DIRS = new Set([
   ".refi-prototype-store",
   "playwright-report",
   "test-results",
+  // Rebuilt from openapi/refi-api.yaml on every build; the spec is the file
+  // that must stay clean, and scanning the output only duplicates its findings.
+  "generated",
 ]);
 
 // ─── Violation type ──────────────────────────────────────────────────────────

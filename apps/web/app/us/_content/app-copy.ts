@@ -159,20 +159,30 @@ export const appCopy = {
   },
 } as const;
 
+/**
+ * Wallet linking copy.
+ *
+ * Corrected 2026-07-30. This previously read "ReFi.Trading uses your Ethereum
+ * wallet as your login — no passwords, no email verification. Your wallet
+ * address is your account." Every clause of that is now wrong under Daniel's
+ * 2026-07-28 direction: onboarding is email-first and must not require a
+ * wallet, and a wallet address is a LINKED IDENTIFIER, never the user or
+ * account id. Wallet linking is optional and secondary.
+ */
 export const siweCopy = {
-  heading: "Verify your identity",
+  heading: "Link a wallet",
   notConnected: {
-    title: "Connect your wallet to continue",
-    body: "ReFi.Trading uses your Ethereum wallet as your login — no passwords, no email verification. Your wallet address is your account.",
+    title: "Connect a wallet (optional)",
+    body: "Linking a wallet is optional. You do not need one to open or use your ReFi.Trading account — your account is created and secured through your verified email address.",
     cta: "Connect wallet",
   },
   connected: {
     title: "Wallet connected",
-    body: "Sign a message to verify you own this wallet. This is a free, off-chain signature — it does not initiate a transaction.",
-    cta: "Verify identity",
+    body: "Sign a message to prove you own this wallet so we can link it to your account. This is a free, off-chain signature — it does not initiate a transaction, and it does not replace your email sign-in.",
+    cta: "Link wallet",
   },
   signing: "Waiting for signature…",
-  success: "Identity verified. Redirecting…",
+  success: "Wallet linked. Redirecting…",
   siweErrors: {
     NONCE_INVALID: "Connection expired — please try again.",
     SIGNATURE_INVALID:
@@ -235,12 +245,9 @@ export const compliancePreviewCopy = {
     tone: "success" as const,
     body: "Compliance review passed. You may submit this order.",
   },
-  REVIEW: {
-    label: "Manual review required",
-    tone: "warning" as const,
-    body: "This order requires manual compliance review before submission.",
-    cta: "Request manual review",
-  },
+  // No REVIEW entry: the risk verdict is binary and a DENY is a backend hard
+  // stop, so there is no manual-review escalation to offer. See
+  // docs/phase2-6-daniel-answer-resolution.md Q1 (GAP-RISK-BINARY-006).
   DENY: {
     label: "Not approved",
     tone: "error" as const,

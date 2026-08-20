@@ -35,13 +35,21 @@ async function bffMutate<TRes>(
   return env.data;
 }
 
+/**
+ * Resolvable NON-RISK conditions only. A backend risk rejection is terminal
+ * and never appears here — see the contract note in
+ * apps/web/src/lib/prototype-store/entities/exception-review.ts.
+ */
 export type ExceptionKind =
   | "stale_broker_data"
   | "insufficient_buying_power"
   | "expired_disclosure"
   | "changed_preference"
   | "stale_profile"
-  | "out_of_policy_intent";
+  | "out_of_policy_intent"
+  | "missing_consent"
+  | "broker_disconnected"
+  | "reconciliation_block";
 
 export type ExceptionStatus = "open" | "resolved" | "expired";
 

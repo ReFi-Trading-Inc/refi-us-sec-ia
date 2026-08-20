@@ -41,30 +41,45 @@ const STALE_PROFILE_DURATIONS = [
   "P365D",
 ] as const;
 
-const decimalUsdInRange = (min: number, max: number) =>
+const decimalInRange = (field: string, min: number, max: number) =>
   z
     .string()
-    .refine(decimalStringRefiner, decimalStringMessage("maxSingleOrderUsd"))
+    .refine(decimalStringRefiner, decimalStringMessage(field))
     .refine(
       (s) => {
         const n = Number(s);
         return Number.isFinite(n) && n >= min && n <= max;
       },
-      `must be between ${min.toFixed(2)} and ${max.toFixed(2)} USD`,
+      `must be between ${String(min)} and ${String(max)}`,
     );
 
+/**
+ * Investor-editable fields only — the four Daniel approved (§4 of
+ * docs/phase2-7-daniel-direction-resolution.md). The capital-allocation and
+ * risk-limit controls that used to live here were removed on 2026-07-30:
+ * `RiskLimits` and template limits are backend-owned and read-only, so
+ * accepting them at this boundary would have let the BFF become the system of
+ * record for guardrails the backend enforces.
+ *
+ * The BFF re-validates everything the UI validates, so a misbehaving client
+ * cannot smuggle an out-of-range — or removed — value past the boundary.
+ * Unknown keys are stripped by Zod's default object behaviour; the contract
+ * assertion in scripts/contract-assertions.ts proves the removed control names
+ * are not silently re-accepted.
+ */
 const draftBody = z.object({
   strategyId: z.string().min(1).max(64),
   accountScope: z.string().min(1).max(64),
   assetUniverse: z.array(z.string().min(1).max(64)).min(1).max(32),
   restrictedSectors: z.array(z.string().min(1).max(64)).max(32),
-  maxSingleOrderUsd: decimalUsdInRange(25, 25000),
-  maxPositionSizeBps: z.number().int().min(100).max(2500),
-  minimumCashReserveBps: z.number().int().min(0).max(5000),
-  dailyOrderLimit: z.number().int().min(1).max(25),
-  dailyLossPauseBps: z.number().int().min(100).max(1000),
-  drawdownPauseBps: z.number().int().min(300).max(3000),
-  maxOpenOrders: z.number().int().min(1).max(20),
+  // drift_threshold — decimal fraction, 0.1% to 25%.
+  driftThreshold: decimalInRange("driftThreshold", 0.001, 0.25),
+  // min_order — USD notional floor.
+  minOrder: decimalInRange("minOrder", 1, 25000),
+  // excluded_assets — opaque backend asset ids.
+  excludedAssets: z.array(z.string().min(1).max(64)).max(64),
+  // fractional_enabled
+  fractionalEnabled: z.boolean(),
   staleBrokerDataPauseAfter: z.enum(STALE_BROKER_DURATIONS),
   staleProfilePauseAfter: z.enum(STALE_PROFILE_DURATIONS),
   pauseOnDisclosureSuperseded: z.boolean(),
@@ -106,13 +121,10 @@ export const PUT = bffMutate<DraftBody>({
         accountScope: ctx.input.accountScope,
         assetUniverse: ctx.input.assetUniverse,
         restrictedSectors: ctx.input.restrictedSectors,
-        maxSingleOrderUsd: asDecimalString(ctx.input.maxSingleOrderUsd),
-        maxPositionSizeBps: ctx.input.maxPositionSizeBps,
-        minimumCashReserveBps: ctx.input.minimumCashReserveBps,
-        dailyOrderLimit: ctx.input.dailyOrderLimit,
-        dailyLossPauseBps: ctx.input.dailyLossPauseBps,
-        drawdownPauseBps: ctx.input.drawdownPauseBps,
-        maxOpenOrders: ctx.input.maxOpenOrders,
+        driftThreshold: asDecimalString(ctx.input.driftThreshold),
+        minOrder: asDecimalString(ctx.input.minOrder),
+        excludedAssets: ctx.input.excludedAssets,
+        fractionalEnabled: ctx.input.fractionalEnabled,
         staleBrokerDataPauseAfter: ctx.input.staleBrokerDataPauseAfter,
         staleProfilePauseAfter: ctx.input.staleProfilePauseAfter,
         pauseOnDisclosureSuperseded: ctx.input.pauseOnDisclosureSuperseded,

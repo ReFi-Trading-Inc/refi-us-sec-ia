@@ -3,9 +3,27 @@
 **Date:** 2026-05-30
 **Source of truth:** [`phase2-6-authoritative-source-of-truth.md`](phase2-6-authoritative-source-of-truth.md)
 **Gap:** `GAP-PREFS-HISTORY-001`, `GAP-PREFS-WRITE-002`, `GAP-PREFS-AUDIT-003`
-**Status:** **Architecture recorded as ratified (2026-05-30): Option 3c — hybrid TS/Python split — PENDING WRITTEN CONFIRMATION FROM DANIEL.** Implementation still blocked pending final Contract V3 + AccountPrefs History Contract (PR-D). Surface 4 remains blocked.
+**Status:** ⛔ **Option 3c SUPERSEDED (2026-07-28).** See [`phase2-7-daniel-direction-resolution.md`](phase2-7-daniel-direction-resolution.md) §4.
 
-> **Provenance caveat (2026-07-24):** the ratification below is dated one day
+> **Daniel, 2026-07-28 (written):** `AccountPrefsHistory` lives in the **same
+> Spanner database as `AccountPrefs`**. Backend systems own both current
+> preferences and durable history — "the frontend's interim history should not
+> become the long-term system of record." **One canonical transactional writer**
+> updates prefs and appends history **atomically**; Admin Portal and the investor
+> path use the same procedure.
+>
+> This keeps Option 3's canonical-writer principle but **drops the 3c
+> extensions**: no TypeScript port, no parity-fixture harness, no Python sidecar
+> service. The BFF consumes three REST routes
+> (`GET`/`PATCH` `/preferences`, `GET` `/preferences/history`).
+> **§6 Option 3c, §9 conformance test, and §10 sidecar deploy strategy are
+> obsolete.** Investor-editable fields are exactly four: `drift_threshold`,
+> `min_order`, `excluded_assets`, `fractional_enabled`. The "material change"
+> classification is a **versioned backend policy**, not a frontend decision.
+
+**Superseded status (2026-05-30):** **Architecture recorded as ratified: Option 3c — hybrid TS/Python split — PENDING WRITTEN CONFIRMATION FROM DANIEL.** Implementation still blocked pending final Contract V3 + AccountPrefs History Contract (PR-D). Surface 4 remains blocked.
+
+> **Provenance caveat (2026-07-24) — since vindicated:** the ratification below is dated one day
 > after Daniel's 2026-05-29 message, but no email/message source is linked, and
 > Daniel's own words only said Option 3 (`apps/common` shared funcs) "is likely
 > best." Option 3c materially extends that (it adds a Python sidecar service

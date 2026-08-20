@@ -19,8 +19,10 @@
  *     downstream lifecycle evidence.
  *   - NOT an `exec-gateway` policy contract. Do not pass this artifact (or
  *     its `policyId` / `policyVersion`) downstream as a backend trust input.
- *   - NOT a broker-driver `ExecutionPolicy`. The broker submission path
- *     uses Admin Portal projections of `Orders` / `OrderEvents`.
+ *   - NOT a broker-driver `ExecutionPolicy`. The broker submission path is
+ *     backend-owned; the investor product reads order lifecycle state through
+ *     `investor-api` projections, never through the Admin Portal (rejected as
+ *     the investor boundary, Daniel 2026-07-28).
  *   - NOT `ManagedExecutionState` (see managed-execution-state.ts), which
  *     answers "under the current authorization, what is automation doing
  *     right now?"
@@ -57,11 +59,16 @@ export interface ExecutionPolicy {
   accountScope: string;
   assetUniverse: string[];
 
-  // Investor-set thresholds (decimal strings, never JS numbers).
+  // Investor-set preferences (decimal strings, never JS numbers). These mirror
+  // the four investor-editable backend `AccountPrefs` fields and nothing more —
+  // see apps/web/src/lib/sec203a/account-prefs.ts. `maxOrderSize` and
+  // `maxTurnover` were removed on 2026-07-30: they are backend `RiskLimits`
+  // concerns, read-only to the investor.
   driftThreshold?: DecimalString;
+  minOrder?: DecimalString;
+  excludedAssets?: string[];
+  fractionalEnabled?: boolean;
   rebalanceFrequency?: string;
-  maxOrderSize?: DecimalString;
-  maxTurnover?: DecimalString;
 
   // Guardrails + restrictions (hashes preserved for audit).
   riskGuardrailHash: string;

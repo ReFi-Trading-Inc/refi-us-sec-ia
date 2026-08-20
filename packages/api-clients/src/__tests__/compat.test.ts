@@ -96,11 +96,16 @@ describe("OrderPreviewResult", () => {
     expect(r.latency_ms).toBe(42);
   });
 
-  test("status must be one of ALLOW | REVIEW | DENY", () => {
+  // Binary by construction — a REVIEW status would re-introduce the
+  // REVIEW/DENY partition Daniel's contract forbids, and would imply a
+  // frontend escalation that can clear a backend hard stop.
+  test("status is exactly ALLOW | DENY", () => {
     const allow: OrderPreviewResult["status"] = "ALLOW";
-    const review: OrderPreviewResult["status"] = "REVIEW";
     const deny: OrderPreviewResult["status"] = "DENY";
-    expect([allow, review, deny]).toEqual(["ALLOW", "REVIEW", "DENY"]);
+    expectTypeOf<OrderPreviewResult["status"]>().toEqualTypeOf<
+      "ALLOW" | "DENY"
+    >();
+    expect([allow, deny]).toEqual(["ALLOW", "DENY"]);
   });
 });
 

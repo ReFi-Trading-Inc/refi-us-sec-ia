@@ -1,29 +1,12 @@
 import { test, expect } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
+import { e2eAuthCookies } from "./session";
 
 const SIGNAL_COOKIE = E2E_USERS.signal.eligibilityCookie;
 
-// Use a seeded cookie value so the BFF dev-fallback resolves to a real
-// authId + auth-session-link. The proxy itself only checks cookie presence
-// for the eligibility / session gates, so the same string is fine for both.
-const authCookies = [
-  {
-    name: "us_eligibility_v1",
-    value: SIGNAL_COOKIE,
-    domain: "localhost",
-    path: "/",
-  },
-  {
-    name: "us_session_v1",
-    value: SIGNAL_COOKIE,
-    domain: "localhost",
-    path: "/",
-  },
-];
-
 test.describe("Support", () => {
   test.beforeEach(async ({ page }) => {
-    await page.context().addCookies(authCookies);
+    await page.context().addCookies(await e2eAuthCookies(SIGNAL_COOKIE));
     // The support page POSTs to `/v1/support/ticket` via apiFetch (the BFF
     // owns this surface but the upstream ticket sink is still TBD). Mock the
     // route so the form's submit-success path can be observed in E2E without

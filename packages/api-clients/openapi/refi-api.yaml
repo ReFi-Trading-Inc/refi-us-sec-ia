@@ -5,8 +5,16 @@ info:
   description: |
     Hand-written skeleton API contract for the SEC-registered investment adviser app.
     Replaced by Daniel's published OpenAPI in a later milestone.
+# Integration target is `refinity-dev` — the only active deployment, and
+# intentionally so. Staging is out of scope until the dev release is
+# reproducible, and the former production URL (https://api.refi.trading) does
+# not resolve. The dev base URL is a generated Cloud Run URL that arrives with
+# Daniel's connection package; it is deliberately NOT guessed here, so the
+# server list stays local-only until that package lands.
+# See docs/phase2-7-daniel-direction-resolution.md §1 and §8.
 servers:
-  - url: https://api-staging.refi.trading
+  - url: http://localhost:3000
+    description: Local BFF / MSW. Replace with the refinity-dev Cloud Run URL.
 paths:
   /auth/session:
     get:
@@ -200,6 +208,13 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/OrderPreviewResult" }
+  # Read-only by design. `POST /orders` (submitOrder) and
+  # `DELETE /orders/{id}` (cancelOrder) were removed 2026-07-30: the first dev
+  # release is Signal-only and exposes no path from investor actions to broker
+  # submission, and investor cancellation of pending_submit orders is deferred
+  # on ownership-boundary grounds (GAP-CANCEL-INIT-012). Order submission and
+  # cancellation are backend-owned; the investor product only reads lifecycle
+  # state. See docs/phase2-7-daniel-direction-resolution.md §5 and §9.
   /orders:
     get:
       operationId: listOrders
@@ -211,37 +226,6 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Order" }
-    post:
-      operationId: submitOrder
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/OrderRequest" }
-      responses:
-        "200":
-          description: ok
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Order" }
-  /orders/{id}:
-    delete:
-      operationId: cancelOrder
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
-      responses:
-        "200":
-          {
-            description: ok,
-            content:
-              {
-                application/json:
-                  { schema: { $ref: "#/components/schemas/OkResult" } },
-              },
-          }
   /v1/recommendations:
     get:
       operationId: listRecommendations
@@ -410,10 +394,19 @@ components:
         filled_avg_price: { type: number }
         created_at: { type: string, format: date-time }
     OrderPreviewResult:
+      # Binary by construction. Daniel's Q1 answer (2026-05-30, upheld
+      # 2026-07-28): every persisted RiskDecision.decision = "rejected" is a
+      # backend hard stop, and Exec Gateway builds plans only from approved
+      # decisions. A risk verdict is therefore never clearable from a frontend,
+      # so this gate must not offer a "request manual review" escalation.
+      # Retryable operational conditions (STALE_PRICES, BROKER_UNAVAILABLE,
+      # RETRY_PRICES) surface as the UNAVAILABLE client state with a retry
+      # affordance, not as a review request. See
+      # docs/phase2-6-daniel-answer-resolution.md Q1 (GAP-RISK-BINARY-006).
       type: object
       required: [status, reasons, source]
       properties:
-        status: { type: string, enum: [ALLOW, REVIEW, DENY] }
+        status: { type: string, enum: [ALLOW, DENY] }
         reasons:
           type: array
           items:

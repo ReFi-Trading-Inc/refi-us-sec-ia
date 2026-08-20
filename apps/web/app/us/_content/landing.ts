@@ -39,9 +39,9 @@ export const landingCopy = {
       },
       {
         number: "02",
-        title: "Connect your wallet and broker",
+        title: "Verify your email and connect your broker",
         description:
-          "Sign in with your Ethereum wallet and link your brokerage account.",
+          "Verify your email address to create your account, then link your brokerage account. Connecting a wallet is optional.",
       },
       {
         number: "03",

@@ -29,8 +29,8 @@ export const eligibilityCopy = {
     eligible: {
       badge: "Eligible",
       heading: "Check eligibility passed",
-      body: "You're eligible to proceed. Connect your wallet to continue.",
-      cta: "Continue to wallet connect",
+      body: "You're eligible to proceed. Continue to set up your account.",
+      cta: "Continue",
     },
     waitlist: {
       badge: "Waitlist",

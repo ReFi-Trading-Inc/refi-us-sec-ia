@@ -5,9 +5,20 @@ import { useOrderPreview, type OrderRequest } from "@refi/api-clients";
 import { Badge, Button, StatusBanner } from "@ui/components";
 import { compliancePreviewCopy } from "../../_content/app-copy";
 
+/**
+ * The risk verdict is binary by construction — see the OrderPreviewResult note
+ * in refi-api.yaml and docs/phase2-6-daniel-answer-resolution.md Q1
+ * (GAP-RISK-BINARY-006). A DENY is a backend hard stop that no frontend
+ * affordance can clear, so there is deliberately no REVIEW state and no
+ * "request manual review" escalation here.
+ *
+ * UNAVAILABLE is not a verdict: it is the client-side state for retryable
+ * operational failures (STALE_PRICES, BROKER_UNAVAILABLE, RETRY_PRICES), and
+ * it is the only state that carries a retry affordance.
+ */
 type Verdict =
   | {
-      kind: "ALLOW" | "REVIEW" | "DENY";
+      kind: "ALLOW" | "DENY";
       source: "cache" | "fresh";
       reasons: { code: string; message: string }[];
     }
@@ -26,11 +37,9 @@ export type CompliancePreviewProps = {
     canSubmit: boolean,
     verdictKind: Verdict["kind"],
   ) => React.ReactNode;
-  /** Optional: invoked when the user requests manual review (REVIEW state). */
-  onRequestReview?: () => void;
   /** Telemetry hook. Caller can wire to PostHog in MIG-P2-06. */
   onVerdict?: (e: {
-    status: "ALLOW" | "REVIEW" | "DENY" | "UNAVAILABLE";
+    status: "ALLOW" | "DENY" | "UNAVAILABLE";
     source?: "cache" | "fresh";
     latency_ms?: number;
   }) => void;
@@ -39,11 +48,10 @@ export type CompliancePreviewProps = {
 export function CompliancePreview({
   order,
   renderSubmit,
-  onRequestReview,
   onVerdict,
 }: CompliancePreviewProps) {
   const [override, setOverride] = useState<
-    null | "ALLOW" | "REVIEW" | "DENY" | "UNAVAILABLE"
+    null | "ALLOW" | "DENY" | "UNAVAILABLE"
   >(null);
   const query = useOrderPreview(order);
 
@@ -61,14 +69,7 @@ export function CompliancePreview({
                   message: "Forced DENY for local testing.",
                 },
               ]
-            : override === "REVIEW"
-              ? [
-                  {
-                    code: "DEV_OVERRIDE",
-                    message: "Forced REVIEW for local testing.",
-                  },
-                ]
-              : [],
+            : [],
       };
     }
     if (!order) return { kind: "LOADING" };
@@ -162,12 +163,6 @@ export function CompliancePreview({
         </div>
       )}
 
-      {verdict.kind === "REVIEW" && onRequestReview && (
-        <Button variant="secondary" size="sm" onClick={onRequestReview}>
-          {compliancePreviewCopy.REVIEW.cta}
-        </Button>
-      )}
-
       {renderSubmit(canSubmit, verdict.kind)}
 
       {isDev && <DevOverridePanel value={override} onChange={setOverride} />}
@@ -179,13 +174,13 @@ function DevOverridePanel({
   value,
   onChange,
 }: {
-  value: "ALLOW" | "REVIEW" | "DENY" | "UNAVAILABLE" | null;
-  onChange: (v: "ALLOW" | "REVIEW" | "DENY" | "UNAVAILABLE" | null) => void;
+  value: "ALLOW" | "DENY" | "UNAVAILABLE" | null;
+  onChange: (v: "ALLOW" | "DENY" | "UNAVAILABLE" | null) => void;
 }) {
   return (
     <div className="rounded-md border border-charcoal-700 bg-charcoal-900 p-2 flex flex-wrap items-center gap-2">
       <p className="text-xs text-charcoal-500">Dev: override verdict</p>
-      {(["ALLOW", "REVIEW", "DENY", "UNAVAILABLE"] as const).map((k) => (
+      {(["ALLOW", "DENY", "UNAVAILABLE"] as const).map((k) => (
         <Button
           key={k}
           size="sm"

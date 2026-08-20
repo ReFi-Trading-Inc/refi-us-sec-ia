@@ -51,6 +51,28 @@ const PROTOTYPE_DEFAULTS = {
   }),
   ALPHA_HANDOFF_ISSUER: "refi-alpha" as const,
   ALPHA_HANDOFF_AUDIENCE: "refi-us-sec-ia" as const,
+  // ─── BFF→investor-api user assertion (Daniel 2026-08-17, D-017) ──────────
+  // The BFF signs an ES256 JWT per backend call and publishes its public JWKS;
+  // investor-api pins issuer + audience and fetches the JWKS.
+  //
+  // The issuer must be a STABLE, environment-specific value — explicitly NOT a
+  // Vercel preview URL.
+  //
+  // A URN, not a hostname, deliberately: the issuer is an IDENTITY, and tying
+  // it to wherever the app happens to be deployed means any hostname change
+  // forces an issuer rotation on Daniel's side. A URN decouples the two. The
+  // trade-off is that a URN has no derivable `jwks_uri`, so the JWKS URL must
+  // be communicated explicitly in the connection sheet — which it has to be
+  // anyway.
+  BFF_ASSERTION_ISSUER: "urn:refinity:bff:dev",
+  // Logical dev audience specified by Daniel. Environment-specific in staging
+  // and prod, so it must be set explicitly there.
+  INVESTOR_API_AUDIENCE: "urn:refinity:investor-api:dev",
+  // Which release surface this deployment exposes. "signal" is the
+  // v1.0.0-dev.1 default: join/leave templates and preference updates only.
+  // "managed_paper" additionally enables pause/resume/reduce-only. Server-only
+  // so a client build constant can never widen the action surface.
+  REFI_RELEASE_STAGE: "signal" as const,
 };
 
 /**
@@ -97,6 +119,44 @@ const serverSchema = clientSchema.extend({
   ALPHA_HANDOFF_PUBLIC_KEY_JWK: z.string().min(1),
   ALPHA_HANDOFF_ISSUER: z.string().min(1),
   ALPHA_HANDOFF_AUDIENCE: z.string().min(1),
+  // BFF→investor-api user assertion (D-017).
+  //
+  // ALL FOUR ARE OPTIONAL IN THE SCHEMA, deliberately. Nothing on the request
+  // path mints an assertion yet — the outbound client lands with the connection
+  // package — so making them required here would fail the next staging/prod
+  // BOOT on secrets that are not needed yet. They are enforced at MINT time
+  // instead, where the error names the missing variable. Add them to the deploy
+  // environments before the outbound client is wired.
+  BFF_ASSERTION_ISSUER: z.string().min(1).optional(),
+  INVESTOR_API_AUDIENCE: z.string().min(1).optional(),
+  /** Private ES256 JWK (JSON string) including `kid`. Server-only, never logged. */
+  BFF_ASSERTION_PRIVATE_KEY_JWK: z.string().min(1).optional(),
+  /**
+   * Optional PREVIOUS public ES256 JWK (JSON string) kept in the published
+   * JWKS during a rotation overlap, so assertions signed with the retiring
+   * `kid` still verify while investor-api's JWKS cache expires.
+   */
+  BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK: z.string().min(1).optional(),
+  /**
+   * Explicit opt-in to the per-process ephemeral signing key.
+   *
+   * Set ONLY for a single-process local machine or CI run. A deployed dev tier
+   * runs multiple Cloud Run instances with ephemeral filesystems, so each one
+   * would mint under its own key while serving its own JWKS — assertions signed
+   * by instance A would fail verification against the JWKS instance B happens
+   * to serve. That failure is intermittent and load-balancer-dependent, which
+   * is the worst possible way to discover it.
+   *
+   * REFI_ENV alone cannot distinguish "localhost dev" from "the deployed dev
+   * tier Daniel calls", so this is a separate explicit switch rather than an
+   * inference.
+   */
+  BFF_ASSERTION_ALLOW_EPHEMERAL_KEY: z.enum(["0", "1"]).default("0"),
+  /**
+   * Release surface. Gated verbs are refused with 403 until Managed paper —
+   * enforced in bffMutate, not merely documented in the allowlist.
+   */
+  REFI_RELEASE_STAGE: z.enum(["signal", "managed_paper"]).default("signal"),
 });
 
 function formatError(error: z.ZodError): string {
@@ -192,6 +252,25 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
       process.env["ALPHA_HANDOFF_AUDIENCE"],
       "ALPHA_HANDOFF_AUDIENCE",
     ),
+    BFF_ASSERTION_ISSUER: withFallback(
+      process.env["BFF_ASSERTION_ISSUER"],
+      "BFF_ASSERTION_ISSUER",
+    ),
+    INVESTOR_API_AUDIENCE: withFallback(
+      process.env["INVESTOR_API_AUDIENCE"],
+      "INVESTOR_API_AUDIENCE",
+    ),
+    BFF_ASSERTION_ALLOW_EPHEMERAL_KEY:
+      process.env["BFF_ASSERTION_ALLOW_EPHEMERAL_KEY"] || undefined,
+    REFI_RELEASE_STAGE: withFallback(
+      process.env["REFI_RELEASE_STAGE"],
+      "REFI_RELEASE_STAGE",
+    ),
+    // No withFallback: a signing key must never have a committed default.
+    BFF_ASSERTION_PRIVATE_KEY_JWK:
+      process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"] || undefined,
+    BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK:
+      process.env["BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"] || undefined,
   });
 
   if (!parsed.success) {
@@ -205,3 +284,15 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
 }
 
 export type ServerEnv = ReturnType<typeof getServerEnv>;
+
+/**
+ * TEST-ONLY seam. Drops the memoised server env so a test can change
+ * process.env and re-parse.
+ *
+ * Application code must never call this: the cache is what makes env reads
+ * cheap and, more importantly, what guarantees every request in a process sees
+ * the same validated configuration.
+ */
+export function resetServerEnvCacheForTests(): void {
+  cachedServerEnv = null;
+}

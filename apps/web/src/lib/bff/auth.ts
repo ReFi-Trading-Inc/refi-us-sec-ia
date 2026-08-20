@@ -31,6 +31,24 @@
  * against current backend state on every request. Do not cache a gate verdict
  * into the session.
  *
+ * ─── What identity-ccid sends, and what we must do with it ─────────────────
+ *
+ * Daniel 2026-08-19 confirms the handoff carries `auth_time` (the underlying
+ * user authentication time) and a non-empty `amr` array. `acr` may be added
+ * later; `amr` is the required v1 method claim. Method values ship with the
+ * contract, "initially covering email verification code and email magic link"
+ * — not spelled here, because guessing them would produce a set that quietly
+ * disagrees with `v1.0.0-dev.1`.
+ *
+ * The obligation on this module, in his words: preserve `auth_time` and `amr`
+ * in the server-side session and copy them into each user assertion; do NOT
+ * replace `auth_time` when the session refreshes or a new assertion is minted.
+ * Only a new underlying authentication or a step-up updates it.
+ *
+ * That is why both are read here and never defaulted. A refresh path that
+ * re-stamps `auth_time` would defeat step-up while every test still passed —
+ * the assertion would look perfectly well-formed.
+ *
  * ─── Blocked, deliberately ─────────────────────────────────────────────────
  *
  * The JWKS URL, issuer, audience, and the assertion-exchange endpoint all
@@ -70,6 +88,40 @@ export interface AuthContext {
    * cross-account isolation test user (§8) is what makes that testable.
    */
   accountId?: string;
+  /**
+   * BFF session id, carried as `sid` in the investor-api user assertion
+   * (D-017). Distinct from `authId`: one user_id may have several concurrent
+   * sessions, and investor-api correlates and revokes on the session, not the
+   * user.
+   */
+  sid?: string;
+  /**
+   * UNIX seconds of the UNDERLYING user authentication, propagated from the
+   * identity-ccid assertion — NOT the time this session was minted or last
+   * refreshed.
+   *
+   * This is the input to step-up (D-015): investor-api enforces a maximum
+   * auth_time age of 10 minutes and answers STEP_UP_REQUIRED otherwise.
+   * Daniel: "Merely minting a new BFF assertion from an old session does not
+   * satisfy step-up." So a session refresh must NEVER advance this value; only
+   * a fresh identity-ccid authentication may.
+   */
+  authTime?: number;
+  /**
+   * Authentication methods from the identity-ccid assertion (`amr`).
+   *
+   * Non-empty whenever the session came from a real identity-ccid handoff
+   * (Daniel 2026-08-19). Optional here only because the MSW-minted session
+   * does not carry one yet; minting an assertion without it throws rather
+   * than substituting a method we did not observe.
+   */
+  amr?: string[];
+  /**
+   * Authentication context class reference. ADDITIVE to `amr`, never a
+   * replacement for it — `acr` "may be added later, but `amr` will be the
+   * required v1 method claim".
+   */
+  acr?: string;
   /** Bucket A or backend; informs the response envelope. */
   source: "prototype-bff" | "backend";
 }
@@ -124,6 +176,29 @@ export async function getAuthContext(
       const link = await getAuthSessionLink(sub);
       const ctx: AuthContext = { authId: sub, source: "prototype-bff" };
       if (link?.accountId) ctx.accountId = link.accountId;
+      // Session-identity claims for the investor-api user assertion (D-017).
+      //
+      // READ, NEVER SYNTHESISED, and never re-stamped. `auth_time` must come
+      // from the identity-ccid authentication; a missing value surfaces as a
+      // mint-time failure rather than a fabricated "now" that would silently
+      // defeat step-up. Daniel 2026-08-19 makes the non-replacement explicit:
+      // a session refresh or a fresh assertion must carry the ORIGINAL
+      // `auth_time` forward — only a new underlying authentication or a
+      // step-up moves it.
+      //
+      // Absent today because the session is MSW-minted; the identity-ccid
+      // exchange (GAP-IDENTITY-018) populates them.
+      if (typeof payload["sid"] === "string") ctx.sid = payload["sid"];
+      if (typeof payload["auth_time"] === "number") {
+        ctx.authTime = payload["auth_time"];
+      }
+      if (
+        Array.isArray(payload["amr"]) &&
+        payload["amr"].every((m): m is string => typeof m === "string")
+      ) {
+        ctx.amr = payload["amr"];
+      }
+      if (typeof payload["acr"] === "string") ctx.acr = payload["acr"];
       return ctx;
     } catch {
       return null;

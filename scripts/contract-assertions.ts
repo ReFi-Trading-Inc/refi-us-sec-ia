@@ -747,6 +747,19 @@ await section(
       undefined,
       "saveExecutionPolicyDraft must not map — drafts never reach backend.",
     );
+    assert.equal(
+      adminVerbFor("submitSupportRequest"),
+      undefined,
+      "submitSupportRequest must not map to a backend admin verb — the support " +
+        "sink is not an investor-api action, and mapping it would imply the " +
+        "BFF may proxy support through /actions.",
+    );
+    assert.equal(
+      receiptVerbFor("submitSupportRequest"),
+      undefined,
+      "submitSupportRequest must not carry a receipt verb either — it is " +
+        "BFF-only in both vocabularies.",
+    );
   },
 );
 

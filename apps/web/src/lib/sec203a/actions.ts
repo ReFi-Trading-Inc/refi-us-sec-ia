@@ -37,6 +37,10 @@ export const InvestorActions = [
   "dismissSignal",
   "saveSignal",
   "selectMode",
+  // BFF-only, like acknowledgeDisclosure: a support submission is a
+  // state-changing investor action that leaves a receipt, but it maps to no
+  // backend admin verb because the ticket sink is not an investor-api action.
+  "submitSupportRequest",
 ] as const;
 
 export type InvestorActionName = (typeof InvestorActions)[number];

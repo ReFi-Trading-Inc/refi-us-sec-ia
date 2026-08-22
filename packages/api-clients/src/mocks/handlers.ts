@@ -160,9 +160,6 @@ export const handlers = [
   http.post(url("/v1/documents/acknowledge"), () =>
     HttpResponse.json({ ok: true }),
   ),
-  http.post(url("/v1/support/ticket"), () =>
-    HttpResponse.json({ ok: true, ticket_id: `tkt_${String(Date.now())}` }),
-  ),
 
   http.post(url("/v1/us/eligibility"), () => {
     const decision: EligibilityDecision = {

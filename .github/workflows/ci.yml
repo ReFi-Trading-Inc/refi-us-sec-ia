@@ -107,6 +107,12 @@ jobs:
       # Nothing is exported here, so this job cannot diverge from a local run.
       - name: Run E2E against the production artifact
         run: pnpm e2e
+      # Reuses the build the step above produced and reboots it at the
+      # September stage (REFI_RELEASE_STAGE=signal). Sequential, same port:
+      # NEXT_PUBLIC_* are inlined at build time, so a different port would make
+      # the client's own fetches cross-origin.
+      - name: Signal-stage smoke (September release stage)
+        run: pnpm e2e:signal
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

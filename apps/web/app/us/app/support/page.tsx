@@ -4,10 +4,9 @@ import { useState } from "react";
 import { Button, Select, StatusBanner } from "@ui/components";
 import type { SelectOption } from "@ui/components";
 import { useMutation } from "@tanstack/react-query";
-import { apiFetch } from "@refi/api-clients";
 import {
   supportBoundaryCopy,
-  blockedPromptPatterns,
+  classifySupportMessage,
 } from "../../_content/support-boundary";
 import { appCopy } from "../../_content/app-copy";
 
@@ -21,7 +20,6 @@ const categoryOptions: SelectOption[] = supportBoundaryCopy.categories.map(
 );
 
 type SupportTicket = {
-  subject: string;
   category: string;
   message: string;
 };
@@ -33,9 +31,16 @@ export default function SupportPage() {
 
   const submit = useMutation({
     mutationFn: (body: SupportTicket) =>
-      apiFetch<{ ok: boolean; ticket_id: string }>("/v1/support/ticket", {
+      // Same-origin BFF route, not a browser-direct call to an external API.
+      // The support boundary is enforced server-side there; a browser-direct
+      // POST would have no server of ours in the path at all.
+      fetch("/api/us/support", {
         method: "POST",
-        body,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }).then(async (r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return (await r.json()) as unknown;
       }),
     onSuccess: () => {
       setCategory("");
@@ -47,17 +52,15 @@ export default function SupportPage() {
   function handleMessageChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value;
     setMessage(val);
-    setBlocked(blockedPromptPatterns.some((p) => p.test(val)));
+    // UX only. The server re-classifies the raw message and its verdict is
+    // the one that decides; this just avoids a pointless round trip.
+    setBlocked(classifySupportMessage(val).blocked);
   }
 
   function handleSubmit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!canSubmit) return;
-    submit.mutate({
-      subject: category,
-      category,
-      message: message.trim(),
-    });
+    submit.mutate({ category, message: message.trim() });
   }
 
   const canSubmit =

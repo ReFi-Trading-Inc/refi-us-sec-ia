@@ -22,6 +22,11 @@ import type {
 } from "../sec203a/actions";
 import { appendActionReceipt } from "../prototype-store/entities/receipt";
 import { appendRecordAccess } from "../prototype-store/entities/record-access-log";
+import {
+  GATED_UNTIL_MANAGED_PAPER,
+  isGatedUntilManagedPaper,
+} from "../sec203a/admin-verbs";
+import { getServerEnv } from "../config/env";
 
 export interface BffContext {
   req: NextRequest;
@@ -44,21 +49,55 @@ export interface BffMutateHandler<T> {
   source?: BffSource;
   upstreamGap?: GapId | GapId[];
   parse?: (body: unknown) => Promise<T> | T;
-  apply: (ctx: BffContext & { input: T }) =>
-    | Promise<{
-        data: unknown;
-        references?: string[];
-        outcome?: "ok" | "rejected" | "blocked";
-        reasonCode?: string;
-        status?: number;
-      }>
-    | {
-        data: unknown;
-        references?: string[];
-        outcome?: "ok" | "rejected" | "blocked";
-        reasonCode?: string;
-        status?: number;
-      };
+  apply: (
+    ctx: BffContext & { input: T },
+  ) => Promise<BffMutationResult> | BffMutationResult;
+}
+
+/** Ordinary success. Unchanged from before the refusal branch existed. */
+export interface BffMutationSuccess {
+  data: unknown;
+  references?: string[];
+  outcome?: "ok" | "rejected" | "blocked";
+  reasonCode?: string;
+  status?: number;
+}
+
+export type BffMutationResult = BffMutationSuccess | BffMutationRefusal;
+
+/**
+ * A controlled refusal from a mutation handler.
+ *
+ * Discriminated on `refuse`. A handler that does not set it stays on the
+ * success path with byte-identical behaviour — which is deliberate, because
+ * several existing Managed handlers return `status: 412` with
+ * `outcome: "blocked"` and are serialised through `bffOk()`. That combination
+ * emits an error status carrying a SUCCESS-shaped body, and e2e asserts the
+ * current shape. Migrating those routes is a public response-contract change;
+ * it is tracked as BFF-412-ENVELOPE and belongs with the Signal topology work,
+ * not here.
+ *
+ * There is deliberately no `status` and no `data` on this variant. Status is
+ * derived from `refuse` alone, so the branch cannot reproduce the very
+ * status/body mismatch it exists to avoid:
+ *
+ *   forbidden           -> 403
+ *   precondition_failed -> 412
+ *   bad_request         -> 400
+ */
+export interface BffMutationRefusal {
+  refuse: "forbidden" | "precondition_failed" | "bad_request";
+  /** Investor-facing message. Must never echo submitted content back. */
+  message: string;
+  /** Defaults to "blocked". */
+  outcome?: "blocked" | "rejected";
+  /** Stable machine reason (e.g. an SBR rule id). Persisted in the receipt. */
+  reasonCode?: string;
+  references?: string[];
+}
+
+function isRefusal(result: BffMutationResult): result is BffMutationRefusal {
+  return "refuse" in result;
 }
 
 export function bffRead<T>(handler: BffReadHandler<T>) {
@@ -113,6 +152,32 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
       const auth = await getAuthContext(req);
       if (!auth) return BffErrors.unauthorized(correlationId);
 
+      // Release gate (Daniel 2026-08-17 §6). pause_autopilot,
+      // resume_autopilot, and reduce_only are approved but unavailable until
+      // Managed paper. Enforced here, before any handler runs, so the gate is a
+      // refusal rather than a convention — and receipted, so an attempt against
+      // a gated verb leaves an immutable trace.
+      if (
+        isGatedUntilManagedPaper(
+          handler.action,
+          getServerEnv().REFI_RELEASE_STAGE,
+        )
+      ) {
+        await appendActionReceipt({
+          action: handler.action,
+          actor: "user",
+          authId: auth.authId,
+          ...(auth.accountId ? { accountId: auth.accountId } : {}),
+          correlationId,
+          outcome: "blocked",
+          reasonCode: GATED_UNTIL_MANAGED_PAPER,
+        });
+        return BffErrors.forbidden(
+          correlationId,
+          "This action is not available in the Signal release.",
+        );
+      }
+
       let input: T;
       if (handler.parse) {
         const json: unknown = await req.json().catch(() => null);
@@ -139,6 +204,33 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
       }
 
       const result = await handler.apply({ req, auth, correlationId, input });
+
+      // Controlled refusal: receipt the disposition, then answer with the
+      // canonical error envelope. The receipt is written BEFORE the response so
+      // a refusal is never invisible; if persistence itself fails, the throw
+      // reaches the catch below and the request fails closed as an internal
+      // error rather than silently proceeding.
+      if (isRefusal(result)) {
+        await appendActionReceipt({
+          action: handler.action,
+          actor: "user",
+          authId: auth.authId,
+          ...(auth.accountId ? { accountId: auth.accountId } : {}),
+          correlationId,
+          outcome: result.outcome ?? "blocked",
+          ...(result.reasonCode ? { reasonCode: result.reasonCode } : {}),
+          references: result.references ?? [],
+        });
+        switch (result.refuse) {
+          case "forbidden":
+            return BffErrors.forbidden(correlationId, result.message);
+          case "precondition_failed":
+            return BffErrors.precondition(correlationId, result.message);
+          case "bad_request":
+            return BffErrors.badRequest(correlationId, result.message);
+        }
+      }
+
       const receipt = await appendActionReceipt({
         action: handler.action,
         actor: "user",

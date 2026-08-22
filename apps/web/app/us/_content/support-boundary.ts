@@ -1,5 +1,8 @@
-// Per rule 203A-2(e)(3): advisory personnel cannot generate client-specific advice.
-// This copy is a regulatory requirement, not only a product preference.
+// Support-boundary copy. Supports ReFi's intended Rule 203A-2(e) Internet
+// Adviser posture — support must not become an alternate channel for
+// individualized investment advice. Treated as a compliance-relevant control
+// rather than product preference; final regulatory treatment is subject to
+// counsel review.
 export const supportBoundaryCopy = {
   bannerTitle: "Support boundary",
   bannerBody:

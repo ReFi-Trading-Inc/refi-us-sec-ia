@@ -2,7 +2,8 @@
  * Support-boundary classifier rules.
  *
  * One case per SBR rule, plus the benign controls. This is the unit-level half
- * of the 203A-2(e)(3) control; the server-enforcement half is proven in
+ * of the support boundary supporting ReFi's intended Rule 203A-2(e) Internet
+ * Adviser posture; the server-enforcement half is proven in
  * apps/web/e2e/support.spec.ts, which shows a direct POST cannot bypass it.
  */
 import { describe, expect, test } from "vitest";
@@ -31,6 +32,14 @@ const BLOCKED: ReadonlyArray<readonly [string, string]> = [
 ];
 
 const ALLOWED: ReadonlyArray<string> = [
+  // SBR-006 negative controls. "Can you tell me…" is ordinary technical-support
+  // English; the Phase 2.5 rule blocked all four of these outright.
+  "Can you tell me how to reconnect my broker?",
+  "Can you tell me where to download my Form CRS?",
+  "Can you tell me why this page is not loading?",
+  "Can you tell me how the direct index works?",
+  "Can you tell me how to change my email address?",
+  "Can you recommend a browser that works better with the site?",
   "I cannot log in after resetting my password.",
   "Where do I download my Form CRS?",
   "My Alpaca connection shows as disconnected — how do I reconnect?",

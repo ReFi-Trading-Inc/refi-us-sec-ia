@@ -1,10 +1,16 @@
 /**
  * Support-boundary classifier — SHARED, PURE, and the authority is the server.
  *
- * SEC Rule 203A-2(e)(3): advisory personnel cannot generate client-specific
- * advice. The support channel must not become a side door through which a human
- * starts giving individualized investment advice, so a message that solicits it
- * is refused before it reaches any support sink.
+ * Supports ReFi's intended Rule 203A-2(e) Internet Adviser posture, under which
+ * advice reaches clients through the interactive platform. This control is
+ * designed to prevent support personnel from becoming an alternate channel for
+ * individualized investment advice: a message soliciting it is refused before
+ * it reaches any support sink. Support staff assisting with technical matters
+ * is expected and must keep working — see the benign controls in the tests.
+ *
+ * This is an engineering control, not a legal determination. It is deliberately
+ * NOT attributed to a specific rule subsection; final regulatory treatment is
+ * subject to counsel review.
  *
  * ─── Where this runs, and which run counts ─────────────────────────────────
  *
@@ -83,9 +89,18 @@ export const BOUNDARY_RULES: readonly BoundaryRule[] = [
   },
   {
     id: "SBR-006",
-    pattern: /\bcan you (advise|suggest|recommend|tell me)\b/i,
+    // Narrowed during salvage. The Phase 2.5 original was
+    // /\bcan you (advise|suggest|recommend|tell me)\b/i, which blocked
+    // ordinary technical-support English — "Can you tell me how to reconnect
+    // my broker?" and "Can you tell me where to download my Form CRS?" were
+    // both refused. A support boundary that rejects legitimate help requests
+    // is a functional regression, so the advisory verb must now be followed,
+    // in the same sentence, by an investment subject. The rule set fails
+    // toward answering the investor.
+    pattern:
+      /\bcan you (advise|suggest|recommend|tell me)\b[^.?!]{0,80}\b(buy|sell|hold|invest(ing|ment|ments)?|stocks?|shares?|portfolio|allocations?|positions?|holdings?|fund|funds|etf)\b/i,
     category: "buy_sell_advice",
-    label: "Advisory verb",
+    label: "Advisory verb with investment subject",
   },
 
   // ── Recommendation approval / override ───────────────────────────────────

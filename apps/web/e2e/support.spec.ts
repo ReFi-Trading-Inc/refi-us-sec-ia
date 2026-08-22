@@ -41,7 +41,16 @@ test.describe("Support", () => {
       route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ data: { ticketId: "tkt-e2e" } }),
+        // Shaped like the canonical BFF success envelope so this UI-only
+        // fixture cannot drift from the real response contract.
+        body: JSON.stringify({
+          data: { ticketId: "tkt-e2e" },
+          meta: {
+            source: "prototype-bff",
+            correlationId: "e2e-support",
+            receipt: { receiptId: "rcpt-e2e", action: "submitSupportRequest" },
+          },
+        }),
       }),
     );
     const categorySelect = page.getByLabel(/category/i);
@@ -87,8 +96,9 @@ test.describe("Support", () => {
   //
   // These POST the real route directly, with NO page.route stub. Before this
   // work the browser posted past every server in this repository to an external
-  // /v1/support/ticket, so the only control was a disabled button — a plain
-  // curl bypassed the SEC 203A-2(e)(3) boundary completely.
+  // /v1/support/ticket, so the only control was a disabled button — a direct
+  // request bypassed every support-boundary control implemented HERE. Whether
+  // that external service classified independently is unknown to us.
 
   test("a prohibited request is refused by the server, not just the UI", async ({
     page,

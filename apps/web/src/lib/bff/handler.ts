@@ -22,11 +22,6 @@ import type {
 } from "../sec203a/actions";
 import { appendActionReceipt } from "../prototype-store/entities/receipt";
 import { appendRecordAccess } from "../prototype-store/entities/record-access-log";
-import {
-  GATED_UNTIL_MANAGED_PAPER,
-  isGatedUntilManagedPaper,
-} from "../sec203a/admin-verbs";
-import { getServerEnv } from "../config/env";
 
 export interface BffContext {
   req: NextRequest;
@@ -151,32 +146,6 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
 
       const auth = await getAuthContext(req);
       if (!auth) return BffErrors.unauthorized(correlationId);
-
-      // Release gate (Daniel 2026-08-17 §6). pause_autopilot,
-      // resume_autopilot, and reduce_only are approved but unavailable until
-      // Managed paper. Enforced here, before any handler runs, so the gate is a
-      // refusal rather than a convention — and receipted, so an attempt against
-      // a gated verb leaves an immutable trace.
-      if (
-        isGatedUntilManagedPaper(
-          handler.action,
-          getServerEnv().REFI_RELEASE_STAGE,
-        )
-      ) {
-        await appendActionReceipt({
-          action: handler.action,
-          actor: "user",
-          authId: auth.authId,
-          ...(auth.accountId ? { accountId: auth.accountId } : {}),
-          correlationId,
-          outcome: "blocked",
-          reasonCode: GATED_UNTIL_MANAGED_PAPER,
-        });
-        return BffErrors.forbidden(
-          correlationId,
-          "This action is not available in the Signal release.",
-        );
-      }
 
       let input: T;
       if (handler.parse) {

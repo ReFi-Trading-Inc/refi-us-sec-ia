@@ -1,6 +1,11 @@
 /**
  * Support intake — the same-origin BFF boundary for the investor support
- * channel, and the point at which SEC Rule 203A-2(e)(3) is enforced.
+ * channel, and the point at which the support boundary is enforced.
+ *
+ * Supports ReFi's intended Rule 203A-2(e) Internet Adviser posture. Designed to
+ * prevent support personnel from becoming an alternate channel for
+ * individualized investment advice; final regulatory treatment is subject to
+ * counsel review.
  *
  * ─── What this route used to be ────────────────────────────────────────────
  *
@@ -26,7 +31,9 @@
  * `{ category, message }` — there is no `blocked` flag to forge, because the
  * server does not accept one.
  */
+import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
+import { createRateLimiter } from "@app/_lib/rateLimit";
 import { bffMutate } from "@lib/bff/handler";
 import { classifySupportMessage } from "@lib/support-boundary";
 import {
@@ -39,7 +46,30 @@ const bodySchema = z.object({
   message: z.string().min(10).max(4000),
 });
 
-export const POST = bffMutate<z.infer<typeof bodySchema>>({
+/**
+ * Abuse protection, retained as defence in depth.
+ *
+ * The orphaned route this replaces had an IP limiter, and dropping it while
+ * making the route REAL would have been a net loss: an authenticated caller can
+ * otherwise drive unbounded blocked/rejected action receipts into the
+ * append-only store.
+ *
+ * Deliberately in front of `bffMutate` rather than inside `apply`. The refusal
+ * variant intentionally offers only forbidden / precondition_failed /
+ * bad_request, and "too many requests" is none of those — routing it through
+ * one of them would misreport the reason, while adding a fourth kind would
+ * invent a new public error code for a concern the repository already answers
+ * another way. `us/eligibility` and `investor/alpha-claim` both reply to a
+ * limiter hit with a bare 429 JSON body, so this matches the established
+ * convention exactly and leaves the BFF envelope untouched.
+ *
+ * Keyed by IP, like its siblings. That is not authentication and is not
+ * claimed to be; it bounds volume, and authentication is enforced immediately
+ * after by `bffMutate`.
+ */
+const limiter = createRateLimiter({ windowMs: 60 * 60_000, max: 10 });
+
+const handle = bffMutate<z.infer<typeof bodySchema>>({
   action: "submitSupportRequest",
   parse: (json) => bodySchema.parse(json),
   apply: async ({ auth, correlationId, input }) => {
@@ -87,3 +117,18 @@ export const POST = bffMutate<z.infer<typeof bodySchema>>({
     }
   },
 });
+
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const ip =
+    request.headers.get("x-real-ip") ??
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    "unknown";
+  const { allowed } = limiter(ip);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many support requests. Please wait before trying again." },
+      { status: 429 },
+    );
+  }
+  return handle(request);
+}

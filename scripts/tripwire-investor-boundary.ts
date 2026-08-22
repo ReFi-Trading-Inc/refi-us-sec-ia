@@ -8,6 +8,8 @@
  *   3. User-facing labels that imply per-trade investor approval or operator
  *      action (e.g. "Accept Recommendation", "Approve Trade", "Manual Rebalance").
  *   4. Route files mounted under /admin or /api/admin within the investor app.
+ *   5. Client-side recommendation-freshness threshold constants (freshness is
+ *      backend-owned — Daniel 2026-08-17).
  *
  * This is the enforcement leg of docs/admin-investor-boundary.md. See also
  * docs/sec203a-product-boundary.md.
@@ -123,6 +125,109 @@ const FORBIDDEN_LABELS: ReadonlyArray<string> = [
   "investor accept",
 ];
 
+/**
+ * Client-side freshness threshold identifiers — forbidden outright.
+ *
+ * Daniel 2026-08-17 (docs/phase2-7-daniel-contract-mechanics-resolution.md §3):
+ * freshness "will be backend-owned and may vary by strategy/source and market
+ * schedule. Please do not make the provisional two-hour and 24-hour thresholds
+ * contract constants."
+ *
+ * The frontend displays `freshness_status` / `fresh_until` / `expires_at` from
+ * the projection; it never computes staleness from a clock comparison. Any
+ * constant of this shape is a reintroduction of the dead Phase 2.5 thresholds.
+ *
+ * Word-boundary match, same as FORBIDDEN_ACTION_IDS. Case-insensitive variants
+ * are covered by listing both spellings.
+ */
+const FORBIDDEN_FRESHNESS_STEMS: ReadonlyArray<string> = [
+  // SCREAMING_SNAKE spellings.
+  "FRESH_THRESHOLD",
+  "STALE_THRESHOLD",
+  "FRESHNESS_THRESHOLD",
+  "STALE_AFTER",
+  "FRESH_WINDOW",
+  "RECOMMENDATION_TTL",
+  // camelCase spellings.
+  "freshThreshold",
+  "staleThreshold",
+  "freshnessThreshold",
+  "staleAfter",
+  "freshWindow",
+  "recommendationTtl",
+];
+
+/**
+ * Match a prohibited freshness stem.
+ *
+ * ASYMMETRIC BY DESIGN. The left side keeps a full identifier boundary so a
+ * stem never matches mid-word. The right side is open, because the units
+ * suffix is exactly where these constants acquire their real names —
+ * STALE_THRESHOLD_HOURS and FRESH_THRESHOLD_HOURS are the two most natural
+ * spellings for the dead Phase 2.5 thresholds, and a symmetric \b…\b rule
+ * misses both (`_` is a word character, so there is no boundary after
+ * "THRESHOLD"). Enumerating every unit suffix is a losing game; anchoring the
+ * stem is not.
+ *
+ * The stems are deliberately narrow. They are threshold/window/TTL nouns, not
+ * the words "fresh" or "stale" — the backend-owned projection fields
+ * (`freshness_status`, `fresh_until`, `expires_at`) must keep flowing through
+ * this code untouched. The FRESHNESS_BENIGN_CONTROLS below hold that line.
+ */
+function matchFreshnessStem(line: string): string | null {
+  for (const stem of FORBIDDEN_FRESHNESS_STEMS) {
+    const re = new RegExp(`(^|[^\\w$])${stem}[\\w$]*`);
+    if (re.test(line) && !lineAllows(line, stem)) return stem;
+  }
+  return null;
+}
+
+/**
+ * Executable proof that the rule above catches what it claims to. Ships with
+ * the rule so a future checkout carries the invariant, not just the intent.
+ */
+const FRESHNESS_MUST_MATCH: ReadonlyArray<string> = [
+  "export const STALE_THRESHOLD = 2;",
+  "export const STALE_THRESHOLD_HOURS = 2;",
+  "export const STALE_THRESHOLD_SECONDS = 7200;",
+  "export const FRESH_THRESHOLD_HOURS = 2;",
+  "export const STALE_AFTER_HOURS = 24;",
+  "export const FRESH_WINDOW_HOURS = 2;",
+  "export const RECOMMENDATION_TTL_HOURS = 24;",
+  "const staleThresholdHours = 2;",
+  "const freshThresholdMinutes = 120;",
+];
+
+/**
+ * The other half of the guard: a rule that flags these has degenerated into
+ * grepping for "fresh"/"stale" and would block the backend-owned envelope the
+ * frontend is required to display.
+ */
+const FRESHNESS_BENIGN_CONTROLS: ReadonlyArray<string> = [
+  "  fresh_until: z.string().datetime(),",
+  "  freshness_status: freshnessStatusSchema,",
+  "  expires_at: z.string().datetime().optional(),",
+  'export const FRESHNESS_STATUSES = ["fresh", "stale", "expired"] as const;',
+  "// Recommendations may be stale; the backend decides, never the client.",
+  '  const isStale = projection.freshness?.freshness_status === "stale";',
+];
+
+function selfTestFreshnessRule(): string[] {
+  const failures: string[] = [];
+  for (const line of FRESHNESS_MUST_MATCH) {
+    if (matchFreshnessStem(line) === null) {
+      failures.push(`must be REFUSED but was not detected: ${line}`);
+    }
+  }
+  for (const line of FRESHNESS_BENIGN_CONTROLS) {
+    const hit = matchFreshnessStem(line);
+    if (hit !== null) {
+      failures.push(`must be ALLOWED but matched stem "${hit}": ${line}`);
+    }
+  }
+  return failures;
+}
+
 // ─── Scan targets ────────────────────────────────────────────────────────────
 
 /**
@@ -178,7 +283,8 @@ const SKIP_DIRS = new Set([
 interface Violation {
   file: string;
   line: number;
-  kind: "endpoint" | "action-id" | "label" | "route-path";
+  kind:
+    "endpoint" | "action-id" | "label" | "route-path" | "freshness-threshold";
   pattern: string;
   text: string;
 }
@@ -300,6 +406,18 @@ function scanFile(absPath: string): Violation[] {
       }
     }
 
+    // 3b. Client-side freshness thresholds (left-anchored stem).
+    const freshnessStem = matchFreshnessStem(line);
+    if (freshnessStem !== null) {
+      violations.push({
+        file: relPath,
+        line: i + 1,
+        kind: "freshness-threshold",
+        pattern: freshnessStem,
+        text: line.trim().slice(0, 160),
+      });
+    }
+
     // 4. Forbidden user-facing labels (case-insensitive substring).
     const lower = line.toLowerCase();
     for (const label of FORBIDDEN_LABELS) {
@@ -321,6 +439,18 @@ function scanFile(absPath: string): Violation[] {
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 function main(): number {
+  // The freshness rule proves itself before it is trusted to police anything.
+  const selfTestFailures = selfTestFreshnessRule();
+  if (selfTestFailures.length > 0) {
+    console.error(
+      `\ntripwire: freshness-threshold rule SELF-TEST FAILED ` +
+        `(${selfTestFailures.length}) — the guard does not enforce what it claims.\n`,
+    );
+    for (const f of selfTestFailures) console.error(`    ${f}`);
+    console.error("");
+    return 1;
+  }
+
   const allFiles: string[] = [];
   for (const root of SCAN_ROOTS) {
     const abs = join(REPO_ROOT, root);

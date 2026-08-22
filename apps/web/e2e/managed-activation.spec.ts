@@ -1,6 +1,7 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 import { e2eAuthCookies } from "./session";
+import { postSameOrigin } from "./api";
 
 interface BffJsonBody {
   data: {
@@ -151,7 +152,8 @@ test.describe("Managed activation — idempotency", () => {
       deviceFingerprint: "e2e-device-stable",
     };
 
-    const first = await page.request.post(
+    const first = await postSameOrigin(
+      page,
       "/api/v1/investor/execution-policy/activate",
       { headers, data: body },
     );
@@ -161,7 +163,8 @@ test.describe("Managed activation — idempotency", () => {
     const firstVersion = firstJson.data.policy?.policyVersion;
     expect(typeof firstVersion).toBe("number");
 
-    const second = await page.request.post(
+    const second = await postSameOrigin(
+      page,
       "/api/v1/investor/execution-policy/activate",
       { headers, data: body },
     );
@@ -196,7 +199,8 @@ test.describe("Managed activation — idempotency", () => {
       deviceFingerprint: "e2e-device-stable",
     };
 
-    const first = await page.request.post(
+    const first = await postSameOrigin(
+      page,
       "/api/v1/investor/execution-policy/activate",
       { headers, data: body },
     );
@@ -207,7 +211,8 @@ test.describe("Managed activation — idempotency", () => {
 
     // Even a different deviceFingerprint must still collapse to the same
     // key — device is intentionally NOT in the derivation.
-    const second = await page.request.post(
+    const second = await postSameOrigin(
+      page,
       "/api/v1/investor/execution-policy/activate",
       {
         headers: {

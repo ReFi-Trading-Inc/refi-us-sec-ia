@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 import { e2eAuthCookies } from "./session";
+import { selectOptionHydrated } from "./hydration";
 
 const SIGNAL_COOKIE = E2E_USERS.signal.eligibilityCookie;
 
@@ -42,10 +43,11 @@ test.describe("Support", () => {
 
   test("shows success banner after submission", async ({ page }) => {
     const categorySelect = page.getByLabel(/category/i);
-    await categorySelect.selectOption("App issue");
-    // Confirm React state caught the change before continuing — the
-    // canSubmit predicate depends on the live `category` state.
-    await expect(categorySelect).toHaveValue("App issue");
+    // The canSubmit predicate depends on the live `category` state, so the
+    // selection must survive hydration. Asserting the value after a single
+    // selectOption only detected a discarded interaction; this replays it
+    // until React retains it.
+    await selectOptionHydrated(categorySelect, "App issue");
     const messageField = page.getByTestId("support-message");
     await messageField.fill("My document download link is broken.");
     await expect(messageField).toHaveValue(

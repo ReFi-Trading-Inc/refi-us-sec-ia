@@ -1,6 +1,7 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 import { e2eAuthCookies } from "./session";
+import { postSameOrigin } from "./api";
 
 interface BffJsonBody {
   data: {
@@ -205,13 +206,11 @@ test.describe("Exception Review — Managed user", () => {
     // Close the two remaining open exceptions for the user via direct POST so
     // this test does not depend on UI mutation ordering.
     for (const id of ["exc-profile-stale", "exc-disclosure-expired"]) {
-      const res = await page.request.post(
+      const res = await postSameOrigin(
+        page,
         `/api/v1/investor/exceptions/${id}/resolve`,
         {
-          headers: {
-            "content-type": "application/json",
-            "x-correlation-id": `e2e-exc-close-${id}`,
-          },
+          headers: { "x-correlation-id": `e2e-exc-close-${id}` },
           // UI never spells the legacy backend value; the direct API still
           // accepts it under the legacy contract for now.
           data: { resolution: "approve_exception", clientAttestation: true }, // allow-investor-boundary: "approve_exception" reason: "exercising backend contract from a test that asserts no UI exposure"

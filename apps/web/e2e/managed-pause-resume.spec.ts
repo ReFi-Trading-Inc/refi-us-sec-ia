@@ -1,6 +1,7 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 import { e2eAuthCookies } from "./session";
+import { postSameOrigin } from "./api";
 
 interface BffJsonBody {
   data: {
@@ -131,16 +132,16 @@ test.describe("Managed pause/resume — paused_by_system (read-only)", () => {
       page.getByTestId("managed-controls-reason-code"),
     ).toContainText("broker_disconnected");
 
-    // Even if a malicious client POSTs the resume endpoint directly, the
-    // BFF must reject with status_must_clear_upstream and the banner stays
-    // paused_by_system.
-    const direct = await page.request.post("/api/v1/investor/managed/resume", {
-      headers: {
-        "content-type": "application/json",
-        "x-correlation-id": "e2e-sys-paused-resume",
-      },
-      data: {},
-    });
+    // Even when a client bypasses the UI and POSTs the resume endpoint
+    // directly, the BFF must reject with status_must_clear_upstream and the
+    // banner stays paused_by_system. Sent same-origin on purpose: a foreign
+    // origin would stop at the CSRF guard (403) and never reach the
+    // system-pause check this asserts on.
+    const direct = await postSameOrigin(
+      page,
+      "/api/v1/investor/managed/resume",
+      { headers: { "x-correlation-id": "e2e-sys-paused-resume" }, data: {} },
+    );
     expect(direct.status()).toBe(412);
     const body = (await direct.json()) as BffJsonBody;
     // bffMutate emits a 412 with the blocked-outcome envelope (data.ok=false,

@@ -10,6 +10,19 @@ export interface DisclosureAcknowledgement {
   userId: string;
   docId: string;
   version: string;
+  /**
+   * The registry `contentHash` this acknowledgment was made against.
+   *
+   * Daniel 2026-08-17 §1/§4: the disclosure registry keys on document key,
+   * version, AND content hash, and the `409 ACKNOWLEDGMENT_REQUIRED` payload
+   * returns all three together. Recording only (docId, version) cannot prove
+   * WHICH content the investor saw if a version is ever re-published, so the
+   * hash is captured at acknowledgment time.
+   *
+   * Optional only because interim records predate the field; the backend
+   * projection makes it mandatory.
+   */
+  contentHash?: string;
   ackedAt: string;
   acceptanceSource: "web" | "recovery";
   ipHash: string;
@@ -42,6 +55,8 @@ export async function appendDisclosureAck(args: {
   userId: string;
   docId: string;
   version: string;
+  /** Registry content hash the investor actually acknowledged. */
+  contentHash?: string;
   acceptanceSource: "web" | "recovery";
   ipHash: string;
   userAgentHash: string;
@@ -52,6 +67,7 @@ export async function appendDisclosureAck(args: {
     userId: args.userId,
     docId: args.docId,
     version: args.version,
+    ...(args.contentHash ? { contentHash: args.contentHash } : {}),
     ackedAt: new Date().toISOString(),
     acceptanceSource: args.acceptanceSource,
     ipHash: args.ipHash,

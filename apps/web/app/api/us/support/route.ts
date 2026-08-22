@@ -67,7 +67,10 @@ const bodySchema = z.object({
  * claimed to be; it bounds volume, and authentication is enforced immediately
  * after by `bffMutate`.
  */
-const limiter = createRateLimiter({ windowMs: 60 * 60_000, max: 10 });
+// Threshold preserved from the route this replaces. Workstream B restores the
+// existing abuse control; it does not tune support policy. Revisit when the
+// real sink and operational expectations exist.
+const limiter = createRateLimiter({ windowMs: 60 * 60_000, max: 3 });
 
 const handle = bffMutate<z.infer<typeof bodySchema>>({
   action: "submitSupportRequest",

@@ -94,7 +94,15 @@ test.describe("Support", () => {
 
   // ─── Server-side enforcement ───────────────────────────────────────────────
   //
-  // These POST the real route directly, with NO page.route stub. Before this
+  // These POST the real route directly, with NO page.route stub.
+  //
+  // Each case declares its own client IP via `x-forwarded-for`, the header the
+  // route already reads in production to identify a caller behind a proxy. The
+  // support limiter allows 3 requests per hour per IP and is in-memory per
+  // server process, so without this every test after the third would 429 and
+  // the suite would be asserting the limiter rather than the control. Distinct
+  // IPs make each case an independent client, which is what each one actually
+  // means. This does not weaken the limiter — it is separately covered below. Before this
   // work the browser posted past every server in this repository to an external
   // /v1/support/ticket, so the only control was a disabled button — a direct
   // request bypassed every support-boundary control implemented HERE. Whether
@@ -104,6 +112,7 @@ test.describe("Support", () => {
     page,
   }) => {
     const res = await postSameOrigin(page, "/api/us/support", {
+      headers: { "x-forwarded-for": "203.0.113.1" },
       data: { category: "App issue", message: "Should I buy AAPL right now?" },
     });
     expect(res.status(), "server did not refuse a prohibited request").toBe(
@@ -120,6 +129,7 @@ test.describe("Support", () => {
     // fields are the exact shape a forged client would send. They must change
     // nothing: the server classifies the raw message itself.
     const res = await postSameOrigin(page, "/api/us/support", {
+      headers: { "x-forwarded-for": "203.0.113.2" },
       data: {
         category: "App issue",
         message: "Should I buy AAPL right now?",
@@ -136,7 +146,10 @@ test.describe("Support", () => {
   test("an unauthenticated request is refused", async ({ browser }) => {
     const fresh = await browser.newContext();
     const res = await fresh.request.post("/api/us/support", {
-      headers: { origin: "http://localhost:3000" },
+      headers: {
+        origin: "http://localhost:3000",
+        "x-forwarded-for": "203.0.113.3",
+      },
       data: { category: "App issue", message: "My download link is broken." },
     });
     expect(res.status()).toBe(401);
@@ -145,6 +158,7 @@ test.describe("Support", () => {
 
   test("a malformed payload is refused", async ({ page }) => {
     const res = await postSameOrigin(page, "/api/us/support", {
+      headers: { "x-forwarded-for": "203.0.113.4" },
       data: { category: "App issue", message: "too short" },
     });
     expect(res.status()).toBe(400);
@@ -158,6 +172,7 @@ test.describe("Support", () => {
     // resolved and a real sink is wired, this expectation becomes 200 — which
     // is precisely the signal that the sink went live.
     const res = await postSameOrigin(page, "/api/us/support", {
+      headers: { "x-forwarded-for": "203.0.113.5" },
       data: {
         category: "App issue",
         message: "My document download link is broken.",
@@ -166,5 +181,34 @@ test.describe("Support", () => {
     expect(res.status()).toBe(412);
     const body = (await res.json()) as { error?: { code?: string } };
     expect(body.error?.code).toBe("precondition_failed");
+  });
+
+  test("the support limiter refuses a fourth request within the window", async ({
+    page,
+  }) => {
+    // Defence in depth, preserved from the route this replaced: 3 per hour per
+    // IP. Proven here so the control cannot be silently dropped again — an
+    // authenticated caller must not be able to drive unbounded blocked receipts
+    // into the append-only store.
+    const ip = { "x-forwarded-for": "203.0.113.99" };
+    const body = {
+      category: "App issue",
+      message: "My document download link is broken.",
+    };
+    for (let i = 0; i < 3; i += 1) {
+      const res = await postSameOrigin(page, "/api/us/support", {
+        headers: ip,
+        data: body,
+      });
+      expect(
+        res.status(),
+        `request ${String(i + 1)} should reach the route`,
+      ).not.toBe(429);
+    }
+    const fourth = await postSameOrigin(page, "/api/us/support", {
+      headers: ip,
+      data: body,
+    });
+    expect(fourth.status()).toBe(429);
   });
 });

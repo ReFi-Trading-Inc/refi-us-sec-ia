@@ -1,6 +1,7 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 import { e2eAuthCookies } from "./session";
+import { postSameOrigin } from "./api";
 
 interface BffJsonBody {
   data: {
@@ -137,13 +138,11 @@ test.describe("Disclosure re-acknowledgement — paused_by_system clears on ack"
     await page.goto("/us/app/settings/automation", {
       waitUntil: "domcontentloaded",
     });
-    const direct = await page.request.post("/api/v1/investor/managed/resume", {
-      headers: {
-        "content-type": "application/json",
-        "x-correlation-id": "e2e-stale-paused-resume",
-      },
-      data: {},
-    });
+    const direct = await postSameOrigin(
+      page,
+      "/api/v1/investor/managed/resume",
+      { headers: { "x-correlation-id": "e2e-stale-paused-resume" }, data: {} },
+    );
     expect(direct.status()).toBe(412);
     const body = (await direct.json()) as BffJsonBody;
     expect(body.data.ok).toBe(false);
@@ -257,26 +256,22 @@ test.describe("Disclosure re-acknowledgement — forbidden language and API guar
     });
 
     // Missing version
-    const missing = await page.request.post(
+    const missing = await postSameOrigin(
+      page,
       "/api/v1/investor/disclosures/reacknowledge",
       {
-        headers: {
-          "content-type": "application/json",
-          "x-correlation-id": "e2e-reack-missing",
-        },
+        headers: { "x-correlation-id": "e2e-reack-missing" },
         data: { docId: "form-adv-2a" },
       },
     );
     expect(missing.status()).toBe(400);
 
     // Document not in the active policy
-    const notInPolicy = await page.request.post(
+    const notInPolicy = await postSameOrigin(
+      page,
       "/api/v1/investor/disclosures/reacknowledge",
       {
-        headers: {
-          "content-type": "application/json",
-          "x-correlation-id": "e2e-reack-not-in-policy",
-        },
+        headers: { "x-correlation-id": "e2e-reack-not-in-policy" },
         data: { docId: "form-crs", version: "v2026-06" },
       },
     );
@@ -285,13 +280,11 @@ test.describe("Disclosure re-acknowledgement — forbidden language and API guar
     expect(notInPolicyBody.data.reason).toBe("disclosure_not_in_active_policy");
 
     // Submitting the SAME version that is already pinned in the policy
-    const sameAsActive = await page.request.post(
+    const sameAsActive = await postSameOrigin(
+      page,
       "/api/v1/investor/disclosures/reacknowledge",
       {
-        headers: {
-          "content-type": "application/json",
-          "x-correlation-id": "e2e-reack-same-version",
-        },
+        headers: { "x-correlation-id": "e2e-reack-same-version" },
         data: { docId: "form-adv-2a", version: "v2026-01" },
       },
     );
@@ -300,13 +293,11 @@ test.describe("Disclosure re-acknowledgement — forbidden language and API guar
     expect(sameAsActiveBody.data.reason).toBe("version_matches_active_policy");
 
     // Unknown version
-    const unknown = await page.request.post(
+    const unknown = await postSameOrigin(
+      page,
       "/api/v1/investor/disclosures/reacknowledge",
       {
-        headers: {
-          "content-type": "application/json",
-          "x-correlation-id": "e2e-reack-unknown-version",
-        },
+        headers: { "x-correlation-id": "e2e-reack-unknown-version" },
         data: { docId: "form-adv-2a", version: "v9999-99" },
       },
     );

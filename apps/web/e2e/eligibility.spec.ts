@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { selectOptionHydrated } from "./hydration";
 
 test.describe("Eligibility flow", () => {
   test.beforeEach(async ({ page }) => {
@@ -7,6 +8,10 @@ test.describe("Eligibility flow", () => {
     // load, the first navigation can land before the eligibility route is
     // compiled and the page returns a transient 404. Wait for the H1 to
     // confirm the page itself is rendered before any field interaction.
+    //
+    // This confirms paint, NOT hydration — the markup is server-rendered and
+    // present before React mounts. Tests that interact with a control must
+    // additionally gate on hydration (see ./hydration).
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   });
 
@@ -17,7 +22,10 @@ test.describe("Eligibility flow", () => {
   });
 
   test("eligible CA resident proceeds to auth", async ({ page }) => {
-    await page.getByLabel(/state of residence/i).selectOption("CA");
+    // First stateful interaction on the page — gate it on hydration so the
+    // selection is not discarded by a late React mount. Once this holds the
+    // tree is hydrated, so the remaining fields need no wrapper.
+    await selectOptionHydrated(page.getByLabel(/state of residence/i), "CA");
     await page.getByLabel(/date of birth/i).fill("1990-01-01");
     // The "Are you a US person or US tax resident?" group is a radio group;
     // selecting "Yes" satisfies the schema's `isUsPerson: "yes"`.
@@ -36,7 +44,7 @@ test.describe("Eligibility flow", () => {
   });
 
   test("NY resident sees waitlist message", async ({ page }) => {
-    await page.getByLabel(/state of residence/i).selectOption("NY");
+    await selectOptionHydrated(page.getByLabel(/state of residence/i), "NY");
     await page.getByLabel(/date of birth/i).fill("1990-01-01");
     await page.getByRole("radio", { name: "Yes" }).check();
     await page.getByRole("button", { name: /check eligibility/i }).click();
@@ -49,7 +57,7 @@ test.describe("Eligibility flow", () => {
 
   test("under-18 applicant sees age error", async ({ page }) => {
     const underageYear = new Date().getFullYear() - 16;
-    await page.getByLabel(/state of residence/i).selectOption("CA");
+    await selectOptionHydrated(page.getByLabel(/state of residence/i), "CA");
     await page
       .getByLabel(/date of birth/i)
       .fill(`${String(underageYear)}-01-01`);

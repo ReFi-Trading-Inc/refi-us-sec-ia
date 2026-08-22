@@ -1,6 +1,7 @@
 import { test, expect, type BrowserContext } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 import { e2eAuthCookies } from "./session";
+import { postSameOrigin } from "./api";
 
 interface BffJsonBody {
   data: {
@@ -135,13 +136,11 @@ test.describe("Profile reactivation — aging-only stale profile", () => {
     await page.goto("/us/app/settings/automation", {
       waitUntil: "domcontentloaded",
     });
-    const direct = await page.request.post("/api/v1/investor/managed/resume", {
-      headers: {
-        "content-type": "application/json",
-        "x-correlation-id": "e2e-stale-profile-resume",
-      },
-      data: {},
-    });
+    const direct = await postSameOrigin(
+      page,
+      "/api/v1/investor/managed/resume",
+      { headers: { "x-correlation-id": "e2e-stale-profile-resume" }, data: {} },
+    );
     expect(direct.status()).toBe(412);
     const body = (await direct.json()) as BffJsonBody;
     expect(body.data.reason).toBe("system_pause_must_clear_upstream");
@@ -191,13 +190,14 @@ test.describe("Profile reactivation — material change routes to policy review"
     await page.goto("/us/app/settings/automation/profile", {
       waitUntil: "domcontentloaded",
     });
-    const res = await page.request.post("/api/v1/investor/profile/reconfirm", {
-      headers: {
-        "content-type": "application/json",
-        "x-correlation-id": "e2e-profile-material-reconfirm",
+    const res = await postSameOrigin(
+      page,
+      "/api/v1/investor/profile/reconfirm",
+      {
+        headers: { "x-correlation-id": "e2e-profile-material-reconfirm" },
+        data: { profileVersion: 2, acknowledgeUnchanged: true },
       },
-      data: { profileVersion: 2, acknowledgeUnchanged: true },
-    });
+    );
     expect(res.status()).toBe(409);
     const body = (await res.json()) as BffJsonBody;
     expect(body.data.ok).toBe(false);
@@ -231,13 +231,14 @@ test.describe("Profile reactivation — remaining blockers", () => {
       timeout: 30_000,
     });
 
-    const res = await page.request.post("/api/v1/investor/profile/reconfirm", {
-      headers: {
-        "content-type": "application/json",
-        "x-correlation-id": "e2e-profile-with-disc",
+    const res = await postSameOrigin(
+      page,
+      "/api/v1/investor/profile/reconfirm",
+      {
+        headers: { "x-correlation-id": "e2e-profile-with-disc" },
+        data: { profileVersion: 1, acknowledgeUnchanged: true },
       },
-      data: { profileVersion: 1, acknowledgeUnchanged: true },
-    });
+    );
     expect(res.status()).toBe(200);
     const body = (await res.json()) as BffJsonBody;
     expect(body.data.ok).toBe(true);
@@ -328,13 +329,14 @@ test.describe("Profile reactivation — direct API fail-closed cases", () => {
     await page.goto("/us/app/settings/automation", {
       waitUntil: "domcontentloaded",
     });
-    const res = await page.request.post("/api/v1/investor/profile/reconfirm", {
-      headers: {
-        "content-type": "application/json",
-        "x-correlation-id": "e2e-profile-missing-version",
+    const res = await postSameOrigin(
+      page,
+      "/api/v1/investor/profile/reconfirm",
+      {
+        headers: { "x-correlation-id": "e2e-profile-missing-version" },
+        data: { acknowledgeUnchanged: true },
       },
-      data: { acknowledgeUnchanged: true },
-    });
+    );
     expect(res.status()).toBe(400);
   });
 
@@ -344,13 +346,14 @@ test.describe("Profile reactivation — direct API fail-closed cases", () => {
     await page.goto("/us/app/settings/automation", {
       waitUntil: "domcontentloaded",
     });
-    const res = await page.request.post("/api/v1/investor/profile/reconfirm", {
-      headers: {
-        "content-type": "application/json",
-        "x-correlation-id": "e2e-profile-mismatch",
+    const res = await postSameOrigin(
+      page,
+      "/api/v1/investor/profile/reconfirm",
+      {
+        headers: { "x-correlation-id": "e2e-profile-mismatch" },
+        data: { profileVersion: 9999, acknowledgeUnchanged: true },
       },
-      data: { profileVersion: 9999, acknowledgeUnchanged: true },
-    });
+    );
     expect(res.status()).toBe(409);
     const body = (await res.json()) as BffJsonBody;
     expect(body.data.reason).toBe("profile_version_mismatch");
@@ -364,13 +367,14 @@ test.describe("Profile reactivation — direct API fail-closed cases", () => {
     await page.goto("/us/app/settings/automation", {
       waitUntil: "domcontentloaded",
     });
-    const res = await page.request.post("/api/v1/investor/profile/reconfirm", {
-      headers: {
-        "content-type": "application/json",
-        "x-correlation-id": "e2e-profile-no-policy",
+    const res = await postSameOrigin(
+      page,
+      "/api/v1/investor/profile/reconfirm",
+      {
+        headers: { "x-correlation-id": "e2e-profile-no-policy" },
+        data: { profileVersion: 1, acknowledgeUnchanged: true },
       },
-      data: { profileVersion: 1, acknowledgeUnchanged: true },
-    });
+    );
     expect(res.status()).toBe(412);
     const body = (await res.json()) as BffJsonBody;
     // Signal user has no profile-snapshot seeded either, so no_profile fires

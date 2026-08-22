@@ -31,12 +31,27 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm --filter @refi/web dev",
+    // PRODUCTION ARTIFACT, not `next dev`.
+    //
+    // The suite's authority comes from testing what actually ships. Dev mode
+    // compiles routes on demand and skips static prerendering, so an entire
+    // class of defect is invisible to it — #40 shipped production with every
+    // script blocked by CSP (no hydration; the eligibility form silently fell
+    // back to a native GET submit) while a green dev-mode suite reported
+    // nothing. `next build` + `next start` is the only configuration in which
+    // that failure is reachable by a test.
+    //
+    // Set PLAYWRIGHT_SKIP_BUILD=1 to re-run against an existing build while
+    // iterating locally; CI never sets it.
+    command: process.env["PLAYWRIGHT_SKIP_BUILD"]
+      ? "pnpm --filter @refi/web start"
+      : "pnpm --filter @refi/web build && pnpm --filter @refi/web start",
     url: "http://localhost:3000",
     reuseExistingServer: !process.env["CI"],
-    timeout: 120_000,
+    // Generous: the command now includes a full production build.
+    timeout: 300_000,
     env: {
-      NEXT_PUBLIC_REFI_ENV: "dev",
+      NEXT_PUBLIC_REFI_ENV: "prod",
       NEXT_PUBLIC_API_BASE_URL: "http://localhost:3000",
       NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "test",
       NEXT_PUBLIC_POSTHOG_KEY: "test",
@@ -51,11 +66,29 @@ export default defineConfig({
       // silently if the default ever changed.
       SESSION_JWT_SECRET: E2E_SESSION_JWT_SECRET,
       REFI_DATA_ADAPTER: "mock",
+      REFI_ENV: "prod",
       // Disable browser MSW in e2e. Surface 1 only needs the BFF route, and
       // service-worker registration in headless Chromium is the slowest part
       // of dev-mode boot, which makes the mswReady gate flake.
       NEXT_PUBLIC_REFI_DATA_ADAPTER: "live",
       REFI_PROTOTYPE_STORE_DIR: PROTOTYPE_STORE_DIR,
+      // The default release stage is "signal", which refuses pause/resume with
+      // 403 (Daniel 2026-08-17 §6). Several specs cover Managed pause/resume
+      // behaviour, so the e2e server runs at the Managed-paper stage. The
+      // refusal itself is covered by contract assertions rather than here —
+      // if this line is ever removed, those Managed specs fail loudly rather
+      // than silently testing a surface that is switched off.
+      REFI_RELEASE_STAGE: "managed_paper",
+      // Single-process local server: the per-process assertion signing key is
+      // safe here and must be opted into explicitly.
+      ALPHA_HANDOFF_PUBLIC_KEY_JWK: JSON.stringify({
+        kty: "EC",
+        crv: "P-256",
+        x: "e2e-x",
+        y: "e2e-y",
+      }),
+      ALPHA_HANDOFF_ISSUER: "refi-alpha",
+      ALPHA_HANDOFF_AUDIENCE: "refi-us-sec-ia",
     },
   },
 });

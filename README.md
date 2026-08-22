@@ -10,6 +10,44 @@
 
 ---
 
+> [!IMPORTANT]
+> **This README is stale and is being rewritten. Do not use it to establish the
+> current product or backend model.**
+>
+> **Product model — being re-baselined.** The launch product is a U.S.
+> long-only, unlevered **direct index** intended to follow the S&P 500,
+> delivered **Signal-only**: personalized, immutable, account-level
+> recommendations with **no execution path**. Managed execution is a separate,
+> later product. The strategy/template framing below, the single-symbol
+> recommendation model, and every Managed and automation surface described in
+> this document are **superseded or out of scope** for that release. The
+> governing documents are Daniel's September 2026 architecture set, listed
+> below; they are **not yet committed to this repository**.
+>
+> **Integration mechanics — Phase 2.7 still applies** where the September
+> documents do not supersede it: identity (`identity-ccid`, email-first),
+> BFF↔`investor-api` user assertions, JWKS and rotation, account isolation,
+> disclosure version/hash binding, backend-owned freshness, and the
+> investor/admin boundary.
+>
+> | Topic                                                              | Authoritative document                                                                                               |
+> | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+> | Target backend architecture, release boundaries, settled decisions | `arch_migration_overview.md` — request from Daniel                                                                   |
+> | Product model, investor architecture, investor-api surface         | `exec_overview_v2.md` — request from Daniel                                                                          |
+> | Integration direction, Admin Portal rejection, investor-api        | [`docs/phase2-7-daniel-direction-resolution.md`](docs/phase2-7-daniel-direction-resolution.md)                       |
+> | Contract mechanics: assertions, freshness, step-up, Signal surface | [`docs/phase2-7-daniel-contract-mechanics-resolution.md`](docs/phase2-7-daniel-contract-mechanics-resolution.md)     |
+> | Connection mechanics: `amr`, JWKS rotation, idempotency            | [`docs/phase2-7-daniel-connection-mechanics-resolution.md`](docs/phase2-7-daniel-connection-mechanics-resolution.md) |
+> | Dated decision history                                             | [`docs/decisions/DECISION_LOG.md`](docs/decisions/DECISION_LOG.md)                                                   |
+>
+> Four reversals to know before reading further: **Admin Portal is not the
+> investor integration path** (a dedicated `investor-api` is); **identity is
+> `identity-ccid` and email-first**, not SIWE, with wallet linking separated
+> from authentication; **risk verdicts are binary** `ALLOW`/`DENY` with no
+> `REVIEW` partition; and **the product is a direct index**, not the legacy
+> RF/RL/D-CQL strategy model.
+
+---
+
 ## 🧭 Backend source of truth for Phase 2.6
 
 The current source of truth for the trading backend is **`refinity_dev/refinity-main main @ 9f9dfc9`** and specifically the docs under **`refinity-main/docs/authoritative/*`**. Phase 2.5 docs are retained as historical audit evidence with supersession headers.

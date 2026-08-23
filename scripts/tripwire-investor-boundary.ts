@@ -140,6 +140,43 @@ const FORBIDDEN_LABELS: ReadonlyArray<string> = [
  * Word-boundary match, same as FORBIDDEN_ACTION_IDS. Case-insensitive variants
  * are covered by listing both spellings.
  */
+/**
+ * Identifiers retired from the Signal artifact.
+ *
+ * Distinct from FORBIDDEN_ACTION_IDS, which lists things forbidden by policy.
+ * These were legitimate, are now removed, and their reappearance is a
+ * regression rather than a policy breach — so the message points at what
+ * replaced them instead of at a rule.
+ *
+ * `/orders` and `/v1/brokers/orders` are deliberately NOT here. Both are GET
+ * read models, and banning a route because its name contains "orders" would
+ * confuse observation with authority. The Signal boundary is the absence of
+ * order SUBMISSION, cancellation, and executable intent — not the absence of
+ * order history.
+ */
+const RETIRED_SIGNAL_IDS: ReadonlyArray<{ id: string; note: string }> = [
+  {
+    id: "useSubmitOrder",
+    note: "removed 2026-07-30 — investors never place raw orders",
+  },
+  {
+    id: "useCancelOrder",
+    note: "removed 2026-07-30 — cancellation crosses broker ownership boundaries",
+  },
+  {
+    id: "useOrderPreview",
+    note: "removed 2026-08-22 — browser-direct POST /orders/preview, execution-era per-trade model",
+  },
+  {
+    id: "CompliancePreview",
+    note: "removed 2026-08-22 — unmounted renderSubmit(canSubmit) component; Signal has no per-trade approval",
+  },
+  {
+    id: "/orders/preview",
+    note: "removed 2026-08-22 — see useOrderPreview",
+  },
+];
+
 const FORBIDDEN_FRESHNESS_STEMS: ReadonlyArray<string> = [
   // SCREAMING_SNAKE spellings.
   "FRESH_THRESHOLD",
@@ -401,6 +438,28 @@ function scanFile(absPath: string): Violation[] {
           line: i + 1,
           kind: "action-id",
           pattern: id,
+          text: line.trim().slice(0, 160),
+        });
+      }
+    }
+
+    // 3a2. Retired Signal identifiers.
+    //
+    // Comment lines are skipped, and that is the point: the note explaining why
+    // an identifier was retired must name it, so a scanner that reads prose
+    // flags its own documentation and pressures the next person to delete the
+    // explanation. A commented-out call is not a reachable capability.
+    const isComment = /^\s*(\/\/|\*|\/\*)/.test(line);
+    for (const { id, note } of isComment ? [] : RETIRED_SIGNAL_IDS) {
+      const re = id.startsWith("/")
+        ? new RegExp(id.replace(/[/]/g, "\\/"))
+        : new RegExp(`(^|[^\\w$])${id}([^\\w$]|$)`);
+      if (re.test(line) && !lineAllows(line, id)) {
+        violations.push({
+          file: relPath,
+          line: i + 1,
+          kind: "retired-signal-id",
+          pattern: `${id} (${note})`,
           text: line.trim().slice(0, 160),
         });
       }

@@ -33,9 +33,9 @@ export {
   useBrokerOrders,
   useBrokerDisconnect,
 } from "./hooks/broker";
-// Read model + binary preview gate only. `useSubmitOrder` / `useCancelOrder`
-// were removed 2026-07-30 — see the note in ./hooks/orders.
-export { useOrders, useOrderPreview } from "./hooks/orders";
+// Read model only. `useSubmitOrder` / `useCancelOrder` were removed
+// 2026-07-30; `useOrderPreview` on 2026-08-22 — see the note in ./hooks/orders.
+export { useOrders } from "./hooks/orders";
 export { useRecommendations, useRecommendation } from "./hooks/recommendations";
 export {
   useSubscriptionMode,

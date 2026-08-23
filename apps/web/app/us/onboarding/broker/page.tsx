@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 import { standardSchemaResolver } from "@hookform/resolvers/standard-schema";
 import { z } from "zod";
 import {
@@ -11,7 +11,6 @@ import {
   Card,
   CardContent,
   Input,
-  RadioGroup,
   StatusBanner,
 } from "@ui/components";
 import {
@@ -30,13 +29,32 @@ const { broker, brokerApiKey } = onboardingCopy;
 //   - Live keys start with AK
 const PAPER_KEY_PATTERN = /^PK[A-Z0-9]{18}$/;
 const LIVE_KEY_PATTERN = /^AK[A-Z0-9]{18}$/;
+// The field regex still admits both prefixes so a live key PARSES far enough
+// to reach the refinement below and be refused by name. Narrowing it here
+// instead would reject an AK key as a malformed string, which is true but
+// useless — the investor needs to know live keys are not accepted at all,
+// not that their key looks wrong.
 const ANY_KEY_PATTERN = /^(PK|AK)[A-Z0-9]{18}$/;
 // Alpaca secret keys are 40-char mixed-case alphanumerics.
 const SECRET_PATTERN = /^[A-Za-z0-9]{40}$/;
 
 const apiKeySchema = z
   .object({
-    environment: z.enum(["paper", "live"]),
+    // Paper only, by construction.
+    //
+    // Signal must never hold a credential capable of placing, cancelling, or
+    // modifying an order. A raw live Alpaca API key cannot satisfy that: its
+    // authority is whatever the key carries, regardless of what this frontend
+    // chooses to call. Defaulting to paper while leaving "live" acceptable
+    // would leave the submission path reachable, so the value is refused at
+    // the schema.
+    //
+    // This is NOT "paper forever". The intended live path is a read-only
+    // authorization — for Alpaca, OAuth without the `trading` scope — which
+    // lets Signal observe a real account without being able to trade it. That
+    // contract is open with the backend (D-SIGNAL-01); until it exists, live
+    // connection is absent rather than approximated.
+    environment: z.literal("paper"),
     api_key_id: z
       .string()
       .trim()
@@ -47,24 +65,21 @@ const apiKeySchema = z
       .regex(SECRET_PATTERN, brokerApiKey.errors.apiSecretFormat),
   })
   .superRefine((data, ctx) => {
-    if (
-      data.environment === "paper" &&
-      !PAPER_KEY_PATTERN.test(data.api_key_id)
-    ) {
+    // A live key is recognised specifically so the investor gets a real
+    // explanation instead of a generic format error. It is refused either way.
+    if (LIVE_KEY_PATTERN.test(data.api_key_id)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["api_key_id"],
+        message: brokerApiKey.errors.liveKeyNotAccepted,
+      });
+      return;
+    }
+    if (!PAPER_KEY_PATTERN.test(data.api_key_id)) {
       ctx.addIssue({
         code: "custom",
         path: ["api_key_id"],
         message: brokerApiKey.errors.apiKeyIdEnvMismatchPaper,
-      });
-    }
-    if (
-      data.environment === "live" &&
-      !LIVE_KEY_PATTERN.test(data.api_key_id)
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["api_key_id"],
-        message: brokerApiKey.errors.apiKeyIdEnvMismatchLive,
       });
     }
   });
@@ -90,9 +105,7 @@ export default function OnboardingBrokerPage() {
   const {
     register,
     handleSubmit,
-    setValue,
     reset,
-    control,
     formState: { errors, isSubmitting },
   } = useForm<ApiKeyFormValues>({
     resolver: standardSchemaResolver(apiKeySchema),
@@ -103,10 +116,9 @@ export default function OnboardingBrokerPage() {
     },
   });
 
-  // useWatch is the memo-safe variant; plain watch() triggers
+  // (environment watch removed with the live option — paper is the only value.)
   // react-hooks/incompatible-library because the returned function cannot
   // be memoized by React Compiler.
-  const environment = useWatch({ control, name: "environment" });
 
   // Defensive: if the form is ever unmounted while values are in memory,
   // make sure we clear them. RHF clears its own internal state on unmount,
@@ -272,41 +284,14 @@ export default function OnboardingBrokerPage() {
                         </p>
                       </div>
 
-                      <RadioGroup
-                        name="environment"
-                        label={brokerApiKey.environment.label}
-                        value={environment}
-                        onChange={(v) => {
-                          setValue("environment", v as "paper" | "live", {
-                            shouldValidate: true,
-                          });
-                        }}
-                        options={[
-                          {
-                            value: brokerApiKey.environment.paper.value,
-                            label: brokerApiKey.environment.paper.label,
-                            hint: brokerApiKey.environment.paper.hint,
-                          },
-                          {
-                            value: brokerApiKey.environment.live.value,
-                            label: brokerApiKey.environment.live.label,
-                            hint: brokerApiKey.environment.live.hint,
-                          },
-                        ]}
-                      />
-
-                      {environment === "live" && (
-                        <StatusBanner variant="warning" title="Live trading">
-                          {brokerApiKey.liveWarning}
-                        </StatusBanner>
-                      )}
+                      <StatusBanner variant="info" title="Paper trading only">
+                        {brokerApiKey.paperOnlyNotice}
+                      </StatusBanner>
 
                       <Input
                         label={brokerApiKey.fields.apiKeyId.label}
                         placeholder={
-                          environment === "live"
-                            ? brokerApiKey.fields.apiKeyId.placeholderLive
-                            : brokerApiKey.fields.apiKeyId.placeholderPaper
+                          brokerApiKey.fields.apiKeyId.placeholderPaper
                         }
                         hint={brokerApiKey.fields.apiKeyId.hint}
                         error={errors.api_key_id?.message}

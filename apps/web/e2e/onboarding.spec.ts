@@ -103,6 +103,55 @@ test.describe("Broker onboarding", () => {
       page.getByText("Alpaca connected", { exact: true }),
     ).toBeVisible({ timeout: 10_000 });
   });
+
+  test("a live Alpaca key is refused and never submitted", async ({ page }) => {
+    // Signal must never hold a credential capable of placing, cancelling, or
+    // modifying an order. A raw live key carries whatever authority Alpaca
+    // granted it, regardless of what this frontend does with it, so the
+    // September artifact refuses live credentials outright rather than
+    // defaulting to paper and leaving the path reachable.
+    //
+    // Asserted at the network layer, not just the UI: a validation message
+    // that still let the request through would be worthless.
+    let submitted = 0;
+    await page.route("**/v1/brokers/connect/keys", (route) => {
+      submitted += 1;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ ok: true }),
+      });
+    });
+
+    await page.goto("/us/onboarding/broker");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await page
+      .getByRole("button", { name: /connect/i })
+      .first()
+      .click();
+    // AK-prefixed key: a live Alpaca credential.
+    await page.getByLabel(/api key id/i).fill("AKABCDEFGHIJ12345678");
+    await page
+      .getByLabel(/api secret key|secret key/i)
+      .fill("abcdefghij1234567890abcdefghij1234567890");
+    await page.getByRole("button", { name: /connect alpaca/i }).click();
+
+    await expect(page.getByText(/live Alpaca key/i)).toBeVisible();
+    expect(submitted, "live credentials reached the network").toBe(0);
+    await expect(
+      page.getByText("Alpaca connected", { exact: true }),
+    ).toHaveCount(0);
+  });
+
+  test("no live trading environment option is offered", async ({ page }) => {
+    await page.goto("/us/onboarding/broker");
+    await page
+      .getByRole("button", { name: /connect/i })
+      .first()
+      .click();
+    await expect(page.getByText(/paper trading only/i)).toBeVisible();
+    await expect(page.getByRole("radio", { name: /live/i })).toHaveCount(0);
+  });
 });
 
 test.describe("Advisory profile", () => {

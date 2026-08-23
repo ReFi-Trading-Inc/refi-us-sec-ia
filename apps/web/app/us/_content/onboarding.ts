@@ -103,6 +103,8 @@ export const onboardingCopy = {
       "Enter your Alpaca API keys to link your brokerage account. ReFi uses these keys to read your balances, holdings, and order status, and — once you activate managed execution — to submit eligible orders on your behalf.",
     security:
       "Your keys are transmitted securely over HTTPS to ReFi's systems and are never stored in your browser. They are cleared from this form the moment your connection is confirmed.",
+    paperOnlyNotice:
+      "ReFi Signal connects to paper accounts only. Signal provides recommendations and never places trades, so it does not accept live trading credentials. Live account connection will use a read-only authorization that cannot trade.",
     environment: {
       label: "Trading environment",
       paper: {
@@ -136,6 +138,8 @@ export const onboardingCopy = {
     errors: {
       apiKeyIdFormat:
         "API Key ID looks invalid. Paper keys start with PK and live keys start with AK, followed by 18 characters (letters and digits).",
+      liveKeyNotAccepted:
+        "That looks like a live Alpaca key (AK…). ReFi Signal accepts paper keys only — it never places trades, so it does not take credentials that can. Live accounts will connect through a read-only authorization.",
       apiKeyIdEnvMismatchPaper:
         "Paper keys should start with PK. The key you entered looks like a live key.",
       apiKeyIdEnvMismatchLive:

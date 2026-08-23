@@ -707,11 +707,32 @@ await section(
       "The canonical resolve route no longer applies " +
         "isExceptionResolutionPermitted — the category partition is unenforced.",
     );
+    // Ordering is proven on the INVOCATIONS inside the apply handler, not on
+    // bare indexOf: the header comment and the import block both name these
+    // identifiers near the top of the file, so an unanchored search matches
+    // them and passes regardless of where the actual calls sit. Both searches
+    // therefore start at the apply handler.
+    const applyStart = src.indexOf("apply:");
+    assert.ok(applyStart > 0, `${canonical} has no apply handler to inspect.`);
+    const guardCall = src.indexOf(
+      "isExceptionResolutionPermitted(",
+      applyStart,
+    );
+    const lookupCall = src.indexOf("getExceptionReview(", applyStart);
     assert.ok(
-      src.indexOf("isExceptionResolutionPermitted") <
-        src.indexOf("getExceptionReview("),
-      "The category check must run BEFORE the exception lookup so refusals " +
-        "stay id-independent.",
+      guardCall > 0,
+      "No isExceptionResolutionPermitted(...) INVOCATION inside apply — the " +
+        "import alone does not enforce the partition.",
+    );
+    assert.ok(
+      lookupCall > 0,
+      "No getExceptionReview(...) invocation inside apply — the route shape " +
+        "changed; re-derive this invariant rather than deleting it.",
+    );
+    assert.ok(
+      guardCall < lookupCall,
+      "The category-check INVOCATION must run BEFORE the exception lookup " +
+        "inside apply, so refusals stay id-independent.",
     );
   },
 );

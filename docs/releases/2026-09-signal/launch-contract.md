@@ -1,5 +1,21 @@
 <!-- Tracked canonical copy, committed 2026-08-22. Originated as a session working paper; this file is now the authoritative version. -->
 
+> **MILESTONE SUPERSESSION (2026-08-23).** The milestone framing below —
+> **"Client-Onboarding-Ready Signal Release Candidate"** — was our own
+> construction and is not supported by Daniel's governing architecture, which
+> defines the progression Signal Dev Release 1 → Managed paper → staging →
+> Production Signal alpha → live Managed. The canonical milestone is now:
+>
+> **September 13, 2026 — Signal Dev Release 1 Candidate**
+>
+> defined in [SHIP_CONTRACT.md](SHIP_CONTRACT.md), which cites Daniel's
+> executive architecture overview and backend migration overview as its
+> authority and controls wherever this document differs. The Gate A / Gate B
+> split below remains useful as an engineering-vs-legal separation, but Gate A
+> acceptance now means Signal Dev Release 1 acceptance in `refinity-dev` —
+> not client-onboarding readiness, not Production Signal alpha, and no
+> September production hostname, cohort, or activation date exists.
+
 # September 13 Release Candidate Contract — PROVISIONAL
 
 > **STATUS: PROVISIONAL — NOT YET IMPLEMENTATION AUTHORITY.** Drafted 2026-08-22

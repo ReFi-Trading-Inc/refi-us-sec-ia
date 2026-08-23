@@ -380,6 +380,16 @@ Applied in this pass:
    ownership split and the mock-replacement grouping recorded.
 10. **`.../entities/recommendation-projection.ts`** — carries the freshness
     envelope; `expiresAt` deprecated in place.
+    > **STATE CORRECTION (2026-08-22): NOT on `main`, deliberately.** The
+    > freshness attachment was implemented in the working pass this section
+    > describes, but withheld when the work landed (PR #46): the single-symbol
+    > `RecommendationProjection` — which still carries an `executing` status —
+    > was superseded by the direct-index `AccountRecommendation` model in
+    > Daniel's September architecture, and wiring the envelope into a model
+    > about to be replaced would have been churn. Only the freshness
+    > **primitive** (`sec203a/freshness.ts`) and its anti-threshold tripwire
+    > landed; the consumer arrives with the new recommendation model. See
+    > `docs/releases/2026-09-signal/open-items.md`.
 11. **`.../entities/disclosure-acknowledgement.ts`** — acknowledgments now
     record the `contentHash` they were made against, so an acknowledgment can
     prove _which_ content was shown.
@@ -393,6 +403,16 @@ Added after review (2026-08-17):
     action receipt during the Signal release, before any handler runs. Exported
     constants alone were documentation. Driven by server-only
     `REFI_RELEASE_STAGE`, so no client build constant can widen the surface.
+    > **STATE CORRECTION (2026-08-22): NOT on `main`, deliberately.** The gate
+    > described here was implemented in the working pass but never landed: it
+    > keyed on the three-verb `isGatedUntilManagedPaper()` mapping, and the C0
+    > capability audit showed that mapping misses execution-policy mutations,
+    > the Managed exception-resolution categories, and the entire
+    > browser-direct API surface. `main` today asserts the predicate
+    > (`contract-assertions.ts`) but nothing invokes it on the request path.
+    > The replacement is the default-deny Signal capability policy owned by
+    > **Workstream C1a-1** — see
+    > `docs/releases/2026-09-signal/c0-capability-audit.md` §5.
 14. **`apps/web/src/lib/bff/public-routes.ts`** (new) + contract assertion —
     any route file outside `app/api/` must be declared as an intentional public
     route with a reason, or CI fails. The JWKS route is the first entry.

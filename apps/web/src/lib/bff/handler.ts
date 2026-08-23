@@ -21,6 +21,9 @@ import type {
   RecordAccessAction,
 } from "../sec203a/actions";
 import { appendActionReceipt } from "../prototype-store/entities/receipt";
+import { GATED_UNTIL_MANAGED_PAPER } from "../sec203a/admin-verbs";
+import { isInvestorActionPermitted } from "../sec203a/release-policy";
+import { getServerEnv } from "../config/env";
 import { appendRecordAccess } from "../prototype-store/entities/record-access-log";
 
 export interface BffContext {
@@ -146,6 +149,36 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
 
       const auth = await getAuthContext(req);
       if (!auth) return BffErrors.unauthorized(correlationId);
+
+      // Release-stage capability policy (C1a-1). Default-deny: at the signal
+      // stage an action runs only if it is explicitly Signal-allowed —
+      // derived from the September boundary, not from the three-verb gated
+      // mapping (see release-policy.ts for why that predicate under-covers).
+      // Enforced before parse, deliberately: a body is never parsed for a
+      // capability that cannot run, and the receipt records the denial as a
+      // policy refusal rather than a body defect. Receipt precedes response
+      // so a refusal is never invisible; if persistence throws, the catch
+      // below fails the request closed.
+      if (
+        !isInvestorActionPermitted(
+          handler.action,
+          getServerEnv().REFI_RELEASE_STAGE,
+        )
+      ) {
+        await appendActionReceipt({
+          action: handler.action,
+          actor: "user",
+          authId: auth.authId,
+          ...(auth.accountId ? { accountId: auth.accountId } : {}),
+          correlationId,
+          outcome: "blocked",
+          reasonCode: GATED_UNTIL_MANAGED_PAPER,
+        });
+        return BffErrors.forbidden(
+          correlationId,
+          "This action is not available in Signal mode.",
+        );
+      }
 
       let input: T;
       if (handler.parse) {

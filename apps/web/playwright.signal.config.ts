@@ -14,12 +14,13 @@ import { E2E_SESSION_JWT_SECRET } from "./e2e/session";
  * and never inlined into the bundle, so one `next build` serves both stages.
  * Run `pnpm e2e` first (which builds), then `pnpm e2e:signal`.
  *
- * SCOPE, stated plainly: this is a boot-and-posture smoke lane, NOT the
- * structural no-execution proof. It cannot be that yet — the release gate is
- * asserted on main (contract-assertions.ts:666) but never invoked by bffMutate,
- * so "a Managed mutation is refused at signal stage" is not a true statement
- * about main and cannot honestly be asserted here. Workstream C lands the
- * enforcement and owns that proof.
+ * SCOPE: boot-and-posture plus the CAPABILITY-POLICY refusals. Since C1a-1,
+ * bffMutate enforces the default-deny Signal capability policy
+ * (sec203a/release-policy.ts), so "a Managed mutation is refused at the
+ * signal stage" is finally a true statement about main and is asserted here.
+ * Structural ABSENCE of the Managed surfaces (removal, not refusal) is C2a/
+ * C2b and still pending — refusal at the boundary is a necessary layer, not
+ * the whole proof.
  */
 const PROTOTYPE_STORE_DIR = resolve(__dirname, ".refi-prototype-store-e2e");
 process.env["REFI_PROTOTYPE_STORE_DIR"] = PROTOTYPE_STORE_DIR;

@@ -663,6 +663,98 @@ await section(
 );
 
 await section(
+  "Signal capability policy: complete, disjoint, default-deny (C1a-1)",
+  async () => {
+    const {
+      SIGNAL_ALLOWED_ACTIONS,
+      MANAGED_PAPER_GATED_ACTIONS,
+      SIGNAL_ALLOWED_EXCEPTION_RESOLUTIONS,
+      MANAGED_EXCEPTION_RESOLUTIONS,
+      isInvestorActionPermitted,
+      isExceptionResolutionPermitted,
+      unclassifiedInvestorActions,
+      unclassifiedExceptionResolutions,
+    } = await import("../apps/web/src/lib/sec203a/release-policy.ts");
+    const { InvestorActions, ExceptionResolutions } =
+      await import("../apps/web/src/lib/sec203a/actions.ts");
+    const { isGatedUntilManagedPaper } =
+      await import("../apps/web/src/lib/sec203a/admin-verbs.ts");
+
+    // Completeness + disjointness (runtime mirror of the compile-time proofs).
+    assert.deepEqual(
+      unclassifiedInvestorActions(),
+      [],
+      "Every InvestorActionName must be classified Signal-allowed or Managed-gated.",
+    );
+    assert.deepEqual(unclassifiedExceptionResolutions(), []);
+    for (const a of SIGNAL_ALLOWED_ACTIONS) {
+      assert.ok(
+        !(MANAGED_PAPER_GATED_ACTIONS as readonly string[]).includes(a),
+        `"${a}" classified in both sets.`,
+      );
+    }
+
+    // Default-deny semantics: signal permits exactly the allowlist.
+    for (const a of InvestorActions) {
+      assert.equal(
+        isInvestorActionPermitted(a, "signal"),
+        (SIGNAL_ALLOWED_ACTIONS as readonly string[]).includes(a),
+        `signal-stage verdict for "${a}" must equal allowlist membership.`,
+      );
+      assert.equal(
+        isInvestorActionPermitted(a, "managed_paper"),
+        true,
+        `managed_paper must permit "${a}".`,
+      );
+    }
+
+    // Named denials that must never regress open (Daniel 2026-08-17 §6 + C0).
+    for (const a of [
+      "pauseManaged",
+      "resumeManaged",
+      "activateExecutionPolicy",
+      "updateExecutionPolicy",
+      "saveExecutionPolicyDraft",
+      "selectMode",
+    ] as const) {
+      assert.equal(
+        isInvestorActionPermitted(a, "signal"),
+        false,
+        `"${a}" must be denied at the signal stage.`,
+      );
+    }
+
+    // Consistency with the legacy three-verb predicate: everything IT gates,
+    // the policy also denies at signal. The converse is deliberately false —
+    // that asymmetry is why the policy replaced the predicate (C0 §5).
+    for (const a of InvestorActions) {
+      if (isGatedUntilManagedPaper(a, "signal")) {
+        assert.equal(
+          isInvestorActionPermitted(a, "signal"),
+          false,
+          `policy must deny "${a}", which the legacy predicate gates.`,
+        );
+      }
+    }
+
+    // Exception-resolution partition: exactly the three remediation
+    // categories pass at signal; Managed categories never do.
+    assert.equal(
+      SIGNAL_ALLOWED_EXCEPTION_RESOLUTIONS.length +
+        MANAGED_EXCEPTION_RESOLUTIONS.length,
+      ExceptionResolutions.length,
+    );
+    for (const r of ExceptionResolutions) {
+      assert.equal(
+        isExceptionResolutionPermitted(r, "signal"),
+        (SIGNAL_ALLOWED_EXCEPTION_RESOLUTIONS as readonly string[]).includes(r),
+        `signal-stage verdict for resolution "${r}" must equal allowlist membership.`,
+      );
+    }
+  },
+);
+
+await section(
   "release gate refuses Managed verbs during the Signal release",
   async () => {
     const { isGatedUntilManagedPaper, GATED_UNTIL_MANAGED_PAPER } =

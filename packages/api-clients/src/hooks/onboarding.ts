@@ -75,6 +75,19 @@ export function useBrokerConnectStart(): UseMutationResult<
  * - Callers MUST clear the secret from their component state after the mutation
  *   settles (success or error). The mutation itself does not retain the body.
  * - The UI never talks to Alpaca directly; the backend handles Alpaca auth.
+ *
+ * PAPER ONLY, and the limit of that guarantee matters. The request type
+ * narrows `environment` to the literal "paper", so this client cannot express
+ * a live credential. But the call is browser-direct to the external
+ * /v1/brokers/connect/keys — a modified client or a plain HTTP request reaches
+ * it without passing through anything in this repository. Whether the backend
+ * refuses `environment: "live"` is unproven here (D-SIGNAL-01, EXTERNAL PROOF
+ * REQUIRED), and Gate A needs that evidence, or evidence that this raw-key
+ * endpoint is no longer part of the Signal architecture.
+ *
+ * Live accounts are not meant to arrive through this path at all. The settled
+ * requirement is read access WITHOUT broker-write authority; which mechanism
+ * provides it is the backend's broker-connection contract to define.
  */
 export function useBrokerConnectApiKey(): UseMutationResult<
   BrokerConnectKeyResponse,

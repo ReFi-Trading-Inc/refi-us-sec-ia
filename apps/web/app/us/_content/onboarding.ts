@@ -81,7 +81,6 @@ export const onboardingCopy = {
       "Read balances",
       "Read holdings",
       "Read order status",
-      "Submit orders eligible for managed execution (only after activation)",
     ],
     permissionsDisclaimer:
       "No withdrawal, transfer, margin, options, or crypto permissions are requested.",
@@ -100,32 +99,16 @@ export const onboardingCopy = {
   brokerApiKey: {
     heading: "Connect your Alpaca account",
     subheading:
-      "Enter your Alpaca API keys to link your brokerage account. ReFi uses these keys to read your balances, holdings, and order status, and — once you activate managed execution — to submit eligible orders on your behalf.",
+      "Enter your Alpaca paper API keys to link your brokerage account. ReFi Signal uses them to read your balances, holdings, and order status so it can build your recommendations. It does not submit orders.",
     security:
       "Your keys are transmitted securely over HTTPS to ReFi's systems and are never stored in your browser. They are cleared from this form the moment your connection is confirmed.",
     paperOnlyNotice:
-      "ReFi Signal connects to paper accounts only. Signal provides recommendations and never places trades, so it does not accept live trading credentials. Live account connection will use a read-only authorization that cannot trade.",
-    environment: {
-      label: "Trading environment",
-      paper: {
-        value: "paper",
-        label: "Paper trading",
-        hint: "Practice with simulated trades. No real money is involved. Recommended for first-time setup.",
-      },
-      live: {
-        value: "live",
-        label: "Live trading",
-        hint: "Executes real orders against your funded Alpaca account.",
-      },
-    },
-    liveWarning:
-      "Live trading executes real orders with real money. Only activate if your Alpaca account is funded and you understand the risks. You can switch to paper at any time.",
+      "ReFi Signal connects to paper accounts only. Signal provides recommendations and never places trades, so it does not accept live trading credentials. Live account connection will use a read-only method that cannot place trades.",
     fields: {
       apiKeyId: {
         label: "API Key ID",
         placeholderPaper: "PKXXXXXXXXXXXXXXXXXX",
-        placeholderLive: "AKXXXXXXXXXXXXXXXXXX",
-        hint: 'Found in your Alpaca dashboard under "API Keys". Paper keys start with PK; live keys start with AK.',
+        hint: 'Found in your Alpaca paper dashboard under "API Keys". Paper keys start with PK.',
       },
       apiSecret: {
         label: "Secret Key",
@@ -137,19 +120,17 @@ export const onboardingCopy = {
     },
     errors: {
       apiKeyIdFormat:
-        "API Key ID looks invalid. Paper keys start with PK and live keys start with AK, followed by 18 characters (letters and digits).",
+        "API Key ID looks invalid. Paper keys start with PK followed by 18 characters (letters and digits).",
       liveKeyNotAccepted:
-        "That looks like a live Alpaca key (AK…). ReFi Signal accepts paper keys only — it never places trades, so it does not take credentials that can. Live accounts will connect through a read-only authorization.",
+        "That looks like a live Alpaca key (AK…). ReFi Signal accepts paper keys only — it never places trades, so it does not take credentials that can. Live accounts will connect through a read-only method instead.",
       apiKeyIdEnvMismatchPaper:
         "Paper keys should start with PK. The key you entered looks like a live key.",
-      apiKeyIdEnvMismatchLive:
-        "Live keys should start with AK. The key you entered looks like a paper key.",
       apiSecretFormat:
         "Secret key looks invalid. It should be a 40-character alphanumeric string.",
       invalidCredentials:
         "Alpaca rejected those keys. Double-check the API Key ID and Secret Key, and confirm they match the selected environment.",
       insufficientPermissions:
-        "Those keys don't have the permissions ReFi needs. Generate a new key pair in Alpaca with trading enabled.",
+        "Those keys don't have the read permissions ReFi needs. Generate a new paper key pair in Alpaca and try again.",
       networkError:
         "We couldn't reach ReFi's servers. Check your connection and try again.",
       generic:
@@ -158,10 +139,9 @@ export const onboardingCopy = {
     instructions: {
       heading: "How to find your Alpaca API keys",
       paperUrl: "https://app.alpaca.markets/paper/dashboard/overview",
-      liveUrl: "https://app.alpaca.markets/",
       steps: [
         "Sign in to your Alpaca account at app.alpaca.markets.",
-        "Switch to either the Paper or Live dashboard, matching the environment you selected above.",
+        "Open the Paper dashboard. ReFi Signal connects to paper accounts only.",
         'In the right-hand sidebar, find the "API Keys" panel and click "Generate New Key".',
         "Copy the API Key ID and the Secret Key. The secret is shown only once — save it somewhere safe before closing the dialog.",
         "Paste both values into the form below.",

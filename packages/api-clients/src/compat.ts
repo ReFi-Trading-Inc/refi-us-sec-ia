@@ -137,11 +137,31 @@ export type BrokerConnectStartResponse = {
   state?: string;
 };
 
+/**
+ * Raw API-key broker connection. PAPER ONLY.
+ *
+ * `environment` is narrowed to the literal so a live credential cannot be
+ * expressed by this client at all — not merely rejected by a form. Signal must
+ * never hold a credential capable of placing, cancelling, or modifying an
+ * order, and a raw live key carries whatever authority the broker granted it
+ * regardless of what this frontend does with it.
+ *
+ * SCOPE OF THE GUARANTEE, stated precisely: this narrows what the shipped
+ * frontend can originate. It does NOT prove the ReFi system refuses a live
+ * credential — this request still goes browser-direct to the external
+ * /v1/brokers/connect/keys, so a modified client or a plain HTTP call bypasses
+ * every check in this repository. Backend refusal of `environment: "live"` is
+ * unproven here and tracked as D-SIGNAL-01 (EXTERNAL PROOF REQUIRED).
+ *
+ * The intended live path is not this endpoint at all. The settled requirement
+ * is read access WITHOUT broker-write authority; the mechanism that delivers
+ * it belongs to the backend's broker-connection contract, not to this type.
+ */
 export type BrokerApiKeyConnectRequest = {
   broker_id: string;
   api_key_id: string;
   api_secret_key: string;
-  environment: "paper" | "live";
+  environment: "paper";
 };
 
 export type BrokerConnectKeyResponse = {
@@ -170,12 +190,7 @@ export interface SubscriptionModeState {
 // The "review-required" frontend state is derived (a recommendation gated by
 // a pending ExceptionReview), not stored as a projection status.
 export type RecommendationProjectionStatus =
-  | "open"
-  | "executing"
-  | "delivered"
-  | "dismissed"
-  | "saved"
-  | "blocked";
+  "open" | "executing" | "delivered" | "dismissed" | "saved" | "blocked";
 
 export interface RecommendationProjection {
   accountId: string;

@@ -49,11 +49,11 @@ const apiKeySchema = z
     // would leave the submission path reachable, so the value is refused at
     // the schema.
     //
-    // This is NOT "paper forever". The intended live path is a read-only
-    // authorization — for Alpaca, OAuth without the `trading` scope — which
-    // lets Signal observe a real account without being able to trade it. That
-    // contract is open with the backend (D-SIGNAL-01); until it exists, live
-    // connection is absent rather than approximated.
+    // This is NOT "paper forever". The settled requirement is that Signal can
+    // READ a live account without holding broker-write authority; the exact
+    // connection and authorization mechanism is the backend's broker contract
+    // and is not decided here. Until it exists, live connection is absent
+    // rather than approximated.
     environment: z.literal("paper"),
     api_key_id: z
       .string()
@@ -344,14 +344,6 @@ export default function OnboardingBrokerPage() {
                             className="text-mint-400 hover:text-mint-300"
                           >
                             Open Alpaca paper dashboard ↗
-                          </a>
-                          <a
-                            href={brokerApiKey.instructions.liveUrl}
-                            target="_blank"
-                            rel="noreferrer noopener"
-                            className="text-mint-400 hover:text-mint-300"
-                          >
-                            Open Alpaca live dashboard ↗
                           </a>
                         </div>
                       </details>

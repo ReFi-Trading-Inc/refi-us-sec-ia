@@ -173,3 +173,12 @@ for calling the Signal product technically release-ready?_ Do not infer it.
 ## 9. Known repository gap against this contract
 
 `main` carries **15 reachable Managed/execution surfaces** — 10 API routes, 5 pages (inventory in the companion impact report). Under §17 these require structural removal or hard disablement, not navigation hiding. This is the largest net-new workstream the contract implies and the most likely target of an external audit.
+
+> **STATE CORRECTION (2026-08-22): the fixed count above is superseded.** The
+> C0 capability audit proved this inventory materially incomplete — it counted
+> BFF routes and pages while missing the browser-direct `apiFetch` surface
+> entirely (~25 external endpoints bypassing every server in this repository),
+> and one closure slice (#49) has since merged. No replacement fixed total is
+> stated here, deliberately: the current inventory is
+> [`c0-capability-audit.md`](c0-capability-audit.md) and the live state is
+> [`open-items.md`](open-items.md).

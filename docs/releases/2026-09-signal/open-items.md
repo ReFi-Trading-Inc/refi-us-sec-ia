@@ -13,12 +13,12 @@ Companion documents in this folder: [launch-contract.md](launch-contract.md) ·
 
 ## 1. External dependencies (Daniel / backend)
 
-| ID               | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | State                          |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
-| **D-SIGNAL-01**  | Signal broker-connection contract: reading/reconciling a **live** Alpaca account without granting Signal broker-write authority. Settled requirement: read access, no broker-write; mechanism is the backend's to define. Frontend has removed raw live-key acceptance (#49); backend refusal of a direct `environment: "live"` submission to `/v1/brokers/connect/keys` is **EXTERNAL PROOF REQUIRED** for Gate A — or made moot if the raw-key endpoint leaves the Signal architecture. | OPEN — message drafted, unsent |
-| **D-SIGNAL-02**  | Investor API connection package: dev URL, OIDC audience, workload identity config, seeded test IDs, exported route/schema package. Gates classification of the ~25 legacy browser-direct `apiFetch` endpoints (C1b-2).                                                                                                                                                                                                                                                                    | OPEN — message drafted, unsent |
-| **D-SUPPORT-01** | Upstream support/ticket sink: endpoint, auth, request/response contract, ownership. Is `/v1/support/ticket` real, provisional, or obsolete? Until answered, `/api/us/support` fails closed (412) after classification rather than fabricating a ticket.                                                                                                                                                                                                                                   | OPEN                           |
-| Gate B evidence  | Alpaca credential scope proof; Signal service-identity IAM; absence of execution publisher bindings. Not testable from this repo.                                                                                                                                                                                                                                                                                                                                                         | OPEN                           |
+| ID                                     | Item                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | State                          |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| **D-SIGNAL-01**                        | Signal broker-connection contract: reading/reconciling a **live** Alpaca account without granting Signal broker-write authority. Settled requirement: read access, no broker-write; mechanism is the backend's to define. Frontend has removed raw live-key acceptance (#49); backend refusal of a direct `environment: "live"` submission to `/v1/brokers/connect/keys` is **EXTERNAL PROOF REQUIRED** for Gate A — or made moot if the raw-key endpoint leaves the Signal architecture. | OPEN — message drafted, unsent |
+| **D-SIGNAL-02**                        | Investor API connection package: dev URL, OIDC audience, workload identity config, seeded test IDs, exported route/schema package. Gates classification of the ~25 legacy browser-direct `apiFetch` endpoints (C1b-2).                                                                                                                                                                                                                                                                    | OPEN — message drafted, unsent |
+| **D-SUPPORT-01**                       | Upstream support/ticket sink: endpoint, auth, request/response contract, ownership. Is `/v1/support/ticket` real, provisional, or obsolete? Until answered, `/api/us/support` fails closed (412) after classification rather than fabricating a ticket.                                                                                                                                                                                                                                   | OPEN                           |
+| **Gate A external technical evidence** | Alpaca credential scope proof; Signal service-identity IAM; absence of execution publisher bindings. Not testable from this repo, but part of **Gate A technical acceptance** (launch-contract.md §6: "no deployed Signal identity holds broker-write authority") — not a Gate B legal item.                                                                                                                                                                                              | OPEN                           |
 
 ## 2. Decided, not yet implemented (owner: this repo)
 
@@ -52,15 +52,15 @@ Companion documents in this folder: [launch-contract.md](launch-contract.md) ·
 
 ## 4. Workstream C state
 
-| Slice                                             | State                           |
-| ------------------------------------------------- | ------------------------------- |
-| C0 capability audit                               | done (`c0-capability-audit.md`) |
-| C1b-1 — live credentials + dead execution surface | **merged** (#49)                |
-| C1a-1 — default-deny Signal capability policy     | next; fresh branch              |
-| C1b-2 — remaining browser-direct endpoints        | blocked on D-SIGNAL-02          |
-| C2a — Managed removal + IA move + exception split | after C1a-1                     |
-| C2b — release-authority Signal lane (11 proofs)   | after C2a                       |
-| C2c — deployment/IAM evidence                     | external (Gate B table above)   |
+| Slice                                             | State                                                   |
+| ------------------------------------------------- | ------------------------------------------------------- |
+| C0 capability audit                               | done (`c0-capability-audit.md`)                         |
+| C1b-1 — live credentials + dead execution surface | **merged** (#49)                                        |
+| C1a-1 — default-deny Signal capability policy     | next; fresh branch                                      |
+| C1b-2 — remaining browser-direct endpoints        | blocked on D-SIGNAL-02                                  |
+| C2a — Managed removal + IA move + exception split | after C1a-1                                             |
+| C2b — release-authority Signal lane (11 proofs)   | after C2a                                               |
+| C2c — deployment/IAM evidence                     | external (Gate A external technical evidence, §1 above) |
 
 ## 5. Gate B (pre-client-onboarding) — unchanged
 

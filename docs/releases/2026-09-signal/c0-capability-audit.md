@@ -38,7 +38,7 @@ This is the same architecture that produced the support defect, at ~25× the sur
 
 Genuinely unauthenticated: `/.well-known/jwks.json` and `/api/health` (both in the `public-routes` allowlist with recorded reasons), `/api/us/eligibility` (pre-auth by design), `/api/v1/investor/alpha-claim` (flag-gated, token-verified).
 
-### Mutating routes — the `bffMutate` set (10)
+### Mutating routes — the `bffMutate` set (12)
 
 | Route                          | Action                     | Disposition                | Rationale                                                    |
 | ------------------------------ | -------------------------- | -------------------------- | ------------------------------------------------------------ |

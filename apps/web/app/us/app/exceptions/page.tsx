@@ -87,7 +87,7 @@ const KIND_COPY: Record<ExceptionKind, KindCopy> = {
     severity: "warning",
   },
   out_of_policy_intent: {
-    title: "Recommendation does not fit the active policy",
+    title: "Recommendation outside your configured guardrails",
     why: "This item falls outside your configured guardrails. It stays recorded here; no investor action is available for it in the current release.",
     resolutions: [],
     severity: "blocked",
@@ -364,8 +364,8 @@ export default function ExceptionsPage() {
         <Card data-testid="exceptions-empty-open">
           <CardContent className="pt-5 pb-5">
             <p className="text-sm text-charcoal-300">
-              No exceptions need review. Recommendations that fit your active
-              policy continue through the normal automation checks.
+              No exceptions need review. Your recommendations reflect the
+              information currently available for your account.
             </p>
           </CardContent>
         </Card>

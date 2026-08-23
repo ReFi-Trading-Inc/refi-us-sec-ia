@@ -184,6 +184,30 @@ test.describe("C2a — the product is Signal-only for the SIGNAL user", () => {
     }
   });
 
+  test("Exception Review renders no Managed-era product language for the Signal user", async ({
+    page,
+  }) => {
+    // Targeted regression guard for the copy class C2a exists to eliminate:
+    // a reachable Signal surface must never tell the investor an execution
+    // policy or automation pipeline governs their advice. Caught late in
+    // review as a leftover sentence; now mechanical.
+    await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("exceptions-page")).toBeVisible({
+      timeout: 30_000,
+    });
+    for (const phrase of [
+      "active policy",
+      "automation checks",
+      "Managed execution",
+      "ReFi Managed",
+    ]) {
+      await expect(
+        page.getByText(phrase, { exact: false }),
+        `Managed-era phrase "${phrase}" must not render on Signal Exception Review`,
+      ).toHaveCount(0);
+    }
+  });
+
   test("Recommendations render Signal-only for the Signal user", async ({
     page,
   }) => {

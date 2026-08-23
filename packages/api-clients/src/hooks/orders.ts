@@ -1,6 +1,6 @@
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiFetch } from "../client";
-import type { Order, OrderPreviewResult, OrderRequest } from "../compat";
+import type { Order } from "../compat";
 
 export function useOrders(): UseQueryResult<Order[]> {
   return useQuery({
@@ -10,23 +10,18 @@ export function useOrders(): UseQueryResult<Order[]> {
   });
 }
 
-export function useOrderPreview(
-  params: OrderRequest | null,
-): UseQueryResult<OrderPreviewResult> {
-  return useQuery({
-    queryKey: ["orders", "preview", params],
-    queryFn: () =>
-      apiFetch<OrderPreviewResult>("/orders/preview", {
-        method: "POST",
-        body: params,
-      }),
-    enabled: params !== null,
-    staleTime: 5_000,
-  });
-}
-
 /*
- * Deliberately absent: `useSubmitOrder` and `useCancelOrder`.
+ * Deliberately absent: `useSubmitOrder`, `useCancelOrder`, and
+ * `useOrderPreview`.
+ *
+ * `useOrderPreview` POSTed to `/orders/preview` browser-direct, bypassing the
+ * BFF entirely. Its only consumer was `CompliancePreview`, which nothing
+ * mounted — an execution-era `renderSubmit(canSubmit)` component built around
+ * a per-trade approval model the Signal product does not have. Removed with it
+ * on 2026-08-22 rather than proxied, because proxying would have preserved
+ * dead architecture behind a new boundary.
+ *
+ * Also below: `useSubmitOrder` and `useCancelOrder`.
  *
  * Removed 2026-07-30. Both were exported and reachable from the investor app
  * but consumed by nothing, so they were a live path waiting to be wired.

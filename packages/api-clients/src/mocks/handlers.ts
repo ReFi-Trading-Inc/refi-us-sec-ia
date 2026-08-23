@@ -2,12 +2,7 @@
 // Handlers cover every endpoint surfaced by the hooks so that all /us/app/*
 // screens render without MSW 404s in dev/test.
 import { http, HttpResponse } from "msw";
-import type {
-  EligibilityDecision,
-  Order,
-  OrderPreviewResult,
-  OrderRequest,
-} from "../compat";
+import type { EligibilityDecision } from "../compat";
 import {
   mayaActivity,
   mayaBrokerAccount,
@@ -100,49 +95,12 @@ export const handlers = [
   ),
   http.get(url("/v1/brokers/orders"), () => HttpResponse.json(mayaOrders)),
 
-  http.post(url("/orders/preview"), async ({ request }) => {
-    const body = (await request
-      .json()
-      .catch(() => ({}))) as Partial<OrderRequest>;
-    if (typeof body.qty === "number" && body.qty > 1000) {
-      const result: OrderPreviewResult = {
-        status: "DENY",
-        reasons: [
-          {
-            code: "POSITION_SIZE_LIMIT",
-            message: "Order exceeds maximum allowed quantity per submission.",
-          },
-        ],
-        source: "fresh",
-      };
-      return HttpResponse.json(result);
-    }
-    const result: OrderPreviewResult = {
-      status: "ALLOW",
-      reasons: [],
-      source: "fresh",
-    };
-    return HttpResponse.json(result);
-  }),
-
+  // Read model only. The POST /orders (submission) and DELETE /orders/:id
+  // (cancellation) mocks were removed 2026-08-22 with useOrderPreview and
+  // CompliancePreview: no hook called them, and a mock that answers "accepted"
+  // to an order submission describes a capability the Signal product must not
+  // have.
   http.get(url("/orders"), () => HttpResponse.json(mayaOrders)),
-  http.post(url("/orders"), async ({ request }) => {
-    const body = (await request
-      .json()
-      .catch(() => ({}))) as Partial<OrderRequest>;
-    const order: Order = {
-      id: `ord_${String(Date.now())}`,
-      symbol: body.symbol ?? "AAPL",
-      qty: body.qty ?? 1,
-      side: body.side ?? "buy",
-      type: body.type ?? "market",
-      status: "accepted",
-      limit_price: body.limit_price,
-      created_at: new Date().toISOString(),
-    };
-    return HttpResponse.json(order);
-  }),
-  http.delete(url("/orders/:id"), () => HttpResponse.json({ ok: true })),
 
   http.get(url("/v1/recommendations"), () =>
     HttpResponse.json(mayaRecommendations),

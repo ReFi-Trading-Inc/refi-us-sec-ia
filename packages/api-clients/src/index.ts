@@ -40,16 +40,9 @@ export {
 // model, zero consumers — C2a). Broker OBSERVATION (/v1/brokers/orders) is
 // untouched and belongs to C1b-2.
 export { useRecommendations, useRecommendation } from "./hooks/recommendations";
-export {
-  useSubscriptionMode,
-  useInvestorRecommendations,
-} from "./hooks/subscription-mode";
+export { useInvestorRecommendations } from "./hooks/subscription-mode";
 export {
   useInvestorStatus,
-  useProfileReactivation,
-  useReconfirmProfile,
-  useDisclosureReacknowledgement,
-  useReacknowledgeDisclosure,
   useDisclosureRegistry,
   type InvestorStatusDto,
   type ProfileReactivationView,

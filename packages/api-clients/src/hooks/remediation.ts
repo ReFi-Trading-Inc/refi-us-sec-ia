@@ -1,10 +1,4 @@
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseMutationResult,
-  type UseQueryResult,
-} from "@tanstack/react-query";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import { apiFetch } from "../client";
 
 // BFF envelope wrapper. Mirrors the inline helper in subscription-mode.ts —
@@ -17,15 +11,6 @@ interface BffEnvelope<T> {
 
 async function bffFetch<T>(path: string): Promise<T> {
   const env = await apiFetch<BffEnvelope<T>>(path);
-  return env.data;
-}
-
-async function bffMutate<TRes>(
-  path: string,
-  method: "POST" | "PUT",
-  body: unknown,
-): Promise<TRes> {
-  const env = await apiFetch<BffEnvelope<TRes>>(path, { method, body });
   return env.data;
 }
 
@@ -128,70 +113,6 @@ export interface ReconfirmProfileResult {
   managedExecutionStatusBefore: string;
   managedExecutionStatusAfter: string;
   reasonCodeCleared: string | null;
-}
-
-export function useProfileReactivation(): UseQueryResult<ProfileReactivationView | null> {
-  return useQuery({
-    queryKey: ["profile-reactivation"],
-    queryFn: () =>
-      bffFetch<ProfileReactivationView | null>(
-        "/api/v1/investor/profile/reactivation",
-      ),
-    staleTime: 15_000,
-  });
-}
-
-export function useReconfirmProfile(): UseMutationResult<
-  ReconfirmProfileResult,
-  Error,
-  ReconfirmProfileInput
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) =>
-      bffMutate<ReconfirmProfileResult>(
-        "/api/v1/investor/profile/reconfirm",
-        "POST",
-        input,
-      ),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["profile-reactivation"] });
-      void qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
-      void qc.invalidateQueries({ queryKey: ["investor-status"] });
-    },
-  });
-}
-
-export function useDisclosureReacknowledgement(): UseQueryResult<DisclosureReacknowledgementView | null> {
-  return useQuery({
-    queryKey: ["disclosure-reacknowledgement"],
-    queryFn: () =>
-      bffFetch<DisclosureReacknowledgementView | null>(
-        "/api/v1/investor/disclosures/reacknowledgement",
-      ),
-    staleTime: 15_000,
-  });
-}
-
-export function useReacknowledgeDisclosure(): UseMutationResult<
-  ReacknowledgeDisclosureResult,
-  Error,
-  ReacknowledgeDisclosureInput
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) =>
-      bffMutate<ReacknowledgeDisclosureResult>(
-        "/api/v1/investor/disclosures/reacknowledge",
-        "POST",
-        input,
-      ),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["disclosure-reacknowledgement"] });
-      void qc.invalidateQueries({ queryKey: ["disclosure-registry"] });
-      void qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
-    },
-  });
 }
 
 export function useDisclosureRegistry(): UseQueryResult<DisclosureRegistryDto | null> {

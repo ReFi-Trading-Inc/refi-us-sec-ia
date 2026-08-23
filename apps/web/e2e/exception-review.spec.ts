@@ -20,18 +20,18 @@ async function seedCookies(
 // The resolution writes mutate the shared prototype store; keep deterministic.
 test.describe.configure({ mode: "serial" });
 
-test.describe("Exception Review — Managed user", () => {
+test.describe("Exception Review — remediation queue (seeded exceptions user)", () => {
   test.beforeEach(async ({ context }) => {
     await seedCookies(context, E2E_USERS.exceptionsUser.eligibilityCookie);
   });
 
-  test("Queue renders mode badge, four seeded exceptions, and the explainer/boundary banner", async ({
+  test("Queue renders four seeded exceptions and the explainer/boundary banner", async ({
     page,
   }) => {
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("exceptions-page")).toHaveAttribute(
       "data-mode",
-      "managed",
+      "signal",
       { timeout: 30_000 },
     );
     await expect(page.getByTestId("exceptions-explainer")).toBeVisible();
@@ -83,7 +83,7 @@ test.describe("Exception Review — Managed user", () => {
     }
   });
 
-  test("update_profile exception exposes a route CTA to the profile review page (no inline mutation)", async ({
+  test("update_profile exception routes to the REAL advisory-profile editor (no inline mutation)", async ({
     page,
   }) => {
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
@@ -91,12 +91,12 @@ test.describe("Exception Review — Managed user", () => {
       "exception-card-exc-profile-stale-route-update_profile",
     );
     await expect(route).toBeVisible({ timeout: 30_000 });
-    await expect(route).toHaveAttribute("href", "/us/app/profile");
+    await expect(route).toHaveAttribute("href", "/us/onboarding/profile");
     await route.click();
-    await expect(page).toHaveURL(/\/us\/app\/profile$/);
+    await expect(page).toHaveURL(/\/us\/onboarding\/profile$/);
   });
 
-  test("acknowledge_disclosure exception exposes a route CTA to the disclosure review page", async ({
+  test("acknowledge_disclosure exception routes to the REAL Documents surface", async ({
     page,
   }) => {
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
@@ -104,10 +104,7 @@ test.describe("Exception Review — Managed user", () => {
       "exception-card-exc-disclosure-expired-route-acknowledge_disclosure",
     );
     await expect(route).toBeVisible({ timeout: 30_000 });
-    await expect(route).toHaveAttribute(
-      "href",
-      "/us/app/documents/reacknowledge",
-    );
+    await expect(route).toHaveAttribute("href", "/us/app/documents");
   });
 
   test("reconnect_broker exception exposes a reconnect CTA and never renders an order-submit affordance", async ({
@@ -126,42 +123,6 @@ test.describe("Exception Review — Managed user", () => {
     ]) {
       await expect(page.getByTestId(id)).toHaveCount(0);
     }
-  });
-
-  test("A Signal remediation closes the exception and the card moves to Resolved", async ({
-    page,
-  }) => {
-    // C2a: no card renders an inline mutation button any more — dismiss
-    // (reject_exception) and pause_managed were the only Button-rendered
-    // resolutions, and both are Managed-era. Signal categories render as
-    // ROUTE CTAs into the remediation surfaces; the resolution itself is
-    // recorded through the resolve endpoint. This test drives that endpoint
-    // directly and asserts the queue reflects it — the UI truth is "cards
-    // link to remediation; they do not mutate inline".
-    await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
-    await expect(
-      page.getByTestId("exception-card-exc-broker-stale"),
-    ).toBeVisible({ timeout: 30_000 });
-    const res = await postSameOrigin(
-      page,
-      "/api/v1/investor/exceptions/exc-broker-stale/resolve",
-      {
-        headers: { "x-correlation-id": "e2e-exc-reconnect" },
-        data: { resolution: "reconnect_broker", clientAttestation: true },
-      },
-    );
-    expect(res.status()).toBe(200);
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(
-      page.getByTestId("exception-card-exc-broker-stale"),
-    ).toHaveCount(0, { timeout: 15_000 });
-    await page.getByTestId("exceptions-filter-resolved").click();
-    await expect(
-      page.getByTestId("exception-card-exc-broker-stale"),
-    ).toBeVisible({ timeout: 15_000 });
-    await expect(
-      page.getByTestId("exception-card-exc-broker-stale-resolved-tag"),
-    ).toContainText("Resolved by broker reconnect");
   });
 
   test("The out-of-policy exception offers NO investor operation, and Managed categories are schema-unrepresentable", async ({
@@ -196,48 +157,36 @@ test.describe("Exception Review — Managed user", () => {
     expect(direct.status()).toBe(400);
   });
 
-  test("Signal remediations close every closable exception; only the Managed-era item remains open", async ({
+  test("Remediated items remain OPEN — no closure path exists yet, and the suite says so", async ({
     page,
   }) => {
-    // C2a: approve_exception is no longer representable, so exceptions close
-    // only through their Signal remediation categories. exc-out-of-policy has
-    // none — it remains open by design, which is the September truth this
-    // suite must describe rather than paper over.
+    // Closure truth (C2a correction): route CTAs take the investor to
+    // remediation; nothing calls the resolve endpoint from this page, and the
+    // remediation-completion contract that would observe a completed
+    // remediation and close the exception is an open backend item (ledger).
+    // A direct POST is a backend capability, not an implemented product flow —
+    // so this suite no longer closes items to manufacture an empty queue.
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
-    const closures: ReadonlyArray<readonly [string, string]> = [
-      ["exc-profile-stale", "update_profile"],
-      ["exc-disclosure-expired", "acknowledge_disclosure"],
-    ];
-    for (const [id, resolution] of closures) {
-      const res = await postSameOrigin(
-        page,
-        `/api/v1/investor/exceptions/${id}/resolve`,
-        {
-          headers: { "x-correlation-id": `e2e-exc-close-${id}` },
-          data: { resolution, clientAttestation: true },
-        },
-      );
-      expect(res.status(), `${id} via ${resolution}`).toBe(200);
-    }
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(
-      page.getByTestId("exception-card-exc-out-of-policy"),
-    ).toBeVisible({ timeout: 30_000 });
     for (const id of [
       "exception-card-exc-profile-stale",
       "exception-card-exc-disclosure-expired",
       "exception-card-exc-broker-stale",
+      "exception-card-exc-out-of-policy",
     ]) {
-      await expect(page.getByTestId(id)).toHaveCount(0);
+      await expect(page.getByTestId(id)).toBeVisible({ timeout: 30_000 });
     }
   });
 });
 
 test.describe("Exception Review — Signal boundary + forbidden language", () => {
-  test("Signal user sees not-applicable panel and no resolution controls", async ({
+  test("The queue is USABLE by a Signal user — rendered, empty state, no gate", async ({
     page,
     context,
   }) => {
+    // C2a correction: the earlier artifact told Signal users Exception Review
+    // was "Managed mode only" while the API reserved the remediation
+    // categories FOR Signal. The gate is gone; a Signal user with no seeded
+    // exceptions gets a working queue with a clean empty state.
     await seedCookies(context, E2E_USERS.signal.eligibilityCookie);
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("exceptions-page")).toHaveAttribute(
@@ -245,12 +194,10 @@ test.describe("Exception Review — Signal boundary + forbidden language", () =>
       "signal",
       { timeout: 30_000 },
     );
-    await expect(page.getByTestId("exceptions-not-applicable")).toBeVisible();
-    await expect(page.getByTestId("exceptions-list")).toHaveCount(0);
-    await expect(page.getByTestId("exceptions-filter")).toHaveCount(0);
-    await expect(
-      page.getByTestId("exceptions-back-to-recommendations"),
-    ).toBeVisible();
+    await expect(page.getByTestId("exceptions-not-applicable")).toHaveCount(0);
+    await expect(page.getByTestId("exceptions-empty-open")).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
   test("No forbidden language or testids anywhere on the exceptions surface (Managed view)", async ({

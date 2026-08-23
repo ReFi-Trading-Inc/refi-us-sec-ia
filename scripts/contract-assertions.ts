@@ -1574,8 +1574,11 @@ await section(
     const editableSurfaces = [
       "apps/web/src/lib/prototype-store/entities/execution-policy-draft.ts",
       "packages/api-clients/src/hooks/remediation.ts",
-      "apps/web/app/us/app/profile/page.tsx",
-      "apps/web/app/us/app/documents/reacknowledge/page.tsx",
+      // C2a correction: the reactivation pages were reclassified as Managed
+      // workflows and removed; the surviving investor-editable surfaces are
+      // the genuine Signal flows.
+      "apps/web/app/us/onboarding/profile/page.tsx",
+      "apps/web/app/us/app/documents/page.tsx",
     ];
 
     const offenders: string[] = [];

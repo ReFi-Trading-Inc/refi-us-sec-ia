@@ -2,14 +2,8 @@
 
 import { use } from "react";
 import Link from "next/link";
-import {
-  Badge,
-  Card,
-  CardContent,
-  ModeBadge,
-  StatusBanner,
-} from "@ui/components";
-import { useRecommendation, useSubscriptionMode } from "@refi/api-clients";
+import { Badge, Card, CardContent, StatusBanner } from "@ui/components";
+import { useRecommendation } from "@refi/api-clients";
 import { appCopy } from "../../../_content/app-copy";
 
 const { recommendations } = appCopy;
@@ -22,10 +16,6 @@ export default function RecommendationDetailPage({
 }) {
   const { id } = use(params);
   const { data, isLoading, isError } = useRecommendation(id);
-  const { data: modeState } = useSubscriptionMode();
-  const mode = modeState?.mode ?? null;
-  const modeKey: "signal" | "managed" | "unset" =
-    mode === "signal" ? "signal" : mode === "managed" ? "managed" : "unset";
 
   if (isLoading) {
     return <p className="text-sm text-charcoal-500">Loading…</p>;
@@ -66,7 +56,6 @@ export default function RecommendationDetailPage({
         <span className="text-xs text-charcoal-500 font-mono">
           {(data.confidence * 100).toFixed(0)}% confidence
         </span>
-        <ModeBadge mode={modeKey} data-testid="recommendation-detail-mode" />
       </div>
 
       <Card>
@@ -82,26 +71,7 @@ export default function RecommendationDetailPage({
         </CardContent>
       </Card>
 
-      {actionable && modeKey === "managed" && (
-        <StatusBanner
-          variant="info"
-          title="Managed execution active"
-          data-testid="managed-detail-banner"
-        >
-          {recommendations.managed.banner}
-          <div className="mt-2">
-            <Link
-              href="/us/app/exceptions"
-              className="text-mint-400 hover:text-mint-300 text-sm"
-              data-testid="managed-detail-exception-link"
-            >
-              {recommendations.managed.reviewCta} →
-            </Link>
-          </div>
-        </StatusBanner>
-      )}
-
-      {actionable && modeKey !== "managed" && (
+      {actionable && (
         <Card data-testid="signal-manual-panel">
           <CardContent className="pt-5 pb-5 flex flex-col gap-3">
             <p className="text-sm font-semibold text-charcoal-50">

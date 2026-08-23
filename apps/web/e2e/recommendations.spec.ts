@@ -59,7 +59,6 @@ test.describe("Recommendations — Signal user", () => {
       .locator("xpath=ancestor::a");
     await reviewLink.click();
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.getByTestId("recommendation-detail-mode")).toBeVisible();
 
     // SEC 203A-2(e) §A: NO per-trade Accept / Approve / Submit affordance
     // may render on the recommendation detail page. The tripwire enforces
@@ -82,52 +81,49 @@ test.describe("Recommendations — Signal user", () => {
   });
 });
 
-test.describe("Recommendations — Managed user", () => {
+test.describe("Recommendations — Managed-tier user sees the Signal product", () => {
   test.beforeEach(async ({ page }) => {
     await page
       .context()
       .addCookies(await e2eAuthCookies(E2E_USERS.managed.eligibilityCookie));
   });
 
-  test("list renders managed banner and review-required CTA when blocked", async ({
+  test("no Managed banner, upgrade CTA, badge, or Managed action branch renders — even with a historical managed mode in the store", async ({
     page,
   }) => {
+    // C2a correction: the September artifact is Signal-only as a PRODUCT.
+    // This user's prototype store carries mode: "managed" from historical
+    // seeding, and the UI must present Signal behaviour regardless — stored
+    // mode no longer drives presentation.
     await page.goto("/us/app/recommendations");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.getByTestId("managed-banner")).toBeVisible();
-    // The managed seed includes one `blocked` projection (rec-managed-msft);
-    // its card surfaces the `managed-exception-cta` link to Exception Review.
-    await expect(
-      page.getByTestId("managed-exception-cta").first(),
-    ).toBeVisible();
+    await expect(page.getByTestId("recommendations-list")).toBeVisible();
+    for (const id of [
+      "managed-banner",
+      "signal-upgrade-cta",
+      "recommendations-mode-badge",
+      "managed-status-row",
+      "managed-review-action",
+      "managed-exception-cta",
+    ]) {
+      await expect(page.getByTestId(id)).toHaveCount(0);
+    }
+    await expect(page.getByText("Activate ReFi Managed")).toHaveCount(0);
+    await expect(page.getByText("ReFi Managed is active")).toHaveCount(0);
   });
 
-  test("Managed detail page exposes no per-trade affordance — only review / exception link", async ({
+  test("detail page renders Signal UI with no per-trade or Managed execution affordance", async ({
     page,
   }) => {
-    // The managed seed names the first projection `rec-managed-aapl`.
     await mockRecommendationDetail(page, {
       id: "rec-managed-aapl",
       symbol: "AAPL",
       action: "buy",
     });
-    await mockRecommendationDetail(page, {
-      id: "rec-managed-msft",
-      symbol: "MSFT",
-      action: "sell",
-    });
-    await page.goto("/us/app/recommendations");
-    await expect(page.getByTestId("recommendations-list")).toBeVisible();
-    const managedReviewLink = page
-      .getByTestId("managed-review-action")
-      .first()
-      .locator("xpath=ancestor::a");
-    await managedReviewLink.click();
+    await page.goto("/us/app/recommendations/rec-managed-aapl");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-
-    // SEC 203A-2(e) §A: Managed mode is auto-executed under an active
-    // ExecutionPolicy; per-trade investor Accept is forbidden in both modes
-    // but especially load-bearing for Managed. Assert absence.
+    await expect(page.getByTestId("recommendation-detail-mode")).toHaveCount(0);
+    await expect(page.getByText(/managed execution active/i)).toHaveCount(0);
     for (const forbidden of [
       /accept (recommendation|trade)/i,
       /approve (for execution|trade|rebalance)/i,

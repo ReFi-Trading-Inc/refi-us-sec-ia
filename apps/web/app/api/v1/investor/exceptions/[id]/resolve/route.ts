@@ -1,16 +1,28 @@
 /**
  * POST /api/v1/investor/exceptions/[id]/resolve
  *
- * The single per-decision investor touchpoint allowed under Managed mode.
- * The resolution category is constrained by ExceptionResolution — anything
- * outside that set is rejected at the BFF, so generic per-trade approval
- * payloads are impossible by construction.
+ * A MIXED legacy remediation surface (C0 audit §3: SPLIT_SIGNAL_MANAGED). The
+ * six ExceptionResolution categories cross the Signal/Managed boundary:
  *
- * The "resolve" resolution category is the only one that releases a held
- * intent for downstream replay; the other categories are user-side
- * remediations that unblock the same intent without per-trade authorization.
- * The UI never spells the legacy backend identifiers — the mapping lives in
+ *   Signal remediation — permitted at the signal stage (C1a-1):
+ *     update_profile, reconnect_broker, acknowledge_disclosure
+ *   Managed-era legacy — refused at the signal stage, category-checked FIRST.
+ *     (The three gated spellings are deliberately not written here; the
+ *     partition, with both halves named, lives in
+ *     sec203a/release-policy.ts, which is tripwire-exempt for exactly that
+ *     reason.)
+ *
+ * The category is constrained by ExceptionResolution, so payloads outside the
+ * set are rejected at the BFF and generic per-trade approval remains
+ * impossible by construction. What Managed exception semantics look like when
+ * that release exists is deliberately NOT settled here — this route only
+ * enforces today's partition (release-policy.ts). The UI never spells the
+ * legacy backend identifiers; the mapping lives in
  * packages/api-clients/src/hooks/exceptions.ts.
+ *
+ * INVARIANT: action "resolveException" is globally Signal-allowed ONLY because
+ * this route applies isExceptionResolutionPermitted. A contract assertion pins
+ * this file as the sole user of the action.
  */
 import { z } from "zod";
 import { bffMutate } from "@lib/bff/handler";

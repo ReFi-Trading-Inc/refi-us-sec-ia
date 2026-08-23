@@ -663,6 +663,60 @@ await section(
 );
 
 await section(
+  'action "resolveException" is used only by the category-guarded route',
+  async () => {
+    // resolveException is on SIGNAL_ALLOWED_ACTIONS only because the canonical
+    // exceptions route applies isExceptionResolutionPermitted before anything
+    // else. A second bffMutate({ action: "resolveException" }) route would
+    // inherit the Signal allowance while bypassing the category partition —
+    // so the action is mechanically pinned to the one guarded file.
+    const { readdirSync, statSync } = await import("node:fs");
+    const apiDir = join(REPO_ROOT, "apps/web/app/api");
+    const users: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir)) {
+        const full = join(dir, entry);
+        if (statSync(full).isDirectory()) walk(full);
+        else if (entry === "route.ts") {
+          const src = readFileSync(full, "utf8");
+          if (/action:\s*"resolveException"/.test(src)) {
+            users.push(
+              full
+                .slice(REPO_ROOT.length + 1)
+                .split(sep)
+                .join("/"),
+            );
+          }
+        }
+      }
+    };
+    walk(apiDir);
+    const canonical =
+      "apps/web/app/api/v1/investor/exceptions/[id]/resolve/route.ts";
+    assert.deepEqual(
+      users,
+      [canonical],
+      `action "resolveException" may be used ONLY by ${canonical} — it is ` +
+        "Signal-allowed solely because that route enforces the category " +
+        "partition. Found: " +
+        JSON.stringify(users),
+    );
+    const src = readFileSync(join(REPO_ROOT, canonical), "utf8");
+    assert.ok(
+      src.includes("isExceptionResolutionPermitted"),
+      "The canonical resolve route no longer applies " +
+        "isExceptionResolutionPermitted — the category partition is unenforced.",
+    );
+    assert.ok(
+      src.indexOf("isExceptionResolutionPermitted") <
+        src.indexOf("getExceptionReview("),
+      "The category check must run BEFORE the exception lookup so refusals " +
+        "stay id-independent.",
+    );
+  },
+);
+
+await section(
   "Signal capability policy: complete, disjoint, default-deny (C1a-1)",
   async () => {
     const {

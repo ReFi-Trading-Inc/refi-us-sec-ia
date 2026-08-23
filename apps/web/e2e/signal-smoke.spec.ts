@@ -144,14 +144,46 @@ test.describe("Signal stage — production posture", () => {
     expect(body.error?.code).toBe("forbidden");
   });
 
-  test("a Signal-allowed mutation passes the policy gate", async ({
+  test("a Signal-allowed mutation SUCCEEDS end to end", async ({
     page,
     context,
   }) => {
-    // Positive control, so the lane cannot go green by refusing everything: a
-    // support submission is Signal-allowed, passes the capability gate, and
-    // fails closed at the UNCONFIGURED SINK with 412 — not with the policy's
-    // 403. When D-SUPPORT-01 lands a real sink this becomes 200.
+    // The acceptance-grade positive control: a Signal-allowed mutation must
+    // not merely get past the gate — it must complete. refreshProfile is
+    // Signal remediation; a valid advisory profile POST writes an immutable
+    // snapshot and answers 201 with a receipt naming the action.
+    await context.addCookies(
+      await e2eAuthCookies(E2E_USERS.signal.eligibilityCookie),
+    );
+    await page.goto("/us/app/recommendations");
+    const res = await postSameOrigin(page, "/api/v1/investor/profile", {
+      data: {
+        goal: "long_term_growth",
+        horizon: "10_plus_years",
+        incomeBand: "100k_250k",
+        liquidityNeed: "low",
+        riskTolerance: "moderate",
+        experience: "some_experience",
+        accountPurpose: "retirement",
+      },
+    });
+    expect(res.status(), "Signal-allowed mutation must SUCCEED").toBe(201);
+    const body = (await res.json()) as {
+      data?: { profileVersion?: number };
+      receipt?: { action?: string };
+    };
+    expect(body.receipt?.action).toBe("refreshProfile");
+    expect(body.data?.profileVersion).toBeGreaterThan(0);
+  });
+
+  test("a Signal-allowed mutation with no sink fails at the sink, not the gate", async ({
+    page,
+    context,
+  }) => {
+    // Secondary control: support is Signal-allowed, passes the capability
+    // gate, and fails closed at the UNCONFIGURED SINK with 412 — not with the
+    // policy's 403. Distinguishes gate-refusal from downstream fail-closed;
+    // becomes 200 when D-SUPPORT-01 lands a real sink.
     await context.addCookies(
       await e2eAuthCookies(E2E_USERS.signal.eligibilityCookie),
     );

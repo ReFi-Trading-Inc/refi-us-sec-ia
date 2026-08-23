@@ -29,80 +29,7 @@ async function bffMutate<TRes>(
   return env.data;
 }
 
-export interface ActivateExecutionPolicyInput {
-  acknowledgedDisclosures: { docId: string; version: string }[];
-  advisoryAgreementVersion: string;
-  clientAttestation: true;
-  deviceFingerprint: string;
-}
-
-export interface ActivateExecutionPolicyResult {
-  policy: {
-    policyId: string;
-    policyVersion: number;
-    accountId: string;
-    strategyId: string;
-    signedAt: string;
-  };
-  managedExecutionState: {
-    status: string;
-    executionPolicyVersion: number | null;
-  };
-  subscriptionModeFlipped: boolean;
-}
-
 // ─── Types (UI-facing shapes; server is source of truth) ────────────────────
-
-export type StaleBrokerDataDuration =
-  | "PT5M"
-  | "PT15M"
-  | "PT30M"
-  | "PT1H"
-  | "PT4H";
-
-export type StaleProfileDuration = "P30D" | "P60D" | "P90D" | "P180D" | "P365D";
-
-export interface ExecutionPolicySummary {
-  accountId: string;
-  policyId: string;
-  policyVersion: number;
-  strategyId: string;
-  accountScope: string;
-  assetUniverse: string[];
-  driftThreshold?: string;
-  minOrder?: string;
-  excludedAssets?: string[];
-  fractionalEnabled?: boolean;
-  rebalanceFrequency?: string;
-  pauseRules: string[];
-  notificationPreferences: string[];
-  signedAt: string;
-}
-
-export interface ExecutionPolicyDraftDto {
-  accountId: string;
-  strategyId: string;
-  accountScope: string;
-  assetUniverse: string[];
-  restrictedSectors: string[];
-  // The four investor-editable backend `AccountPrefs` fields. Capital
-  // allocation and risk limits are backend-owned and read-only — they are
-  // deliberately absent from this DTO (Daniel 2026-07-28).
-  driftThreshold: string;
-  minOrder: string;
-  excludedAssets: string[];
-  fractionalEnabled: boolean;
-  staleBrokerDataPauseAfter: StaleBrokerDataDuration;
-  staleProfilePauseAfter: StaleProfileDuration;
-  pauseOnDisclosureSuperseded: boolean;
-  pauseOnProfileSuperseded: boolean;
-  updatedAt: string;
-}
-
-export type SaveExecutionPolicyDraftInput = Omit<
-  ExecutionPolicyDraftDto,
-  "accountId" | "updatedAt"
->;
 
 export type ManagedExecutionStatus =
   | "inactive"
@@ -122,98 +49,6 @@ export interface ManagedExecutionStateDto {
 }
 
 // ─── Hooks ──────────────────────────────────────────────────────────────────
-
-export function useExecutionPolicy(): UseQueryResult<ExecutionPolicySummary | null> {
-  return useQuery({
-    queryKey: ["execution-policy"],
-    queryFn: () =>
-      bffFetch<ExecutionPolicySummary | null>(
-        "/api/v1/investor/execution-policy",
-      ),
-    staleTime: 30_000,
-  });
-}
-
-export function useExecutionPolicyDraft(): UseQueryResult<ExecutionPolicyDraftDto | null> {
-  return useQuery({
-    queryKey: ["execution-policy-draft"],
-    queryFn: () =>
-      bffFetch<ExecutionPolicyDraftDto | null>(
-        "/api/v1/investor/execution-policy/draft",
-      ),
-    staleTime: 0,
-  });
-}
-
-export function useSaveExecutionPolicyDraft(): UseMutationResult<
-  ExecutionPolicyDraftDto,
-  Error,
-  SaveExecutionPolicyDraftInput
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) =>
-      bffMutate<ExecutionPolicyDraftDto>(
-        "/api/v1/investor/execution-policy/draft",
-        "PUT",
-        input,
-      ),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["execution-policy-draft"] });
-    },
-  });
-}
-
-export function useManagedExecutionState(): UseQueryResult<ManagedExecutionStateDto | null> {
-  return useQuery({
-    queryKey: ["managed-execution-state"],
-    queryFn: () =>
-      bffFetch<ManagedExecutionStateDto | null>(
-        "/api/v1/investor/managed/state",
-      ),
-    staleTime: 30_000,
-  });
-}
-
-export function usePauseManaged(): UseMutationResult<
-  ManagedExecutionStateDto,
-  Error,
-  { reason?: string } | undefined
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) =>
-      bffMutate<ManagedExecutionStateDto>(
-        "/api/v1/investor/managed/pause",
-        "POST",
-        input ?? {},
-      ),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
-    },
-  });
-}
-
-export function useActivateExecutionPolicy(): UseMutationResult<
-  ActivateExecutionPolicyResult,
-  Error,
-  ActivateExecutionPolicyInput
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (input) =>
-      bffMutate<ActivateExecutionPolicyResult>(
-        "/api/v1/investor/execution-policy/activate",
-        "POST",
-        input,
-      ),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["execution-policy"] });
-      void qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
-      void qc.invalidateQueries({ queryKey: ["subscription-mode"] });
-    },
-  });
-}
 
 export interface DisclosureRegistryDto {
   documents: Array<{
@@ -263,9 +98,7 @@ export interface ReacknowledgeDisclosureResult {
 }
 
 export type ProfileReactivationBlockerReason =
-  | "stale_profile_aging"
-  | "stale_profile_changed"
-  | null;
+  "stale_profile_aging" | "stale_profile_changed" | null;
 
 export interface ProfileReactivationView {
   activePolicyVersion: number | null;
@@ -386,24 +219,5 @@ export function useInvestorStatus(): UseQueryResult<InvestorStatusDto | null> {
     queryFn: () =>
       bffFetch<InvestorStatusDto | null>("/api/v1/investor/status"),
     staleTime: 15_000,
-  });
-}
-
-export function useResumeManaged(): UseMutationResult<
-  ManagedExecutionStateDto,
-  Error,
-  void
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      bffMutate<ManagedExecutionStateDto>(
-        "/api/v1/investor/managed/resume",
-        "POST",
-        {},
-      ),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["managed-execution-state"] });
-    },
   });
 }

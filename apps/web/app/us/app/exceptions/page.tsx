@@ -55,72 +55,77 @@ const KIND_COPY: Record<ExceptionKind, KindCopy> = {
   stale_broker_data: {
     title: "Broker data needs to refresh",
     why: "Automation paused for this item because the broker connection has not provided fresh data within your policy's freshness window.",
-    resolutions: ["reconnect_broker", "pause_managed", "dismiss_exception"],
+    resolutions: ["reconnect_broker"],
     primaryRoute: "/us/app/account",
     severity: "warning",
   },
   insufficient_buying_power: {
     title: "Not enough buying power",
     why: "Automation paused for this item because your account does not currently have enough buying power to follow the recommendation under your active policy.",
-    resolutions: ["dismiss_exception", "pause_managed"],
+    resolutions: [],
     severity: "warning",
   },
   expired_disclosure: {
     title: "Disclosure needs review",
     why: "An updated disclosure version supersedes the one your active policy was signed under. Automation pauses items affected by this disclosure until you review the new version.",
-    resolutions: ["acknowledge_disclosure", "dismiss_exception"],
-    primaryRoute: "/us/app/settings/automation/disclosures",
+    resolutions: ["acknowledge_disclosure"],
+    primaryRoute: "/us/app/documents/reacknowledge",
     severity: "blocked",
   },
   changed_preference: {
     title: "A profile preference changed",
     why: "Your profile changed in a way that affects what this recommendation would do under your active policy. Review your profile before automation resumes.",
-    resolutions: ["update_profile", "dismiss_exception"],
-    primaryRoute: "/us/app/settings/automation/profile",
+    resolutions: ["update_profile"],
+    primaryRoute: "/us/app/profile",
     severity: "warning",
   },
   stale_profile: {
     title: "Profile needs review",
     why: "Your active policy was signed under a profile snapshot that is older than your freshness setting. Review your profile to keep automation eligible.",
-    resolutions: ["update_profile", "dismiss_exception"],
-    primaryRoute: "/us/app/settings/automation/profile",
+    resolutions: ["update_profile"],
+    primaryRoute: "/us/app/profile",
     severity: "warning",
   },
   out_of_policy_intent: {
     title: "Recommendation does not fit the active policy",
-    why: "Automation paused this item because it falls outside the guardrails you signed in your active Execution Policy. You can dismiss it or pause Managed entirely while you review.",
-    resolutions: ["dismiss_exception", "pause_managed"],
+    why: "Automation paused this item because it falls outside the guardrails you signed in your active Execution Policy. It stays recorded here; no investor action is available for it in the current release.",
+    resolutions: [],
     severity: "blocked",
   },
   missing_consent: {
     title: "A consent is missing",
     why: "Automation paused this item because a consent your active policy depends on has not been given. Review and accept it to keep automation eligible.",
-    resolutions: ["acknowledge_disclosure", "dismiss_exception"],
-    primaryRoute: "/us/app/settings/automation/disclosures",
+    resolutions: ["acknowledge_disclosure"],
+    primaryRoute: "/us/app/documents/reacknowledge",
     severity: "blocked",
   },
   broker_disconnected: {
     title: "Broker connection is disconnected",
     why: "Automation paused this item because your brokerage connection is no longer active. Reconnect your broker to resume.",
-    resolutions: ["reconnect_broker", "pause_managed", "dismiss_exception"],
+    resolutions: ["reconnect_broker"],
     primaryRoute: "/us/app/account",
     severity: "blocked",
   },
   reconciliation_block: {
     title: "Account is being reconciled",
     why: "Automation paused this item while ReFi reconciles your account records with your broker. This clears on its own once reconciliation completes; no action is needed from you.",
-    resolutions: ["dismiss_exception", "pause_managed"],
+    resolutions: [],
     severity: "warning",
   },
 };
 
 const RESOLUTION_LABEL: Record<UiResolution, string> = {
-  resolve_exception: "Continue after checks",
-  dismiss_exception: "Dismiss exception",
+  // C2a: only Signal remediation is offered as an investor operation. The
+  // Managed-era Ui options (resolve/dismiss/pause) are no longer rendered and
+  // are unrepresentable at the BFF schema; their entries here exist solely
+  // because the Record type spans the full Ui vocabulary, which the hook
+  // layer retains for labelling HISTORICAL resolutions.
+  resolve_exception: "",
+  dismiss_exception: "",
+  pause_managed: "",
   update_profile: "Update profile",
   reconnect_broker: "Reconnect broker",
   acknowledge_disclosure: "Review disclosure",
-  pause_managed: "Pause Managed",
 };
 
 function ExceptionCard(props: {
@@ -228,9 +233,7 @@ function ExceptionCard(props: {
                 <Button
                   key={res}
                   data-testid={`exception-card-${item.exceptionId}-resolve-${res}`}
-                  variant={
-                    res === "dismiss_exception" ? "secondary" : "primary"
-                  }
+                  variant="primary"
                   size="sm"
                   loading={pendingResolution === res}
                   onClick={() => {

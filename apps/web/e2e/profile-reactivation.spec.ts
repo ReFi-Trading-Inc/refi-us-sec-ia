@@ -7,12 +7,8 @@ interface BffJsonBody {
   data: {
     ok?: boolean;
     reason?: string;
-    idempotentReplay?: boolean;
-    subscriptionModeFlipped?: boolean;
-    policy?: { policyVersion: number };
     executionPolicyVersion?: number | null;
     managedExecutionState?: { status: string };
-    managedExecutionStatusBefore?: string | null;
     managedExecutionStatusAfter?: string | null;
     reasonCodeCleared?: string | null;
     [key: string]: unknown;
@@ -21,11 +17,22 @@ interface BffJsonBody {
   [key: string]: unknown;
 }
 
-// Surface 6 — Profile reactivation.
-// When the active ExecutionPolicy's pinned advisory profile version is stale
-// (aging or materially changed), the investor must re-confirm before Managed
-// automation continues. Re-confirmation is an eligibility event — never a
-// recommendation acceptance, broker submission, or policy mutation.
+// Surface 6 — Profile reactivation, relocated by C2a from
+// /us/app/settings/automation/profile to /us/app/profile. The Automation
+// Center was structurally removed with the Managed execution surfaces; the
+// advisory-profile obligation is Signal remediation and lives in the normal
+// Signal IA. The SERVER contracts (profile/reactivation, profile/reconfirm)
+// are unchanged — assertions that used to read Managed state off the
+// Automation Center page now read the same facts from /api/v1/investor/status,
+// which remains a Signal read.
+//
+// Structurally REMOVED coverage (deliberate, not lost):
+//   - "Automation Center shows the blocked banner" — page no longer exists;
+//     its 404 is proven in c2a-structure.spec.ts.
+//   - "/managed/resume fails closed" — the route no longer exists; 404 proven
+//     in c2a-structure.spec.ts. Refusal tests convert to absence proofs.
+
+const PROFILE = "/us/app/profile";
 
 test.setTimeout(180_000);
 
@@ -36,8 +43,6 @@ async function seedCookies(
   await context.addCookies(await e2eAuthCookies(eligibilityValue));
 }
 
-// Several tests mutate the prototype store for the user under test. Serial
-// keeps the assertions deterministic against the shared store.
 test.describe.configure({ mode: "serial" });
 
 test.describe("Profile reactivation — aging-only stale profile", () => {
@@ -45,28 +50,10 @@ test.describe("Profile reactivation — aging-only stale profile", () => {
     await seedCookies(context, E2E_USERS.staleProfilePaused.eligibilityCookie);
   });
 
-  test("Automation Center shows the blocked banner + Review profile CTA", async ({
-    page,
-  }) => {
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
-    const banner = page.getByTestId("profile-react-blocked-banner");
-    await expect(banner).toBeVisible({ timeout: 30_000 });
-    await expect(banner).toHaveAttribute("data-blocker", "stale_profile_aging");
-    const cta = page.getByTestId("profile-react-cta");
-    await expect(cta).toHaveAttribute(
-      "href",
-      "/us/app/settings/automation/profile",
-    );
-  });
-
   test("Review page shows pinned, latest, and last-confirmed versions; reconfirm clears stale_profile and preserves policy version", async ({
     page,
   }) => {
-    await page.goto("/us/app/settings/automation/profile", {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(PROFILE, { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("profile-react-page")).toBeVisible();
     await expect(page.getByTestId("profile-react-latest-version")).toHaveText(
       "1",
@@ -88,66 +75,25 @@ test.describe("Profile reactivation — aging-only stale profile", () => {
 
     await page.getByTestId("profile-react-ack-checkbox").check();
     await page.getByTestId("profile-react-submit").click();
-    // The successful reconfirm either keeps the aging panel briefly with a
-    // confirmation line, or — once the eligibility query refetches — flips
-    // the page to the "Up to date" panel. Either is a successful end state.
     await expect(
       page
         .getByTestId("profile-react-confirmation")
         .or(page.getByTestId("profile-react-current")),
     ).toBeVisible({ timeout: 15_000 });
 
-    // Active policy version is preserved by a reconfirmation.
+    // Active policy version is preserved and MES is restored to active —
+    // read from /status, the retained Signal view of the same server facts
+    // the Automation Center used to render.
     const afterStatus = await page.request.get("/api/v1/investor/status", {
       headers: { "x-correlation-id": "e2e-profile-after-status" },
     });
     const afterBody = (await afterStatus.json()) as BffJsonBody;
     expect(afterBody.data.executionPolicyVersion).toBe(policyVersionBefore);
-
-    // MES restored to active under the same policy version.
     expect(afterBody.data.managedExecutionState?.status).toBe("active");
-
-    // Automation Center no longer surfaces the profile blocked banner.
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
-    await expect(page.getByTestId("profile-react-blocked-banner")).toHaveCount(
-      0,
-      { timeout: 30_000 },
-    );
-    await expect(page.getByTestId("managed-controls-banner")).toHaveAttribute(
-      "data-status",
-      "active",
-    );
-  });
-
-  test("/managed/resume fails closed while a stale-profile system pause exists", async ({
-    page,
-    context,
-  }) => {
-    // Use a freshly seeded paused user (the previous test resumed the one
-    // shared with this describe). The stale-profile-with-disclosure user
-    // exists exactly for this — its reasonCode also starts with
-    // stale_profile so the resume guard fires the same way.
-    await seedCookies(
-      context,
-      E2E_USERS.staleProfileWithDisclosure.eligibilityCookie,
-    );
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
-    const direct = await postSameOrigin(
-      page,
-      "/api/v1/investor/managed/resume",
-      { headers: { "x-correlation-id": "e2e-stale-profile-resume" }, data: {} },
-    );
-    expect(direct.status()).toBe(412);
-    const body = (await direct.json()) as BffJsonBody;
-    expect(body.data.reason).toBe("system_pause_must_clear_upstream");
   });
 });
 
-test.describe("Profile reactivation — material change routes to policy review", () => {
+test.describe("Profile reactivation — material change requires policy review", () => {
   test.beforeEach(async ({ context }) => {
     await seedCookies(
       context,
@@ -155,12 +101,10 @@ test.describe("Profile reactivation — material change routes to policy review"
     );
   });
 
-  test("Review page surfaces material-change panel + activation route, does not show aging panel", async ({
+  test("Review page surfaces the material-change panel with the policy-review note, not an activation link", async ({
     page,
   }) => {
-    await page.goto("/us/app/settings/automation/profile", {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(PROFILE, { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("profile-react-page")).toHaveAttribute(
       "data-blocker",
       "stale_profile_changed",
@@ -174,11 +118,15 @@ test.describe("Profile reactivation — material change routes to policy review"
       page.getByTestId("profile-react-material-change"),
     ).toBeVisible();
     await expect(page.getByTestId("profile-react-aging")).toHaveCount(0);
-    const route = page.getByTestId("profile-react-route-to-activation");
-    await expect(route).toHaveAttribute(
-      "href",
-      "/us/app/settings/automation/activate",
-    );
+    // C2a: the Managed activation flow is structurally absent, so the panel
+    // states that policy review is unavailable and points at support — it
+    // must NOT link into a deleted activation surface.
+    await expect(
+      page.getByTestId("profile-react-policy-review-note"),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("profile-react-route-to-activation"),
+    ).toHaveCount(0);
     await expect(
       page.getByTestId("profile-react-changed-fields"),
     ).toContainText("riskTolerance");
@@ -187,9 +135,7 @@ test.describe("Profile reactivation — material change routes to policy review"
   test("Direct reconfirm POST rejects material change with material_change_requires_policy_review and does NOT restore MES", async ({
     page,
   }) => {
-    await page.goto("/us/app/settings/automation/profile", {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(PROFILE, { waitUntil: "domcontentloaded" });
     const res = await postSameOrigin(
       page,
       "/api/v1/investor/profile/reconfirm",
@@ -224,9 +170,7 @@ test.describe("Profile reactivation — remaining blockers", () => {
   test("Reconfirm records the durable confirmation but leaves MES paused while a stale disclosure remains", async ({
     page,
   }) => {
-    await page.goto("/us/app/settings/automation/profile", {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(PROFILE, { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("profile-react-aging")).toBeVisible({
       timeout: 30_000,
     });
@@ -244,15 +188,6 @@ test.describe("Profile reactivation — remaining blockers", () => {
     expect(body.data.ok).toBe(true);
     expect(body.data.reasonCodeCleared).toBeNull();
     expect(body.data.managedExecutionStatusAfter).toBe("paused_by_system");
-
-    // The disclosure-reack banner should still be the active blocker on the
-    // Automation Center.
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
-    await expect(
-      page.getByTestId("disclosure-reack-blocked-banner"),
-    ).toBeVisible({ timeout: 30_000 });
   });
 });
 
@@ -262,15 +197,7 @@ test.describe("Profile reactivation — Signal boundary + forbidden language", (
     context,
   }) => {
     await seedCookies(context, E2E_USERS.signal.eligibilityCookie);
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
-    await expect(page.getByTestId("profile-react-blocked-banner")).toHaveCount(
-      0,
-    );
-    await page.goto("/us/app/settings/automation/profile", {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(PROFILE, { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("profile-react-page")).toHaveAttribute(
       "data-mode",
       "signal",
@@ -279,6 +206,12 @@ test.describe("Profile reactivation — Signal boundary + forbidden language", (
     await expect(
       page.getByTestId("profile-react-not-applicable"),
     ).toBeVisible();
+    // C2a: the not-applicable panel routes home, never into an Automation
+    // surface (which no longer exists).
+    await expect(page.getByTestId("profile-react-back-home")).toHaveAttribute(
+      "href",
+      "/us/app/home",
+    );
   });
 
   test("No per-trade Accept or admin language appears on the profile reactivation flow", async ({
@@ -286,36 +219,31 @@ test.describe("Profile reactivation — Signal boundary + forbidden language", (
     context,
   }) => {
     await seedCookies(context, E2E_USERS.staleProfilePaused.eligibilityCookie);
-    for (const path of [
-      "/us/app/settings/automation",
-      "/us/app/settings/automation/profile",
+    await page.goto(PROFILE, { waitUntil: "domcontentloaded" });
+    for (const id of [
+      "signal-place-order-button",
+      "signal-order-entry",
+      "investor-accept",
+      "accept-trade-button",
+      "approve-trade-button",
+      "approve-recommendation-button",
     ]) {
-      await page.goto(path, { waitUntil: "domcontentloaded" });
-      for (const id of [
-        "signal-place-order-button",
-        "signal-order-entry",
-        "investor-accept",
-        "accept-trade-button",
-        "approve-trade-button",
-        "approve-recommendation-button",
-      ]) {
-        await expect(page.getByTestId(id)).toHaveCount(0);
-      }
-      for (const phrase of [
-        "Accept Recommendation",
-        "Approve Trade",
-        "Accept and Execute",
-        "Approve for Execution",
-        "Manual Rebalance",
-        "accept_trade",
-        "admin action",
-        "terminal reason",
-        "staff review",
-        "compliance adapter",
-        "autopilot",
-      ]) {
-        await expect(page.getByText(phrase, { exact: false })).toHaveCount(0);
-      }
+      await expect(page.getByTestId(id)).toHaveCount(0);
+    }
+    for (const phrase of [
+      "Accept Recommendation",
+      "Approve Trade",
+      "Accept and Execute",
+      "Approve for Execution",
+      "Manual Rebalance",
+      "accept_trade",
+      "admin action",
+      "terminal reason",
+      "staff review",
+      "compliance adapter",
+      "autopilot",
+    ]) {
+      await expect(page.getByText(phrase, { exact: false })).toHaveCount(0);
     }
   });
 });
@@ -326,9 +254,7 @@ test.describe("Profile reactivation — direct API fail-closed cases", () => {
   });
 
   test("Missing version → 400 bad_request", async ({ page }) => {
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(PROFILE, { waitUntil: "domcontentloaded" });
     const res = await postSameOrigin(
       page,
       "/api/v1/investor/profile/reconfirm",
@@ -343,9 +269,7 @@ test.describe("Profile reactivation — direct API fail-closed cases", () => {
   test("Mismatched profile version → 409 profile_version_mismatch", async ({
     page,
   }) => {
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(PROFILE, { waitUntil: "domcontentloaded" });
     const res = await postSameOrigin(
       page,
       "/api/v1/investor/profile/reconfirm",
@@ -364,9 +288,7 @@ test.describe("Profile reactivation — direct API fail-closed cases", () => {
     context,
   }) => {
     await seedCookies(context, E2E_USERS.signal.eligibilityCookie);
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto(PROFILE, { waitUntil: "domcontentloaded" });
     const res = await postSameOrigin(
       page,
       "/api/v1/investor/profile/reconfirm",

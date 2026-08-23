@@ -21,7 +21,12 @@ interface BffJsonBody {
   [key: string]: unknown;
 }
 
-// Surface 5 — Disclosure re-acknowledgement.
+// Surface 5 — Disclosure re-acknowledgement, relocated by C2a from
+// /us/app/settings/automation/disclosures to /us/app/documents/reacknowledge.
+// Server contracts unchanged; Managed-state assertions moved to /status.
+// Structurally REMOVED coverage (deliberate): the Automation Center banner
+// test (page deleted; 404 proven in c2a-structure.spec.ts) and the
+// /managed/resume fail-closed test (route deleted; 404 proven there too).
 // When a disclosure version pinned in the active ExecutionPolicy is
 // superseded in the registry, the investor must re-acknowledge the new
 // version before Managed automation continues. Re-acknowledgement records a
@@ -46,26 +51,10 @@ test.describe("Disclosure re-acknowledgement — Managed user with stale disclos
     await seedCookies(context, E2E_USERS.staleDisclosure.eligibilityCookie);
   });
 
-  test("Automation Center shows the blocked banner and CTA when a disclosure is stale", async ({
-    page,
-  }) => {
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
-    const banner = page.getByTestId("disclosure-reack-blocked-banner");
-    await expect(banner).toBeVisible({ timeout: 30_000 });
-    const cta = page.getByTestId("disclosure-reack-cta");
-    await expect(cta).toBeVisible();
-    await expect(cta).toHaveAttribute(
-      "href",
-      "/us/app/settings/automation/disclosures",
-    );
-  });
-
   test("Review page lists the stale disclosure with previous and current versions", async ({
     page,
   }) => {
-    await page.goto("/us/app/settings/automation/disclosures", {
+    await page.goto("/us/app/documents/reacknowledge", {
       waitUntil: "domcontentloaded",
     });
     const reackPage = page.getByTestId("reack-page");
@@ -86,7 +75,7 @@ test.describe("Disclosure re-acknowledgement — Managed user with stale disclos
   test("Acknowledging the new version clears the stale-disclosure blocker but preserves the active policy version", async ({
     page,
   }) => {
-    await page.goto("/us/app/settings/automation/disclosures", {
+    await page.goto("/us/app/documents/reacknowledge", {
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByTestId("reack-row-form-adv-2a")).toBeVisible({
@@ -113,14 +102,6 @@ test.describe("Disclosure re-acknowledgement — Managed user with stale disclos
     });
     const afterBody = (await afterStatus.json()) as BffJsonBody;
     expect(afterBody.data.executionPolicyVersion).toBe(policyVersionBefore);
-
-    // Automation Center no longer surfaces the blocked banner.
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
-    await expect(
-      page.getByTestId("disclosure-reack-blocked-banner"),
-    ).toHaveCount(0, { timeout: 30_000 });
   });
 });
 
@@ -132,27 +113,10 @@ test.describe("Disclosure re-acknowledgement — paused_by_system clears on ack"
     );
   });
 
-  test("Direct resume call fails closed while a stale disclosure exists", async ({
-    page,
-  }) => {
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
-    const direct = await postSameOrigin(
-      page,
-      "/api/v1/investor/managed/resume",
-      { headers: { "x-correlation-id": "e2e-stale-paused-resume" }, data: {} },
-    );
-    expect(direct.status()).toBe(412);
-    const body = (await direct.json()) as BffJsonBody;
-    expect(body.data.ok).toBe(false);
-    expect(body.data.reason).toBe("system_pause_must_clear_upstream");
-  });
-
   test("Re-acknowledgement clears stale_disclosure and restores active execution", async ({
     page,
   }) => {
-    await page.goto("/us/app/settings/automation/disclosures", {
+    await page.goto("/us/app/documents/reacknowledge", {
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByTestId("reack-row-form-adv-2a")).toBeVisible({
@@ -164,20 +128,13 @@ test.describe("Disclosure re-acknowledgement — paused_by_system clears on ack"
       page.getByTestId("reack-row-form-adv-2a-ack-confirmation"),
     ).toBeVisible({ timeout: 15_000 });
 
-    // Returning to the Automation Center, ManagedExecutionState should now
-    // report `active` again (the BFF flipped it because the stale-disclosure
-    // reason cleared) and the blocked banner is gone.
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
+    // MES reports `active` again — read from /status, the retained Signal
+    // view of the fact the Automation Center used to render.
+    const status = await page.request.get("/api/v1/investor/status", {
+      headers: { "x-correlation-id": "e2e-reack-restored-status" },
     });
-    await expect(page.getByTestId("managed-controls-banner")).toHaveAttribute(
-      "data-status",
-      "active",
-      { timeout: 30_000 },
-    );
-    await expect(
-      page.getByTestId("disclosure-reack-blocked-banner"),
-    ).toHaveCount(0);
+    const statusBody = (await status.json()) as BffJsonBody;
+    expect(statusBody.data.managedExecutionState?.status).toBe("active");
   });
 });
 
@@ -187,13 +144,11 @@ test.describe("Disclosure re-acknowledgement — Signal boundary", () => {
     context,
   }) => {
     await seedCookies(context, E2E_USERS.signal.eligibilityCookie);
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto("/us/app/home", { waitUntil: "domcontentloaded" });
     await expect(
       page.getByTestId("disclosure-reack-blocked-banner"),
     ).toHaveCount(0);
-    await page.goto("/us/app/settings/automation/disclosures", {
+    await page.goto("/us/app/documents/reacknowledge", {
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByTestId("reack-page")).toHaveAttribute(
@@ -214,10 +169,7 @@ test.describe("Disclosure re-acknowledgement — forbidden language and API guar
   test("No per-trade Accept or admin language appears on the re-ack flow", async ({
     page,
   }) => {
-    for (const path of [
-      "/us/app/settings/automation",
-      "/us/app/settings/automation/disclosures",
-    ]) {
+    for (const path of ["/us/app/documents/reacknowledge"]) {
       await page.goto(path, { waitUntil: "domcontentloaded" });
       for (const id of [
         "signal-place-order-button",
@@ -251,9 +203,7 @@ test.describe("Disclosure re-acknowledgement — forbidden language and API guar
   test("Direct API path fails closed on stale, missing, or mismatched ack payloads", async ({
     page,
   }) => {
-    await page.goto("/us/app/settings/automation", {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto("/us/app/home", { waitUntil: "domcontentloaded" });
 
     // Missing version
     const missing = await postSameOrigin(

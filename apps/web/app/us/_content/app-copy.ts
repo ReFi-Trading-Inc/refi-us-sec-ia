@@ -5,7 +5,6 @@ export const navItems = [
   { href: "/us/app/activity", label: "Activity" },
   { href: "/us/app/documents", label: "Documents" },
   { href: "/us/app/account", label: "Account" },
-  { href: "/us/app/settings/automation", label: "Automation Center" },
   { href: "/us/app/support", label: "Support" },
 ] as const;
 

@@ -76,73 +76,13 @@ test.describe("Signal stage — production posture", () => {
     expect(response.status()).toBeLessThan(400);
   });
 
-  // ─── Capability-policy refusals (C1a-1) ────────────────────────────────────
+  // ─── Positive capability controls ──────────────────────────────────────────
   //
-  // These prove the default-deny release policy on the REAL routes at the
-  // September stage. Refusal is one layer of the boundary; structural absence
-  // of these surfaces (C2a) is the other, and these tests convert to 404
-  // assertions when the routes are removed.
-
-  test("a Managed mutation is refused by policy at the signal stage", async ({
-    page,
-    context,
-  }) => {
-    // A Managed-TIER user, deliberately: the denial is stage-based, not
-    // tier-based. Even the user the capability belongs to cannot exercise it
-    // before the Managed-paper release exists.
-    await context.addCookies(
-      await e2eAuthCookies(E2E_USERS.managed.eligibilityCookie),
-    );
-    await page.goto("/us/app/recommendations");
-    for (const path of [
-      "/api/v1/investor/managed/pause",
-      "/api/v1/investor/managed/resume",
-      "/api/v1/investor/execution-policy/activate",
-    ]) {
-      const res = await postSameOrigin(page, path, { data: {} });
-      expect(res.status(), `${path} must be refused at signal stage`).toBe(403);
-      const body = (await res.json()) as { error?: { code?: string } };
-      expect(body.error?.code, path).toBe("forbidden");
-    }
-  });
-
-  test("switching the account to managed mode is refused", async ({
-    page,
-    context,
-  }) => {
-    await context.addCookies(
-      await e2eAuthCookies(E2E_USERS.signal.eligibilityCookie),
-    );
-    await page.goto("/us/app/recommendations");
-    const res = await postSameOrigin(
-      page,
-      "/api/v1/investor/subscription-mode",
-      {
-        data: { mode: "managed" },
-      },
-    );
-    expect(res.status()).toBe(403);
-  });
-
-  test("a Managed exception resolution is refused; the gate is category-level", async ({
-    page,
-    context,
-  }) => {
-    await context.addCookies(
-      await e2eAuthCookies(E2E_USERS.managed.eligibilityCookie),
-    );
-    await page.goto("/us/app/recommendations");
-    // Id-independent: the category check runs before the exception lookup, so
-    // a Managed category is refused whether or not the exception exists.
-    const res = await postSameOrigin(
-      page,
-      "/api/v1/investor/exceptions/any-id/resolve",
-      { data: { resolution: "approve_exception", clientAttestation: true } },
-    );
-    expect(res.status()).toBe(403);
-    const body = (await res.json()) as { error?: { code?: string } };
-    expect(body.error?.code).toBe("forbidden");
-  });
+  // C1a-1's refusal proofs lived here while refusal was the boundary. C2a made
+  // the Managed surfaces structurally ABSENT, so those tests converted to the
+  // stage-independent 404/405/400 proofs in c2a-structure.spec.ts (main lane).
+  // What remains stage-specific is the positive half: Signal-allowed mutations
+  // must actually work at the September stage.
 
   test("a Signal-allowed mutation SUCCEEDS end to end", async ({
     page,

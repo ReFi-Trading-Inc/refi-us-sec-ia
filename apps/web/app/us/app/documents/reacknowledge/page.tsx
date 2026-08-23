@@ -182,15 +182,15 @@ export default function DisclosureReackPage() {
         <Card data-testid="reack-not-applicable">
           <CardContent className="pt-5 pb-5">
             <p className="text-sm text-charcoal-300">
-              You are not currently on ReFi Managed. Return to the Automation
-              Center for the controls available to you.
+              You are not currently on ReFi Managed. Return to your Center for
+              the controls available to you.
             </p>
             <Link
-              href="/us/app/settings/automation"
+              href="/us/app/home"
               className="text-sm text-mint-300 underline underline-offset-2"
-              data-testid="reack-back-to-automation"
+              data-testid="reack-back-home"
             >
-              Back to Automation Center
+              Back to Home
             </Link>
           </CardContent>
         </Card>
@@ -265,11 +265,11 @@ export default function DisclosureReackPage() {
       )}
 
       <Link
-        href="/us/app/settings/automation"
+        href="/us/app/home"
         className="text-sm text-mint-300 underline underline-offset-2"
-        data-testid="reack-back-to-automation"
+        data-testid="reack-back-home"
       >
-        Back to Automation Center
+        Back to Home
       </Link>
     </div>
   );

@@ -3,24 +3,6 @@ import { E2E_USERS } from "./global-setup";
 import { e2eAuthCookies } from "./session";
 import { postSameOrigin } from "./api";
 
-interface BffJsonBody {
-  data: {
-    ok?: boolean;
-    reason?: string;
-    idempotentReplay?: boolean;
-    subscriptionModeFlipped?: boolean;
-    policy?: { policyVersion: number };
-    executionPolicyVersion?: number | null;
-    managedExecutionState?: { status: string };
-    managedExecutionStatusBefore?: string | null;
-    managedExecutionStatusAfter?: string | null;
-    reasonCodeCleared?: string | null;
-    [key: string]: unknown;
-  };
-  receipt?: { action?: string };
-  [key: string]: unknown;
-}
-
 // Surface 7 — Exception Review.
 // Exception Review resolves eligibility blockers. It does not approve trades,
 // override guardrails, submit broker orders, or expose the legacy backend
@@ -109,12 +91,9 @@ test.describe("Exception Review — Managed user", () => {
       "exception-card-exc-profile-stale-route-update_profile",
     );
     await expect(route).toBeVisible({ timeout: 30_000 });
-    await expect(route).toHaveAttribute(
-      "href",
-      "/us/app/settings/automation/profile",
-    );
+    await expect(route).toHaveAttribute("href", "/us/app/profile");
     await route.click();
-    await expect(page).toHaveURL(/\/us\/app\/settings\/automation\/profile$/);
+    await expect(page).toHaveURL(/\/us\/app\/profile$/);
   });
 
   test("acknowledge_disclosure exception exposes a route CTA to the disclosure review page", async ({
@@ -127,7 +106,7 @@ test.describe("Exception Review — Managed user", () => {
     await expect(route).toBeVisible({ timeout: 30_000 });
     await expect(route).toHaveAttribute(
       "href",
-      "/us/app/settings/automation/disclosures",
+      "/us/app/documents/reacknowledge",
     );
   });
 
@@ -149,79 +128,108 @@ test.describe("Exception Review — Managed user", () => {
     }
   });
 
-  test("Dismissing an exception removes it from the Open tab and surfaces it under Dismissed", async ({
+  test("A Signal remediation closes the exception and the card moves to Resolved", async ({
     page,
   }) => {
+    // C2a: no card renders an inline mutation button any more — dismiss
+    // (reject_exception) and pause_managed were the only Button-rendered
+    // resolutions, and both are Managed-era. Signal categories render as
+    // ROUTE CTAs into the remediation surfaces; the resolution itself is
+    // recorded through the resolve endpoint. This test drives that endpoint
+    // directly and asserts the queue reflects it — the UI truth is "cards
+    // link to remediation; they do not mutate inline".
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
-    const dismiss = page.getByTestId(
-      "exception-card-exc-broker-stale-resolve-dismiss_exception",
+    await expect(
+      page.getByTestId("exception-card-exc-broker-stale"),
+    ).toBeVisible({ timeout: 30_000 });
+    const res = await postSameOrigin(
+      page,
+      "/api/v1/investor/exceptions/exc-broker-stale/resolve",
+      {
+        headers: { "x-correlation-id": "e2e-exc-reconnect" },
+        data: { resolution: "reconnect_broker", clientAttestation: true },
+      },
     );
-    await expect(dismiss).toBeVisible({ timeout: 30_000 });
-    await dismiss.click();
-    // After mutation the card should disappear from the Open tab.
+    expect(res.status()).toBe(200);
+    await page.reload({ waitUntil: "domcontentloaded" });
     await expect(
       page.getByTestId("exception-card-exc-broker-stale"),
     ).toHaveCount(0, { timeout: 15_000 });
-    await page.getByTestId("exceptions-filter-dismissed").click();
+    await page.getByTestId("exceptions-filter-resolved").click();
     await expect(
       page.getByTestId("exception-card-exc-broker-stale"),
     ).toBeVisible({ timeout: 15_000 });
     await expect(
       page.getByTestId("exception-card-exc-broker-stale-resolved-tag"),
-    ).toContainText("Dismissed");
+    ).toContainText("Resolved by broker reconnect");
   });
 
-  test("Resolving an out-of-policy exception via pause_managed records the resolution and preserves the active ExecutionPolicy version", async ({
+  test("The out-of-policy exception offers NO investor operation, and Managed categories are schema-unrepresentable", async ({
     page,
   }) => {
+    // C2a structural truth: an out-of-policy exception has no Signal
+    // remediation, so the card is informational — no mutation button of any
+    // kind renders on it — and a direct POST with a Managed-era category is
+    // rejected at the request schema (400), not merely by the stage policy.
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
-
-    const beforeStatus = await page.request.get("/api/v1/investor/status", {
-      headers: { "x-correlation-id": "e2e-exc-before" },
-    });
-    const beforeBody = (await beforeStatus.json()) as BffJsonBody;
-    const policyVersionBefore = beforeBody.data
-      .executionPolicyVersion as number;
-
-    const pauseBtn = page.getByTestId(
-      "exception-card-exc-out-of-policy-resolve-pause_managed",
-    );
-    await expect(pauseBtn).toBeVisible({ timeout: 30_000 });
-    await pauseBtn.click();
     await expect(
       page.getByTestId("exception-card-exc-out-of-policy"),
-    ).toHaveCount(0, { timeout: 15_000 });
+    ).toBeVisible({ timeout: 30_000 });
+    for (const res of [
+      "pause_managed",
+      "dismiss_exception",
+      "resolve_exception",
+    ]) {
+      await expect(
+        page.getByTestId(`exception-card-exc-out-of-policy-resolve-${res}`),
+      ).toHaveCount(0);
+    }
 
-    const afterStatus = await page.request.get("/api/v1/investor/status", {
-      headers: { "x-correlation-id": "e2e-exc-after" },
-    });
-    const afterBody = (await afterStatus.json()) as BffJsonBody;
-    expect(afterBody.data.executionPolicyVersion).toBe(policyVersionBefore);
+    const direct = await postSameOrigin(
+      page,
+      "/api/v1/investor/exceptions/exc-out-of-policy/resolve",
+      {
+        headers: { "x-correlation-id": "e2e-exc-managed-category" },
+        data: { resolution: "pause_managed", clientAttestation: true },
+      },
+    );
+    expect(direct.status()).toBe(400);
   });
 
-  test("Empty Open tab shows a clean empty state once every exception is closed", async ({
+  test("Signal remediations close every closable exception; only the Managed-era item remains open", async ({
     page,
   }) => {
+    // C2a: approve_exception is no longer representable, so exceptions close
+    // only through their Signal remediation categories. exc-out-of-policy has
+    // none — it remains open by design, which is the September truth this
+    // suite must describe rather than paper over.
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
-    // Close the two remaining open exceptions for the user via direct POST so
-    // this test does not depend on UI mutation ordering.
-    for (const id of ["exc-profile-stale", "exc-disclosure-expired"]) {
+    const closures: ReadonlyArray<readonly [string, string]> = [
+      ["exc-profile-stale", "update_profile"],
+      ["exc-disclosure-expired", "acknowledge_disclosure"],
+    ];
+    for (const [id, resolution] of closures) {
       const res = await postSameOrigin(
         page,
         `/api/v1/investor/exceptions/${id}/resolve`,
         {
           headers: { "x-correlation-id": `e2e-exc-close-${id}` },
-          // UI never spells the legacy backend value; the direct API still
-          // accepts it under the legacy contract for now.
-          data: { resolution: "approve_exception", clientAttestation: true }, // allow-investor-boundary: "approve_exception" reason: "exercising backend contract from a test that asserts no UI exposure"
+          data: { resolution, clientAttestation: true },
         },
       );
-      expect(res.status()).toBe(200);
+      expect(res.status(), `${id} via ${resolution}`).toBe(200);
     }
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("exceptions-empty-open")).toBeVisible({
-      timeout: 30_000,
-    });
+    await expect(
+      page.getByTestId("exception-card-exc-out-of-policy"),
+    ).toBeVisible({ timeout: 30_000 });
+    for (const id of [
+      "exception-card-exc-profile-stale",
+      "exception-card-exc-disclosure-expired",
+      "exception-card-exc-broker-stale",
+    ]) {
+      await expect(page.getByTestId(id)).toHaveCount(0);
+    }
   });
 });
 

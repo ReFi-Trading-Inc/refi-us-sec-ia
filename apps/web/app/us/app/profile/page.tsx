@@ -86,15 +86,15 @@ export default function ProfileReactivationPage() {
         <Card data-testid="profile-react-not-applicable">
           <CardContent className="pt-5 pb-5 flex flex-col gap-3">
             <p className="text-sm text-charcoal-300">
-              You are not currently on ReFi Managed. Return to the Automation
-              Center for the controls available to you.
+              You are not currently on ReFi Managed. Return to your Center for
+              the controls available to you.
             </p>
             <Link
-              href="/us/app/settings/automation"
+              href="/us/app/home"
               className="text-sm text-mint-300 underline underline-offset-2"
-              data-testid="profile-react-back-to-automation"
+              data-testid="profile-react-back-home"
             >
-              Back to Automation Center
+              Back to Home
             </Link>
           </CardContent>
         </Card>
@@ -223,15 +223,27 @@ export default function ProfileReactivationPage() {
                 </ul>
               </div>
             )}
-            <div>
+            {/* The activation review flow was a Managed authoring surface and
+                is structurally absent from the September Signal artifact
+                (C2a). The server contract is unchanged — reconfirm still
+                refuses a material change with
+                material_change_requires_policy_review — but there is no
+                investor-side activation to route to, so this panel states the
+                situation and points at support instead of a deleted page. */}
+            <p
+              data-testid="profile-react-policy-review-note"
+              className="text-sm text-charcoal-300"
+            >
+              A material profile change requires a policy review, which is not
+              available in the current release.{" "}
               <Link
-                href="/us/app/settings/automation/activate"
-                data-testid="profile-react-route-to-activation"
-                className="inline-flex items-center text-sm font-medium underline underline-offset-2"
+                href="/us/app/support"
+                className="font-medium underline underline-offset-2"
               >
-                Review and activate updated policy
-              </Link>
-            </div>
+                Contact support
+              </Link>{" "}
+              if you need assistance.
+            </p>
           </CardContent>
         </Card>
       )}
@@ -297,11 +309,11 @@ export default function ProfileReactivationPage() {
       )}
 
       <Link
-        href="/us/app/settings/automation"
+        href="/us/app/home"
         className="text-sm text-mint-300 underline underline-offset-2"
-        data-testid="profile-react-back-to-automation"
+        data-testid="profile-react-back-home"
       >
-        Back to Automation Center
+        Back to Home
       </Link>
     </div>
   );

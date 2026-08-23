@@ -33,29 +33,37 @@ export {
   useBrokerOrders,
   useBrokerDisconnect,
 } from "./hooks/broker";
-// Read model only. `useSubmitOrder` / `useCancelOrder` were removed
-// 2026-07-30; `useOrderPreview` on 2026-08-22 — see the note in ./hooks/orders.
-export { useOrders } from "./hooks/orders";
+// The order hook family is fully retired: useSubmitOrder/useCancelOrder
+// removed 2026-07-30 (live paths waiting to be wired), useOrderPreview
+// 2026-08-22 (browser-direct execution-era preview, unmounted consumer),
+// useOrders 2026-08-23 with the BFF /orders routes (execution-domain read
+// model, zero consumers — C2a). Broker OBSERVATION (/v1/brokers/orders) is
+// untouched and belongs to C1b-2.
 export { useRecommendations, useRecommendation } from "./hooks/recommendations";
 export {
   useSubscriptionMode,
   useInvestorRecommendations,
 } from "./hooks/subscription-mode";
 export {
-  useExecutionPolicy,
-  useExecutionPolicyDraft,
-  useSaveExecutionPolicyDraft,
-  useManagedExecutionState,
-  usePauseManaged,
-  useResumeManaged,
-  useActivateExecutionPolicy,
-  useDisclosureRegistry,
-  useDisclosureReacknowledgement,
-  useReacknowledgeDisclosure,
+  useInvestorStatus,
   useProfileReactivation,
   useReconfirmProfile,
-} from "./hooks/execution-policy";
-export { useInvestorStatus } from "./hooks/execution-policy";
+  useDisclosureReacknowledgement,
+  useReacknowledgeDisclosure,
+  useDisclosureRegistry,
+  type InvestorStatusDto,
+  type ProfileReactivationView,
+  type ProfileReactivationBlockerReason,
+  type ReconfirmProfileInput,
+  type ReconfirmProfileResult,
+  type DisclosureRegistryDto,
+  type StaleDisclosureDto,
+  type DisclosureReacknowledgementView,
+  type ReacknowledgeDisclosureInput,
+  type ReacknowledgeDisclosureResult,
+  type ManagedExecutionStatus,
+  type ManagedExecutionStateDto,
+} from "./hooks/remediation";
 export {
   useInvestorExceptions,
   useResolveException,
@@ -63,27 +71,6 @@ export {
   describeBackendResolution,
   isDismissResolution,
 } from "./hooks/exceptions";
-export type {
-  ExecutionPolicySummary,
-  ExecutionPolicyDraftDto,
-  SaveExecutionPolicyDraftInput,
-  ManagedExecutionStateDto,
-  ManagedExecutionStatus,
-  StaleBrokerDataDuration,
-  StaleProfileDuration,
-  ActivateExecutionPolicyInput,
-  ActivateExecutionPolicyResult,
-  DisclosureRegistryDto,
-  DisclosureReacknowledgementView,
-  StaleDisclosureDto,
-  ReacknowledgeDisclosureInput,
-  ReacknowledgeDisclosureResult,
-  ProfileReactivationView,
-  ProfileReactivationBlockerReason,
-  ReconfirmProfileInput,
-  ReconfirmProfileResult,
-  InvestorStatusDto,
-} from "./hooks/execution-policy";
 export type {
   InvestorExceptionItem,
   InvestorExceptionsView,

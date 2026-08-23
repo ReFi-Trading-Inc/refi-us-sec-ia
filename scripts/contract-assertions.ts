@@ -1562,16 +1562,20 @@ await section(
     // attributes and visible control labels part of the check, not just field
     // declarations.
     //
-    // Deliberately NOT scanned: apps/web/e2e/automation-center.spec.ts, which
-    // names all seven controls in negative assertions proving their absence.
+    // C2a shrank this list dramatically, and that is the point: the BFF
+    // execution-policy write routes, the execution-policy/managed hooks, and
+    // the Automation Center pages were structurally REMOVED from the artifact.
+    // A deleted surface cannot regress a control name, so the scan now covers
+    // the surviving editable surfaces: the storage entity that still exists
+    // for audit history, the remediation hooks the Signal IA kept, and the
+    // relocated Signal pages. If a Managed authoring surface ever returns, it
+    // must be added back here in the same commit — the invariant is the scan
+    // list tracking the real write surface, not a fixed set of paths.
     const editableSurfaces = [
       "apps/web/src/lib/prototype-store/entities/execution-policy-draft.ts",
-      "apps/web/app/api/v1/investor/execution-policy/draft/route.ts",
-      "apps/web/app/api/v1/investor/execution-policy/route.ts",
-      "apps/web/app/api/v1/investor/execution-policy/activate/route.ts",
-      "packages/api-clients/src/hooks/execution-policy.ts",
-      "apps/web/app/us/app/settings/automation/page.tsx",
-      "apps/web/app/us/app/settings/automation/activate/page.tsx",
+      "packages/api-clients/src/hooks/remediation.ts",
+      "apps/web/app/us/app/profile/page.tsx",
+      "apps/web/app/us/app/documents/reacknowledge/page.tsx",
     ];
 
     const offenders: string[] = [];

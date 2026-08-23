@@ -3,10 +3,10 @@
 **Canonical immutable reference:** signed annotated tag
 `archive/managed-pre-signal-2026-08-22` → `42e9603de0a2b132c1e7239e8d0049040f33a194`
 (GPG key `80CF…99FF`; verify with `git tag -v archive/managed-pre-signal-2026-08-22`).
-A convenience branch of the same name points at the same SHA — the tag is the
-authority; the branch is browseable convenience only. Note: because tag and
-branch share a name, plain `git checkout archive/managed-pre-signal-2026-08-22`
-prints an ambiguous-ref warning; use `refs/tags/…` or `origin/…` explicitly.
+The convenience branch `archive/managed-pre-signal-2026-08-22-browse` points
+at the same SHA — the tag is the immutable canonical reference; the `-browse`
+branch is browseable convenience only. The names are deliberately distinct so
+no ambiguous-ref workaround is ever necessary.
 
 **What this freezes:** the last hardened merged `main` before PR #49 began
 Signal-specific destructive surface removal — the complete dual-mode product:

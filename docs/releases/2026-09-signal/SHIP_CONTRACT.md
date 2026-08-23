@@ -11,6 +11,22 @@ pending); dated copies are held in the 2026-08-22 recovery directory. Section
 references below cite those documents. Where this contract and those documents
 disagree, the documents win.
 
+## Authority source pin
+
+The governing scope of this contract is fixed to the EXACT document versions
+below. A later revision from Daniel does not silently replace the authority:
+it gets its own hash/version row here plus an explicit amendment to this
+contract. Replacing an external file under the same filename does not change
+the governing version.
+
+| Document (title as written)                                                     | Document status (as written)         | Received   | SHA-256                                                            |
+| ------------------------------------------------------------------------------- | ------------------------------------ | ---------- | ------------------------------------------------------------------ |
+| ReFinity executive architecture overview v2 (`exec_overview_v2.md`)             | Target-state executive overview      | 2026-08-23 | `def4e407b9d28bb0bbfbec2dcd236672ca458824ecdbfddda6cd912c568676e0` |
+| ReFinity backend architecture migration overview (`arch_migration_overview.md`) | Stakeholder migration-scope overview | 2026-08-23 | `04910de36d073b168fa82aa63b636588fa26340477e4dc35866a9a197cd6faa6` |
+
+The source documents themselves are not committed (Daniel's authorization
+pending); verify a held copy with `shasum -a 256 <file>` against this table.
+
 ## Milestone definition
 
 Daniel's release progression (`exec_overview_v2.md` §13; also

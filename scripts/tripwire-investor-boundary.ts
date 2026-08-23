@@ -288,6 +288,10 @@ const ALLOWED_PATHS: ReadonlyArray<string> = [
   "packages/config/blocked-terms.ts",
   "apps/web/src/lib/sec203a/actions.ts",
   "apps/web/src/lib/sec203a/admin-verbs.ts",
+  // The release-stage capability policy must name the Managed resolution
+  // categories in order to DENY them at the signal stage — the same rationale
+  // as actions.ts naming forbidden actions to keep them out of everywhere else.
+  "apps/web/src/lib/sec203a/release-policy.ts",
   "apps/web/src/lib/sec203a/account-prefs.ts",
   // The single documented home of the legacy UI→backend resolution alias
   // mapping. Same rationale as actions.ts / admin-verbs.ts: it must name the

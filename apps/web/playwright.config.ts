@@ -13,6 +13,12 @@ process.env["REFI_PROTOTYPE_STORE_DIR"] = PROTOTYPE_STORE_DIR;
 
 export default defineConfig({
   testDir: "./e2e",
+  // The signal-stage lane (playwright.signal.config.ts) owns signal-smoke:
+  // since C1a-1 its assertions are STAGE-SPECIFIC — they prove capability
+  // refusals that must fire at REFI_RELEASE_STAGE=signal and correctly do NOT
+  // fire at managed_paper, which is what this lane runs. While the smoke lane
+  // was stage-independent this separation was implicit; now it is enforced.
+  testIgnore: /signal-smoke\.spec\.ts/,
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env["CI"],

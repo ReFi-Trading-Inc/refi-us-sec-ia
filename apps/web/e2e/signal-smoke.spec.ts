@@ -7,6 +7,7 @@
  */
 import { expect, test } from "@playwright/test";
 import { e2eAuthCookies } from "./session";
+import { postSameOrigin } from "./api";
 import { E2E_USERS } from "./global-setup";
 
 test.describe("Signal stage — production posture", () => {
@@ -73,5 +74,129 @@ test.describe("Signal stage — production posture", () => {
     const response = await page.goto("/us/app/recommendations");
     if (!response) throw new Error("navigation produced no response");
     expect(response.status()).toBeLessThan(400);
+  });
+
+  // ─── Capability-policy refusals (C1a-1) ────────────────────────────────────
+  //
+  // These prove the default-deny release policy on the REAL routes at the
+  // September stage. Refusal is one layer of the boundary; structural absence
+  // of these surfaces (C2a) is the other, and these tests convert to 404
+  // assertions when the routes are removed.
+
+  test("a Managed mutation is refused by policy at the signal stage", async ({
+    page,
+    context,
+  }) => {
+    // A Managed-TIER user, deliberately: the denial is stage-based, not
+    // tier-based. Even the user the capability belongs to cannot exercise it
+    // before the Managed-paper release exists.
+    await context.addCookies(
+      await e2eAuthCookies(E2E_USERS.managed.eligibilityCookie),
+    );
+    await page.goto("/us/app/recommendations");
+    for (const path of [
+      "/api/v1/investor/managed/pause",
+      "/api/v1/investor/managed/resume",
+      "/api/v1/investor/execution-policy/activate",
+    ]) {
+      const res = await postSameOrigin(page, path, { data: {} });
+      expect(res.status(), `${path} must be refused at signal stage`).toBe(403);
+      const body = (await res.json()) as { error?: { code?: string } };
+      expect(body.error?.code, path).toBe("forbidden");
+    }
+  });
+
+  test("switching the account to managed mode is refused", async ({
+    page,
+    context,
+  }) => {
+    await context.addCookies(
+      await e2eAuthCookies(E2E_USERS.signal.eligibilityCookie),
+    );
+    await page.goto("/us/app/recommendations");
+    const res = await postSameOrigin(
+      page,
+      "/api/v1/investor/subscription-mode",
+      {
+        data: { mode: "managed" },
+      },
+    );
+    expect(res.status()).toBe(403);
+  });
+
+  test("a Managed exception resolution is refused; the gate is category-level", async ({
+    page,
+    context,
+  }) => {
+    await context.addCookies(
+      await e2eAuthCookies(E2E_USERS.managed.eligibilityCookie),
+    );
+    await page.goto("/us/app/recommendations");
+    // Id-independent: the category check runs before the exception lookup, so
+    // a Managed category is refused whether or not the exception exists.
+    const res = await postSameOrigin(
+      page,
+      "/api/v1/investor/exceptions/any-id/resolve",
+      { data: { resolution: "approve_exception", clientAttestation: true } },
+    );
+    expect(res.status()).toBe(403);
+    const body = (await res.json()) as { error?: { code?: string } };
+    expect(body.error?.code).toBe("forbidden");
+  });
+
+  test("a Signal-allowed mutation SUCCEEDS end to end", async ({
+    page,
+    context,
+  }) => {
+    // The acceptance-grade positive control: a Signal-allowed mutation must
+    // not merely get past the gate — it must complete. refreshProfile is
+    // Signal remediation; a valid advisory profile POST writes an immutable
+    // snapshot and answers 201 with a receipt naming the action.
+    await context.addCookies(
+      await e2eAuthCookies(E2E_USERS.signal.eligibilityCookie),
+    );
+    await page.goto("/us/app/recommendations");
+    const res = await postSameOrigin(page, "/api/v1/investor/profile", {
+      data: {
+        goal: "long_term_growth",
+        horizon: "10_plus_years",
+        incomeBand: "100k_250k",
+        liquidityNeed: "low",
+        riskTolerance: "moderate",
+        experience: "some_experience",
+        accountPurpose: "retirement",
+      },
+    });
+    expect(res.status(), "Signal-allowed mutation must SUCCEED").toBe(201);
+    const body = (await res.json()) as {
+      data?: { profileVersion?: number };
+      receipt?: { action?: string };
+    };
+    expect(body.receipt?.action).toBe("refreshProfile");
+    expect(body.data?.profileVersion).toBeGreaterThan(0);
+  });
+
+  test("a Signal-allowed mutation with no sink fails at the sink, not the gate", async ({
+    page,
+    context,
+  }) => {
+    // Secondary control: support is Signal-allowed, passes the capability
+    // gate, and fails closed at the UNCONFIGURED SINK with 412 — not with the
+    // policy's 403. Distinguishes gate-refusal from downstream fail-closed;
+    // becomes 200 when D-SUPPORT-01 lands a real sink.
+    await context.addCookies(
+      await e2eAuthCookies(E2E_USERS.signal.eligibilityCookie),
+    );
+    await page.goto("/us/app/support");
+    const res = await postSameOrigin(page, "/api/us/support", {
+      headers: { "x-forwarded-for": "203.0.113.201" },
+      data: {
+        category: "App issue",
+        message: "Signal-stage positive control message.",
+      },
+    });
+    expect(res.status(), "allowed mutation must reach the sink boundary").toBe(
+      412,
+    );
   });
 });

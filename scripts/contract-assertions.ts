@@ -4093,7 +4093,6 @@ await section(
     OPTIONAL_AUTH_METHOD_CLAIM,
     MissingAuthMethodError,
     assertPublishableIssuer,
-    jwksUrlFor,
     mintUserAssertion,
     getPublicJwks,
     resetSigningKeyCache,
@@ -4125,9 +4124,13 @@ await section(
       // carrying only `acr` must not be mintable.
       assert.equal(REQUIRED_AUTH_METHOD_CLAIM, "amr");
       assert.equal(OPTIONAL_AUTH_METHOD_CLAIM, "acr");
-      assert.equal(
-        jwksUrlFor("https://app.example.com/"),
-        "https://app.example.com/.well-known/jwks.json",
+      // Daniel 2026-08-19: investor-api uses only the explicitly configured
+      // JWKS URL and never derives one from `iss`. The helper that did exactly
+      // that derivation was deleted 2026-08-24; its reappearance would be a
+      // contract regression, so its absence is pinned.
+      assert.ok(
+        !("jwksUrlFor" in assertionMod),
+        "jwksUrlFor must not exist — the JWKS URL is configured, never derived from iss",
       );
     },
   );

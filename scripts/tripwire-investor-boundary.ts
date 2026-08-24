@@ -177,6 +177,121 @@ const RETIRED_SIGNAL_IDS: ReadonlyArray<{ id: string; note: string }> = [
   },
 ];
 
+/**
+ * Browser-direct execution guard (C2b).
+ *
+ * The C0 capability audit's §0 finding was that ~25 legacy `apiFetch` calls
+ * bypass every server in this repository, so no BFF route deletion can prove
+ * the browser cannot reach an execution endpoint. This is the mechanical half
+ * of that proof: no `apiFetch` call may target a path with an execution
+ * segment. The runtime half is the signal-lane absence proofs
+ * (apps/web/e2e/signal-authority.spec.ts).
+ *
+ * Segment-exact by design. `/v1/brokers/orders` and a bare `/orders` read
+ * model are NOT flagged — the C0 correction (§4b) is explicit that banning a
+ * route because its name contains "orders" confuses observation with
+ * authority. The boundary is submission, cancellation, and executable intent.
+ * `preview` is flagged only directly under an `orders` segment (the retired
+ * per-trade compliance preview), not as a general word.
+ */
+const EXECUTION_PATH_SEGMENTS: ReadonlySet<string> = new Set([
+  "submit",
+  "cancel",
+  "execute",
+  "execution",
+  "executions",
+  "execution-policy",
+  "intent",
+  "intents",
+  "account-intents",
+  "trade",
+  "trades",
+  "rebalance",
+  "liquidate",
+]);
+
+/**
+ * Match every apiFetch call's first argument across the WHOLE file content
+ * (not per line — a multi-line call must not slip through). Template-literal
+ * interpolations are normalized to a plain segment so `/v1/orders/${id}/cancel`
+ * still yields a "cancel" segment.
+ */
+const API_FETCH_ARG_RE =
+  /apiFetch\s*(?:<[^>()]*>)?\s*\(\s*(`[^`]*`|"[^"]*"|'[^']*')/g;
+
+function executionSegmentIn(rawArg: string): string | null {
+  const path = rawArg.slice(1, -1).replace(/\$\{[^}]*\}/g, "X");
+  const segments = path.split("/").filter(Boolean);
+  for (let i = 0; i < segments.length; i++) {
+    const seg = (segments[i] ?? "").toLowerCase();
+    if (EXECUTION_PATH_SEGMENTS.has(seg)) return seg;
+    if (seg === "preview" && (segments[i - 1] ?? "").toLowerCase() === "orders")
+      return "orders/preview";
+  }
+  return null;
+}
+
+/** Executable proof the guard catches what it claims — and only that. */
+const EXECUTION_MUST_MATCH: ReadonlyArray<string> = [
+  'apiFetch<Order>("/v1/orders/submit", { method: "POST" })',
+  "apiFetch(`/v1/orders/${id}/cancel`, { method: 'POST' })",
+  'apiFetch<Preview>("/orders/preview")',
+  'apiFetch("/v1/account-intents", { method: "POST", body })',
+  'apiFetch<Execution[]>("/v1/executions")',
+  'apiFetch("/v1/managed/rebalance", { method: "POST" })',
+  "await apiFetch(\n  '/v1/positions/liquidate',\n  { method: 'POST' },\n)",
+  'apiFetch("/v1/execution-policy", { method: "PUT" })',
+];
+
+const EXECUTION_BENIGN_CONTROLS: ReadonlyArray<string> = [
+  'apiFetch<Order[]>("/v1/brokers/orders")',
+  "apiFetch<Recommendation>(`/v1/recommendations/${id}`)",
+  'apiFetch<AccountActivationResponse>("/v1/account/activate", { method: "POST" })',
+  'apiFetch<BrokerConnectKeyResponse>("/v1/brokers/connect/keys", { method: "POST" })',
+  'apiFetch<AuthSession>("/auth/session")',
+  'apiFetch<ActivityEvent[]>("/v1/activity")',
+];
+
+function scanExecutionEndpoints(content: string): Array<{
+  index: number;
+  pattern: string;
+  text: string;
+}> {
+  const hits: Array<{ index: number; pattern: string; text: string }> = [];
+  for (const m of content.matchAll(API_FETCH_ARG_RE)) {
+    const arg = m[1] ?? "";
+    const seg = executionSegmentIn(arg);
+    if (seg !== null) {
+      hits.push({
+        index: m.index,
+        pattern: seg,
+        text: m[0].replace(/\s+/g, " ").slice(0, 160),
+      });
+    }
+  }
+  return hits;
+}
+
+function selfTestExecutionGuard(): string[] {
+  const failures: string[] = [];
+  for (const call of EXECUTION_MUST_MATCH) {
+    if (scanExecutionEndpoints(call).length === 0) {
+      failures.push(
+        `must be REFUSED but was not detected: ${call.replace(/\s+/g, " ")}`,
+      );
+    }
+  }
+  for (const call of EXECUTION_BENIGN_CONTROLS) {
+    const hits = scanExecutionEndpoints(call);
+    if (hits.length > 0) {
+      failures.push(
+        `must be ALLOWED but matched segment "${hits[0]?.pattern ?? ""}": ${call}`,
+      );
+    }
+  }
+  return failures;
+}
+
 const FORBIDDEN_FRESHNESS_STEMS: ReadonlyArray<string> = [
   // SCREAMING_SNAKE spellings.
   "FRESH_THRESHOLD",
@@ -325,7 +440,13 @@ interface Violation {
   file: string;
   line: number;
   kind:
-    "endpoint" | "action-id" | "label" | "route-path" | "freshness-threshold";
+    | "endpoint"
+    | "action-id"
+    | "label"
+    | "route-path"
+    | "freshness-threshold"
+    | "retired-signal-id"
+    | "execution-endpoint";
   pattern: string;
   text: string;
 }
@@ -496,18 +617,37 @@ function scanFile(absPath: string): Violation[] {
     }
   }
 
+  // 5. Browser-direct execution guard (whole-content pass — a multi-line
+  //    apiFetch call must not slip through a per-line scan).
+  for (const hit of scanExecutionEndpoints(content)) {
+    const lineNo = content.slice(0, hit.index).split("\n").length;
+    const line = lines[lineNo - 1] ?? "";
+    if (lineAllows(line, hit.pattern)) continue;
+    violations.push({
+      file: relPath,
+      line: lineNo,
+      kind: "execution-endpoint",
+      pattern: hit.pattern,
+      text: hit.text,
+    });
+  }
+
   return violations;
 }
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
 function main(): number {
-  // The freshness rule proves itself before it is trusted to police anything.
-  const selfTestFailures = selfTestFreshnessRule();
+  // Each self-proving rule demonstrates itself before it is trusted to police
+  // anything.
+  const selfTestFailures = [
+    ...selfTestFreshnessRule().map((f) => `[freshness] ${f}`),
+    ...selfTestExecutionGuard().map((f) => `[execution] ${f}`),
+  ];
   if (selfTestFailures.length > 0) {
     console.error(
-      `\ntripwire: freshness-threshold rule SELF-TEST FAILED ` +
-        `(${selfTestFailures.length}) — the guard does not enforce what it claims.\n`,
+      `\ntripwire: rule SELF-TEST FAILED ` +
+        `(${selfTestFailures.length}) — a guard does not enforce what it claims.\n`,
     );
     for (const f of selfTestFailures) console.error(`    ${f}`);
     console.error("");

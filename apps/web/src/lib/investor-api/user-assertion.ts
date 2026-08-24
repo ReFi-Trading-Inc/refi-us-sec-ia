@@ -160,10 +160,11 @@ export function assertPublishableIssuer(
   }
 }
 
-/** The JWKS URL investor-api fetches. Pinned in the dev connection sheet. */
-export function jwksUrlFor(issuer: string): string {
-  return `${issuer.replace(/\/+$/, "")}/.well-known/jwks.json`;
-}
+// NOTE: a `jwksUrlFor(issuer)` helper used to live here, deriving the JWKS URL
+// from `iss`. Deleted 2026-08-24: Daniel's 2026-08-19 contract is explicit that
+// investor-api uses only its explicitly configured JWKS URL and never derives
+// one from the issuer — the URN issuer and the JWKS hostname move
+// independently. The contract assertions pin the export's absence.
 
 // ─── Signing key ────────────────────────────────────────────────────────────
 

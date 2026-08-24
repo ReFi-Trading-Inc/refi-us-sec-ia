@@ -19,7 +19,7 @@
     "@rainbow-me/rainbowkit": "^2.2.11",
     "@refi/api-clients": "workspace:*",
     "@refi/ui": "workspace:*",
-    "@sentry/nextjs": "^9.47.1",
+    "@sentry/nextjs": "^10.71.0",
     "@tanstack/react-query": "^5.101.4",
     "jose": "^6.2.4",
     "msw": "^2.15.0",

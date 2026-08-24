@@ -3,24 +3,6 @@ import { E2E_USERS } from "./global-setup";
 import { e2eAuthCookies } from "./session";
 import { postSameOrigin } from "./api";
 
-interface BffJsonBody {
-  data: {
-    ok?: boolean;
-    reason?: string;
-    idempotentReplay?: boolean;
-    subscriptionModeFlipped?: boolean;
-    policy?: { policyVersion: number };
-    executionPolicyVersion?: number | null;
-    managedExecutionState?: { status: string };
-    managedExecutionStatusBefore?: string | null;
-    managedExecutionStatusAfter?: string | null;
-    reasonCodeCleared?: string | null;
-    [key: string]: unknown;
-  };
-  receipt?: { action?: string };
-  [key: string]: unknown;
-}
-
 // Surface 7 — Exception Review.
 // Exception Review resolves eligibility blockers. It does not approve trades,
 // override guardrails, submit broker orders, or expose the legacy backend
@@ -38,18 +20,18 @@ async function seedCookies(
 // The resolution writes mutate the shared prototype store; keep deterministic.
 test.describe.configure({ mode: "serial" });
 
-test.describe("Exception Review — Managed user", () => {
+test.describe("Exception Review — remediation queue (seeded exceptions user)", () => {
   test.beforeEach(async ({ context }) => {
     await seedCookies(context, E2E_USERS.exceptionsUser.eligibilityCookie);
   });
 
-  test("Queue renders mode badge, four seeded exceptions, and the explainer/boundary banner", async ({
+  test("Queue renders four seeded exceptions and the explainer/boundary banner", async ({
     page,
   }) => {
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("exceptions-page")).toHaveAttribute(
       "data-mode",
-      "managed",
+      "signal",
       { timeout: 30_000 },
     );
     await expect(page.getByTestId("exceptions-explainer")).toBeVisible();
@@ -101,7 +83,7 @@ test.describe("Exception Review — Managed user", () => {
     }
   });
 
-  test("update_profile exception exposes a route CTA to the profile review page (no inline mutation)", async ({
+  test("update_profile exception routes to the REAL advisory-profile editor (no inline mutation)", async ({
     page,
   }) => {
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
@@ -109,15 +91,12 @@ test.describe("Exception Review — Managed user", () => {
       "exception-card-exc-profile-stale-route-update_profile",
     );
     await expect(route).toBeVisible({ timeout: 30_000 });
-    await expect(route).toHaveAttribute(
-      "href",
-      "/us/app/settings/automation/profile",
-    );
+    await expect(route).toHaveAttribute("href", "/us/onboarding/profile");
     await route.click();
-    await expect(page).toHaveURL(/\/us\/app\/settings\/automation\/profile$/);
+    await expect(page).toHaveURL(/\/us\/onboarding\/profile$/);
   });
 
-  test("acknowledge_disclosure exception exposes a route CTA to the disclosure review page", async ({
+  test("acknowledge_disclosure exception routes to the REAL Documents surface", async ({
     page,
   }) => {
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
@@ -125,10 +104,7 @@ test.describe("Exception Review — Managed user", () => {
       "exception-card-exc-disclosure-expired-route-acknowledge_disclosure",
     );
     await expect(route).toBeVisible({ timeout: 30_000 });
-    await expect(route).toHaveAttribute(
-      "href",
-      "/us/app/settings/automation/disclosures",
-    );
+    await expect(route).toHaveAttribute("href", "/us/app/documents");
   });
 
   test("reconnect_broker exception exposes a reconnect CTA and never renders an order-submit affordance", async ({
@@ -149,87 +125,68 @@ test.describe("Exception Review — Managed user", () => {
     }
   });
 
-  test("Dismissing an exception removes it from the Open tab and surfaces it under Dismissed", async ({
+  test("The out-of-policy exception offers NO investor operation, and Managed categories are schema-unrepresentable", async ({
     page,
   }) => {
+    // C2a structural truth: an out-of-policy exception has no Signal
+    // remediation, so the card is informational — no mutation button of any
+    // kind renders on it — and a direct POST with a Managed-era category is
+    // rejected at the request schema (400), not merely by the stage policy.
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
-    const dismiss = page.getByTestId(
-      "exception-card-exc-broker-stale-resolve-dismiss_exception",
-    );
-    await expect(dismiss).toBeVisible({ timeout: 30_000 });
-    await dismiss.click();
-    // After mutation the card should disappear from the Open tab.
-    await expect(
-      page.getByTestId("exception-card-exc-broker-stale"),
-    ).toHaveCount(0, { timeout: 15_000 });
-    await page.getByTestId("exceptions-filter-dismissed").click();
-    await expect(
-      page.getByTestId("exception-card-exc-broker-stale"),
-    ).toBeVisible({ timeout: 15_000 });
-    await expect(
-      page.getByTestId("exception-card-exc-broker-stale-resolved-tag"),
-    ).toContainText("Dismissed");
-  });
-
-  test("Resolving an out-of-policy exception via pause_managed records the resolution and preserves the active ExecutionPolicy version", async ({
-    page,
-  }) => {
-    await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
-
-    const beforeStatus = await page.request.get("/api/v1/investor/status", {
-      headers: { "x-correlation-id": "e2e-exc-before" },
-    });
-    const beforeBody = (await beforeStatus.json()) as BffJsonBody;
-    const policyVersionBefore = beforeBody.data
-      .executionPolicyVersion as number;
-
-    const pauseBtn = page.getByTestId(
-      "exception-card-exc-out-of-policy-resolve-pause_managed",
-    );
-    await expect(pauseBtn).toBeVisible({ timeout: 30_000 });
-    await pauseBtn.click();
     await expect(
       page.getByTestId("exception-card-exc-out-of-policy"),
-    ).toHaveCount(0, { timeout: 15_000 });
+    ).toBeVisible({ timeout: 30_000 });
+    for (const res of [
+      "pause_managed",
+      "dismiss_exception",
+      "resolve_exception",
+    ]) {
+      await expect(
+        page.getByTestId(`exception-card-exc-out-of-policy-resolve-${res}`),
+      ).toHaveCount(0);
+    }
 
-    const afterStatus = await page.request.get("/api/v1/investor/status", {
-      headers: { "x-correlation-id": "e2e-exc-after" },
-    });
-    const afterBody = (await afterStatus.json()) as BffJsonBody;
-    expect(afterBody.data.executionPolicyVersion).toBe(policyVersionBefore);
+    const direct = await postSameOrigin(
+      page,
+      "/api/v1/investor/exceptions/exc-out-of-policy/resolve",
+      {
+        headers: { "x-correlation-id": "e2e-exc-managed-category" },
+        data: { resolution: "pause_managed", clientAttestation: true },
+      },
+    );
+    expect(direct.status()).toBe(400);
   });
 
-  test("Empty Open tab shows a clean empty state once every exception is closed", async ({
+  test("Remediated items remain OPEN — no closure path exists yet, and the suite says so", async ({
     page,
   }) => {
+    // Closure truth (C2a correction): route CTAs take the investor to
+    // remediation; nothing calls the resolve endpoint from this page, and the
+    // remediation-completion contract that would observe a completed
+    // remediation and close the exception is an open backend item (ledger).
+    // A direct POST is a backend capability, not an implemented product flow —
+    // so this suite no longer closes items to manufacture an empty queue.
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
-    // Close the two remaining open exceptions for the user via direct POST so
-    // this test does not depend on UI mutation ordering.
-    for (const id of ["exc-profile-stale", "exc-disclosure-expired"]) {
-      const res = await postSameOrigin(
-        page,
-        `/api/v1/investor/exceptions/${id}/resolve`,
-        {
-          headers: { "x-correlation-id": `e2e-exc-close-${id}` },
-          // UI never spells the legacy backend value; the direct API still
-          // accepts it under the legacy contract for now.
-          data: { resolution: "approve_exception", clientAttestation: true }, // allow-investor-boundary: "approve_exception" reason: "exercising backend contract from a test that asserts no UI exposure"
-        },
-      );
-      expect(res.status()).toBe(200);
+    for (const id of [
+      "exception-card-exc-profile-stale",
+      "exception-card-exc-disclosure-expired",
+      "exception-card-exc-broker-stale",
+      "exception-card-exc-out-of-policy",
+    ]) {
+      await expect(page.getByTestId(id)).toBeVisible({ timeout: 30_000 });
     }
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByTestId("exceptions-empty-open")).toBeVisible({
-      timeout: 30_000,
-    });
   });
 });
 
 test.describe("Exception Review — Signal boundary + forbidden language", () => {
-  test("Signal user sees not-applicable panel and no resolution controls", async ({
+  test("The queue is USABLE by a Signal user — rendered, empty state, no gate", async ({
     page,
     context,
   }) => {
+    // C2a correction: the earlier artifact told Signal users Exception Review
+    // was "Managed mode only" while the API reserved the remediation
+    // categories FOR Signal. The gate is gone; a Signal user with no seeded
+    // exceptions gets a working queue with a clean empty state.
     await seedCookies(context, E2E_USERS.signal.eligibilityCookie);
     await page.goto("/us/app/exceptions", { waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("exceptions-page")).toHaveAttribute(
@@ -237,12 +194,10 @@ test.describe("Exception Review — Signal boundary + forbidden language", () =>
       "signal",
       { timeout: 30_000 },
     );
-    await expect(page.getByTestId("exceptions-not-applicable")).toBeVisible();
-    await expect(page.getByTestId("exceptions-list")).toHaveCount(0);
-    await expect(page.getByTestId("exceptions-filter")).toHaveCount(0);
-    await expect(
-      page.getByTestId("exceptions-back-to-recommendations"),
-    ).toBeVisible();
+    await expect(page.getByTestId("exceptions-not-applicable")).toHaveCount(0);
+    await expect(page.getByTestId("exceptions-empty-open")).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
   test("No forbidden language or testids anywhere on the exceptions surface (Managed view)", async ({

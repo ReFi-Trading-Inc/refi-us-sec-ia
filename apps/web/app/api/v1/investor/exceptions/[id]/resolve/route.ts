@@ -26,22 +26,39 @@
  */
 import { z } from "zod";
 import { bffMutate } from "@lib/bff/handler";
-import {
-  ExceptionResolutions,
-  isExceptionResolution,
-} from "@lib/sec203a/actions";
+import { isExceptionResolution } from "@lib/sec203a/actions";
 import { GATED_UNTIL_MANAGED_PAPER } from "@lib/sec203a/admin-verbs";
-import { isExceptionResolutionPermitted } from "@lib/sec203a/release-policy";
+import {
+  isExceptionResolutionPermitted,
+  SIGNAL_ALLOWED_EXCEPTION_RESOLUTIONS,
+} from "@lib/sec203a/release-policy";
 import { getServerEnv } from "@lib/config/env";
 import {
   appendExceptionResolution,
   getExceptionReview,
 } from "@lib/prototype-store";
 
+/**
+ * C2a structural narrowing: the ACCEPTED request surface is Signal
+ * remediation only. A Managed-era category is no longer representable in the
+ * September artifact's schema — it fails shape validation (400) before the
+ * C1a-1 stage guard could even see it. The guard stays as defence in depth
+ * (and the mechanical pin requires its invocation), and the broader
+ * ExceptionResolutions taxonomy remains intact for audit history.
+ */
 const resolveBody = z.object({
-  resolution: z.string().refine(isExceptionResolution, {
-    message: `resolution must be one of: ${ExceptionResolutions.join(", ")}`,
-  }),
+  resolution: z
+    .string()
+    .refine(isExceptionResolution, {
+      message: `resolution must be one of: ${SIGNAL_ALLOWED_EXCEPTION_RESOLUTIONS.join(", ")}`,
+    })
+    .refine(
+      (r) =>
+        (SIGNAL_ALLOWED_EXCEPTION_RESOLUTIONS as readonly string[]).includes(r),
+      {
+        message: `resolution must be one of: ${SIGNAL_ALLOWED_EXCEPTION_RESOLUTIONS.join(", ")}`,
+      },
+    ),
   reasonCode: z.string().max(120).optional(),
   clientAttestation: z.literal(true),
 });

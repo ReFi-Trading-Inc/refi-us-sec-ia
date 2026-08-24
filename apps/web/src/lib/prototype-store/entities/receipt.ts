@@ -6,20 +6,25 @@
 import { appendOnlyStore } from "../store";
 import type { InvestorActionName } from "../../sec203a/actions";
 import {
-  adminVerbFor,
-  type InvestorAdminVerb,
+  receiptVerbFor,
+  type InvestorActionReceiptVerb,
 } from "../../sec203a/admin-verbs";
 
 export interface InvestorActionReceipt {
   receiptId: string;
   action: InvestorActionName;
   /**
-   * Daniel's backend admin-actions verb this investor action translates to,
-   * when one exists. Recorded so the audit trail carries backend vocabulary
-   * even while the BFF runs prototype-only. Omitted for BFF-only actions
-   * (e.g. acknowledgeDisclosure).
+   * Daniel's backend action verb this investor action translates to, when one
+   * exists. Recorded so the audit trail carries backend vocabulary even while
+   * the BFF runs prototype-only. Omitted for BFF-only actions (e.g.
+   * acknowledgeDisclosure).
+   *
+   * This is the RECEIPT vocabulary, a superset of the `/actions` emission
+   * allowlist: `update_prefs` appears here because preference updates create
+   * the same immutable receipts, even though they travel the dedicated
+   * preferences route (Daniel 2026-08-17 §6).
    */
-  adminVerb?: InvestorAdminVerb;
+  adminVerb?: InvestorActionReceiptVerb;
   actor: "user" | "system";
   authId: string;
   accountId?: string;
@@ -45,7 +50,7 @@ export async function appendActionReceipt(args: {
   reasonCode?: string;
   references?: string[];
 }): Promise<InvestorActionReceipt> {
-  const verb = adminVerbFor(args.action);
+  const verb = receiptVerbFor(args.action);
   const receipt: InvestorActionReceipt = {
     receiptId: crypto.randomUUID(),
     action: args.action,

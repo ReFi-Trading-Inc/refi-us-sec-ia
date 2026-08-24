@@ -178,8 +178,8 @@ export default function AccountPage() {
               {confirmDisconnect ? (
                 <div className="flex flex-col gap-2 p-3 rounded-md border border-status-rejected/40 bg-status-rejected/10">
                   <p className="text-xs text-charcoal-300">
-                    Disconnecting will stop managed execution. You can reconnect
-                    at any time.
+                    Disconnecting stops ReFi from reading this account, so your
+                    recommendations will pause. You can reconnect at any time.
                   </p>
                   <div className="flex gap-2">
                     <Button

@@ -176,7 +176,7 @@ export const onboardingCopy = {
   },
   activation: {
     heading: "Activation checklist",
-    subheading: "Complete all items to activate managed execution.",
+    subheading: "Complete all items to activate your account.",
     checklist: [
       { key: "eligibility", label: "State eligible", auto: true },
       { key: "wallet", label: "Wallet connected", auto: true },
@@ -189,9 +189,9 @@ export const onboardingCopy = {
         auto: false,
       },
     ],
-    activateLabel: "Activate managed execution",
+    activateLabel: "Activate account",
     pendingLabel: "Complete all items above to activate",
     warningDisclosure:
-      "Managed execution activation requires Form CRS, ADV Part 2A, and Investment Advisory Agreement acknowledgment. These documents are currently in preparation.",
+      "Account activation requires Form CRS, ADV Part 2A, and Investment Advisory Agreement acknowledgment. These documents are currently in preparation.",
   },
 } as const;

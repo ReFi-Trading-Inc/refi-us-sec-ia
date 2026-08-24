@@ -100,7 +100,6 @@ export const handlers = [
   // CompliancePreview: no hook called them, and a mock that answers "accepted"
   // to an order submission describes a capability the Signal product must not
   // have.
-  http.get(url("/orders"), () => HttpResponse.json(mayaOrders)),
 
   http.get(url("/v1/recommendations"), () =>
     HttpResponse.json(mayaRecommendations),

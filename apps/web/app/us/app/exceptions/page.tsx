@@ -1,19 +1,21 @@
 "use client";
 
 /**
- * Exception Review queue (Phase 2 Surface 7).
+ * Exception Review — the Signal remediation queue.
  *
- * Exception Review is the only per-decision investor touchpoint allowed in
- * Managed mode. It resolves blockers — it never approves trades.
+ * C2a-corrected: this surface was previously gated to "Managed mode only" with
+ * a not-applicable panel for Signal users, which contradicted the API split
+ * that reserves the remediation categories FOR Signal. It now renders for
+ * every investor. Items link to the genuine remediation surfaces (advisory
+ * profile editor, Documents, Account/broker); items with no Signal remedy are
+ * informational, with no investor override of any kind.
  *
- * Boundary preserved:
- *   - No per-trade Accept affordance.
- *   - No broker order is submitted from this surface.
- *   - The active ExecutionPolicy is never mutated by this surface.
- *   - The UI never exposes the legacy backend resolution identifiers; UI
- *     labels are "Resolve exception" and "Dismiss exception". The mapping
- *     lives in `mapResolutionToBackend`
- *     (packages/api-clients/src/hooks/exceptions.ts).
+ * Closure truth: route CTAs take the investor to remediation — they do not
+ * call the resolve endpoint, and nothing marks an exception resolved from this
+ * page. The remediation-completion contract (what observes a completed
+ * remediation and closes the exception) is an open backend item recorded in
+ * the release ledger. Until it exists, remediated items legitimately remain
+ * listed as open.
  */
 import { useCallback, useMemo, useState } from "react";
 import Link from "next/link";
@@ -25,7 +27,6 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  ModeBadge,
   StatusBanner,
 } from "@ui/components";
 import {
@@ -33,7 +34,6 @@ import {
   isDismissResolution,
   useInvestorExceptions,
   useResolveException,
-  useSubscriptionMode,
   type ExceptionKind,
   type InvestorExceptionItem,
   type UiResolution,
@@ -54,73 +54,78 @@ interface KindCopy {
 const KIND_COPY: Record<ExceptionKind, KindCopy> = {
   stale_broker_data: {
     title: "Broker data needs to refresh",
-    why: "Automation paused for this item because the broker connection has not provided fresh data within your policy's freshness window.",
-    resolutions: ["reconnect_broker", "pause_managed", "dismiss_exception"],
+    why: "Your broker connection has not provided fresh account data recently, so this item cannot be kept current. Check your broker connection.",
+    resolutions: ["reconnect_broker"],
     primaryRoute: "/us/app/account",
     severity: "warning",
   },
   insufficient_buying_power: {
     title: "Not enough buying power",
-    why: "Automation paused for this item because your account does not currently have enough buying power to follow the recommendation under your active policy.",
-    resolutions: ["dismiss_exception", "pause_managed"],
+    why: "Your account does not currently have enough buying power for this item to be reflected as recommended.",
+    resolutions: [],
     severity: "warning",
   },
   expired_disclosure: {
     title: "Disclosure needs review",
-    why: "An updated disclosure version supersedes the one your active policy was signed under. Automation pauses items affected by this disclosure until you review the new version.",
-    resolutions: ["acknowledge_disclosure", "dismiss_exception"],
-    primaryRoute: "/us/app/settings/automation/disclosures",
+    why: "An updated disclosure version supersedes one you previously acknowledged. Review the current documents to bring your acknowledgements up to date.",
+    resolutions: ["acknowledge_disclosure"],
+    primaryRoute: "/us/app/documents",
     severity: "blocked",
   },
   changed_preference: {
     title: "A profile preference changed",
-    why: "Your profile changed in a way that affects what this recommendation would do under your active policy. Review your profile before automation resumes.",
-    resolutions: ["update_profile", "dismiss_exception"],
-    primaryRoute: "/us/app/settings/automation/profile",
+    why: "Your profile changed in a way that affects this item. Review and update your advisory profile so your recommendations reflect it.",
+    resolutions: ["update_profile"],
+    primaryRoute: "/us/onboarding/profile",
     severity: "warning",
   },
   stale_profile: {
     title: "Profile needs review",
-    why: "Your active policy was signed under a profile snapshot that is older than your freshness setting. Review your profile to keep automation eligible.",
-    resolutions: ["update_profile", "dismiss_exception"],
-    primaryRoute: "/us/app/settings/automation/profile",
+    why: "Your advisory profile has not been confirmed recently. Review and update it so your recommendations stay grounded in current information.",
+    resolutions: ["update_profile"],
+    primaryRoute: "/us/onboarding/profile",
     severity: "warning",
   },
   out_of_policy_intent: {
-    title: "Recommendation does not fit the active policy",
-    why: "Automation paused this item because it falls outside the guardrails you signed in your active Execution Policy. You can dismiss it or pause Managed entirely while you review.",
-    resolutions: ["dismiss_exception", "pause_managed"],
+    title: "Recommendation outside your configured guardrails",
+    why: "This item falls outside your configured guardrails. It stays recorded here; no investor action is available for it in the current release.",
+    resolutions: [],
     severity: "blocked",
   },
   missing_consent: {
     title: "A consent is missing",
-    why: "Automation paused this item because a consent your active policy depends on has not been given. Review and accept it to keep automation eligible.",
-    resolutions: ["acknowledge_disclosure", "dismiss_exception"],
-    primaryRoute: "/us/app/settings/automation/disclosures",
+    why: "A required consent has not been given. Review and accept it in your documents.",
+    resolutions: ["acknowledge_disclosure"],
+    primaryRoute: "/us/app/documents",
     severity: "blocked",
   },
   broker_disconnected: {
     title: "Broker connection is disconnected",
-    why: "Automation paused this item because your brokerage connection is no longer active. Reconnect your broker to resume.",
-    resolutions: ["reconnect_broker", "pause_managed", "dismiss_exception"],
+    why: "Your brokerage connection is no longer active. Reconnect your broker.",
+    resolutions: ["reconnect_broker"],
     primaryRoute: "/us/app/account",
     severity: "blocked",
   },
   reconciliation_block: {
     title: "Account is being reconciled",
-    why: "Automation paused this item while ReFi reconciles your account records with your broker. This clears on its own once reconciliation completes; no action is needed from you.",
-    resolutions: ["dismiss_exception", "pause_managed"],
+    why: "ReFi is reconciling your account records with your broker. This clears on its own once reconciliation completes; no action is needed from you.",
+    resolutions: [],
     severity: "warning",
   },
 };
 
 const RESOLUTION_LABEL: Record<UiResolution, string> = {
-  resolve_exception: "Continue after checks",
-  dismiss_exception: "Dismiss exception",
+  // C2a: only Signal remediation is offered as an investor operation. The
+  // Managed-era Ui options (resolve/dismiss/pause) are no longer rendered and
+  // are unrepresentable at the BFF schema; their entries here exist solely
+  // because the Record type spans the full Ui vocabulary, which the hook
+  // layer retains for labelling HISTORICAL resolutions.
+  resolve_exception: "",
+  dismiss_exception: "",
+  pause_managed: "",
   update_profile: "Update profile",
   reconnect_broker: "Reconnect broker",
   acknowledge_disclosure: "Review disclosure",
-  pause_managed: "Pause Managed",
 };
 
 function ExceptionCard(props: {
@@ -228,9 +233,7 @@ function ExceptionCard(props: {
                 <Button
                   key={res}
                   data-testid={`exception-card-${item.exceptionId}-resolve-${res}`}
-                  variant={
-                    res === "dismiss_exception" ? "secondary" : "primary"
-                  }
+                  variant="primary"
                   size="sm"
                   loading={pendingResolution === res}
                   onClick={() => {
@@ -249,7 +252,6 @@ function ExceptionCard(props: {
 }
 
 export default function ExceptionsPage() {
-  const modeQ = useSubscriptionMode();
   const listQ = useInvestorExceptions();
   const resolveMut = useResolveException();
   const [filter, setFilter] = useState<QueueFilter>("open");
@@ -258,7 +260,6 @@ export default function ExceptionsPage() {
   >({});
   const [serverError, setServerError] = useState<string | null>(null);
 
-  const mode = modeQ.data?.mode ?? "unset";
   // Memoize so the empty-array fallback has a stable identity across renders;
   // otherwise `useMemo(... [allItems, filter])` below recomputes on every
   // render and the dependency array is reported as inexhaustive.
@@ -296,62 +297,26 @@ export default function ExceptionsPage() {
     });
   }, [allItems, filter]);
 
-  // Signal users — show not-applicable panel.
-  if (mode === "signal") {
-    return (
-      <div
-        className="flex flex-col gap-6 max-w-3xl"
-        data-testid="exceptions-page"
-        data-mode={mode}
-      >
-        <header>
-          <h1 className="text-xl font-semibold text-charcoal-50 mb-1">
-            Exception Review
-          </h1>
-          <p className="text-sm text-charcoal-400">
-            Managed-mode review of items automation could not act on.
-          </p>
-        </header>
-        <Card data-testid="exceptions-not-applicable">
-          <CardContent className="pt-5 pb-5 flex flex-col gap-3">
-            <p className="text-sm text-charcoal-300">
-              Exception Review applies to ReFi Managed mode only. On Signal, you
-              review recommendations manually — return to the recommendations
-              list to see what is currently surfaced.
-            </p>
-            <Link
-              href="/us/app/recommendations"
-              className="text-sm text-mint-300 underline underline-offset-2"
-              data-testid="exceptions-back-to-recommendations"
-            >
-              Back to recommendations
-            </Link>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
   return (
     <div
       className="flex flex-col gap-6 max-w-3xl"
       data-testid="exceptions-page"
-      data-mode={mode}
+      data-mode="signal"
     >
       <header className="flex flex-col gap-2">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold text-charcoal-50">
             Exception Review
           </h1>
-          {mode !== "unset" && <ModeBadge mode="managed" />}
         </div>
         <p
           className="text-sm text-charcoal-400"
           data-testid="exceptions-explainer"
         >
-          Managed execution pauses or skips items that fall outside the active
-          policy or need updated information. Resolve the blocker before
-          automation continues.
+          Items that need your attention before they can be reflected in your
+          recommendations — a stale profile, an unacknowledged disclosure, or a
+          broker connection issue. Each links to the place where you can put it
+          right.
         </p>
       </header>
 
@@ -399,8 +364,8 @@ export default function ExceptionsPage() {
         <Card data-testid="exceptions-empty-open">
           <CardContent className="pt-5 pb-5">
             <p className="text-sm text-charcoal-300">
-              No exceptions need review. Managed recommendations that fit your
-              active policy continue through the normal automation checks.
+              No exceptions need review. Your recommendations reflect the
+              information currently available for your account.
             </p>
           </CardContent>
         </Card>

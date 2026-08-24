@@ -12,7 +12,6 @@ import {
 } from "recharts";
 import { appCopy } from "../../_content/app-copy";
 import { useSimulation } from "../../../_hooks/useSimulation";
-import { ModeStatusStrip } from "../_components/ModeStatusStrip";
 
 const { home } = appCopy;
 
@@ -64,8 +63,6 @@ export default function HomePage() {
           {home.heading}
         </h1>
       </div>
-
-      <ModeStatusStrip />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((kpi) => (

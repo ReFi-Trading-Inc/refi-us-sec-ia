@@ -14,13 +14,13 @@ import { E2E_SESSION_JWT_SECRET } from "./e2e/session";
  * and never inlined into the bundle, so one `next build` serves both stages.
  * Run `pnpm e2e` first (which builds), then `pnpm e2e:signal`.
  *
- * SCOPE: boot-and-posture plus the CAPABILITY-POLICY refusals. Since C1a-1,
- * bffMutate enforces the default-deny Signal capability policy
- * (sec203a/release-policy.ts), so "a Managed mutation is refused at the
- * signal stage" is finally a true statement about main and is asserted here.
- * Structural ABSENCE of the Managed surfaces (removal, not refusal) is C2a/
- * C2b and still pending — refusal at the boundary is a necessary layer, not
- * the whole proof.
+ * SCOPE: this is the release-authority lane. signal-smoke.spec.ts proves the
+ * September configuration boots and holds its production posture, and that
+ * Signal-allowed mutations positively succeed. signal-authority.spec.ts
+ * (C2b) proves the structural ABSENCE of the Managed surface at this stage —
+ * the same shared route lists the main lane asserts at managed_paper — plus
+ * the per-trade-approval absence proof. The C1a-1 default-deny policy
+ * (sec203a/release-policy.ts) remains defence in depth behind the removals.
  */
 const PROTOTYPE_STORE_DIR = resolve(__dirname, ".refi-prototype-store-e2e");
 process.env["REFI_PROTOTYPE_STORE_DIR"] = PROTOTYPE_STORE_DIR;
@@ -34,7 +34,7 @@ const PORT = 3000;
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /signal-smoke\.spec\.ts/,
+  testMatch: /signal-(smoke|authority)\.spec\.ts/,
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   forbidOnly: !!process.env["CI"],

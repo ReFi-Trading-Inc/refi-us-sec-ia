@@ -16,6 +16,15 @@ import { test, expect } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 import { e2eAuthCookies } from "./session";
 import { postSameOrigin } from "./api";
+import {
+  ABSENT_MANAGED_POST_ROUTES,
+  ABSENT_MANAGED_GET_ROUTES,
+  ABSENT_MODE_ROUTE,
+  ABSENT_MANAGED_PAGES,
+  SIGNAL_REMEDIATION_PAGES,
+  MANAGED_EXCEPTION_RESOLUTIONS,
+  SIGNAL_EXCEPTION_RESOLUTION,
+} from "./signal-boundary-surface";
 
 test.describe("C2a — removed Managed API surfaces answer 404", () => {
   test.beforeEach(async ({ context }) => {
@@ -28,28 +37,11 @@ test.describe("C2a — removed Managed API surfaces answer 404", () => {
 
   test("Managed execution routes are structurally absent", async ({ page }) => {
     await page.goto("/us/app/home", { waitUntil: "domcontentloaded" });
-    for (const path of [
-      "/api/v1/investor/managed/pause",
-      "/api/v1/investor/managed/resume",
-      "/api/v1/investor/execution-policy/activate",
-      "/api/v1/investor/profile/reconfirm",
-      "/api/v1/investor/disclosures/reacknowledge",
-    ]) {
+    for (const path of ABSENT_MANAGED_POST_ROUTES) {
       const res = await postSameOrigin(page, path, { data: {} });
       expect(res.status(), `${path} must be gone, not gated`).toBe(404);
     }
-    for (const path of [
-      "/api/v1/investor/managed/state",
-      "/api/v1/investor/execution-policy",
-      "/api/v1/investor/execution-policy/draft",
-      "/api/v1/investor/orders",
-      "/api/v1/investor/orders/any-id/lineage",
-      // Reclassified in the C2a correction: profile reactivation and
-      // disclosure re-acknowledgement are ExecutionPolicy/MES workflows, not
-      // Signal remediation. Parked with the Managed product.
-      "/api/v1/investor/profile/reactivation",
-      "/api/v1/investor/disclosures/reacknowledgement",
-    ]) {
+    for (const path of ABSENT_MANAGED_GET_ROUTES) {
       const res = await page.request.get(path);
       expect(res.status(), `${path} must be gone, not gated`).toBe(404);
     }
@@ -63,13 +55,11 @@ test.describe("C2a — removed Managed API surfaces answer 404", () => {
     // legitimate September consumer left — so the whole route is gone, not
     // retained reflexively as a read.
     await page.goto("/us/app/home", { waitUntil: "domcontentloaded" });
-    const get = await page.request.get("/api/v1/investor/subscription-mode");
+    const get = await page.request.get(ABSENT_MODE_ROUTE);
     expect(get.status()).toBe(404);
-    const post = await postSameOrigin(
-      page,
-      "/api/v1/investor/subscription-mode",
-      { data: { mode: "managed" } },
-    );
+    const post = await postSameOrigin(page, ABSENT_MODE_ROUTE, {
+      data: { mode: "managed" },
+    });
     expect(post.status()).toBe(404);
   });
 
@@ -77,11 +67,7 @@ test.describe("C2a — removed Managed API surfaces answer 404", () => {
     page,
   }) => {
     await page.goto("/us/app/home", { waitUntil: "domcontentloaded" });
-    for (const resolution of [
-      "approve_exception",
-      "reject_exception",
-      "pause_managed",
-    ]) {
+    for (const resolution of MANAGED_EXCEPTION_RESOLUTIONS) {
       const res = await postSameOrigin(
         page,
         "/api/v1/investor/exceptions/any-id/resolve",
@@ -97,7 +83,12 @@ test.describe("C2a — removed Managed API surfaces answer 404", () => {
     const ok = await postSameOrigin(
       page,
       "/api/v1/investor/exceptions/no-such-exception/resolve",
-      { data: { resolution: "update_profile", clientAttestation: true } },
+      {
+        data: {
+          resolution: SIGNAL_EXCEPTION_RESOLUTION,
+          clientAttestation: true,
+        },
+      },
     );
     expect(ok.status()).toBe(404);
   });
@@ -113,30 +104,17 @@ test.describe("C2a — removed pages and relocated Signal IA", () => {
   test("Automation and reactivation pages are gone; the REAL Signal flows serve", async ({
     page,
   }) => {
-    for (const path of [
-      "/us/app/settings/automation",
-      "/us/app/settings/automation/activate",
-      "/us/app/settings/automation/profile",
-      "/us/app/settings/automation/disclosures",
-      // C2a correction: these two were briefly presented as "moved Signal
-      // IA". They were the Managed reactivation workflow under new URLs and
-      // are parked with the Managed product, not relocated.
-      "/us/app/profile",
-      "/us/app/documents/reacknowledge",
-    ]) {
+    for (const path of ABSENT_MANAGED_PAGES) {
       const res = await page.goto(path, { waitUntil: "domcontentloaded" });
       expect(res?.status(), `${path} must 404 — removed, no redirects`).toBe(
         404,
       );
     }
     // The genuine Signal surfaces remediation routes to:
-    for (const [path, marker] of [
-      ["/us/onboarding/profile", "heading"],
-      ["/us/app/documents", "heading"],
-    ] as const) {
+    for (const path of SIGNAL_REMEDIATION_PAGES) {
       const res = await page.goto(path, { waitUntil: "domcontentloaded" });
       expect(res?.status(), `${path} must serve`).toBe(200);
-      await expect(page.getByRole(marker, { level: 1 })).toBeVisible({
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible({
         timeout: 30_000,
       });
     }

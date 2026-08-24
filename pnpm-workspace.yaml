@@ -2,23 +2,34 @@ packages:
   - "apps/*"
   - "packages/*"
 
-# Security floor for transitive deps (Dependabot high-severity burn-down).
-# Each entry pins the minimum patched version; parents' own ranges stay intact.
+# Security floor for transitive deps (Dependabot burn-down; refreshed
+# 2026-08-24 against the live registry audit — see compliance/CONTROL_MATRIX.md
+# CM-02). Each entry pins the minimum patched version within the parent's own
+# major line; parents' ranges stay intact. Deliberately NOT floored here:
+# uuid (patched line starts at v11; forcing it under the v8/v9 wallet-connector
+# parents would fake compatibility) and @opentelemetry/core (Sentry pins a 1.x
+# line; fixed through the Sentry parent, not an override).
 overrides:
-  ws: ">=8.21.0"
+  ws: ">=8.21.1 <9"
   axios: ">=1.18.0"
   sharp: ">=0.35.0"
-  postcss: ">=8.5.18"
-  "brace-expansion@1": ">=1.1.16 <2"
-  "brace-expansion@2": ">=2.1.2 <3"
-  "brace-expansion@5": ">=5.0.8"
+  postcss: ">=8.5.23 <9"
+  "brace-expansion@1": ">=1.1.18 <2"
+  "brace-expansion@2": ">=2.1.4 <3"
+  "brace-expansion@5": ">=5.0.9"
   "@opentelemetry/exporter-prometheus": ">=0.217.0"
   "@opentelemetry/sdk-node": ">=0.217.0"
   "@opentelemetry/auto-instrumentations-node": ">=0.75.0"
   "@opentelemetry/propagator-jaeger": ">=2.9.0"
   "@grpc/grpc-js": ">=1.14.4"
   protobufjs: ">=7.6.1"
-  hono: ">=4.12.25"
+  hono: ">=4.12.34 <5"
+  socket.io-parser: ">=4.2.7 <5"
+  fast-uri: ">=3.1.5 <4"
+  js-yaml: ">=4.3.1 <5"
+  nanoid: ">=3.3.18 <4"
+  ua-parser-js: ">=2.0.10 <3"
+  dompurify: ">=3.4.13 <4"
 
 allowBuilds:
   "@sentry/cli": true

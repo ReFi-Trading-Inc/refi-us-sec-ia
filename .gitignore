@@ -34,4 +34,7 @@ apps/web/test-results/
 coverage
 .nyc_output
 .vercel
+# Keep AFTER every .env* ignore: a later `.env*` line re-ignores the example
+# file, and gitignore precedence is last-match-wins.
 .env*
+!.env.example

@@ -2,7 +2,6 @@ import { type NextRequest, NextResponse } from "next/server";
 
 const ELIGIBILITY_COOKIE = "us_eligibility_v1";
 const SESSION_COOKIE = "us_session_v1";
-const CSRF_COOKIE = "csrf_v1";
 
 const isProd = process.env["NEXT_PUBLIC_REFI_ENV"] === "prod";
 const posthogHost =
@@ -109,20 +108,12 @@ export function proxy(request: NextRequest) {
     "max-age=63072000; includeSubDomains; preload",
   );
 
-  // Issue CSRF token on navigation to /us/app/* pages (readable by JS so the
-  // fetch client can echo it back in the x-csrf-token header).
-  const isAppNav =
-    pathname.startsWith("/us/app/") && !request.headers.get("x-requested-with");
-  if (isAppNav && !request.cookies.get(CSRF_COOKIE)) {
-    const csrfToken = crypto.randomUUID().replace(/-/g, "");
-    response.cookies.set(CSRF_COOKIE, csrfToken, {
-      httpOnly: false,
-      secure: true,
-      sameSite: "lax",
-      path: "/us",
-      maxAge: 60 * 60 * 8,
-    });
-  }
+  // NOTE: a double-submit CSRF cookie used to be issued here for /us/app/*
+  // navigations. Removed 2026-08-25 (CS-02): nothing ever echoed or validated
+  // it, and the implemented CSRF control for cookie-authenticated mutations is
+  // the fail-closed same-origin check in bffMutate (src/lib/bff/origin.ts).
+  // The tripwire pins the retired identifiers so the half-layer cannot
+  // silently return without a reviewed CSRF architecture decision.
 
   return response;
 }

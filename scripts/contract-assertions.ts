@@ -3949,6 +3949,62 @@ await section(
       );
     },
   );
+
+  // CS-02 (2026-08-25): with the dead double-submit layer removed, the
+  // same-origin check is the SOLE implemented CSRF control, so its edges are
+  // pinned mechanically: a cookie-authenticated mutation cannot proceed unless
+  // the request declares the exact server-resolved origin.
+  await section(
+    "bffMutate: Origin null with no Referer is rejected 403 even with cookies",
+    async () => {
+      const res = await mutate(
+        post({ origin: "null", cookie: "us_session_v1=looks-valid" }) as never,
+      );
+      assert.equal(
+        res.status,
+        403,
+        "Origin: null (sandboxed/data: context) must fail closed before auth",
+      );
+    },
+  );
+
+  await section(
+    "bffMutate: deceptive origin sharing the hostname as a prefix is rejected",
+    async () => {
+      const res = await mutate(
+        post({
+          origin: "http://localhost:3000.evil.example",
+          cookie: "us_session_v1=looks-valid",
+        }) as never,
+      );
+      assert.equal(res.status, 403, "prefix-spoofed origin must be 403");
+    },
+  );
+
+  await section(
+    "bffMutate: mismatched scheme or port is rejected",
+    async () => {
+      for (const origin of [
+        "https://localhost:3000",
+        "http://localhost:4000",
+      ]) {
+        const res = await mutate(post({ origin }) as never);
+        assert.equal(
+          res.status,
+          403,
+          `${origin} must not count as same-origin`,
+        );
+      }
+    },
+  );
+
+  await section(
+    "bffMutate: malformed Referer with no Origin is rejected 403",
+    async () => {
+      const res = await mutate(post({ referer: "not a url at all" }) as never);
+      assert.equal(res.status, 403, "unparseable Referer must fail closed");
+    },
+  );
 }
 
 // ─── Storage backing resolver (REFI_BACKING) ────────────────────────────────

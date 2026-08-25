@@ -1,16 +1,16 @@
 {
-  "description": "Deny-by-default API route allowlist (control CM-04). Every apps/web/app/api/**/route.ts must have exactly one entry here, with exact HTTP-method parity. CI fails on any unlisted route, ghost entry, or method drift (scripts/route-manifest-gate.ts). This manifest proves INVENTORY COMPLETENESS and REVIEWED ROUTE/METHOD EXPANSION only — it does not prove any route's authorization behaviour is correct; the auth field records the measured mechanism, and the auth-specific controls in CONTROL_MATRIX.md (AC-*, CS-*, IB-*) remain responsible for proving that behaviour.",
+  "description": "Deny-by-default API route allowlist (control CM-04). Every App Router route-handler candidate (any route.* under apps/web/app/api/**) must have exactly one entry here, with exact HTTP-method parity. CI fails on any unlisted route, ghost entry, or method drift (scripts/route-manifest-gate.ts); a route.* candidate with an unsupported extension fails closed as UNSUPPORTED ROUTE FILE, and the introduction of a Pages Router API surface (pages/api) fails closed as an UNMANIFESTED API ROUTING MECHANISM until CM-04 is explicitly redesigned to cover it. This manifest proves INVENTORY COMPLETENESS and REVIEWED ROUTE/METHOD EXPANSION only — it does not prove any route's authorization behaviour is correct; the auth field records the measured mechanism, and the auth-specific controls in CONTROL_MATRIX.md (AC-*, CS-*, IB-*) remain responsible for proving that behaviour.",
   "auth_vocabulary": {
     "public": "No authentication; intentionally unauthenticated (liveness only).",
     "public-rate-limited": "Unauthenticated by design; per-IP rate limiter; issues or consumes signed evidence rather than a session.",
     "token-flag-gated": "Dark unless its feature flag is exactly 'on' (404 otherwise); authenticates a signed single-use token with route-local same-origin check and per-IP rate limit; no session required.",
-    "bff-read": "Session-authenticated investor read via the shared bffRead wrapper (401 when unauthenticated; ownership checked server-side).",
+    "bff-read": "Session-authenticated investor read via the shared bffRead wrapper (401 when unauthenticated). Route-specific ownership/account authorization is outside CM-04 and remains proved by the relevant access-control tests.",
     "bff-read-access-logged": "bff-read plus an append-only RecordAccessLog entry per read (books-and-records surface) via bffReadWithAccessLog.",
     "bff-mutate": "Session-authenticated investor mutation via the shared bffMutate wrapper: fail-closed same-origin check before auth, release-stage capability policy, append-only InvestorActionReceipt."
   },
   "owner_vocabulary": {
     "platform": "Deployment/runtime plumbing owned by the web app itself.",
-    "us-funnel": "Pre-session /us public funnel surfaces (eligibility gate, support intake).",
+    "us-funnel": "US funnel/support surfaces outside the /api/v1/investor namespace; authentication is recorded separately per method.",
     "alpha-onboarding": "Alpha game handoff surface (flag-dark outside the alpha program).",
     "identity": "Session and identity context for the signed-in investor.",
     "investor-bff": "Authenticated Signal investor projections and governed account actions.",

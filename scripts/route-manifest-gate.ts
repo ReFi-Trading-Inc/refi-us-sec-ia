@@ -5,11 +5,20 @@
  * The deployed application may not acquire a new API route, or a new HTTP
  * method on an existing route, without an explicit reviewed change to
  * compliance/API_ROUTE_MANIFEST.json. This gate independently discovers every
- * apps/web/app/api/​**​/route.ts from disk (never from the manifest), extracts
- * the actually-exported HTTP methods with the TypeScript compiler API, and
- * fails CI on any drift in either direction — unlisted route, ghost entry,
- * route-path mismatch, method added in code, method claimed but not exported,
- * duplicate entries, or malformed/unknown metadata.
+ * App Router route-handler candidate — any `route.*` file under
+ * apps/web/app/api/​**​ — from disk (never from the manifest), extracts the
+ * actually-exported HTTP methods with the TypeScript compiler API (which
+ * parses .ts/.tsx/.js/.jsx alike), and fails CI on any drift in either
+ * direction — unlisted route, ghost entry, route-path mismatch, method added
+ * in code, method claimed but not exported, duplicate entries, or
+ * malformed/unknown metadata.
+ *
+ * FAIL-CLOSED COVERAGE, not just parity: a `route.*` candidate with an
+ * extension this gate cannot parse fails as UNSUPPORTED ROUTE FILE rather
+ * than being ignored, and the introduction of a Pages Router API surface
+ * (apps/web/pages/api/** or apps/web/src/pages/api/**) fails as an
+ * UNMANIFESTED API ROUTING MECHANISM until CM-04 is explicitly redesigned to
+ * cover it. Neither bypass can keep the gate green.
  *
  * SCOPE OF PROOF: inventory completeness and reviewed route/method expansion
  * ONLY. A green run does not prove any route's authorization behaviour is
@@ -69,13 +78,78 @@ interface Manifest {
 
 // ─── Discovery (filesystem + TypeScript AST; never the manifest) ────────────
 
+/**
+ * Route-handler extensions the gate can parse and inventory. Anything else
+ * matching `route.*` FAILS CLOSED — never silently ignored — because Next.js
+ * routing is not limited to TypeScript (there is no pageExtensions
+ * restriction in next.config.ts) and an unseen handler would be a manifest
+ * bypass.
+ */
+const PARSEABLE_ROUTE_EXTS: ReadonlySet<string> = new Set([
+  "ts",
+  "tsx",
+  "js",
+  "jsx",
+]);
+
+const ROUTE_FILE_RE = /^route\.([A-Za-z0-9]+)$/;
+
+/** Pure: classify a route-handler candidate by extension. */
+export function classifyRouteCandidate(
+  fileName: string,
+): "parseable" | "unsupported" | "not-a-route" {
+  const m = ROUTE_FILE_RE.exec(fileName);
+  if (!m || !m[1]) return "not-a-route";
+  return PARSEABLE_ROUTE_EXTS.has(m[1].toLowerCase())
+    ? "parseable"
+    : "unsupported";
+}
+
 function walkRouteFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) walkRouteFiles(full, out);
-    else if (entry === "route.ts" || entry === "route.tsx") out.push(full);
+    else if (classifyRouteCandidate(entry) !== "not-a-route") out.push(full);
   }
   return out;
+}
+
+/** Pure: deny-by-default detector for a second API routing mechanism. */
+export function pagesApiViolation(repoRelFile: string): string {
+  return (
+    `UNMANIFESTED API ROUTING MECHANISM: Pages Router API route detected (${repoRelFile}). ` +
+    `CM-04 currently inventories App Router routes only; adding another API routing mechanism ` +
+    `requires an explicit reviewed CM-04 design/manifest change.`
+  );
+}
+
+function walkAllFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) walkAllFiles(full, out);
+    else out.push(full);
+  }
+  return out;
+}
+
+const PAGES_API_ROOTS = ["apps/web/pages/api", "apps/web/src/pages/api"];
+
+function detectPagesApiRoutes(): string[] {
+  const errors: string[] = [];
+  for (const root of PAGES_API_ROOTS) {
+    const abs = join(REPO_ROOT, root);
+    try {
+      if (!statSync(abs).isDirectory()) continue;
+    } catch {
+      continue; // absent — the good state
+    }
+    for (const f of walkAllFiles(abs)) {
+      errors.push(
+        pagesApiViolation(relative(REPO_ROOT, f).split(sep).join("/")),
+      );
+    }
+  }
+  return errors;
 }
 
 /** Extract the HTTP methods a route file actually exports. */
@@ -114,25 +188,36 @@ export function exportedHttpMethods(
   return [...methods].sort();
 }
 
-function routeFromSource(repoRelSource: string): string {
+export function routeFromSource(repoRelSource: string): string {
   // apps/web/app/api/foo/[id]/route.ts -> /api/foo/[id]
   const posix = repoRelSource.split(sep).join("/");
-  const m = /^apps\/web\/app(\/api\/.*)\/route\.tsx?$/.exec(posix);
+  const m = /^apps\/web\/app(\/api\/.*)\/route\.(ts|tsx|js|jsx)$/.exec(posix);
   if (!m || !m[1]) return `<unparseable:${posix}>`;
   return m[1];
 }
 
-function discoverRoutes(): DiscoveredRoute[] {
-  return walkRouteFiles(API_ROOT)
-    .map((abs) => {
-      const source = relative(REPO_ROOT, abs).split(sep).join("/");
-      return {
-        source,
-        route: routeFromSource(source),
-        methods: exportedHttpMethods(readFileSync(abs, "utf8"), abs),
-      };
-    })
-    .sort((a, b) => a.route.localeCompare(b.route));
+function discoverRoutes(): { routes: DiscoveredRoute[]; errors: string[] } {
+  const routes: DiscoveredRoute[] = [];
+  const errors: string[] = [];
+  for (const abs of walkRouteFiles(API_ROOT)) {
+    const source = relative(REPO_ROOT, abs).split(sep).join("/");
+    const fileName = source.split("/").pop() ?? "";
+    if (classifyRouteCandidate(fileName) === "unsupported") {
+      errors.push(
+        `UNSUPPORTED ROUTE FILE: ${source} — a route-handler candidate this gate cannot parse. ` +
+          `Supported extensions: ${[...PARSEABLE_ROUTE_EXTS].join(", ")}. Failing closed: extend the gate ` +
+          `AND the manifest in a reviewed change before introducing this handler form.`,
+      );
+      continue;
+    }
+    routes.push({
+      source,
+      route: routeFromSource(source),
+      methods: exportedHttpMethods(readFileSync(abs, "utf8"), abs),
+    });
+  }
+  routes.sort((a, b) => a.route.localeCompare(b.route));
+  return { routes, errors };
 }
 
 // ─── Reconciliation (pure; unit-testable with synthetic inventories) ────────
@@ -361,6 +446,48 @@ function selfTest(): string[] {
       );
     }
   }
+
+  // 7. A JavaScript route handler cannot bypass discovery: route.js/jsx are
+  // classified parseable, derive a canonical route, and parse with the same
+  // compiler API.
+  for (const ext of ["js", "jsx"]) {
+    if (classifyRouteCandidate(`route.${ext}`) !== "parseable") {
+      failures.push(`route.${ext} must be a parseable candidate, not a bypass`);
+    }
+  }
+  const jsDerived = routeFromSource("apps/web/app/api/js-surface/route.js");
+  if (jsDerived !== "/api/js-surface") {
+    failures.push(
+      `routeFromSource must derive /api/js-surface from route.js, got ${jsDerived}`,
+    );
+  }
+  const jsMethods = exportedHttpMethods(
+    "export async function POST(req) { return new Response('x'); }",
+    "route.js",
+  );
+  if (JSON.stringify(jsMethods) !== JSON.stringify(["POST"])) {
+    failures.push(
+      `JS AST extraction must see POST in route.js, got [${jsMethods.join(", ")}]`,
+    );
+  }
+
+  // 8. An unparseable route-handler extension fails CLOSED, never ignored.
+  if (classifyRouteCandidate("route.py") !== "unsupported") {
+    failures.push("route.py must classify as unsupported (fail closed)");
+  }
+  if (classifyRouteCandidate("route.mjs") !== "unsupported") {
+    failures.push("route.mjs must classify as unsupported (fail closed)");
+  }
+  if (classifyRouteCandidate("helpers.ts") !== "not-a-route") {
+    failures.push("helpers.ts must not classify as a route candidate");
+  }
+
+  // 9. A Pages Router API candidate is rejected with the mechanism error.
+  const pagesErr = pagesApiViolation("apps/web/pages/api/hello.ts");
+  if (!pagesErr.includes("UNMANIFESTED API ROUTING MECHANISM")) {
+    failures.push("Pages Router detector must emit the mechanism error");
+  }
+
   return failures;
 }
 
@@ -387,13 +514,17 @@ function main(): number {
     return 1;
   }
 
-  const discovered = discoverRoutes();
-  const errors = reconcile(discovered, manifest);
+  const { routes: discovered, errors: discoveryErrors } = discoverRoutes();
+  const errors = [
+    ...detectPagesApiRoutes(),
+    ...discoveryErrors,
+    ...reconcile(discovered, manifest),
+  ];
 
   if (errors.length === 0) {
     const methodCount = discovered.reduce((n, d) => n + d.methods.length, 0);
     console.log(
-      `route-manifest: ${discovered.length} routes / ${methodCount} exported methods reconciled against compliance/API_ROUTE_MANIFEST.json (self-tests passed).`,
+      `route-manifest: ${discovered.length} routes / ${methodCount} exported methods reconciled against compliance/API_ROUTE_MANIFEST.json; no Pages Router API surface; no unsupported route-handler forms (self-tests passed).`,
     );
     return 0;
   }

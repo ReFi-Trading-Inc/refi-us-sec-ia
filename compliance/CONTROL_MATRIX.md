@@ -148,7 +148,7 @@ since PR #47 and is removed: both lanes are blocking CI jobs (CM-01).
 3. **CLOSED 2026-08-25 — CS-02 resolved by REMOVING the dead double-submit
    layer** (issued-but-never-validated cookie and orphan helpers deleted; the
    fail-closed same-origin check in `bffMutate` is the implemented control,
-   now pinned across seven negative/positive edge cases plus a tripwire
+   now pinned across eight negative/positive edge cases plus a tripwire
    retired-identifier guard). Kept as a numbered entry so the historical
    ranking stays legible.
 4. **AC-03 / EL-02 — proxy redirect gates (session + eligibility) untested.**

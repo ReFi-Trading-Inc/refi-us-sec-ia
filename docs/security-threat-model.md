@@ -42,8 +42,12 @@ an existing control or an open issue.
   the self-mintable `us_eligibility_v1` cookie. Control: fallback disabled outside
   `REFI_ENV=dev`. Never enable `dev` on an internet-reachable deploy.
 - **Tampering — CSRF on mutations.** Control: `bffMutate` enforces same-origin
-  (Origin/Referer vs `req.nextUrl.origin`) before auth (#26). **Residual:**
-  double-submit token is defense-in-depth, not yet wired (needs client echo).
+  (Origin/Referer vs `req.nextUrl.origin`) before auth (#26); edges pinned by
+  contract assertions (null/deceptive/mismatched/malformed declarations all
+  403). The formerly-planned double-submit token was REMOVED 2026-08-25
+  (CS-02) — it was issued but never echoed or validated, and is not part of
+  the current architecture; the tripwire pins its identifiers against silent
+  reintroduction.
 - **DoS — unauthenticated floods.** Control: rate limiting on `/api/us/eligibility`
   and `/api/us/support` only. **Residual:** investor mutation routes are unthrottled;
   the in-memory limiter is per-instance (#26 — needs a distributed store).

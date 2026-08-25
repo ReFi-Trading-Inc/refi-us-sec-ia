@@ -178,6 +178,42 @@ const RETIRED_SIGNAL_IDS: ReadonlyArray<{ id: string; note: string }> = [
 ];
 
 /**
+ * Retired security-architecture identifiers (CS-02, 2026-08-25).
+ *
+ * The double-submit CSRF layer was half-implemented — cookie issued on
+ * /us/app/* navigation, validator written, but nothing ever echoed or checked
+ * the token — so it was REMOVED rather than wired in. The implemented CSRF
+ * control for cookie-authenticated mutations is the fail-closed same-origin
+ * check in bffMutate (src/lib/bff/origin.ts), pinned by contract assertions.
+ * These identifiers reappearing in runtime source means the dead layer is
+ * silently returning without a reviewed CSRF architecture decision — fail CI.
+ * (Docs and tests are allowlisted; comment lines are skipped by the scanner.)
+ */
+const RETIRED_CSRF_IDS: ReadonlyArray<{ id: string; note: string }> = [
+  {
+    id: "csrf_v1",
+    note: "removed 2026-08-25 (CS-02) — double-submit cookie was never validated; same-origin check in bffMutate is the CSRF control",
+  },
+  {
+    id: "x-csrf-token",
+    note: "removed 2026-08-25 (CS-02) — no client ever sent this header; reintroduction requires a reviewed CSRF architecture",
+  },
+  {
+    id: "validateCsrfToken",
+    note: "removed 2026-08-25 (CS-02) — validator had zero callers",
+  },
+  {
+    id: "setCsrfCookie",
+    note: "removed 2026-08-25 (CS-02) — issuance helper for the dead layer",
+  },
+];
+
+const ALL_RETIRED_IDS: ReadonlyArray<{ id: string; note: string }> = [
+  ...RETIRED_SIGNAL_IDS,
+  ...RETIRED_CSRF_IDS,
+];
+
+/**
  * Browser-direct execution guard (C2b).
  *
  * The C0 capability audit's §0 finding was that ~25 legacy `apiFetch` calls
@@ -575,7 +611,7 @@ function scanFile(absPath: string): Violation[] {
     // flags its own documentation and pressures the next person to delete the
     // explanation. A commented-out call is not a reachable capability.
     const isComment = /^\s*(\/\/|\*|\/\*)/.test(line);
-    for (const { id, note } of isComment ? [] : RETIRED_SIGNAL_IDS) {
+    for (const { id, note } of isComment ? [] : ALL_RETIRED_IDS) {
       const re = id.startsWith("/")
         ? new RegExp(id.replace(/[/]/g, "\\/"))
         : new RegExp(`(^|[^\\w$])${id}([^\\w$]|$)`);

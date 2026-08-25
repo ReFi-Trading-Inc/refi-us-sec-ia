@@ -4,9 +4,12 @@
  * Cookie-authenticated mutations are the classic CSRF target. Modern browsers
  * send an `Origin` header on all cross-origin credentialed requests, so a
  * server-side same-origin check closes CSRF for browser attackers without any
- * client change. This is the primary defense; a double-submit token (see
- * app/_lib/csrf.ts) is the intended defense-in-depth follow-up and requires the
- * client to echo the cookie value in a header.
+ * client change. For the current cookie-authenticated BFF, this fail-closed
+ * same-origin check IS the implemented CSRF control. A separate double-submit
+ * token is not part of the current architecture — a half-implemented one
+ * (cookie issued, never echoed or validated) was removed 2026-08-25 (CS-02)
+ * rather than expanded; reintroducing its identifiers trips the
+ * investor-boundary tripwire until a new CSRF architecture is reviewed.
  *
  * The expected origin is the request's own server-resolved origin
  * (`req.nextUrl.origin`) — never a client-supplied forwarded header used as the

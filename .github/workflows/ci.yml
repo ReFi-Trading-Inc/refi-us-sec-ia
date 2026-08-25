@@ -43,6 +43,8 @@ jobs:
         run: pnpm lint
       - name: Investor-boundary tripwire (admin commands, forbidden actions, labels)
         run: pnpm tripwire
+      - name: Route-manifest gate (CM-04 — deny-by-default API inventory, method parity)
+        run: pnpm route-manifest
       - name: Contract assertions (taxonomy, receipts-vs-access-log, immutability)
         run: pnpm contract-test
       - name: Unit tests (@refi/api-clients)

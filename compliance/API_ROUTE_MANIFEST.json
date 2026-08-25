@@ -1,0 +1,242 @@
+{
+  "description": "Deny-by-default API route allowlist (control CM-04). Every apps/web/app/api/**/route.ts must have exactly one entry here, with exact HTTP-method parity. CI fails on any unlisted route, ghost entry, or method drift (scripts/route-manifest-gate.ts). This manifest proves INVENTORY COMPLETENESS and REVIEWED ROUTE/METHOD EXPANSION only — it does not prove any route's authorization behaviour is correct; the auth field records the measured mechanism, and the auth-specific controls in CONTROL_MATRIX.md (AC-*, CS-*, IB-*) remain responsible for proving that behaviour.",
+  "auth_vocabulary": {
+    "public": "No authentication; intentionally unauthenticated (liveness only).",
+    "public-rate-limited": "Unauthenticated by design; per-IP rate limiter; issues or consumes signed evidence rather than a session.",
+    "token-flag-gated": "Dark unless its feature flag is exactly 'on' (404 otherwise); authenticates a signed single-use token with route-local same-origin check and per-IP rate limit; no session required.",
+    "bff-read": "Session-authenticated investor read via the shared bffRead wrapper (401 when unauthenticated; ownership checked server-side).",
+    "bff-read-access-logged": "bff-read plus an append-only RecordAccessLog entry per read (books-and-records surface) via bffReadWithAccessLog.",
+    "bff-mutate": "Session-authenticated investor mutation via the shared bffMutate wrapper: fail-closed same-origin check before auth, release-stage capability policy, append-only InvestorActionReceipt."
+  },
+  "owner_vocabulary": {
+    "platform": "Deployment/runtime plumbing owned by the web app itself.",
+    "us-funnel": "Pre-session /us public funnel surfaces (eligibility gate, support intake).",
+    "alpha-onboarding": "Alpha game handoff surface (flag-dark outside the alpha program).",
+    "identity": "Session and identity context for the signed-in investor.",
+    "investor-bff": "Authenticated Signal investor projections and governed account actions.",
+    "records-evidence": "Books-and-records reads whose access is itself evidence (access-logged records and adviser-evidence projections)."
+  },
+  "routes": [
+    {
+      "source": "apps/web/app/api/health/route.ts",
+      "route": "/api/health",
+      "methods": ["GET"],
+      "purpose": "Liveness probe; returns process health only.",
+      "owner": "platform",
+      "auth": {
+        "GET": "public"
+      }
+    },
+    {
+      "source": "apps/web/app/api/us/eligibility/route.ts",
+      "route": "/api/us/eligibility",
+      "methods": ["POST"],
+      "purpose": "Server-side US eligibility decision against the versioned rule table; issues the signed 24h us_eligibility_v1 cookie with non-PII decision metadata.",
+      "owner": "us-funnel",
+      "auth": {
+        "POST": "public-rate-limited"
+      }
+    },
+    {
+      "source": "apps/web/app/api/us/support/route.ts",
+      "route": "/api/us/support",
+      "methods": ["POST"],
+      "purpose": "Support ticket intake; classifies then fails closed (412) at the unconfigured upstream sink pending D-SUPPORT-01.",
+      "owner": "us-funnel",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/activity/route.ts",
+      "route": "/api/v1/investor/activity",
+      "methods": ["GET"],
+      "purpose": "Account activity/event list for the authenticated investor.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/activity/[id]/route.ts",
+      "route": "/api/v1/investor/activity/[id]",
+      "methods": ["GET"],
+      "purpose": "Single activity/event detail for the authenticated investor.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/alpha-claim/route.ts",
+      "route": "/api/v1/investor/alpha-claim",
+      "methods": ["POST"],
+      "purpose": "Claims an ES256 AlphaHandoffToken minted by the ReFi Alpha game; single-use jti with idempotent replay; 404 unless FLAG_ALPHA_CLAIM_ROUTE=on.",
+      "owner": "alpha-onboarding",
+      "auth": {
+        "POST": "token-flag-gated"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/broker/connection/route.ts",
+      "route": "/api/v1/investor/broker/connection",
+      "methods": ["GET"],
+      "purpose": "Broker connection observation (status/metadata) for the authenticated investor; read-only, no credentials.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/dashboard/route.ts",
+      "route": "/api/v1/investor/dashboard",
+      "methods": ["GET"],
+      "purpose": "Aggregated dashboard projection for the authenticated investor.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/disclosures/route.ts",
+      "route": "/api/v1/investor/disclosures",
+      "methods": ["GET"],
+      "purpose": "Disclosure document registry list with version and acknowledgment state.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/disclosures/[id]/acknowledge/route.ts",
+      "route": "/api/v1/investor/disclosures/[id]/acknowledge",
+      "methods": ["POST"],
+      "purpose": "Idempotent disclosure acknowledgment per (user, doc, version) with HMAC-hashed IP/UA; replays return the original record.",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/evidence/internet-adviser/route.ts",
+      "route": "/api/v1/investor/evidence/internet-adviser",
+      "methods": ["GET"],
+      "purpose": "Internet-adviser (203A-2(e) posture) evidence projection; every read is access-logged.",
+      "owner": "records-evidence",
+      "auth": {
+        "GET": "bff-read-access-logged"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/evidence/multi-client/route.ts",
+      "route": "/api/v1/investor/evidence/multi-client",
+      "methods": ["GET"],
+      "purpose": "Multi-client evidence projection; every read is access-logged.",
+      "owner": "records-evidence",
+      "auth": {
+        "GET": "bff-read-access-logged"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/evidence/outages/route.ts",
+      "route": "/api/v1/investor/evidence/outages",
+      "methods": ["GET"],
+      "purpose": "Platform outage evidence projection; every read is access-logged.",
+      "owner": "records-evidence",
+      "auth": {
+        "GET": "bff-read-access-logged"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/exceptions/route.ts",
+      "route": "/api/v1/investor/exceptions",
+      "methods": ["GET"],
+      "purpose": "Exception Review queue list for the authenticated investor.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/exceptions/[id]/resolve/route.ts",
+      "route": "/api/v1/investor/exceptions/[id]/resolve",
+      "methods": ["POST"],
+      "purpose": "Resolves an open exception; schema accepts only Signal remediation categories (Managed categories are unrepresentable, 400).",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/profile/route.ts",
+      "route": "/api/v1/investor/profile",
+      "methods": ["GET", "POST"],
+      "purpose": "Advisory profile: GET returns the current snapshot; POST writes a new immutable profile version with receipt.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read",
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/recommendations/route.ts",
+      "route": "/api/v1/investor/recommendations",
+      "methods": ["GET"],
+      "purpose": "Signal recommendation summaries for the authenticated investor.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/recommendations/[id]/route.ts",
+      "route": "/api/v1/investor/recommendations/[id]",
+      "methods": ["GET"],
+      "purpose": "Single recommendation detail with constituent legs.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/records/route.ts",
+      "route": "/api/v1/investor/records",
+      "methods": ["GET"],
+      "purpose": "Retained records list for the authenticated investor.",
+      "owner": "records-evidence",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/records/[id]/route.ts",
+      "route": "/api/v1/investor/records/[id]",
+      "methods": ["GET"],
+      "purpose": "Single record/evidence read; access-logged even when the fetch 404s.",
+      "owner": "records-evidence",
+      "auth": {
+        "GET": "bff-read-access-logged"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/session/route.ts",
+      "route": "/api/v1/investor/session",
+      "methods": ["GET"],
+      "purpose": "Session/identity context for the signed-in investor; 401 with no dev fallback outside REFI_ENV=dev.",
+      "owner": "identity",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/status/route.ts",
+      "route": "/api/v1/investor/status",
+      "methods": ["GET"],
+      "purpose": "Investor authorization/eligibility status projection.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    }
+  ]
+}

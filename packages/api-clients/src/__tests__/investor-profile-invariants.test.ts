@@ -254,6 +254,7 @@ describe("§18 invariants — constraint arithmetic", () => {
     for (const missing of [
       { goal: undefined },
       { horizon: undefined },
+      { accountType: undefined },
       { goal: undefined, horizon: undefined },
     ]) {
       const r = assess({ ...baseline(), ...missing });
@@ -609,6 +610,13 @@ describe("§9 fringe cases", () => {
       expect(r.constraintReasonCodes).toContain("PRODUCT_FIT_ENTITY_ROUTED");
       expect(r.permittedRiskBand).toBeNull();
     }
+  });
+
+  test("joint account — no one-person retail profile (PR #65 review)", () => {
+    const r = assess({ ...baseline(), accountType: "joint" });
+    expect(r.productFitStatus).toBe("not_fit");
+    expect(r.constraintReasonCodes).toContain("PRODUCT_FIT_JOINT_UNSUPPORTED");
+    expect(r.permittedRiskBand).toBeNull();
   });
 
   test("needs emergency funds — product-fit rejection, not a Conservative portfolio", () => {

@@ -40,6 +40,10 @@ export const investorProfileCopy = {
       headline: "ReFi for entities works differently.",
       body: "Business, trust, and fund accounts have their own onboarding. Leave your details and we'll be in touch.",
     },
+    jointExit: {
+      headline: "Joint accounts are almost here.",
+      body: "A joint investor profile needs information from both owners, and we'd rather build that properly than base your profile on one person's circumstances. We'll let you know the moment joint onboarding is ready.",
+    },
   },
 
   goal: {
@@ -88,6 +92,8 @@ export const investorProfileCopy = {
   },
 
   incomeBand: {
+    whyWeAsk:
+      "Your income range helps us judge how much investment risk your plan can absorb. A range is enough.",
     question: "About how much do you earn in a typical year before taxes?",
     options: {
       lt_25k: "Under $25,000",
@@ -101,6 +107,8 @@ export const investorProfileCopy = {
   },
 
   incomeStability: {
+    whyWeAsk:
+      "Two people with the same income can have very different capacity for loss. Predictability tells us which situation is yours.",
     question: "How predictable is your income right now?",
     options: {
       very_predictable: "Very predictable",
@@ -112,6 +120,8 @@ export const investorProfileCopy = {
   },
 
   netWorthBand: {
+    whyWeAsk:
+      "This helps us understand how much investment risk your overall financial situation can reasonably support. A range is enough.",
     question: "About how much is your total net worth?",
     helper: "Your assets minus what you owe. A range is enough.",
     options: {
@@ -127,6 +137,8 @@ export const investorProfileCopy = {
   },
 
   liquidNetWorthBand: {
+    whyWeAsk:
+      "What you could actually access matters more than what you own on paper. It shapes how much risk fits this account.",
     question:
       "About how much of your net worth could reasonably be used or accessed for investing?",
     helper:
@@ -134,6 +146,8 @@ export const investorProfileCopy = {
   },
 
   accountShare: {
+    whyWeAsk:
+      "If this account is a large share of what you could access, losses matter more. That caps how much risk we'd suggest.",
     question:
       "Roughly how much of your liquid savings and investments would this ReFi account represent?",
     options: {
@@ -146,6 +160,8 @@ export const investorProfileCopy = {
   },
 
   emergencyReserve: {
+    whyWeAsk:
+      "A cash cushion means market losses don't force selling at the wrong time. Less cushion, less room for risk.",
     question:
       "If something unexpected happened, how long could your current cash savings cover normal expenses?",
     options: {
@@ -159,6 +175,8 @@ export const investorProfileCopy = {
   },
 
   debtSignal: {
+    whyWeAsk:
+      "High-interest debt competes with investing. We only need the shape of it, never balances.",
     question:
       "Do you carry high-interest debt that you don't normally pay off each month?",
     options: {
@@ -170,6 +188,8 @@ export const investorProfileCopy = {
   },
 
   liquidityLikelihood: {
+    whyWeAsk:
+      "If you might need this money unexpectedly, your plan needs to keep more of it steady.",
     question:
       "How likely are you to need an unexpected withdrawal from this account?",
     options: {
@@ -221,6 +241,9 @@ export const investorProfileCopy = {
     },
   },
 
+  riskSectionWhy:
+    "There are no right answers here. These questions measure how you experience market movement — separately from what your finances can absorb — and the more cautious of the two shapes your profile.",
+
   drawdownBehavior: {
     question:
       "Markets fall sometimes. Imagine your ReFi account started at $50,000 and fell to $40,000 over several months. What would you most likely do?",
@@ -263,6 +286,12 @@ export const investorProfileCopy = {
     },
   },
 
+  restrictionDetails: {
+    question: "Which companies, industries, or securities should we avoid?",
+    helper:
+      "Name them as specifically as you can — for example an employer's ticker, an industry, or a restricted security. This is what lets us exclude them.",
+  },
+
   restrictions: {
     question: "Are there investments ReFi should avoid for you?",
     helper: "Select all that apply.",
@@ -286,6 +315,20 @@ export const investorProfileCopy = {
       no: "No",
       maybe: "Maybe",
       yes: "Yes",
+    },
+  },
+
+  financialChangeKinds: {
+    question: "What kind of change?",
+    helper:
+      "You don't need to provide personal details—only the financial impact that could affect your investment plan.",
+    options: {
+      income_employment: "Income or employment",
+      retirement: "Retirement",
+      major_purchase: "Major purchase",
+      major_expense: "Major planned expense",
+      savings_change: "Significant change in available savings",
+      other: "Other",
     },
   },
 
@@ -315,11 +358,45 @@ export const investorProfileCopy = {
 
   clarification: {
     headline: "Let's double-check one thing.",
-    body: "Two of your answers point in different directions.",
-    explain:
-      "A shorter timeline can leave less time for a portfolio to recover.",
     prompt: "Which answer would you like to revisit?",
     keepBoth: "Keep both answers as they are",
+    flags: {
+      SHORT_HORIZON_HIGH_WILLINGNESS: {
+        body: "You told us you may need this money fairly soon, but you're also comfortable with substantial market declines.",
+        explain:
+          "A shorter timeline can leave less time for a portfolio to recover.",
+      },
+      GOAL_LIQUIDITY_CONFLICT: {
+        body: "You told us this money is for emergencies or near-term expenses, but also that you're unlikely to need an unexpected withdrawal.",
+        explain:
+          "Emergency money usually needs to stay reachable — these two answers describe different jobs for the same account.",
+      },
+      RISK_BEHAVIOR_CONFLICT: {
+        body: "You told us a 10% decline would make you seriously reconsider, but you also chose the plan with the largest market swings.",
+        explain:
+          "The plan you chose will regularly move more than the decline you said you'd reconsider at.",
+      },
+      EXPERIENCE_CONFLICT: {
+        body: "You described yourself as still learning, but also said you've personally used advanced strategies like options, leverage, or quantitative trading.",
+        explain:
+          "We want to understand your experience correctly — it changes how we explain things, not how much risk you can take.",
+      },
+      CONCENTRATION_ALPHA_CONFLICT: {
+        body: "This account would hold more than half of what you can access, and you're also interested in experimental strategies.",
+        explain:
+          "Experimental exposure is for money you could afford to lose entirely — concentrating most of your accessible savings there works against that.",
+      },
+      CAPACITY_WILLINGNESS_GAP: {
+        body: "You told us you have less than a month of cash cushion, but you're also comfortable with the highest levels of market risk.",
+        explain:
+          "Without a cushion, a market decline can force selling at the worst time — comfort with risk doesn't change that math.",
+      },
+      INCONSISTENT_LOSS_BEHAVIOR: {
+        body: "You said you'd invest more after a sharp fall, but also that a 10% decline would make you seriously reconsider staying invested.",
+        explain:
+          "Those two reactions point in different directions — knowing which one is really you changes your profile.",
+      },
+    },
   },
 
   review: {
@@ -346,8 +423,35 @@ export const investorProfileCopy = {
     fitClarify: "We need to clarify something before advising on this money",
     notFit: {
       headline: "This money may have a different job.",
-      body: "Based on your timeline and need to access these funds, a stock-focused ReFi strategy may not be the right fit for this money right now.",
       body2: "Your profile can change as your circumstances change.",
+      reasons: {
+        HORIZON_NEAR_TERM_NOT_FIT:
+          "You may need a meaningful amount of this money within a year. A stock-focused strategy needs more time than that to recover from a decline, so it isn't the right fit for this money right now.",
+        PRODUCT_FIT_EMERGENCY_FUND:
+          "This money is your emergency or near-term reserve. It needs to stay reachable and steady, and a stock-focused strategy can't promise either — so it isn't the right place for these funds.",
+        PRODUCT_FIT_LOSS_INTOLERANT:
+          "Your answers tell us a meaningful loss on this money isn't something you could stay invested through. A stock-focused strategy will have those moments, so it isn't the right fit right now.",
+        PRODUCT_FIT_JOINT_UNSUPPORTED:
+          "A joint investor profile needs information from both owners, and we don't build one from a single person's circumstances. Joint onboarding is coming.",
+        PRODUCT_FIT_ENTITY_ROUTED:
+          "Business, trust, and fund accounts have their own onboarding path.",
+        fallback:
+          "Based on what you've told us about this money, a stock-focused ReFi strategy may not be the right fit for it right now.",
+      },
+    },
+    constraintReasons: {
+      HORIZON_SHORT_CONSTRAINT:
+        "Your timeline is on the shorter side, which limits how much market risk this money can carry.",
+      LIQUIDITY_HIGH_NEED_CONSTRAINT:
+        "You may need money from this account unexpectedly, so your plan keeps more of it steady.",
+      CONCENTRATION_OVER_50PCT:
+        "This account would hold more than half of what you can access, so we hold back from the highest risk levels.",
+      CAPACITY_RESERVE_CONSTRAINT:
+        "Your cash cushion is thin right now, which limits how much market risk makes sense.",
+      CAPACITY_DEBT_CONSTRAINT:
+        "Significant high-interest debt competes with investing, so we keep the risk level more cautious.",
+      INCOME_INSTABILITY_CONSTRAINT:
+        "Your income is in flux right now, which limits how much investment risk your plan can absorb.",
     },
   },
 } as const;

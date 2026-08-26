@@ -27,6 +27,7 @@ import {
   EMERGENCY_RESERVE_BANDS,
   EXPECTED_FINANCIAL_CHANGES,
   EXPERIENCE_YEARS,
+  FINANCIAL_CHANGE_KINDS,
   GOALS,
   HORIZONS,
   INCOME_BANDS,
@@ -49,6 +50,7 @@ import {
 import {
   appendProfileAnswers,
   appendProfileAssessment,
+  clearProfileDraftV2,
   getProfileAnswers,
   getProfileAssessment,
   latestProfileVersion,
@@ -95,13 +97,51 @@ const answersBody = z.object({
   riskTradeoffChoice: member(RISK_TRADEOFF_CHOICES).optional(),
 
   restrictions: z.array(member(RESTRICTION_KINDS)).optional(),
+  restrictionDetails: z.string().max(500).optional(),
   expectedFinancialChange: member(EXPECTED_FINANCIAL_CHANGES).optional(),
+  expectedFinancialChangeKinds: z
+    .array(member(FINANCIAL_CHANGE_KINDS))
+    .optional(),
 
   productIntent: z.array(member(PRODUCT_INTENTS)).optional(),
   alphaLossImpact: member(ALPHA_LOSS_IMPACTS).optional(),
 
   reconciledFlags: z.array(member(CONSISTENCY_FLAGS)).optional(),
 });
+
+/**
+ * Cross-field integrity (review of PR #65):
+ *   - "none" is mutually exclusive within productExperience and restrictions;
+ *   - non-"none" restrictions require restrictionDetails naming them;
+ *   - expectedFinancialChange "yes" requires at least one structured kind.
+ * Enforced server-side so a hand-written POST cannot create contradictory or
+ * unusable snapshots.
+ */
+const answersBodyChecked = answersBody
+  .refine(
+    (a) =>
+      !a.productExperience?.includes("none") ||
+      a.productExperience.length === 1,
+    { message: "productExperience 'none' is mutually exclusive" },
+  )
+  .refine(
+    (a) => !a.restrictions?.includes("none") || a.restrictions.length === 1,
+    { message: "restrictions 'none' is mutually exclusive" },
+  )
+  .refine(
+    (a) =>
+      !a.restrictions?.some((r) => r !== "none") ||
+      (a.restrictionDetails !== undefined &&
+        a.restrictionDetails.trim().length > 0),
+    { message: "non-none restrictions require restrictionDetails" },
+  )
+  .refine(
+    (a) =>
+      a.expectedFinancialChange !== "yes" ||
+      (a.expectedFinancialChangeKinds !== undefined &&
+        a.expectedFinancialChangeKinds.length > 0),
+    { message: "expectedFinancialChange 'yes' requires at least one kind" },
+  );
 
 export const GET = bffRead({
   source: "prototype-bff",
@@ -128,7 +168,7 @@ export const POST = bffMutate<InvestorProfileAnswers>({
   action: "refreshProfile",
   source: "prototype-bff",
   upstreamGap: "G-003",
-  parse: (body) => answersBody.parse(body),
+  parse: (body) => answersBodyChecked.parse(body),
   apply: async (ctx) => {
     if (!ctx.auth.accountId) {
       return {
@@ -139,15 +179,26 @@ export const POST = bffMutate<InvestorProfileAnswers>({
       };
     }
 
-    // Server-side derivation — the only place policy runs.
-    const assessment = assessInvestorProfile(ctx.input);
+    // Server-side derivation — the only place policy runs. Client-supplied
+    // reconciliation is honoured ONLY for flags the engine actually computes
+    // on THIS submission; arbitrary flags are dropped before anything is
+    // persisted (review of PR #65).
+    const firstPass = assessInvestorProfile(ctx.input);
+    const sanitizedReconciled = (ctx.input.reconciledFlags ?? []).filter((f) =>
+      firstPass.consistencyFlags.includes(f),
+    );
+    const sanitizedInput = {
+      ...ctx.input,
+      reconciledFlags: sanitizedReconciled,
+    };
+    const assessment = assessInvestorProfile(sanitizedInput);
 
     // Clarification loop (spec §5): unresolved flags block persistence and
     // return the flags for the UI to reconcile. The receipt records the
     // blocked attempt. A hard not_fit verdict pre-empts clarification
     // (spec §4 pipeline: product fit is step 1) — the honest exit is the
     // answer regardless of how the contradiction resolves.
-    const reconciled = new Set(ctx.input.reconciledFlags ?? []);
+    const reconciled = new Set(sanitizedReconciled);
     const unresolved = assessment.consistencyFlags.filter(
       (f) => !reconciled.has(f),
     );
@@ -165,7 +216,7 @@ export const POST = bffMutate<InvestorProfileAnswers>({
 
     const answersVersion = await appendProfileAnswers({
       accountId: ctx.auth.accountId,
-      answers: ctx.input,
+      answers: sanitizedInput,
       correlationId: ctx.correlationId,
     });
     const record = await appendProfileAssessment({
@@ -175,6 +226,8 @@ export const POST = bffMutate<InvestorProfileAnswers>({
       assessment,
       correlationId: ctx.correlationId,
     });
+
+    await clearProfileDraftV2(ctx.auth.authId);
 
     return {
       data: {

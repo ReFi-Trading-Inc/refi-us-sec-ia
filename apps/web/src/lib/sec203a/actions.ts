@@ -41,6 +41,10 @@ export const InvestorActions = [
   // state-changing investor action that leaves a receipt, but it maps to no
   // backend admin verb because the ticket sink is not an investor-api action.
   "submitSupportRequest",
+  // BFF-only: autosaving the questionnaire-v2 profile draft. Mutable draft
+  // state, not an immutable snapshot — promotion to a snapshot is
+  // refreshProfile. No backend admin verb; drafts never leave the BFF.
+  "saveProfileDraft",
 ] as const;
 
 export type InvestorActionName = (typeof InvestorActions)[number];

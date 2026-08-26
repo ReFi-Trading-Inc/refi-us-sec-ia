@@ -207,6 +207,17 @@ export const EXPECTED_FINANCIAL_CHANGES = ["no", "maybe", "yes"] as const;
 export type ExpectedFinancialChange =
   (typeof EXPECTED_FINANCIAL_CHANGES)[number];
 
+/** Spec §3 Screen 21 branch — required when the answer is "yes". */
+export const FINANCIAL_CHANGE_KINDS = [
+  "income_employment",
+  "retirement",
+  "major_purchase",
+  "major_expense",
+  "savings_change",
+  "other",
+] as const;
+export type FinancialChangeKind = (typeof FINANCIAL_CHANGE_KINDS)[number];
+
 export const PRODUCT_INTENTS = [
   "disciplined_long_term",
   "personalized_signals",
@@ -230,7 +241,8 @@ export type AlphaLossImpact = (typeof ALPHA_LOSS_IMPACTS)[number];
  */
 export interface InvestorProfileAnswers {
   questionnaireVersion: 2;
-  accountType: AccountType;
+  /** Essential (spec §11): unanswered means no assessment may personalize. */
+  accountType?: AccountType;
 
   goal?: Goal;
   horizon?: Horizon;
@@ -255,7 +267,16 @@ export interface InvestorProfileAnswers {
   riskTradeoffChoice?: RiskTradeoffChoice;
 
   restrictions?: RestrictionKind[];
+  /**
+   * Bounded free text naming the restricted companies/industries/securities.
+   * Required whenever any non-"none" restriction is selected — a category
+   * without an identity is unusable for direct-index exclusions. Collection
+   * stays minimal; nothing here claims construction-time enforcement.
+   */
+  restrictionDetails?: string;
   expectedFinancialChange?: ExpectedFinancialChange;
+  /** Required (non-empty) when expectedFinancialChange === "yes". */
+  expectedFinancialChangeKinds?: FinancialChangeKind[];
 
   productIntent?: ProductIntent[];
   alphaLossImpact?: AlphaLossImpact;
@@ -279,6 +300,19 @@ export const RISK_BAND_LABELS: Record<RiskBand, string> = {
   3: "Balanced",
   4: "Growth",
   5: "High Growth",
+};
+
+/**
+ * Neutral component-level labels for capacity and willingness. The portfolio
+ * taxonomy above describes ONLY the final permitted profile — "financial
+ * capacity: Growth" is a category error, so components get their own scale.
+ */
+export const COMPONENT_LEVEL_LABELS: Record<RiskBand, string> = {
+  1: "Very Low",
+  2: "Low",
+  3: "Moderate",
+  4: "High",
+  5: "Very High",
 };
 
 export type KnowledgeBand = 1 | 2 | 3 | 4;
@@ -343,6 +377,7 @@ export const REASON_CODES = [
   "PRODUCT_FIT_EMERGENCY_FUND",
   "PRODUCT_FIT_LOSS_INTOLERANT",
   "PRODUCT_FIT_ENTITY_ROUTED",
+  "PRODUCT_FIT_JOINT_UNSUPPORTED",
   "ALPHA_NOT_REQUESTED",
   "ALPHA_LOSS_IMPACT_FAILED",
   "ALPHA_CAPACITY_FAILED",

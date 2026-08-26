@@ -161,6 +161,53 @@ export async function getProfileAssessment(
   );
 }
 
+// ── Mutable questionnaire draft (per auth identity) ─────────────────────────
+//
+// Autosave/resume state for the in-progress questionnaire (review of PR #65:
+// sensitive banded answers must NOT persist in browser storage — OWASP HTML5
+// guidance; the server draft is authenticated and account-isolated by key).
+// Drafts are MUTABLE working state, never part of the immutable version
+// chain; submission promotes them via appendProfileAnswers.
+
+export interface InvestorProfileDraftV2 {
+  authId: string;
+  answers: InvestorProfileAnswers;
+  stepIndex: number;
+  lastUpdatedAt: string;
+  meta: PrototypeMeta;
+}
+
+const draftStore = kvStore<InvestorProfileDraftV2>(
+  "investor-profile-drafts-v2",
+);
+
+export async function saveProfileDraftV2(args: {
+  authId: string;
+  answers: InvestorProfileAnswers;
+  stepIndex: number;
+  correlationId: string;
+}): Promise<InvestorProfileDraftV2> {
+  const draft: InvestorProfileDraftV2 = {
+    authId: args.authId,
+    answers: args.answers,
+    stepIndex: args.stepIndex,
+    lastUpdatedAt: new Date().toISOString(),
+    meta: makePrototypeMeta(args.correlationId),
+  };
+  await draftStore.put(args.authId, draft);
+  return draft;
+}
+
+export async function getProfileDraftV2(
+  authId: string,
+): Promise<InvestorProfileDraftV2 | null> {
+  return draftStore.get(authId);
+}
+
+export async function clearProfileDraftV2(authId: string): Promise<void> {
+  await draftStore.delete(authId);
+}
+
 /** Idempotent per (account, document, documentVersion, profileVersion). */
 export async function appendAdvisoryConsentRecord(args: {
   accountId: string;

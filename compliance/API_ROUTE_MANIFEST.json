@@ -190,6 +190,17 @@
       }
     },
     {
+      "source": "apps/web/app/api/v1/investor/profile/v2/draft/route.ts",
+      "route": "/api/v1/investor/profile/v2/draft",
+      "methods": ["GET", "POST"],
+      "purpose": "Mutable autosave/resume draft for the questionnaire-v2 profile, keyed to the authenticated identity so sensitive banded answers never persist in browser storage; promoted to the immutable version chain (and cleared) by the v2 submit route.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read",
+        "POST": "bff-mutate"
+      }
+    },
+    {
       "source": "apps/web/app/api/v1/investor/recommendations/route.ts",
       "route": "/api/v1/investor/recommendations",
       "methods": ["GET"],

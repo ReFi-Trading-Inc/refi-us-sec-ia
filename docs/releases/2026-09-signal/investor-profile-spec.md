@@ -37,10 +37,9 @@ Goal → Time horizon → Liquidity → Financial capacity
 The governing rule of the whole design:
 
 > **Final permissible risk cannot exceed the more restrictive of risk capacity
-> and risk willingness.** Constraints, never averages. "Willingness: Aggressive
->
-> - Capacity: Conservative" resolves to the Conservative constraint with a
->   reason code — never to "Balanced".
+> and risk willingness.** Constraints, never averages. Willingness "Aggressive"
+> with capacity "Conservative" resolves to the Conservative constraint with a
+> reason code — never to "Balanced".
 
 And the optimization target:
 

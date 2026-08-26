@@ -1,3 +1,11 @@
+> **SUPERSEDED (2026-08-26)** by
+> [investor-profile-spec.md](investor-profile-spec.md) — the canonical
+> Investor Profile + Product Fit specification. That spec absorbs this
+> document's still-valid principles (banded data, backend-owned policy
+> values, immutable snapshots, disclosure-separate-from-questionnaire) and
+> replaces its narrow two-field questionnaire extension with the full
+> constraint-based profile model. Do not implement from this document.
+
 # Design — investor-profile questionnaire and alpha allocation gate
 
 **Status:** design for review, 2026-08-24. Sourced from Daniel's 2026-08-24 response

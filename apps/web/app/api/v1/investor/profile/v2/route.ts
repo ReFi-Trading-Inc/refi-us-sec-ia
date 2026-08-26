@@ -1,0 +1,192 @@
+/**
+ * GET  /api/v1/investor/profile/v2 — latest questionnaire-v2 answers version
+ *                                    and its policy assessment (or null).
+ * POST /api/v1/investor/profile/v2 — submit answers; the deterministic policy
+ *                                    engine derives the assessment server-side
+ *                                    (spec §4). Unresolved consistency flags
+ *                                    return a blocked outcome carrying the
+ *                                    flags so the UI can run the clarification
+ *                                    screen (spec §5) — the frontend never
+ *                                    reimplements any policy rule. On success
+ *                                    a new immutable answers version and its
+ *                                    assessment are persisted with provenance
+ *                                    (spec §12.1), refreshProfile action.
+ *
+ * The v1 route (/api/v1/investor/profile) remains live per spec §19 until v2
+ * fully supersedes it.
+ */
+import { z } from "zod";
+import { bffRead, bffMutate } from "@lib/bff/handler";
+import {
+  ACCOUNT_SHARE_BANDS,
+  ACCOUNT_TYPES,
+  ALPHA_LOSS_IMPACTS,
+  CONSISTENCY_FLAGS,
+  DEBT_SIGNALS,
+  DRAWDOWN_BEHAVIORS,
+  EMERGENCY_RESERVE_BANDS,
+  EXPECTED_FINANCIAL_CHANGES,
+  EXPERIENCE_YEARS,
+  GOALS,
+  HORIZONS,
+  INCOME_BANDS,
+  INCOME_STABILITIES,
+  KNOWLEDGE_LEVELS,
+  LIQUIDITY_LIKELIHOODS,
+  LOSS_THRESHOLDS,
+  NET_WORTH_BANDS,
+  PRODUCT_EXPERIENCES,
+  PRODUCT_INTENTS,
+  RESTRICTION_KINDS,
+  RISK_TRADEOFF_CHOICES,
+  WITHDRAWAL_PATTERNS,
+  type InvestorProfileAnswers,
+} from "@lib/sec203a/investor-profile";
+import {
+  ASSESSMENT_POLICY_VERSION,
+  assessInvestorProfile,
+} from "@lib/sec203a/investor-profile-engine";
+import {
+  appendProfileAnswers,
+  appendProfileAssessment,
+  getProfileAnswers,
+  getProfileAssessment,
+  latestProfileVersion,
+} from "@lib/prototype-store/entities/investor-profile-v2";
+
+function member<T extends string>(values: readonly T[]) {
+  return z
+    .string()
+    .refine((v): v is T => (values as readonly string[]).includes(v));
+}
+
+const answersBody = z.object({
+  questionnaireVersion: z.literal(2),
+  accountType: member(ACCOUNT_TYPES),
+
+  goal: member(GOALS).optional(),
+  horizon: member(HORIZONS).optional(),
+  withdrawalPattern: member(WITHDRAWAL_PATTERNS).optional(),
+
+  incomeBand: member(INCOME_BANDS).optional(),
+  incomeStability: member(INCOME_STABILITIES).optional(),
+  netWorthBand: member(NET_WORTH_BANDS).optional(),
+  liquidNetWorthBand: member(NET_WORTH_BANDS).optional(),
+  accountShareOfLiquidAssets: member(ACCOUNT_SHARE_BANDS).optional(),
+  emergencyReserveBand: member(EMERGENCY_RESERVE_BANDS).optional(),
+  debtSignal: member(DEBT_SIGNALS).optional(),
+  liquidityLikelihood: member(LIQUIDITY_LIKELIHOODS).optional(),
+
+  knowledgeLevel: member(KNOWLEDGE_LEVELS).optional(),
+  experienceYears: member(EXPERIENCE_YEARS).optional(),
+  productExperience: z.array(member(PRODUCT_EXPERIENCES)).optional(),
+
+  drawdownBehavior: member(DRAWDOWN_BEHAVIORS).optional(),
+  lossThreshold: member(LOSS_THRESHOLDS).optional(),
+  growthProtectionPreference: z
+    .union([
+      z.literal(1),
+      z.literal(2),
+      z.literal(3),
+      z.literal(4),
+      z.literal(5),
+    ])
+    .optional(),
+  riskTradeoffChoice: member(RISK_TRADEOFF_CHOICES).optional(),
+
+  restrictions: z.array(member(RESTRICTION_KINDS)).optional(),
+  expectedFinancialChange: member(EXPECTED_FINANCIAL_CHANGES).optional(),
+
+  productIntent: z.array(member(PRODUCT_INTENTS)).optional(),
+  alphaLossImpact: member(ALPHA_LOSS_IMPACTS).optional(),
+
+  reconciledFlags: z.array(member(CONSISTENCY_FLAGS)).optional(),
+});
+
+export const GET = bffRead({
+  source: "prototype-bff",
+  upstreamGap: "G-003",
+  fetch: async (ctx) => {
+    if (!ctx.auth || !ctx.auth.accountId) return null;
+    const version = await latestProfileVersion(ctx.auth.accountId);
+    if (version === 0) return null;
+    const answers = await getProfileAnswers(ctx.auth.accountId, version);
+    if (!answers) return null;
+    const assessment = await getProfileAssessment(
+      ctx.auth.accountId,
+      version,
+      // The stored assessment for the CURRENT policy; a policy change means
+      // this returns null until re-assessed under the new version — the old
+      // record is never rewritten (spec §12.1).
+      ASSESSMENT_POLICY_VERSION,
+    );
+    return { answers, assessment };
+  },
+});
+
+export const POST = bffMutate<InvestorProfileAnswers>({
+  action: "refreshProfile",
+  source: "prototype-bff",
+  upstreamGap: "G-003",
+  parse: (body) => answersBody.parse(body),
+  apply: async (ctx) => {
+    if (!ctx.auth.accountId) {
+      return {
+        data: { ok: false, reason: "account_not_linked" },
+        outcome: "blocked" as const,
+        reasonCode: "account_not_linked",
+        status: 412,
+      };
+    }
+
+    // Server-side derivation — the only place policy runs.
+    const assessment = assessInvestorProfile(ctx.input);
+
+    // Clarification loop (spec §5): unresolved flags block persistence and
+    // return the flags for the UI to reconcile. The receipt records the
+    // blocked attempt. A hard not_fit verdict pre-empts clarification
+    // (spec §4 pipeline: product fit is step 1) — the honest exit is the
+    // answer regardless of how the contradiction resolves.
+    const reconciled = new Set(ctx.input.reconciledFlags ?? []);
+    const unresolved = assessment.consistencyFlags.filter(
+      (f) => !reconciled.has(f),
+    );
+    if (assessment.productFitStatus !== "not_fit" && unresolved.length > 0) {
+      return {
+        data: {
+          needsClarification: true,
+          consistencyFlags: unresolved,
+        },
+        outcome: "blocked" as const,
+        reasonCode: "consistency_unresolved",
+        status: 409,
+      };
+    }
+
+    const answersVersion = await appendProfileAnswers({
+      accountId: ctx.auth.accountId,
+      answers: ctx.input,
+      correlationId: ctx.correlationId,
+    });
+    const record = await appendProfileAssessment({
+      accountId: ctx.auth.accountId,
+      profileVersion: answersVersion.profileVersion,
+      answerSnapshotHash: answersVersion.answerSnapshotHash,
+      assessment,
+      correlationId: ctx.correlationId,
+    });
+
+    return {
+      data: {
+        profileVersion: answersVersion.profileVersion,
+        answerSnapshotHash: answersVersion.answerSnapshotHash,
+        assessment: record.assessment,
+      },
+      references: [
+        `investor-profile-v2:${answersVersion.accountId}/v${String(answersVersion.profileVersion)}`,
+        `investor-profile-assessment:${answersVersion.accountId}/v${String(answersVersion.profileVersion)}/${record.assessment.assessmentPolicyVersion}`,
+      ],
+      status: 201,
+    };
+  },
+});

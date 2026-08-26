@@ -1,795 +1,1021 @@
-# ReFi Investor Profile — canonical specification
+# ReFi Investor Profile — PRD + Decision Specification
 
-**Status:** canonical product specification, 2026-08-26. Supersedes
-[design-investor-profile-alpha-gate.md](design-investor-profile-alpha-gate.md)
-(which retains only its still-valid principles, noted in §1.2). Authored from
-Zeshan's 2026-08-26 research direction (SEC robo-adviser guidance, fiduciary
-interpretation, Rule 203A-2(e) as amended, Reg S-P as amended; Betterment /
-Wealthfront / Vanguard Digital Advisor / Schwab / CIRO methodology review).
+**Status:** canonical product specification, v2, 2026-08-26. Supersedes
+[design-investor-profile-alpha-gate.md](design-investor-profile-alpha-gate.md),
+preserving its good decisions (immutable profile versions, banded net worth,
+disclosure versioning, backend ownership of alpha policy). Authored from
+Zeshan's 2026-08-26 research direction, parts I–XXVII (SEC fiduciary
+interpretation IA-5248; SEC robo-adviser guidance IM 2017-02 and the 2017
+staff bulletin; Form CRS/ADV delivery requirements; Reg S-P as amended 2024;
+Rule 203A-2(e) as amended 2024; Betterment / Wealthfront / Vanguard Digital
+Advisor / Schwab / CIRO methodology review — references in §22).
 
 **Regulatory posture:** every regulatory statement here is an engineering-side
-reading — **DRAFT, confirm with counsel** — consistent with
-`compliance/README.md`. Nothing in this document is a legal determination.
-Counsel checkpoints are marked `[COUNSEL]` throughout and collected in §14.
+reading — **DRAFT, confirm with counsel** — per `compliance/README.md`.
+Counsel/CCO sign-off decisions are collected in §20; nothing there is decided
+silently by product or engineering.
 
-**Naming:** this system is the **Investor Profile + Product Fit system** —
-"Your Investor Profile" in the UI. Never "Risk Quiz", "Risk Test",
-"Suitability Test", "Trading Personality", or "Investor Score".
+**The architectural change this document makes canonical:**
+
+> **The questionnaire collects facts and behavioral answers. A separate
+> deterministic policy engine derives risk capacity, risk willingness, product
+> fit, alpha readiness and consistency flags.** `riskTolerance` ceases to be a
+> user-entered field.
+
+**Naming:** the **Investor Profile + Product Fit system** — "Your Investor
+Profile" in the UI. Never "Risk Quiz", "Risk Test", "Suitability Test",
+"Trading Personality", or "Investor Score".
 
 ---
 
-## 1. Purpose and principles
+## 1. Purpose and governing principles
 
-### 1.1 What this system is
-
-Not a risk-tolerance questionnaire. The SEC expects an adviser to develop a
-reasonable understanding of the client's objectives and circumstances, and its
-robo-adviser guidance specifically warns that an automated adviser is limited
-by what its questionnaire asks, whether questions are clear, and whether
-contradictory responses are detected and resolved. This system therefore
-measures **eight things separately** and reconciles them:
+The SEC's fiduciary interpretation says a retail adviser should make
+reasonable inquiry into the client's financial situation, financial
+sophistication, investment experience and financial goals; the robo-adviser
+guidance emphasizes whether questionnaires gather enough information, explain
+questions clearly, and address inconsistent answers. This system therefore
+measures separately and reconciles:
 
 ```
 Goal → Time horizon → Liquidity → Financial capacity
     → Risk willingness → Knowledge/experience → Restrictions → Product fit
 ```
 
-The governing rule of the whole design:
+Governing rules:
 
-> **Final permissible risk cannot exceed the more restrictive of risk capacity
-> and risk willingness.** Constraints, never averages. Willingness "Aggressive"
-> with capacity "Conservative" resolves to the Conservative constraint with a
-> reason code — never to "Balanced".
+1. **Constraints, never averages.**
+   `permittedRisk = MIN(riskCapacity, riskWillingness)`, with hard
+   constraints layered before and after. Willingness "Aggressive" with
+   capacity "Conservative" resolves to the Conservative constraint with a
+   reason code — never to "Balanced". Averaging is exactly how advisers
+   accidentally over-risk financially fragile clients.
+2. **Experience measures understanding. It never increases a client's
+   ability to absorb financial loss.** A derivatives trader who needs the
+   money next year is still a short-horizon investor.
+3. **Segmentation never overrides the risk engine.**
+   `segment = TIME_POOR_PROFESSIONAL` cannot imply `risk = HIGH`.
+4. **The system must be capable of all four outcomes:**
+   "ReFi fits you." · "ReFi fits you, but with constraints." · "We need to
+   clarify something." · "This product isn't appropriate for this money."
+   The fourth answer is what makes the first three credible — otherwise the
+   questionnaire is a conversion funnel disguised as suitability.
+5. **Optimization target:** not "how many users qualify?" but "how
+   accurately can ReFi determine what it knows about the client, what it
+   does not know, whether the product fits, and why?"
+6. **Deterministic and interpretable.** No ML/RL in the client-risk
+   classification loop. AI may later help flag inconsistencies or suggest
+   clarifications; the suitability decision itself stays reproducible and
+   policy-versioned unless a future compliance-reviewed model is
+   specifically validated for it.
 
-And the optimization target:
-
-> Not "how many users qualify?" but "how accurately can ReFi determine what it
-> knows about the client, what it does not know, whether the product fits, and
-> why?"
-
-### 1.2 Carried forward from the superseded design
-
-- Banded financial data, never exact dollars (Reg S-P minimization).
-- All allocation/threshold policy values are **backend-owned and
-  policy-versioned**; the frontend renders them and never hardcodes a
-  percentage (same class of rule the tripwire enforces for freshness).
-- Immutable versioned snapshots with receipts — the existing profile
-  machinery is the right substrate.
-- The alpha risk disclosure lives in the existing disclosure/consent
-  machinery, **separate from the questionnaire** (§10.3).
-
-### 1.3 Six derived outputs (never one score)
-
-| Output                              | Question                                                                            |
-| ----------------------------------- | ----------------------------------------------------------------------------------- |
-| A. Risk capacity                    | How much loss can this client financially withstand?                                |
-| B. Risk willingness                 | How much volatility/loss are they psychologically willing to accept?                |
-| C. Investment sophistication        | Knowledge/experience — **never mechanically increases allowable risk**              |
-| D. Product fit                      | Is THIS product right for THIS money right now? Includes a real "not a fit" outcome |
-| E. Alpha readiness                  | Separate branch; guidance/segmentation only under Signal-only launch                |
-| F. Profile confidence / consistency | "Willingness High + Capacity Low → needs clarification" beats averaging             |
+The best version of this onboarding is not a survey that finds the
+customer's risk score. It is **a digital advisory conversation that converts
+customer circumstances into an explainable, versioned investment profile.**
 
 ---
 
-## 2. Placement in onboarding — the sequencing constraint
+## 2. Canonical onboarding flow
 
 ```
-Eligibility
-  ↓
-Investor Profile (this spec)
-  ↓
-Profile summary — facts and derived bands only, NO personalized security
-  recommendation
-  ↓
-Form CRS / ADV brochure / privacy notice / advisory agreement
-  ↓
-Broker / account connection
-  ↓
-Personalized recommendation
+WELCOME
+   ↓
+WHO / ACCOUNT TYPE
+   ↓
+BASIC ELIGIBILITY
+   ↓
+GOAL
+   ↓
+TIME HORIZON
+   ↓
+FINANCIAL CAPACITY
+   ↓
+INVESTMENT EXPERIENCE
+   ↓
+RISK WILLINGNESS
+   ↓
+RESTRICTIONS
+   ↓
+PRODUCT INTENT
+   ↓
+ALPHA BRANCH, IF RELEVANT
+   ↓
+CONSISTENCY ENGINE
+   ├── clean → continue
+   └── conflict → clarification screen → recompute
+   ↓
+PROFILE RESULT
+   ↓
+REVIEW YOUR ANSWERS
+   ↓
+REQUIRED ADVISORY / PRIVACY DISCLOSURES
+   ↓
+ADVISORY RELATIONSHIP / ACCOUNT CONNECTION
+   ↓
+PERSONALIZED SIGNAL
 ```
 
-The questionnaire must not accidentally create the personalized recommendation
-before the disclosure/agreement sequencing is legally correct: for a
-registered adviser serving retail investors, Form CRS and the ADV brochure
-generally must be delivered before or at contract formation. **[COUNSEL]**
-approves the exact transition between profile summary and investment advice.
+Form CRS must generally be delivered before or at the time the firm enters
+the advisory contract; ADV brochure delivery has its own timing
+requirements. **The exact point at which ReFi crosses from
+educational/profile information into personalized investment advice is
+signed off by securities counsel and reflected MECHANICALLY in the
+onboarding state machine** — a state the code enforces, not a convention.
 
 **Identity/KYC separation:** identity and KYC data (SSNs, ID images — the
-broker's CIP domain) are never copied into the advisory profile snapshot.
-The FinCEN investment-adviser AML rule is delayed to 2028-01-01 and the
-adviser CIP proposal is not final, but the connected broker's own CIP
-obligations stand — keep the data domains separate regardless.
+broker's CIP domain) are never copied into the advisory profile. The FinCEN
+investment-adviser AML rule is delayed to 2028-01-01 and the adviser CIP
+proposal is not final, but the connected broker's CIP obligations stand —
+the data domains stay separate regardless.
+
+**Performance target:** median completion 4–6 minutes; normal retail path
+roughly 17–20 answered screens; branching means users only see questions
+relevant to them.
 
 ---
 
-## 3. Entry, tone, and the entity split
+## 3. The questionnaire — exact screens
 
-### 3.0 Account-type gate (before Section 1)
+Enum values are the machine-stored spellings. All copy is shipping copy
+(brand voice §17) written against the `scan-copy` blocked-terms list.
+"Why we ask" renders behind a consistent affordance on sensitive screens.
 
-**Who is this account for?**
+### Screen 0 — Welcome
 
-- Just me
-- Me and someone else (joint)
-- A business, trust, or fund I manage
-
-The third answer routes to a separate institutional-onboarding path (out of
-scope here) with:
-
-> **ReFi for entities works differently.** Business, trust, and fund accounts
-> have their own onboarding. Leave your details and we'll be in touch.
-
-Power retail traders and small fund managers must not flow through the retail
-advisory questionnaire — split at the first decision, don't contaminate the
-retail flow. Reason code: `ENTITY_ROUTED`.
-
-### 3.1 Introduction screen
-
-> **A few questions. Better recommendations.**
+> **Let's build your investor profile.**
 >
-> Tell us what you're investing for, when you may need the money, and how you
-> think about risk. Most people finish in about five minutes.
+> A few questions help ReFi understand what this money is for, when you may
+> need it, and how much market risk makes sense for your situation.
 >
-> There are no right answers. Estimates are fine, and you can update your
-> profile whenever your circumstances change.
+> Most people finish in about five minutes. Estimates are fine.
 
-### 3.2 The path
+Expandable — _Why we ask:_
 
-Normal path: **15–18 answered questions**. Branching may expose 20–24 in
-unusual cases. Six section markers (never "Question 14 of 23" — branching
-changes the total):
+> ReFi uses your answers to determine whether our service fits your needs
+> and to shape the investment guidance we provide. You can update your
+> profile when your circumstances change.
 
-`Your goal · Timeline · Financial cushion · Experience · Risk · Restrictions`
+CTA: **Start** (never "Take the risk quiz").
 
-Progress renders as e.g. `Risk · Step 5 of 6`.
+### Screen 1 — Who will own this account?
 
----
+| Answer                                  | Branch                                                        |
+| --------------------------------------- | ------------------------------------------------------------- |
+| Me                                      | Standard retail flow                                          |
+| Me and another person                   | Joint-owner future flow / collect both relevant circumstances |
+| A trust                                 | Dedicated trust flow                                          |
+| A business or organization              | Institutional/entity flow                                     |
+| I'm investing professionally for others | Stop retail questionnaire; institutional/adviser flow         |
 
-## 4. The questions — screen-by-screen
+A fund manager, corporation or professional adviser is never squeezed
+through a consumer robo-adviser questionnaire — the SEC itself distinguishes
+a retail client's investment profile from an institutional client's
+investment mandate. Non-retail exits carry reason `ENTITY_ROUTED` and copy:
 
-Every question ships with its protocol row (§12). Enum values are the
-machine-stored spellings. Copy below is the shipping copy (brand voice §13);
-"Why we ask" text renders behind a consistent affordance on each screen.
+> **ReFi for entities works differently.** Business, trust, and fund
+> accounts have their own onboarding. Leave your details and we'll be in
+> touch.
 
-### Section 1 — Your goal
+### Section 1 — What is this money for?
 
-**Q1 · `objective`** — _What are you investing this money for?_
-Large selectable cards:
+**Screen 2 · `goal`** — _What is the main job of this money?_
 
-| Enum                  | Card                            |
-| --------------------- | ------------------------------- |
-| `long_term_wealth`    | Building long-term wealth       |
-| `retirement`          | Retirement                      |
-| `major_purchase`      | A major purchase                |
-| `education_family`    | Education or a family goal      |
-| `income`              | Generating income               |
-| `general`             | General investing               |
-| `emergency_near_term` | Emergency or near-term expenses |
-| `other`               | Something else                  |
+| Card                            | Enum                |
+| ------------------------------- | ------------------- |
+| Build long-term wealth          | `long_term_wealth`  |
+| Retirement                      | `retirement`        |
+| A major future purchase         | `major_purchase`    |
+| Education or family goal        | `education_family`  |
+| Generate investment income      | `income_generation` |
+| General investing               | `general_investing` |
+| Emergency or near-term expenses | `near_term_reserve` |
+| Something else                  | `other`             |
 
-_Why we ask:_ Your goal changes how much market movement your plan can
-reasonably absorb.
+Underneath:
 
-**Branch:** `emergency_near_term` does NOT immediately reject — ask horizon
-first. Near-term + high liquidity requirement resolves to the product-fit
-constraint (§8), not a "conservative ReFi profile" the product cannot deliver.
+> Different money has different jobs. This helps us avoid treating a
+> long-term portfolio like a savings account—or vice versa.
+
+**Critical branch:** `near_term_reserve` does NOT immediately reject —
+continue through timing/liquidity and let the product-fit engine make the
+determination.
 
 ### Section 2 — Timeline
 
-**Q2 · `horizon`** — _When might you first need a meaningful amount of this
-money?_
-Helper: _Think about roughly a quarter or more of the account._
+**Screen 3 · `horizon`** — _When might you first need a meaningful amount of
+this money?_
+Helper: _Think about roughly 25% or more of the account._
 
-`lt_1y` · `1_3y` · `3_5y` · `5_10y` · `gt_10y` · `unsure`
+`lt_1y` (Within a year) · `1_3y` · `3_5y` · `5_10y` · `gt_10y` (More than
+10 years) · `unknown` (I'm not sure)
 
-**Q3 · `withdrawalPattern`** — _When you start taking money out, how do you
-expect to use it?_
+**Screen 4 · `withdrawalPattern`** — _When you begin taking money out, how
+do you expect to use it?_
 
 `lump_sum` (Most or all at once) · `few_years` (Over a few years) ·
-`gradual` (Gradually over many years) · `none_expected` (I don't expect to
-withdraw it) · `unsure`
+`gradual` (Gradually over many years) · `none_expected` (I don't currently
+expect to withdraw it) · `unsure`
 
-Time-until-withdrawal and manner-of-withdrawal are different constraints.
+A retirement account beginning withdrawals in ten years is economically
+different from a house down payment liquidated on one date in ten years.
 
-### Section 3 — Your financial cushion
+### Section 3 — Financial capacity
 
-Section intro (before any financial question):
+Section introduction:
 
-> **Now, a little context about your finances.**
+> **A little context about your finances**
 >
-> We use ranges rather than exact amounts where we can. This helps us
-> understand how much investment risk your plan can absorb without asking for
-> more information than we need.
+> We use ranges wherever possible. We don't need exact balances to
+> understand whether investment losses could interfere with your plans.
 
-**Q4 · `incomeBand`** — _About how much do you earn in a year?_
+(Reg S-P makes protecting customer information a material operating
+obligation; collecting only information that contributes to the advisory
+decision reduces sensitive-data exposure.)
+
+**Screen 5 · `incomeBand`** — _About how much do you earn in a typical year
+before taxes?_
 
 `lt_25k` · `25_50k` · `50_100k` · `100_200k` · `200_500k` · `gt_500k` ·
 `prefer_not`
 
-`prefer_not` is never automatic rejection: it lowers `profileConfidence` and
-may block certain higher-risk eligibility outcomes (reason
-`CONFIDENCE_LIMITED`).
+Income alone never determines risk.
 
-**Q5 · `incomeStability`** — _How predictable is your income right now?_
+**Screen 6 · `incomeStability`** — _How predictable is your income right
+now?_
 
-`very_predictable` · `mostly_predictable` · `varies_significantly` ·
-`between_sources` (I'm between income sources right now)
-
-Two people earning the same amount can have completely different loss
-capacity.
-
-**Q6 · `netWorthBand`** — _About how much is your total net worth?_
-
-`lt_25k` · `25_100k` · `100_500k` · `500k_1m` · `1_5m` · `gt_5m` ·
+`very_predictable` · `mostly_predictable` · `varies_considerably` ·
+`between_sources` (I'm currently between regular income sources) ·
 `prefer_not`
 
-**Q7 · `liquidNetWorthBand`** — _About how much of that could you reasonably
-access for investing?_
-Definition shown inline:
+A $250,000 salaried executive and a founder with variable income can have
+very different short-term capacity.
 
-> Include cash, savings and investments you could reasonably access. Don't
-> include your home or other assets you would not sell to fund this
-> investment.
+**Screen 7 · `netWorthBand`** — _About how much is your total net worth?_
+Tooltip: _Your assets minus what you owe. A range is enough._
 
-Same bands as Q6. **[COUNSEL]** reviews this definition wording before
-implementation.
+`lt_50k` · `50_100k` · `100_250k` · `250_500k` · `500k_1m` · `1_5m` ·
+`gt_5m` · `prefer_not`
 
-**Q8 · `accountShareOfLiquidAssets`** — _How much of your liquid savings and
-investments would this ReFi account represent?_
+**Screen 8 · `liquidNetWorthBand`** — _About how much of your net worth
+could reasonably be used or accessed for investing?_
+Tooltip:
+
+> Include cash and investments you could reasonably access. Don't include
+> your home or other assets you would not realistically sell to fund this
+> account.
+
+Same bands as Screen 7. **[COUNSEL]** approves the exact liquid-net-worth
+definition wording. More useful for alpha exposure than total net worth.
+
+**Screen 9 · `accountShareOfLiquidAssets`** — _Roughly how much of your
+liquid savings and investments would this ReFi account represent?_
 
 `lt_10pct` · `10_25pct` · `25_50pct` · `gt_50pct` · `unsure`
 
-More useful than net worth alone — proportion of savings represented is a
-direct concentration/capacity measure, and it drives alpha allocation.
+Often more informative than the raw net-worth band: a $100,000 account
+belonging to someone with $3 million liquid is very different from a
+$100,000 account containing someone's entire investable wealth.
 
-**Q9 · `emergencyReserveBand`** — _If an unexpected expense came up, how much
-of a cash cushion do you currently have?_
+**Screen 10 · `emergencyReserveBand`** — _If something unexpected happened,
+how long could your current cash savings cover normal expenses?_
 
-`lt_1mo` · `1_3mo` · `3_6mo` · `gt_6mo` · `unsure`
-(Months of normal expenses.)
+`lt_1mo` · `1_3mo` · `3_6mo` · `gt_6mo` · `unsure` · `prefer_not`
 
-**Q10 · `debtSignal`** — _Do you currently carry high-interest debt that you
+**Screen 11 · `debtSignal`** — _Do you carry high-interest debt that you
 don't normally pay off each month?_
 
-`none` · `manageable` (Yes, but it's manageable) · `significant` (Yes, and
-it's significant) · `prefer_not`
+`none` · `manageable` (Yes, but it is manageable) · `significant` (Yes, and
+it is significant) · `prefer_not`
 
-Never ask exact balances.
+Never ask exact balances unless the policy engine genuinely requires them.
 
-### Section 4 — Your experience
+**Screen 12 · `liquidityLikelihood`** — _How likely are you to need an
+unexpected withdrawal from this account?_
 
-**Q11 · `investmentKnowledge`** — _Which best describes your investing
-knowledge?_
-Behavioral descriptions, never "Beginner/Intermediate/Expert":
+`very_unlikely` · `possible` · `likely` · `unsure`
 
-| Enum                 | Card                                                                                                      |
-| -------------------- | --------------------------------------------------------------------------------------------------------- |
-| `learning`           | I'm learning — I know the basics but don't regularly make investment decisions.                           |
-| `comfortable`        | I'm comfortable with the basics — I understand stocks, ETFs, diversification and market risk.             |
-| `experienced`        | I'm experienced — I've actively managed investments through different market conditions.                  |
-| `highly_experienced` | I'm highly experienced — I regularly evaluate investment strategies, portfolio risk and market structure. |
+Replaces the vague existing `liquidityNeed` string with something
+measurable.
 
-**Q12 · `investmentExperienceYears`** — _How long have you been managing
-investments?_
+### Section 4 — Investment knowledge and experience
+
+Never ask "How sophisticated are you?" — people grade themselves poorly.
+
+**Screen 13 · `knowledgeLevel`** — _Which description sounds most like
+you?_
+
+| Enum                 | Card                                                                                                     |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| `learning`           | **I'm learning** — I understand some basics but don't regularly make investment decisions.               |
+| `comfortable`        | **I'm comfortable with the basics** — I understand stocks, ETFs, diversification and normal market risk. |
+| `experienced`        | **I'm experienced** — I've managed investments through different market conditions.                      |
+| `highly_experienced` | **I'm highly experienced** — I regularly evaluate portfolios, investment strategies and risk.            |
+
+**Screen 14 · `experienceYears`** — _How long have you been making your own
+investment decisions?_
 
 `lt_1y` · `1_3y` · `3_5y` · `5_10y` · `gt_10y`
 
-**Q13 · `productExperience[]`** — _Which have you personally used?_
-Multi-select:
+**Screen 15 · `productExperience[]`** — _Which investments or strategies
+have you personally used?_ Multi-select:
 
-`stocks` · `funds` (ETFs or mutual funds) · `bonds` · `options` ·
-`margin_leverage` · `crypto` · `automated_strategies` · `none`
+`stocks` (Individual stocks) · `funds` (ETFs or mutual funds) · `bonds` ·
+`options` · `margin_leverage` · `digital_assets` · `automated_services`
+(Automated investment services) · `quant_strategies` (Quantitative or
+algorithmic strategies) · `none`
 
-**Rule:** options/margin experience is an experience/complexity signal only.
-**Experience never mechanically increases allowable risk.**
+> **Experience measures understanding. It does not increase a client's
+> ability to absorb financial loss.**
 
-### Section 5 — How you experience risk
+### Section 5 — Risk willingness
 
-Replaces the current single `riskTolerance` self-rating with four independent
-observations. No answer is ever visually presented as "better"; no
-green-for-gains/red-for-losses nudging.
+The single `riskTolerance` input disappears here — replaced by four
+independent behavioral observations. No answer is ever visually rewarded;
+no green-for-gains/red-for-losses nudging.
 
-**Q14 · `riskScenarioDrawdown`** — _Imagine you invested $50,000 and markets
-fell sharply. A few months later your account is worth $40,000. What would
-you most likely do?_
+**Screen 16 · `drawdownBehavior`** — _Markets fall sometimes. Imagine your
+ReFi account started at $50,000 and fell to $40,000 over several months.
+What would you most likely do?_
 
-`sell_all` (Sell most or all of it) · `sell_some` (Sell some and reduce
-risk) · `stay` (Stay invested) · `buy_more` (Invest more) · `unsure`
+`sell_all` (Sell most or all of it) · `sell_some` (Sell some and reduce my
+exposure) · `stay` (Stay invested) · `buy_more` (Invest more) · `unsure`
+(I'm genuinely not sure)
 
-**Q15 · `drawdownTolerance`** — _At what one-year decline would you seriously
+**Screen 17 · `lossThreshold`** — _At what decline would you seriously
 reconsider staying invested?_
 
 `pct_5` · `pct_10` · `pct_20` · `pct_30` · `gt_30` · `unsure`
 
-**Q16 · `riskTradeoff`** — _Which outcome would you be more comfortable
-living with for a year?_
-Four mathematically calibrated pairs (policy-versioned; illustrative v1
-values below — backend owns the numbers, **[COUNSEL]** + product calibrate):
+**Screen 18 · `growthProtectionPreference`** — _Which matters more for this
+money?_ Five-position forced choice:
 
-| Enum     | Presented as (on $10,000)                |
-| -------- | ---------------------------------------- |
-| `band_1` | Typical year between −$300 and +$700     |
-| `band_2` | Typical year between −$900 and +$1,400   |
-| `band_3` | Typical year between −$1,800 and +$2,400 |
-| `band_4` | Typical year between −$3,000 and +$3,600 |
+```
+Protecting the value              Maximizing long-term
+of my investment    ○──○──○──○──○ growth
+```
 
-Neutral presentation; identical typography for gain and loss figures.
+Stored `1`–`5`. Never label the right side "better returns".
 
-**Q17 · `lossVsGrowthPriority`** — _Which matters more for this money?_
-Five positions between:
+**Screen 19 · `riskTradeoffChoice`** — _Which investment experience would
+you rather live with?_ Card set (differently framed than Screen 18 — the
+consistency observation):
 
-_Avoiding a significant loss_ ←→ _Maximizing long-term growth_
+| Enum     | Card                                                                     |
+| -------- | ------------------------------------------------------------------------ |
+| `plan_a` | **Plan A** — Smaller market swings · Lower expected long-term growth     |
+| `plan_b` | **Plan B** — Moderate market swings · Moderate expected long-term growth |
+| `plan_c` | **Plan C** — Larger market swings · Greater long-term growth potential   |
 
-`1` … `5` (stored as the position). Second, differently-framed observation —
-the consistency check against Q14–Q16.
+No promised returns. The illustrative figures behind these cards come from
+the Investment Committee / model governance and are policy-versioned.
+**[COUNSEL]** + investment policy approve values and presentation.
 
 ### Section 6 — Restrictions and circumstances
 
-**Q18 · `restrictions[]`** — _Are there investments ReFi should not include
+**Screen 20 · `restrictions[]`** — _Are there investments ReFi should avoid
 for you?_
 
-`none` · `employer_securities` · `legally_restricted` (Securities I'm legally
-or professionally restricted from trading) · `specific_companies` ·
-`specific_industries` · `other`
+`none` · `employer_securities` · `legally_restricted` (Securities I'm
+legally or professionally restricted from trading) · `specific_companies` ·
+`specific_industries` · `other` — conditional detail fields follow.
+Extremely valuable for direct indexing; feeds the restriction set and
+`excludedAssets`.
 
-Conditional detail (ticker/company/industry pickers) when any non-`none`
-option is selected. For a direct-index product this feeds the existing
-`excludedAssets` preference and a per-client restriction set. Reason code
-where material: `RESTRICTED_SECURITIES`.
+**Screen 21 · `expectedFinancialChange`** — _Do you expect a major
+financial change in the next 12 months that could affect this money?_
 
-**Q19 · `expectedFinancialChange`** — _Do you expect a major financial change
-in the next 12 months that could change when you need this money or how much
-you can invest?_
+`no` · `maybe` · `yes` → if yes: _What kind of change?_
+`income_employment` · `retirement` · `major_purchase` · `major_expense` ·
+`savings_change` (Significant change in available savings) · `other`
 
-`no` · `maybe` · `yes`
-
-If `yes`: free-select from `retirement` · `job_income_change` ·
-`home_purchase` · `large_expense` · `other`, with the instruction:
-
-> Tell us what changes financially, not personal details.
+> You don't need to provide personal details—only the financial impact that
+> could affect your investment plan.
 
 Never solicit medical or other sensitive personal details.
 
-### Section 6b — Product intent (segmentation, outside the risk model)
+### Section 7 — Product intent (segmentation, not risk)
 
-**Q20 · `productIntent[]`** — _What are you hoping ReFi helps you do?_
-Multi-select:
+**Screen 22 · `productIntent[]`** — _What are you hoping ReFi helps you
+do?_ Multi-select:
 
-`disciplined_long_term` · `personalized_signals` · `diversify_existing` ·
-`less_decision_time` · `learn_system` · `explore_alpha` · `other`
+`disciplined_long_term` (Build a disciplined long-term portfolio) ·
+`personalized_signals` · `reduce_emotional_decisions` (Reduce emotional
+investment decisions) · `diversify_existing` · `less_time` (Spend less time
+managing investments) · `understand_systematic` (Understand how a
+systematic strategy works) · `explore_alpha` (Explore experimental or alpha
+strategies)
 
-Commercially valuable segmentation that must **never contaminate the risk
-model**. `explore_alpha` sets `alphaInterest = true` and opens the Alpha
-Readiness branch (§10) — it does not by itself change any band.
+Commercially useful — identifies which ICP the customer resembles —
+**without contaminating the suitability logic**. `explore_alpha` triggers
+the alpha branch (§10).
 
 ---
 
-## 5. Derivation — the decision engine
+## 4. The decision engine
 
-Deterministic, interpretable, policy-versioned. **No ML/RL in the client-risk
-classification loop.** AI may later help flag inconsistencies or suggest
-clarifications, but the suitability decision itself stays reproducible unless
-a future compliance-reviewed model is specifically validated for it.
+Five independent outputs — never one score, never an average of everything:
 
-Pipeline (order matters):
+| Output                | Question it answers                                                    |
+| --------------------- | ---------------------------------------------------------------------- |
+| `riskCapacityBand`    | How much investment loss can this client's circumstances absorb?       |
+| `riskWillingnessBand` | How much volatility/loss is the client actually willing to experience? |
+| `knowledgeBand`       | How well does the client understand investing/product complexity?      |
+| `productFitStatus`    | Does this particular ReFi strategy fit the purpose and circumstances?  |
+| `profileConfidence`   | Are the answers sufficiently complete and internally consistent?       |
+
+Derived:
 
 ```
-1. Check product fit                    (§8 — can exit here)
-2. Calculate risk capacity              (§5.1)
-3. Calculate risk willingness           (§5.2)
-4. Check experience/complexity          (§5.3)
-5. Detect inconsistencies               (§7)
-6. Apply hard constraints               (§8 table)
-7. Derive final profile                 (min(capacity, willingness) then constraints)
-8. Generate reason codes                (§9)
+permittedRiskBand = MIN(riskCapacityBand, riskWillingnessBand)
 ```
 
-All matrices below are **policy v1 drafts** — the backend owns the live
-values under `policyVersion`; the frontend never reimplements them.
+with hard constraints layered before and after.
 
-### 5.1 Risk capacity (`capacityBand` 1–5)
+### 4.1 Risk capacity — v1 model (deterministic, policy-versioned)
 
-Points per answer, summed, then banded:
+Factor weights (product-policy choices, **not SEC rules** — approved by
+counsel and the owner of ReFi's investment policy before release):
 
-| Input                | 0 pts             | 1 pt                        | 2 pts                | 3 pts              | 4 pts          |
-| -------------------- | ----------------- | --------------------------- | -------------------- | ------------------ | -------------- |
-| Q2 horizon           | `lt_1y`           | `1_3y` / `unsure`           | `3_5y`               | `5_10y`            | `gt_10y`       |
-| Q3 withdrawal        | `lump_sum`        | `few_years` / `unsure`      | `gradual`            | `none_expected`    | —              |
-| Q5 income stability  | `between_sources` | `varies_significantly`      | `mostly_predictable` | `very_predictable` | —              |
-| Q7 liquid NW         | `lt_25k`          | `25_100k`                   | `100_500k`           | `500k_1m`          | `1_5m`/`gt_5m` |
-| Q8 account share     | `gt_50pct`        | `25_50pct` / `unsure`       | `10_25pct`           | `lt_10pct`         | —              |
-| Q9 emergency reserve | `lt_1mo`          | `1_3mo` / `unsure`          | `3_6mo`              | `gt_6mo`           | —              |
-| Q10 debt             | `significant`     | `manageable` / `prefer_not` | `none`               | —                  | —              |
+| Factor                                   | Approx. importance |
+| ---------------------------------------- | -----------------: |
+| Time horizon (Screens 3–4)               |                30% |
+| Liquidity need (Screen 12)               |                20% |
+| Account as % of liquid assets (Screen 9) |                20% |
+| Emergency reserve (Screen 10)            |                10% |
+| Income stability (Screen 6)              |                10% |
+| High-interest debt (Screen 11)           |                10% |
 
-Sum 0–22 → `capacityBand`: 0–4 → 1 · 5–8 → 2 · 9–13 → 3 · 14–18 → 4 ·
-19–22 → 5. `prefer_not` on Q4/Q6/Q7 additionally caps `profileConfidence`
-(§5.4); Q7 `prefer_not` caps `capacityBand` at 3 (`CONFIDENCE_LIMITED`).
+Hard constraints (evaluated regardless of the weighted result):
 
-### 5.2 Risk willingness (`willingnessBand` 1–5)
+| Condition                           | Constraint                                               |
+| ----------------------------------- | -------------------------------------------------------- |
+| Needs most funds < 1 year           | `productFitStatus = not_fit` for the equity direct index |
+| Horizon 1–3 years                   | Maximum risk generally constrained                       |
+| Emergency-fund purpose              | `not_fit` or strong product-fit constraint               |
+| Account > 50% of liquid investments | Capacity constrained                                     |
+| < 1 month emergency reserve         | Capacity heavily constrained                             |
+| Significant high-interest debt      | Capacity constrained                                     |
+| Very high liquidity need            | Capacity constrained                                     |
 
-Normalize each observation to 1–5, then take the **median** of the four (not
-the mean — one outlier answer shouldn't drag the band; disagreement is
-handled by §7, not averaged away):
+### 4.2 Risk willingness — v1 ordinal maps (never exposed to the user)
 
-| Observation | 1          | 2                      | 3        | 4          | 5       |
-| ----------- | ---------- | ---------------------- | -------- | ---------- | ------- |
-| Q14         | `sell_all` | `sell_some` / `unsure` | `stay`   | `buy_more` | —       |
-| Q15         | `pct_5`    | `pct_10` / `unsure`    | `pct_20` | `pct_30`   | `gt_30` |
-| Q16         | `band_1`   | `band_2`               | `band_3` | `band_4`   | —       |
-| Q17         | `1`        | `2`                    | `3`      | `4`        | `5`     |
+| `drawdownBehavior` | Internal |
+| ------------------ | -------: |
+| `sell_all`         |        0 |
+| `sell_some`        |       25 |
+| `unsure`           |       40 |
+| `stay`             |       70 |
+| `buy_more`         |       90 |
 
-### 5.3 Sophistication (`knowledgeBand` 1–4)
+| `lossThreshold` | Internal |
+| --------------- | -------: |
+| `pct_5`         |       10 |
+| `pct_10`        |       30 |
+| `pct_20`        |       55 |
+| `pct_30`        |       75 |
+| `gt_30`         |       95 |
+| `unsure`        |       40 |
 
-From Q11 (primary), Q12 and Q13 (supporting). `knowledgeBand` gates
-**complexity of what may be shown/explained** and is an alpha input — it
-never raises `finalRiskBand`. "Highly experienced + low tolerance": low
-tolerance still controls.
+Screens 18–19 map analogously (policy-versioned). The **consistency
+relationship matters more than the score**: "I'd invest more after a 20%
+decline" + "I'd seriously reconsider after a 10% decline" creates
+`INCONSISTENT_LOSS_BEHAVIOR` — it is never silently averaged to 55.
 
-### 5.4 Profile confidence
+### 4.3 Knowledge
 
-`profileConfidence`: `high` · `adequate` · `needs_clarification` · `limited`.
-Lowered by: any `prefer_not` on Q4/Q6/Q7, unresolved §7 inconsistency,
-`unsure` on ≥3 load-bearing questions. `limited` (e.g. material financial
-questions refused) may mean **no personalized recommendation** until
-clarified — stated to the user plainly, not silently degraded.
+`knowledgeBand` from Screens 13–15. Gates complexity of presentation and is
+an alpha input. **Can never override a capacity constraint.**
 
-### 5.5 Final profile
+### 4.4 Product fit — four states
 
-`finalRiskBand = min(capacityBand, willingnessBand)`, then hard constraints
-(§8) may lower it further or resolve to a not-fit outcome. Every lowering
-emits a reason code. The band maps to the user-facing taxonomy (§11.2).
+| Result                | Meaning                                          |
+| --------------------- | ------------------------------------------------ |
+| `fit`                 | Product appears consistent with profile          |
+| `fit_with_constraint` | Product fits, but profile limits risk/exposure   |
+| `needs_clarification` | Cannot conclude yet                              |
+| `not_fit`             | Product should not be recommended for this money |
+
+A good fiduciary questionnaire must be capable of producing "we don't think
+this product is appropriate for this money" — otherwise it is a conversion
+funnel disguised as suitability.
+
+### 4.5 Profile confidence
+
+`profileConfidence = complete | limited | unresolved`
+
+Refusals and unresolved inconsistencies lower it; nuanced outcomes are
+allowed — e.g.:
+
+```
+coreProductFit    = fit
+alphaReadiness    = unavailable
+profileConfidence = limited
+reason            = LIQUID_CAPACITY_NOT_ESTABLISHED
+```
 
 ---
 
-## 6. Result screen — explanation, not a score
+## 5. Consistency engine
 
-Never `Risk Score: 73 — Aggressive`. Render:
+The SEC specifically highlighted whether an automated adviser addresses
+apparently inconsistent questionnaire responses. Explicit rule → flag pairs
+(policy-versioned; v1 set):
 
-> **Your investor profile**
-> **Growth-oriented**
->
-> Your ability to take risk — **Moderate**
-> Your comfort with market risk — **High**
-> Your investing experience — **Experienced**
-> Your timeline — **10+ years**
-> ReFi product fit — **Good fit for long-term investing**
->
-> **What shaped this result**
-> Your long investment horizon supports taking market risk. Your financial
-> cushion supports moderate risk, but it is more restrictive than your stated
-> comfort with market volatility, so we use the more cautious constraint.
+| Rule                                                     | Flag                             |
+| -------------------------------------------------------- | -------------------------------- |
+| Horizon < 3 years + very-high risk willingness           | `SHORT_HORIZON_HIGH_WILLINGNESS` |
+| Emergency goal + low liquidity concern                   | `GOAL_LIQUIDITY_CONFLICT`        |
+| Sell at 10% + choose highest-volatility plan             | `RISK_BEHAVIOR_CONFLICT`         |
+| Very low experience + advanced-strategy self-description | `EXPERIENCE_CONFLICT`            |
+| Account > 50% liquid wealth + aggressive alpha interest  | `CONCENTRATION_ALPHA_CONFLICT`   |
+| No emergency reserve + very high risk willingness        | `CAPACITY_WILLINGNESS_GAP`       |
+| Buy-more-after-crash + reconsider-at-10%                 | `INCONSISTENT_LOSS_BEHAVIOR`     |
 
-The explanation paragraph is generated from the reason codes — explainable
-and auditable, the same trail counsel and the audit spine need.
-
-Users choosing to override toward more aggressive than recommended (where a
-choice exists) see a plain-language caution — the Betterment pattern — and
-the override is itself recorded with a receipt.
-
----
-
-## 7. Inconsistency detection and reconciliation
-
-Trigger examples (policy-versioned rule list):
-
-- Q14–Q17 normalized spread ≥ 3 (willingness observations disagree);
-- short horizon (Q2 ≤ `1_3y`) with high stated willingness (≥ 4);
-- `emergency_near_term` objective with `gt_10y` horizon;
-- `none_expected` withdrawal with `major_purchase` objective;
-- high willingness + `between_sources` income + `lt_25k` liquid NW.
-
-Reconciliation screen (never "your answers are wrong", never silently
-averaged):
+The user sees a **clarification screen, not a compliance error**:
 
 > **Let's double-check one thing.**
 >
-> Two of your answers point in different directions. You told us you may need
-> this money within three years, but you're also comfortable with substantial
-> market losses.
+> You told us you may need this money within three years, but you're also
+> comfortable with large market declines.
 >
-> Your timeline matters because a shorter period gives your portfolio less
-> time to recover.
+> A shorter timeline can leave less time for a portfolio to recover.
 >
-> Which would you like to revisit?
-> · When I need the money
-> · How I think about losses
+> Which answer would you like to revisit?
+>
+> **When I need the money** · **How I think about market losses**
 
-Both answers' history is preserved (immutable snapshots). Unresolved
-contradiction → `profileConfidence: needs_clarification`,
-`INCONSISTENCY_UNRESOLVED`, and the §8 table governs what may proceed.
+After revisiting, the engine recomputes. Both answers' history persists
+(immutable versions). Unresolved → `profileConfidence: unresolved` and the
+§4.4/§6 gates govern what may proceed.
 
 ---
 
-## 8. Product fit — including the honest exit
+## 6. Customer-facing outcomes
 
-The system must have a real **"ReFi is not appropriate for this money right
-now"** outcome. Hard decision-tree cases (v1):
+Never `Risk score: 74`. Render:
 
-| Condition                                                              | Outcome                                                         | Reason code                |
-| ---------------------------------------------------------------------- | --------------------------------------------------------------- | -------------------------- |
-| Needs substantial funds < 1 year                                       | Direct-index strategy likely not a fit                          | `NEAR_TERM_NOT_FIT`        |
-| Emergency-fund purpose (+ short horizon / high liquidity need)         | Not a fit for an equity strategy                                | `EMERGENCY_FUND_NOT_FIT`   |
-| Cannot tolerate material principal loss (Q15 `pct_5` + Q14 `sell_all`) | Not a fit                                                       | `LOSS_INTOLERANT_NOT_FIT`  |
-| Very short horizon + high stated tolerance                             | Horizon/capacity constraint governs; reconciliation triggered   | `HORIZON_CONSTRAINT`       |
-| High tolerance + unstable income + low liquid NW                       | Capacity controls                                               | `CAPACITY_CONTROLS`        |
-| ReFi account > 50% of liquid assets                                    | Capacity reduction; alpha restricted                            | `CONCENTRATION_LIMIT`      |
-| Low experience + very high risk answers                                | Clarification/education path — not simply classified aggressive | `CLARIFICATION_REQUIRED`   |
-| Highly experienced + low tolerance                                     | Low tolerance controls                                          | `WILLINGNESS_CONTROLS`     |
-| Employer/legal trading restrictions                                    | Personalized restriction set                                    | `RESTRICTED_SECURITIES`    |
-| Alpha desired + limited loss capacity                                  | Signal/paper only                                               | `ALPHA_CAPACITY_LIMITED`   |
-| Conflicting behavioral answers                                         | Reconciliation screen                                           | `INCONSISTENCY_UNRESOLVED` |
-| Material financial questions refused                                   | Confidence limitation; possibly no personalized recommendation  | `CONFIDENCE_LIMITED`       |
-| Entity / fund manager                                                  | Separate institutional onboarding                               | `ENTITY_ROUTED`            |
-| Unsupported account type                                               | Product-fit exit, not questionnaire failure                     | `UNSUPPORTED_ACCOUNT`      |
+> ## Your investor profile
+>
+> **Growth**
+>
+> ### Your timeline
+>
+> **Long-term**
+> You don't expect to need a meaningful portion of this money for more than
+> 10 years.
+>
+> ### Your financial capacity for market risk
+>
+> **Moderate**
+> Your long timeline supports investment risk, while the amount this account
+> represents relative to your liquid savings keeps us from using the highest
+> risk level.
+>
+> ### Your comfort with market movement
+>
+> **High**
+> Your responses indicate you're prepared to remain invested through
+> meaningful market declines.
+>
+> ### Your investing experience
+>
+> **Experienced**
+> You've invested through multiple market environments and have experience
+> with stocks and diversified funds.
+>
+> ## What shaped your profile
+>
+> Your comfort with investment risk is higher than your financial capacity
+> for it. We use the more cautious constraint.
 
-Not-fit copy:
+That last sentence is the product's honesty made visible — generated from
+the binding constraint's reason code, explainable and auditable.
+
+Where a client may override toward more aggressive than recommended
+(**[COUNSEL]** decides whether/how — §20), the caution is plain-language and
+the override is itself a receipted, versioned record.
+
+**Not-fit copy:**
 
 > **This money may have a different job.**
 >
-> Based on your timeline and need for access to these funds, a stock-focused
+> Based on your timeline and need to access these funds, a stock-focused
 > ReFi strategy may not be the right fit for this money right now.
 >
 > Your profile can change as your circumstances change.
 
-A not-fit outcome is a saved, versioned, receipted result — not a dead end;
-the user can revisit when circumstances change (§15 refresh triggers).
+A not-fit outcome is a saved, versioned, receipted result the user can
+revisit — not a dead end.
 
 ---
 
-## 9. Reason codes
+## 7. Risk labels
 
-Closed vocabulary (v1), stored on every assessment; the audit answer to "why
-did the system conclude this":
+| Band | Label        |
+| ---- | ------------ |
+| 1    | Preservation |
+| 2    | Conservative |
+| 3    | Balanced     |
+| 4    | Growth       |
+| 5    | High Growth  |
 
-`LIQUIDITY_CONSTRAINT` · `HORIZON_CONSTRAINT` · `CAPACITY_CONTROLS` ·
-`WILLINGNESS_CONTROLS` · `CONCENTRATION_LIMIT` · `NEAR_TERM_NOT_FIT` ·
-`EMERGENCY_FUND_NOT_FIT` · `LOSS_INTOLERANT_NOT_FIT` ·
-`INCONSISTENCY_UNRESOLVED` · `CLARIFICATION_REQUIRED` · `CONFIDENCE_LIMITED`
-· `RESTRICTED_SECURITIES` · `ALPHA_CAPACITY_LIMITED` ·
-`ALPHA_DISCLOSURE_PENDING` · `ENTITY_ROUTED` · `UNSUPPORTED_ACCOUNT` ·
-`USER_OVERRIDE_RECORDED`
-
-Internally the numbers outrank the labels: retain
-`capacity=2 · willingness=4 · final=2 · reason=LIQUIDITY_CONSTRAINT`, not
-just "Conservative".
+Never "Aggressive", "Speculative", or "Expert" — unnecessary
+emotional/status signaling. Internally the numbers and reason codes outrank
+the labels (§13).
 
 ---
 
-## 10. Alpha Readiness — a branch, not everyone's survey
+## 8. ICP segmentation — a separate object
 
-Opens only when `alphaInterest = true` (Q20 `explore_alpha`). Ordinary
-direct-index clients never see experimental-risk questions.
+Segmentation lives in its own object, never inside the advisory assessment,
+and **never overrides the risk engine**.
 
-### 10.1 Branch questions
+| Segment                            | What identifies them                                       | ReFi implication                          |
+| ---------------------------------- | ---------------------------------------------------------- | ----------------------------------------- |
+| Long-Term Builder                  | Long horizon, ordinary experience, disciplined growth goal | Core direct-index/Signal                  |
+| Time-Poor Professional             | Strong income/capacity, wants systematic decisions         | Strong ReFi ICP                           |
+| Experienced Self-Directed Investor | High knowledge, already manages portfolio                  | Signal + deeper evidence/explanation      |
+| Concentrated Equity Holder         | Employer stock / concentrated holdings                     | Strong direct-index/exclusion use case    |
+| Quant-Curious Investor             | Interested in system/AI/strategy mechanics                 | Education + Signal                        |
+| Alpha Explorer                     | Explicit experimental-strategy interest                    | Alpha readiness branch                    |
+| Near-Term Saver                    | Short horizon / high liquidity need                        | Not-fit or alternative future product     |
+| Capital-Preservation Investor      | Low capacity or low willingness                            | Likely not fit for current equity product |
 
-**A1 · `alphaLossImpact`** — _Could losing the entire amount you allocate to
-an experimental strategy interfere with your normal expenses or financial
-obligations?_
+---
+
+## 9. Fringe cases — each needs a test fixture
+
+| Fringe case                                          | ReFi behavior                                                                 |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------- |
+| High net worth, 12-month horizon                     | Short horizon still constrains                                                |
+| Low net worth, 20-year horizon                       | Don't reject merely for low wealth; assess actual capacity                    |
+| Experienced trader, no emergency savings             | Experience does not override capacity                                         |
+| Young investor with variable founder income          | Long horizon helps; unstable cash flow constrains                             |
+| Retired investor with no salary                      | Income question must not misclassify; retirement assets/income matter         |
+| User refuses net-worth answer                        | May continue where possible; confidence reduced; alpha may become unavailable |
+| User temporarily unemployed                          | Not automatically unsuitable; evaluate reserves/liquidity                     |
+| Very high income + substantial debt                  | Capacity reflects debt/liquidity                                              |
+| "Buy more after crash" + "sell at 10%"               | Clarification                                                                 |
+| Wants alpha, account > 50% of liquid wealth          | Alpha capacity restriction                                                    |
+| Goal changes                                         | New immutable profile version                                                 |
+| Multiple financial goals                             | Choose primary goal for this account (goal-specific accounts later)           |
+| Employer trading restrictions                        | Capture exclusion/restriction                                                 |
+| Entity account                                       | Exit retail flow                                                              |
+| Needs emergency funds                                | Product-fit rejection, not a "Conservative" portfolio                         |
+| Picks highest risk believing it means better returns | Behavioral inconsistency / education                                          |
+
+---
+
+## 10. Alpha branch
+
+An extension of this profile, not an isolated questionnaire. Trigger:
+`productIntent` includes `explore_alpha`. Ordinary direct-index clients
+never see experimental-risk questions.
+
+**Alpha screen 1 · `alphaLossImpact`**
+
+> Experimental strategies can lose substantially more than you expect.
+> Would losing the full amount you allocate to an experimental strategy
+> interfere with your normal expenses or financial obligations?
 
 `yes` · `no` · `unsure`
 
-`yes` or `unsure` → no execution-capable alpha; potentially Signal/paper
-experience only (`ALPHA_CAPACITY_LIMITED`).
+`yes` → `alphaReadiness = capacity_failed`; the current Signal path may
+still allow education/paper exposure where appropriate.
 
-**A2 — exposure policy (no question).** The backend computes from account
-value + `liquidNetWorthBand` + `accountShareOfLiquidAssets` and returns:
-
-```
-policyVersion · suggestedMaxExposure · policyBasis
-```
-
-Never ask "Would you like to invest 2%?" — the percentage lives in backend
-policy, full stop.
-
-**A3 — disclosure, separate from the questionnaire.** The
-`alpha-program-risk` document rides the existing disclosure machinery
-(registry, versioning, contentHash, acknowledgment). A suitability question
-asks _what can you financially withstand_; a disclosure states _here are the
-risks of this service_. Never turn one into the other.
-
-### 10.2 Alpha eligibility (conjunction, never a single field)
+**Alpha screen 2 — exposure policy (no question).** The backend computes
+from `liquidNetWorthBand` + `accountShareOfLiquidAssets` + current
+reconciled account value and returns:
 
 ```
-eligible jurisdiction/account
-AND adequate capacity           (capacityBand ≥ policy floor, A1 = no)
-AND adequate experience         (knowledgeBand ≥ policy floor)
-AND proposed exposure within backend policy
-AND no unresolved profile contradiction
-AND required disclosure version acknowledged
+alphaPolicyVersion
+alphaExposureGuidance
+alphaEligibilityStatus
+alphaReasonCodes[]
 ```
 
-Never `riskTolerance === "aggressive"`. Under the current Signal-only launch
-this produces **guidance/segmentation, not trade-execution authority**;
-whether it ever permits execution depends on the final Managed/alpha
-architecture (D-LAUNCH-06 and the Managed release gates).
+The frontend **never contains** `0.02` or `2%` as policy logic — the
+principle the superseded design correctly established.
+
+**Alpha screen 3 — disclosure (separate record).** Draft copy
+(**[COUNSEL]** writes the final text):
+
+> **Before joining the alpha**
+>
+> Alpha features are experimental. Performance may differ materially from
+> simulations, historical tests or expectations. Models, market conditions
+> and infrastructure may behave unexpectedly.
+
+The questionnaire records **financial suitability facts**; the disclosure
+system records **informed acknowledgment**. Different functions, different
+records — never merged.
+
+**Signal-only boundary (current frozen interpretation):** alpha capacity is
+**informational / eligibility / segmentation — not execution authority**.
+The profile may say:
+
+> Based on the information you've provided, we suggest keeping any future
+> experimental allocation limited relative to your liquid investments.
+
+It must not imply ReFi is currently executing that capital. That
+distinction stands until the Managed/execution architecture is explicitly
+authorized (D-LAUNCH-06, Managed gates).
 
 ---
 
-## 11. Segments and taxonomy
+## 11. Refusal policy
 
-### 11.1 Operational customer segments
+Not everything is mandatory; sensitive questions offer **Prefer not to
+answer** rather than forcing fake answers. Classification:
 
-| Segment                              | Typical profile                                       | Product path                              |
-| ------------------------------------ | ----------------------------------------------------- | ----------------------------------------- |
-| Core Builder                         | Long horizon, moderate+ capacity, moderate+ tolerance | Core Signal / direct index                |
-| Experienced Self-Directed            | High sophistication, adequate capacity                | Core + advanced explanation               |
-| Time-Constrained Professional        | Strong capacity, wants discipline/automation          | Core Signal                               |
-| Concentrated/Restricted Investor     | Employer stock or legal restrictions                  | Personalized exclusions / direct indexing |
-| Alpha-Curious, Qualified by Capacity | High capacity + knowledge + in-policy exposure        | Alpha branch                              |
-| Alpha-Curious, Capacity Limited      | Wants risk, cannot financially absorb it              | Signal/paper only                         |
-| Near-Term Investor                   | Short horizon / high liquidity need                   | Not-fit outcome                           |
-| Capital-Preservation Investor        | Low tolerance or essential funds                      | Not-fit outcome                           |
-| Entity / fund manager                | Business/institutional                                | Separate onboarding architecture          |
+| Type                  | Example               | Refusal effect                                   |
+| --------------------- | --------------------- | ------------------------------------------------ |
+| Essential             | goal, horizon         | Cannot personalize                               |
+| Important             | liquid asset share    | Lower confidence / restrict certain outcomes     |
+| Product-specific      | employer restrictions | May assume none only after explicit confirmation |
+| Optional segmentation | product intent        | No compliance impact                             |
 
-### 11.2 User-facing profile taxonomy
+Consequences shown honestly:
 
-Five profiles: **Preservation · Conservative · Balanced · Growth · High
-Growth** (mapping from `finalRiskBand` 1–5). Never "Aggressive Trader" —
-this is an advisory relationship, not transaction-intensity encouragement.
+> We can continue without this answer, but we may not be able to determine
+> whether experimental strategies are appropriate for your situation.
 
 ---
 
-## 12. Question protocol
+## 12. Data architecture
 
-Every question carries this internal protocol (full table maintained with
-the implementation; the columns are mandatory):
-
-| Field                       | Meaning                                                           |
-| --------------------------- | ----------------------------------------------------------------- |
-| Why do we ask this?         | The user-visible and internal rationale                           |
-| What decision uses it?      | Capacity / willingness / fit / alpha / segmentation / restriction |
-| Is it required?             | Required · optional · `prefer_not` allowed                        |
-| What happens if unanswered? | Confidence effect, band caps, blocked outcomes                    |
-| Where is it stored?         | `InvestorProfileSnapshot` field                                   |
-| How is it updated?          | New immutable version via refresh (§15)                           |
-| How long is it retained?    | Per books-and-records retention policy **[COUNSEL]**              |
-
-A question that cannot fill this row honestly does not ship.
-
----
-
-## 13. UI/UX and brand-voice rules (mandatory)
-
-Structure: one principal question per screen · automatic save after every
-answer · persistent Back with correct browser-Back behavior · mobile-first
-radio cards, large tap targets · conditional branching (irrelevant questions
-never render) · answer review before final submission · six section markers,
-never absolute question counts.
-
-Integrity: no preselected financial/risk answers · no sliders for
-dollar-band questions · no celebratory animation for choosing higher risk ·
-no colors suggesting aggressive = better · no artificial urgency · no
-lengthy disclosure text hidden inside questionnaire screens · estimates
-explicitly allowed · "Why we ask" on every sensitive question.
-
-Accessibility: WCAG 2.2 AA · full keyboard and screen-reader support.
-
-Voice — intelligent, calm, human. Not bureaucratic ("Please select your
-aggregate liquid investable assets"), not gamified ("How spicy is your risk
-appetite? 🔥"). ReFi:
-
-> How much of your savings would this account represent?
-
-> Markets move. How would a 20% decline feel for this money?
-
-All copy must pass the existing `pnpm scan-copy` blocked-terms gate (no
-"guaranteed return", "risk-free", approval/operator language, etc.) — the
-copy in this spec was written against that list.
-
----
-
-## 14. Counsel checkpoints (collected)
-
-1. The Q7 liquid-net-worth definition wording (§4).
-2. The exact transition point between profile summary and personalized
-   advice; CRS/ADV/agreement delivery sequencing (§2).
-3. Retention schedule per question class (§12).
-4. Q16 calibrated trade-off values and their presentation (§4 Q16).
-5. The alpha-program-risk disclosure text at Gate B (§10.3).
-6. Whether the suitability record format meets the 203A-2(e) file needs
-   (carried from the superseded design doc).
-7. The not-fit outcome's status under the advisory relationship (is a
-   not-fit user a "client"?) (§8).
-
----
-
-## 15. Profile refresh — part of the product
-
-Onboarding is not permanent. Retail profiles generally need updating as
-circumstances change; each refresh writes a **new immutable profile version**
-on the existing machinery.
-
-- **Annual confirmation:** "Has anything important changed?"
-- **Event-driven prompts** after: significant account-value change · unusual
-  withdrawal · goal change · horizon change · liquidity-requirement change ·
-  a request for a materially more aggressive profile · account concentration
-  · alpha enrollment request · user-reported material financial change.
-
----
-
-## 16. Data schema
-
-Answers and derived results stored **separately**; consent separate from
-both. Replaces the single `riskTolerance` field (which ceases to be
-user-selected — see §17 migration).
+Three persisted objects; answers, derived assessment, and consent are never
+merged.
 
 ```
-InvestorProfileSnapshot            // immutable; new version per change
-  profileVersion
-  questionnaireVersion             // which question set produced it
-  policyVersion                    // which scoring policy interpreted it
-  accountType                      // §3.0 gate
-  objective, horizon, withdrawalPattern
+InvestorProfileAnswers                 // raw facts and answers; immutable versions
+  questionnaireVersion
+  goal, horizon, withdrawalPattern
   incomeBand, incomeStability
   netWorthBand, liquidNetWorthBand
   accountShareOfLiquidAssets, emergencyReserveBand, debtSignal
-  investmentKnowledge, investmentExperienceYears, productExperience[]
-  riskScenarioDrawdown, drawdownTolerance, riskTradeoff, lossVsGrowthPriority
+  liquidityLikelihood
+  knowledgeLevel, experienceYears, productExperience[]
+  drawdownBehavior, lossThreshold
+  growthProtectionPreference, riskTradeoffChoice
   restrictions[], expectedFinancialChange
-  productIntent[], alphaInterest, alphaLossImpact?
+  productIntent[]
 
-InvestorProfileAssessment          // derived, deterministic, versioned
-  capacityBand, willingnessBand, knowledgeBand, finalRiskBand
-  productFit                       // fit | constrained | not_fit
-  alphaReadiness                   // n/a | signal_paper_only | eligible_pending_policy
-  consistencyFlags[]
-  constraintReasonCodes[]
+InvestorProfileAssessment              // derived, deterministic
+  assessmentPolicyVersion
+  riskCapacityBand, riskWillingnessBand, permittedRiskBand
+  knowledgeBand
+  productFitStatus, alphaReadiness
   profileConfidence
-  policyVersion, assessedAt
+  constraintReasonCodes[], consistencyFlags[]
+  assessedAt
 
-ConsentRecord                      // existing disclosure machinery
-  documentId, documentVersion, contentHash, acknowledgedAt
+AdvisoryConsentRecord                  // disclosures out of the questionnaire snapshot
+  documentId, documentVersion, contentHash
+  acknowledgedAt, profileVersion
 ```
 
-Frontend renders assessments; the backend owns derivation once the real
-backend exists. In the interim BFF-prototype phase, the derivation runs
-server-side in the BFF under the same `policyVersion` discipline — never in
-client code.
+### 12.1 Version provenance — every assessment reproducible
+
+Persist with every assessment:
+
+```
+profileVersion · questionnaireVersion · assessmentPolicyVersion
+answerSnapshotHash · result · reasonCodes · timestamp
+```
+
+When the policy engine changes, ReFi must be able to answer both "what
+would policy v3 have concluded?" and "what did policy v2 actually conclude
+at the time?" — and **never retroactively rewrite the historical profile**.
+The existing immutable-snapshot machinery already supports exactly this,
+and the SEC's robo-adviser guidance specifically calls attention to
+explaining how client information is used to generate advice and when it
+should be updated.
 
 ---
 
-## 17. Migration from the current seven-field profile
+## 13. Reason-code architecture
 
-- Existing snapshots (goal, horizon, incomeBand, liquidityNeed,
-  riskTolerance, experience, accountPurpose) are retained unchanged —
-  immutability is the point. New versions are written under
-  `questionnaireVersion: 2`.
-- `riskTolerance` maps to nothing in v2 input; it is superseded by the four
-  §5.2 observations. `liquidityNeed` is superseded by Q3/Q8/Q9.
-- Until v2 ships, the current `POST /api/v1/investor/profile` remains the
-  live surface (it is a manifested route — any route/method change goes
-  through the CM-04 manifest review).
-- Existing users are prompted through the v2 questionnaire on next
-  sign-in after launch (this IS the first §15 refresh).
+Never store only `risk = GROWTH`. Store:
 
-## 18. Analytics events
+```
+risk = GROWTH
+constraints:        LONG_HORIZON · MODERATE_LIQUID_CAPACITY · HIGH_MARKET_WILLINGNESS
+bindingConstraint:  LIQUID_CAPACITY
+```
 
-Snake_case, matching `apps/web/app/_lib/analytics.ts` conventions; no answer
-VALUES in event payloads — only progress/derived-class metadata:
+Code families (closed, versioned vocabulary):
 
-`profile_started` · `profile_section_completed` (section id) ·
-`profile_branch_entered` (`alpha` | `entity` | `reconciliation`) ·
-`profile_inconsistency_shown` / `profile_inconsistency_resolved` ·
-`profile_completed` (finalRiskBand, productFit, profileConfidence — bands
-only, never inputs) · `profile_not_fit_shown` · `profile_refresh_prompted` /
-`profile_refresh_completed` · `profile_override_recorded`
+```
+HORIZON_* · LIQUIDITY_* · CAPACITY_* · INCOME_* · CONCENTRATION_* ·
+EXPERIENCE_* · WILLINGNESS_* · CONSISTENCY_* · RESTRICTION_* ·
+PRODUCT_FIT_* · ALPHA_* · PROFILE_CONFIDENCE_*
+```
 
-(The POSTHOG-CSP decision in the launch backlog still governs whether any of
-this ships in the production artifact.)
+Invaluable for audit, customer explanation, compliance review, debugging,
+analytics, model changes, and support.
 
-## 19. Implementation slices (after this spec is approved)
+---
 
-1. **Schema + engine:** v2 snapshot/assessment entities, deterministic
-   scoring engine with `policyVersion`, property-based invariant tests
-   (constraint rule: final ≤ min(capacity, willingness); no path where
-   experience raises final; not-fit cases fire).
-2. **Questionnaire UI:** sections 1–6b with branching, autosave, review
-   screen, WCAG 2.2 AA; e2e coverage for branch/reconciliation/not-fit
-   paths.
-3. **Result + summary screen** with reason-code-driven explanations —
-   stopping BEFORE personalized advice pending the §2 counsel gate.
-4. **Alpha branch** (A1 + backend policy render + disclosure gate) — the
-   execution half remains behind D-LAUNCH-06 and Managed gates.
+## 14. Analytics
+
+Business analytics stay separate from the advisory record. Events (no
+detailed financial answers into PostHog or any general analytics — bands
+and states only where explicitly reviewed):
+
+```
+profile_started
+profile_section_completed
+profile_question_skipped
+profile_why_we_ask_opened
+profile_conflict_triggered
+profile_conflict_resolved
+profile_completed
+product_fit_not_fit
+alpha_branch_entered
+profile_abandoned
+```
+
+Avoid telemetry like `netWorthBand = 5m_plus` or `debt = significant`
+unless there is an explicitly reviewed need and privacy design. (The
+POSTHOG-CSP launch-backlog decision still governs whether analytics ships
+in the production artifact at all.)
+
+---
+
+## 15. Profile refresh
+
+Not one-and-done. Annual:
+
+> ## Still accurate?
+>
+> Has anything important changed since you last updated your investor
+> profile?
+
+Show current facts, then **Everything still looks right** or **Something
+changed**.
+
+Event-driven refresh triggers: significant changes to goal · horizon ·
+withdrawal behavior · liquidity · financial capacity · account
+concentration · requested product · alpha enrollment · restrictions.
+
+Each refresh writes a new immutable profile version.
+
+---
+
+## 16. UX specification (mandatory)
+
+One principal question per screen. Section progress, never raw question
+count (branching makes "Question 13 of 22" misleading):
+
+```
+● Goal   ● Timeline   ● Finances   ○ Experience   ○ Risk   ○ Review
+```
+
+| UX rule               | ReFi requirement                                               |
+| --------------------- | -------------------------------------------------------------- |
+| Autosave              | Every answered screen                                          |
+| Back                  | Always available without losing answers                        |
+| Resume                | Allow later completion                                         |
+| Mobile-first          | Primary design target                                          |
+| No preselection       | Especially risk answers                                        |
+| Clear ranges          | Avoid free-form financial amounts; no sliders for dollar bands |
+| Why-we-ask            | Available beside sensitive questions                           |
+| Definitions           | Inline, not legal-footnote dependent                           |
+| Accessibility         | WCAG 2.2 AA target; full keyboard/screen-reader support        |
+| Tap targets           | Large card-based controls                                      |
+| Review screen         | Full editable summary before submission                        |
+| No dark patterns      | No pressure toward aggressive answers                          |
+| Neutral colors        | Higher risk is never "green/better"                            |
+| No countdown          | No urgency                                                     |
+| No gamified score     | No "you unlocked aggressive investing"                         |
+| Error recovery        | Explain what is missing instead of wiping state                |
+| No hidden disclosures | No lengthy disclosure text inside questionnaire screens        |
+
+---
+
+## 17. Brand voice
+
+**Smart · Human · Precise · Calm · A little conversational — never cute
+about loss.**
+
+| Instead of                                  | Use                                                                  |
+| ------------------------------------------- | -------------------------------------------------------------------- |
+| Please provide your liquidity requirements. | **How likely are you to need money from this account unexpectedly?** |
+| Select investment objective.                | **What is the main job of this money?**                              |
+| Risk tolerance inconsistent.                | **Let's double-check one thing.**                                    |
+| You are unsuitable.                         | **This money may have a different job.**                             |
+| High Risk Investor                          | **Growth**                                                           |
+
+All copy passes the `pnpm scan-copy` blocked-terms gate (no "guaranteed
+return", "risk-free", approval/operator language).
+
+---
+
+## 18. Testing invariants (property-level, not merely UI tests)
+
+| Invariant                                                                     |
+| ----------------------------------------------------------------------------- |
+| `permittedRisk <= riskCapacity`                                               |
+| `permittedRisk <= riskWillingness`                                            |
+| Marketing/ICP segment can never increase permitted risk                       |
+| Experience can never override a capacity constraint                           |
+| Missing essential profile data cannot produce a personalized recommendation   |
+| `not_fit` cannot be converted to `fit` by choosing higher-risk answers        |
+| Alpha readiness cannot override core capacity constraints                     |
+| Contradictory responses generate a consistency flag                           |
+| Changing an answer generates a new immutable profile version                  |
+| Assessment policy version is always persisted                                 |
+| Frontend cannot own alpha percentage policy                                   |
+| Signal-only launch cannot turn profile output into executable trade authority |
+
+These are mechanically tested (the repo's property-based invariant pattern
+— `account-prefs-invariants.test.ts` — is the template).
+
+---
+
+## 19. Migration from today's seven-field profile
+
+| Existing         | New treatment                                                                                                                                                                                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `goal`           | Keep, convert to enum                                                                                                                                                                                                                                   |
+| `horizon`        | Keep, convert to enum                                                                                                                                                                                                                                   |
+| `incomeBand`     | Keep                                                                                                                                                                                                                                                    |
+| `liquidityNeed`  | Replace with liquidity likelihood + withdrawal pattern                                                                                                                                                                                                  |
+| `riskTolerance`  | **Remove as direct input; make derived**                                                                                                                                                                                                                |
+| `experience`     | Split into knowledge + years + product experience                                                                                                                                                                                                       |
+| `accountPurpose` | Merge conceptually with goal/product intent where appropriate                                                                                                                                                                                           |
+| `restrictions`   | Convert free text into structured restrictions + conditional detail                                                                                                                                                                                     |
+| —                | Add: income stability · net-worth band · liquid-net-worth band · account share of liquid assets · emergency reserve · debt signal · multiple behavioral-risk responses · consistency flags · product-fit outcome · profile confidence · alpha readiness |
+
+Existing snapshots are retained unchanged (immutability is the point); new
+versions write under `questionnaireVersion: 2`; existing users flow through
+v2 on next sign-in after launch — their first §15 refresh. Until v2 ships,
+`POST /api/v1/investor/profile` remains the live surface (any route/method
+change goes through the CM-04 manifest review).
+
+---
+
+## 20. Counsel / CCO sign-off register
+
+The SEC does not prescribe a specific 20-question survey; the duty is
+principles-based. These decisions are therefore **not** silently decided by
+product or engineering:
+
+| #   | Decision                                                                    |
+| --- | --------------------------------------------------------------------------- |
+| 1   | Which answers are required before personalized advice                       |
+| 2   | Product-fit exclusion rules                                                 |
+| 3   | Risk-capacity policy (weights + hard constraints)                           |
+| 4   | Risk-willingness mapping (ordinal values, plan-card figures)                |
+| 5   | Inconsistency handling                                                      |
+| 6   | Profile-refresh frequency                                                   |
+| 7   | Whether/how a client can override ReFi's recommended risk level             |
+| 8   | Documentation of override                                                   |
+| 9   | Alpha financial-capacity policy                                             |
+| 10  | Alpha disclosure language                                                   |
+| 11  | CRS / ADV / advisory-agreement sequencing (the state-machine gate)          |
+| 12  | How refusals / incomplete answers are treated                               |
+| 13  | Records-retention requirements                                              |
+| 14  | Exact wording defining liquid net worth                                     |
+| 15  | Whether direct-index restrictions create additional suitability obligations |
+
+Rule 203A-2(e) is principally about qualifying as an internet investment
+adviser for SEC registration; it does not replace the underlying fiduciary,
+disclosure, privacy and compliance obligations.
+
+---
+
+## 21. Implementation slices (after spec approval)
+
+1. **Schema + engine:** the three §12 objects, deterministic policy engine
+   under `assessmentPolicyVersion`, all §18 invariants as property-based
+   tests, §9 fringe cases as fixtures.
+2. **Questionnaire UI:** screens 0–22 with branching, autosave, resume,
+   review screen, WCAG 2.2 AA; e2e coverage for entity exit, branch,
+   clarification, and not-fit paths.
+3. **Result + review screens** with reason-code-driven explanations —
+   stopping mechanically BEFORE personalized advice pending the §20 #11
+   counsel gate.
+4. **Alpha branch** (screens 1–3, backend policy render, disclosure gate) —
+   execution authority stays behind D-LAUNCH-06 and Managed gates.
 5. **Refresh machinery** (annual + event triggers).
 
 Slices 1–3 are valid under every reading of the September launch. Nothing
 here changes the Signal no-execution boundary.
+
+## 22. References
+
+- SEC, Commission Interpretation Regarding Standard of Conduct for
+  Investment Advisers (IA-5248, 2019).
+- SEC IM Guidance Update 2017-02, "Robo-Advisers", and the 2017 staff
+  guidance / investor bulletin (press release 2017-52).
+- SEC, Form CRS Relationship Summary; Amendments to Form ADV (small-entity
+  compliance guide).
+- SEC, amendments to Regulation S-P (press release 2024-58).
+- SEC, Exemption for Certain Investment Advisers Operating Through the
+  Internet (S7-13-23, amended 203A-2(e), 2024).
+- Betterment, "How Betterment manages risk"; Wealthfront risk-score
+  methodology support articles and blog; Vanguard Digital Advisor
+  methodology; Schwab Intelligent Portfolios risk documentation; CIRO
+  suitability questionnaire methodology.

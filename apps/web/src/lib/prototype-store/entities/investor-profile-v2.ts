@@ -61,15 +61,28 @@ function versionKey(accountId: string, version: number): string {
   return `${accountId}__v${String(version).padStart(6, "0")}`;
 }
 
+/** Recursively key-sorted serialization so nested objects hash stably. */
+function stableSerialize(v: unknown): string {
+  if (Array.isArray(v)) {
+    return "[" + v.map(stableSerialize).join(",") + "]";
+  }
+  if (v !== null && typeof v === "object") {
+    return (
+      "{" +
+      Object.entries(v as Record<string, unknown>)
+        .filter(([, val]) => val !== undefined)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([k, val]) => JSON.stringify(k) + ":" + stableSerialize(val))
+        .join(",") +
+      "}"
+    );
+  }
+  return v === undefined ? "null" : JSON.stringify(v);
+}
+
 /** FNV-1a 64-bit hex over the canonically-ordered answers JSON. */
 export function answersSnapshotHash(answers: InvestorProfileAnswers): string {
-  const ordered = JSON.stringify(
-    Object.fromEntries(
-      Object.entries(answers as unknown as Record<string, unknown>).sort(
-        ([a], [b]) => a.localeCompare(b),
-      ),
-    ),
-  );
+  const ordered = stableSerialize(answers);
   let h1 = 2166136261;
   let h2 = 0xdeadbeef;
   for (let i = 0; i < ordered.length; i++) {
@@ -161,51 +174,143 @@ export async function getProfileAssessment(
   );
 }
 
-// ── Mutable questionnaire draft (per auth identity) ─────────────────────────
+// ── Mutable questionnaire draft (auth + account scoped) ─────────────────────
 //
-// Autosave/resume state for the in-progress questionnaire (review of PR #65:
-// sensitive banded answers must NOT persist in browser storage — OWASP HTML5
-// guidance; the server draft is authenticated and account-isolated by key).
+// Autosave/resume state for the in-progress questionnaire. PR #65 review
+// round 2 hardened three properties:
+//
+//   OWNERSHIP  The draft key is authId + accountId. The auth contract allows
+//              one authenticated user to own zero, one, or many accounts, and
+//              the draft is eventually promoted into an ACCOUNT-scoped
+//              immutable profile — so the account boundary is part of draft
+//              identity. Pre-account onboarding is modelled EXPLICITLY as the
+//              "preaccount" scope with one-way promotion: reads for an
+//              account fall back to the preaccount draft until the first
+//              account-scoped save lands; submission clears both.
+//
+//   ORDERING   Saves carry (sessionId, draftRevision). A save whose revision
+//              is not strictly greater than the stored revision for the same
+//              session is IGNORED (stored: false) — an older request can
+//              never overwrite a newer draft, regardless of network order.
+//              Revisions are client-serialized but server-VERIFIED; no
+//              competing-request timestamps anywhere.
+//
+//   FINALITY   Submission closes the draft session with a tombstone naming
+//              the sessionId. A late autosave from that session cannot
+//              resurrect the cleared draft; a NEW questionnaire run uses a
+//              fresh sessionId and proceeds normally.
+//
 // Drafts are MUTABLE working state, never part of the immutable version
-// chain; submission promotes them via appendProfileAnswers.
+// chain; submission promotes answers via appendProfileAnswers.
+
+export const PREACCOUNT_SCOPE = "preaccount";
 
 export interface InvestorProfileDraftV2 {
+  kind: "draft";
   authId: string;
+  accountId: string | null;
+  sessionId: string;
+  draftRevision: number;
   answers: InvestorProfileAnswers;
-  stepIndex: number;
+  currentStepId: string;
   lastUpdatedAt: string;
   meta: PrototypeMeta;
 }
 
-const draftStore = kvStore<InvestorProfileDraftV2>(
-  "investor-profile-drafts-v2",
-);
+interface DraftTombstone {
+  kind: "closed";
+  authId: string;
+  closedSessionId: string;
+  meta: PrototypeMeta;
+}
+
+type DraftRecord = InvestorProfileDraftV2 | DraftTombstone;
+
+const draftStore = kvStore<DraftRecord>("investor-profile-drafts-v2");
+
+function draftKey(authId: string, accountId: string | null): string {
+  return `${authId}__${accountId ?? PREACCOUNT_SCOPE}`;
+}
+
+export interface SaveDraftResult {
+  stored: boolean;
+  draft: InvestorProfileDraftV2 | null;
+}
 
 export async function saveProfileDraftV2(args: {
   authId: string;
+  accountId: string | null;
+  sessionId: string;
+  draftRevision: number;
   answers: InvestorProfileAnswers;
-  stepIndex: number;
+  currentStepId: string;
   correlationId: string;
-}): Promise<InvestorProfileDraftV2> {
+}): Promise<SaveDraftResult> {
+  const key = draftKey(args.authId, args.accountId);
+  const existing = await draftStore.get(key);
+  if (
+    existing?.kind === "closed" &&
+    existing.closedSessionId === args.sessionId
+  ) {
+    // The session was closed by a successful submission — a late autosave
+    // must not resurrect it.
+    return { stored: false, draft: null };
+  }
+  if (
+    existing?.kind === "draft" &&
+    existing.sessionId === args.sessionId &&
+    existing.draftRevision >= args.draftRevision
+  ) {
+    // Stale or duplicate revision: newer state wins, always.
+    return { stored: false, draft: existing };
+  }
   const draft: InvestorProfileDraftV2 = {
+    kind: "draft",
     authId: args.authId,
+    accountId: args.accountId,
+    sessionId: args.sessionId,
+    draftRevision: args.draftRevision,
     answers: args.answers,
-    stepIndex: args.stepIndex,
+    currentStepId: args.currentStepId,
     lastUpdatedAt: new Date().toISOString(),
     meta: makePrototypeMeta(args.correlationId),
   };
-  await draftStore.put(args.authId, draft);
-  return draft;
+  await draftStore.put(key, draft);
+  return { stored: true, draft };
 }
 
 export async function getProfileDraftV2(
   authId: string,
+  accountId: string | null,
 ): Promise<InvestorProfileDraftV2 | null> {
-  return draftStore.get(authId);
+  const scoped = await draftStore.get(draftKey(authId, accountId));
+  if (scoped?.kind === "draft") return scoped;
+  if (accountId !== null && scoped === null) {
+    // One-way promotion view: an account with no draft of its own may resume
+    // the preaccount draft; the next save lands account-scoped.
+    const pre = await draftStore.get(draftKey(authId, null));
+    if (pre?.kind === "draft") return pre;
+  }
+  return null;
 }
 
-export async function clearProfileDraftV2(authId: string): Promise<void> {
-  await draftStore.delete(authId);
+/** Close the draft session (tombstone) in both the account and preaccount scopes. */
+export async function clearProfileDraftV2(
+  authId: string,
+  accountId: string | null,
+  sessionId: string,
+  correlationId: string,
+): Promise<void> {
+  const tombstone: DraftTombstone = {
+    kind: "closed",
+    authId,
+    closedSessionId: sessionId,
+    meta: makePrototypeMeta(correlationId),
+  };
+  await draftStore.put(draftKey(authId, accountId), tombstone);
+  if (accountId !== null) {
+    await draftStore.put(draftKey(authId, null), tombstone);
+  }
 }
 
 /** Idempotent per (account, document, documentVersion, profileVersion). */

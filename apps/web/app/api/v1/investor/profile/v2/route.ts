@@ -38,9 +38,11 @@ import {
   NET_WORTH_BANDS,
   PRODUCT_EXPERIENCES,
   PRODUCT_INTENTS,
+  RESTRICTION_DETAIL_FIELD,
   RESTRICTION_KINDS,
   RISK_TRADEOFF_CHOICES,
   WITHDRAWAL_PATTERNS,
+  canonicalizeAnswers,
   type InvestorProfileAnswers,
 } from "@lib/sec203a/investor-profile";
 import {
@@ -61,6 +63,17 @@ function member<T extends string>(values: readonly T[]) {
     .string()
     .refine((v): v is T => (values as readonly string[]).includes(v));
 }
+
+const boundedList = z.array(z.string().min(1).max(80)).min(1).max(20);
+
+/** Structured, machine-readable restriction identities (PR #65 round 2). */
+const restrictionDetailsSchema = z.object({
+  employerSecurities: boundedList.optional(),
+  legallyRestrictedSecurities: boundedList.optional(),
+  excludedCompanies: boundedList.optional(),
+  excludedIndustries: boundedList.optional(),
+  other: z.string().min(1).max(300).optional(),
+});
 
 const answersBody = z.object({
   questionnaireVersion: z.literal(2),
@@ -96,8 +109,11 @@ const answersBody = z.object({
     .optional(),
   riskTradeoffChoice: member(RISK_TRADEOFF_CHOICES).optional(),
 
-  restrictions: z.array(member(RESTRICTION_KINDS)).optional(),
-  restrictionDetails: z.string().max(500).optional(),
+  // Explicit answer REQUIRED on the completed questionnaire (PR #65 round 2):
+  // ["none"] is the explicit no-restrictions confirmation; empty/omitted is
+  // not equivalent and is rejected below.
+  restrictions: z.array(member(RESTRICTION_KINDS)).min(1),
+  restrictionDetails: restrictionDetailsSchema.optional(),
   expectedFinancialChange: member(EXPECTED_FINANCIAL_CHANGES).optional(),
   expectedFinancialChangeKinds: z
     .array(member(FINANCIAL_CHANGE_KINDS))
@@ -107,6 +123,12 @@ const answersBody = z.object({
   alphaLossImpact: member(ALPHA_LOSS_IMPACTS).optional(),
 
   reconciledFlags: z.array(member(CONSISTENCY_FLAGS)).optional(),
+  /**
+   * Transport-only: names the questionnaire draft session so a successful
+   * submission tombstones it (a late autosave cannot resurrect the cleared
+   * draft). Stripped by canonicalization before hashing/persistence.
+   */
+  draftSessionId: z.string().min(1).max(64).optional(),
 });
 
 /**
@@ -125,15 +147,23 @@ const answersBodyChecked = answersBody
     { message: "productExperience 'none' is mutually exclusive" },
   )
   .refine(
-    (a) => !a.restrictions?.includes("none") || a.restrictions.length === 1,
+    (a) => !a.restrictions.includes("none") || a.restrictions.length === 1,
     { message: "restrictions 'none' is mutually exclusive" },
   )
   .refine(
     (a) =>
-      !a.restrictions?.some((r) => r !== "none") ||
-      (a.restrictionDetails !== undefined &&
-        a.restrictionDetails.trim().length > 0),
-    { message: "non-none restrictions require restrictionDetails" },
+      a.restrictions
+        .filter((r) => r !== "none")
+        .every((r) => {
+          const field = RESTRICTION_DETAIL_FIELD[r];
+          if (!field) return true;
+          const v = a.restrictionDetails?.[field];
+          return Array.isArray(v) ? v.length > 0 : typeof v === "string";
+        }),
+    {
+      message:
+        "each selected restriction category requires its structured details",
+    },
   )
   .refine(
     (a) =>
@@ -164,7 +194,9 @@ export const GET = bffRead({
   },
 });
 
-export const POST = bffMutate<InvestorProfileAnswers>({
+type SubmitBody = InvestorProfileAnswers & { draftSessionId?: string };
+
+export const POST = bffMutate<SubmitBody>({
   action: "refreshProfile",
   source: "prototype-bff",
   upstreamGap: "G-003",
@@ -179,16 +211,22 @@ export const POST = bffMutate<InvestorProfileAnswers>({
       };
     }
 
+    // Canonicalize FIRST (PR #65 round 2): branch answers whose parent no
+    // longer activates them are removed deterministically, so stale child
+    // data can never reach the engine, the hash, or the immutable record.
+    const { draftSessionId, ...submitted } = ctx.input;
+    const canonical = canonicalizeAnswers(submitted);
+
     // Server-side derivation — the only place policy runs. Client-supplied
     // reconciliation is honoured ONLY for flags the engine actually computes
     // on THIS submission; arbitrary flags are dropped before anything is
     // persisted (review of PR #65).
-    const firstPass = assessInvestorProfile(ctx.input);
-    const sanitizedReconciled = (ctx.input.reconciledFlags ?? []).filter((f) =>
+    const firstPass = assessInvestorProfile(canonical);
+    const sanitizedReconciled = (canonical.reconciledFlags ?? []).filter((f) =>
       firstPass.consistencyFlags.includes(f),
     );
     const sanitizedInput = {
-      ...ctx.input,
+      ...canonical,
       reconciledFlags: sanitizedReconciled,
     };
     const assessment = assessInvestorProfile(sanitizedInput);
@@ -227,7 +265,12 @@ export const POST = bffMutate<InvestorProfileAnswers>({
       correlationId: ctx.correlationId,
     });
 
-    await clearProfileDraftV2(ctx.auth.authId);
+    await clearProfileDraftV2(
+      ctx.auth.authId,
+      ctx.auth.accountId ?? null,
+      draftSessionId ?? "unknown-session",
+      ctx.correlationId,
+    );
 
     return {
       data: {

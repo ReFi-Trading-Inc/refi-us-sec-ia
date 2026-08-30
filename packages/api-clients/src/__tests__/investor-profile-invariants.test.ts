@@ -50,6 +50,7 @@ import {
   ASSESSMENT_POLICY_VERSION,
   assessInvestorProfile,
 } from "../../../../apps/web/src/lib/sec203a/investor-profile-engine";
+import { canonicalizeAnswers } from "../../../../apps/web/src/lib/sec203a/investor-profile";
 
 // Store dir must be set before the store-backed entity module is imported.
 const STORE_DIR = mkdtempSync(join(tmpdir(), "refi-profile-invariants-"));
@@ -59,8 +60,11 @@ const {
   answersSnapshotHash,
   appendProfileAnswers,
   appendProfileAssessment,
+  clearProfileDraftV2,
   getProfileAnswers,
+  getProfileDraftV2,
   latestProfileVersion,
+  saveProfileDraftV2,
 } =
   await import("../../../../apps/web/src/lib/prototype-store/entities/investor-profile-v2");
 
@@ -673,5 +677,163 @@ describe("§12.1 provenance", () => {
     // Replay returns the ORIGINAL record — history is never rewritten.
     expect(replay.assessment.assessedAt).toBe(first.assessment.assessedAt);
     expect(replay.answerSnapshotHash).toBe(answersSnapshotHash(answers));
+  });
+});
+
+// ─── PR #65 round 2 — draft-state integrity at the persistence seam ─────────
+
+describe("draft revisions, tombstones, and account scoping", () => {
+  const base = (rev: number, extra: Record<string, unknown> = {}) => ({
+    authId: "auth-draft",
+    accountId: "acct-A" as string | null,
+    sessionId: "session-1",
+    draftRevision: rev,
+    answers: baseline(),
+    currentStepId: "horizon",
+    correlationId: `t-draft-${String(rev)}`,
+    ...extra,
+  });
+
+  test("an older revision arriving late can never overwrite a newer draft", async () => {
+    const r5 = await saveProfileDraftV2(
+      base(5, { answers: { ...baseline(), goal: "retirement" } }),
+    );
+    expect(r5.stored).toBe(true);
+    // Revision 4 completes AFTER revision 5 (reversed network order).
+    const r4 = await saveProfileDraftV2(
+      base(4, { answers: { ...baseline(), goal: "general_investing" } }),
+    );
+    expect(r4.stored).toBe(false);
+    const stored = await getProfileDraftV2("auth-draft", "acct-A");
+    expect(stored?.draftRevision).toBe(5);
+    expect(stored?.answers.goal).toBe("retirement");
+  });
+
+  test("a late autosave cannot resurrect a draft after its session was closed by submission", async () => {
+    await saveProfileDraftV2(base(6));
+    await clearProfileDraftV2("auth-draft", "acct-A", "session-1", "t-clear");
+    // Pending autosave from the CLOSED session lands after the clear:
+    const late = await saveProfileDraftV2(base(7));
+    expect(late.stored).toBe(false);
+    expect(await getProfileDraftV2("auth-draft", "acct-A")).toBeNull();
+    // A NEW questionnaire run (fresh session) proceeds normally.
+    const fresh = await saveProfileDraftV2(
+      base(1, { sessionId: "session-2", correlationId: "t-fresh" }),
+    );
+    expect(fresh.stored).toBe(true);
+    expect((await getProfileDraftV2("auth-draft", "acct-A"))?.sessionId).toBe(
+      "session-2",
+    );
+  });
+
+  test("drafts are scoped to authId + accountId — account A ≠ account B for the same user", async () => {
+    await saveProfileDraftV2(
+      base(1, {
+        authId: "auth-multi",
+        accountId: "acct-A",
+        sessionId: "sA",
+        answers: { ...baseline(), goal: "retirement" },
+        correlationId: "t-A",
+      }),
+    );
+    await saveProfileDraftV2(
+      base(1, {
+        authId: "auth-multi",
+        accountId: "acct-B",
+        sessionId: "sB",
+        answers: { ...baseline(), goal: "education_family" },
+        correlationId: "t-B",
+      }),
+    );
+    const a = await getProfileDraftV2("auth-multi", "acct-A");
+    const b = await getProfileDraftV2("auth-multi", "acct-B");
+    expect(a?.answers.goal).toBe("retirement");
+    expect(b?.answers.goal).toBe("education_family");
+  });
+
+  test("preaccount drafts promote one-way into an account and are cleared with it", async () => {
+    await saveProfileDraftV2(
+      base(1, {
+        authId: "auth-pre",
+        accountId: null,
+        sessionId: "sPre",
+        answers: { ...baseline(), goal: "major_purchase" },
+        correlationId: "t-pre",
+      }),
+    );
+    // Account read with no account-scoped draft falls back to preaccount.
+    const promoted = await getProfileDraftV2("auth-pre", "acct-new");
+    expect(promoted?.answers.goal).toBe("major_purchase");
+    // Submission clears both scopes for the session.
+    await clearProfileDraftV2("auth-pre", "acct-new", "sPre", "t-pre-clear");
+    expect(await getProfileDraftV2("auth-pre", "acct-new")).toBeNull();
+    expect(await getProfileDraftV2("auth-pre", null)).toBeNull();
+  });
+});
+
+// ─── PR #65 round 2 — canonicalization and provenance ───────────────────────
+
+describe("canonicalization removes retracted branch answers before persistence", () => {
+  test("financial-change kinds are removed when the parent is not 'yes'", () => {
+    const c = canonicalizeAnswers({
+      ...baseline(),
+      expectedFinancialChange: "no",
+      expectedFinancialChangeKinds: ["retirement"],
+    });
+    expect(c.expectedFinancialChangeKinds).toBeUndefined();
+  });
+
+  test("restriction details vanish with 'none' and keep only selected categories", () => {
+    const noneOnly = canonicalizeAnswers({
+      ...baseline(),
+      restrictions: ["none"],
+      restrictionDetails: { excludedCompanies: ["ACME"] },
+    });
+    expect(noneOnly.restrictionDetails).toBeUndefined();
+
+    const partial = canonicalizeAnswers({
+      ...baseline(),
+      restrictions: ["specific_companies"],
+      restrictionDetails: {
+        excludedCompanies: ["ACME"],
+        excludedIndustries: ["tobacco"], // category not selected — must drop
+      },
+    });
+    expect(partial.restrictionDetails).toEqual({
+      excludedCompanies: ["ACME"],
+    });
+  });
+
+  test("alphaLossImpact is removed when explore_alpha is retracted", () => {
+    const c = canonicalizeAnswers({
+      ...baseline(),
+      productIntent: ["disciplined_long_term"],
+      alphaLossImpact: "no",
+    });
+    expect(c.alphaLossImpact).toBeUndefined();
+  });
+
+  test("hash is computed over canonical answers and changes with structured restrictions", () => {
+    const withA = canonicalizeAnswers({
+      ...baseline(),
+      restrictions: ["specific_companies"],
+      restrictionDetails: { excludedCompanies: ["ACME"] },
+    });
+    const withB = canonicalizeAnswers({
+      ...baseline(),
+      restrictions: ["specific_companies"],
+      restrictionDetails: { excludedCompanies: ["Globex"] },
+    });
+    expect(answersSnapshotHash(withA)).not.toBe(answersSnapshotHash(withB));
+    // Stale hidden data canonicalizes away — identical canonical answers,
+    // identical hash, regardless of the retracted child.
+    const stale = canonicalizeAnswers({
+      ...baseline(),
+      expectedFinancialChange: "no",
+      expectedFinancialChangeKinds: ["retirement"],
+    });
+    expect(answersSnapshotHash(stale)).toBe(
+      answersSnapshotHash(canonicalizeAnswers(baseline())),
+    );
   });
 });

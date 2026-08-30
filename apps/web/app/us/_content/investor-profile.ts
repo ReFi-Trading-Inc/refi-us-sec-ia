@@ -289,7 +289,14 @@ export const investorProfileCopy = {
   restrictionDetails: {
     question: "Which companies, industries, or securities should we avoid?",
     helper:
-      "Name them as specifically as you can — for example an employer's ticker, an industry, or a restricted security. This is what lets us exclude them.",
+      "Name them as specifically as you can. Separate multiple entries with commas — this is what lets us exclude them precisely.",
+    fields: {
+      employer_securities: "Your employer's securities (tickers or names)",
+      legally_restricted: "Securities you're restricted from trading",
+      specific_companies: "Companies to exclude",
+      specific_industries: "Industries to exclude",
+      other: "Anything else we should avoid",
+    },
   },
 
   restrictions: {

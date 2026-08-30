@@ -27,7 +27,12 @@ test.describe.configure({ mode: "serial" });
 async function resetDraft(page: Page) {
   await page.goto("/us/app/home", { waitUntil: "domcontentloaded" });
   await postSameOrigin(page, "/api/v1/investor/profile/v2/draft", {
-    data: { answers: { questionnaireVersion: 2 }, stepIndex: 0 },
+    data: {
+      answers: { questionnaireVersion: 2 },
+      currentStepId: "accountType",
+      sessionId: `reset-${String(Date.now())}-${String(Math.random())}`,
+      draftRevision: 1,
+    },
   });
 }
 
@@ -69,6 +74,8 @@ async function completeQuestionnaire(
     productExperience?: string[];
     restrictions?: string[];
     productIntent?: string[];
+    details?: string;
+    changeKinds?: string[];
   } = {},
 ) {
   const single = {
@@ -113,8 +120,18 @@ async function completeQuestionnaire(
   await pickSingle(page, single.lossThreshold);
   await page.getByTestId("ip-opt-scale-4").click();
   await pickSingle(page, single.riskTradeoffChoice);
-  await pickMulti(page, multis.restrictions ?? ["none"]);
+  const restrictions = multis.restrictions ?? ["none"];
+  await pickMulti(page, restrictions);
+  if (restrictions.some((r) => r !== "none")) {
+    for (const r of restrictions.filter((x) => x !== "none")) {
+      await page.getByTestId(`ip-detail-${r}`).fill(multis.details ?? "ACME");
+    }
+    await page.getByTestId("ip-next").click();
+  }
   await pickSingle(page, single.expectedFinancialChange);
+  if (single.expectedFinancialChange === "yes") {
+    await pickMulti(page, multis.changeKinds ?? ["retirement"]);
+  }
   await pickMulti(page, multis.productIntent ?? ["disciplined_long_term"]);
   await expect(page.getByTestId("ip-review")).toBeVisible();
   await page.getByTestId("ip-submit").click();
@@ -362,11 +379,27 @@ test.describe("Investor Profile v2 questionnaire", () => {
       {
         data: apiAnswers({
           restrictions: ["none", "employer_securities"],
-          restrictionDetails: "ACME",
+          restrictionDetails: { employerSecurities: ["ACME"] },
         }),
       },
     );
     expect(contradictory.status()).toBe(400);
+
+    // Explicit-answer requirement (PR #65 round 2): empty/omitted is NOT
+    // "none" — both are rejected; the explicit ["none"] succeeds elsewhere.
+    const emptyRestrictions = await postSameOrigin(
+      page,
+      "/api/v1/investor/profile/v2",
+      { data: apiAnswers({ restrictions: [] }) },
+    );
+    expect(emptyRestrictions.status()).toBe(400);
+    const { restrictions: _omitted, ...withoutRestrictions } = apiAnswers();
+    const omittedRestrictions = await postSameOrigin(
+      page,
+      "/api/v1/investor/profile/v2",
+      { data: withoutRestrictions },
+    );
+    expect(omittedRestrictions.status()).toBe(400);
 
     const contradictoryExp = await postSameOrigin(
       page,
@@ -407,6 +440,118 @@ test.describe("Investor Profile v2 questionnaire", () => {
     expect(body.data.assessment.consistencyFlags).toEqual([]);
   });
 
+  test("retracted branch answers are canonicalized away before persistence (API)", async ({
+    page,
+  }) => {
+    await page.goto("/us/app/home", { waitUntil: "domcontentloaded" });
+    const res = await postSameOrigin(page, "/api/v1/investor/profile/v2", {
+      data: apiAnswers({
+        expectedFinancialChange: "no",
+        expectedFinancialChangeKinds: ["retirement"], // stale child
+        productIntent: ["disciplined_long_term"],
+        alphaLossImpact: "no", // stale child
+        restrictions: ["none"],
+        restrictionDetails: { excludedCompanies: ["ACME"] }, // stale child
+      }),
+    });
+    expect(res.status()).toBe(201);
+    const get = await page.request.get("/api/v1/investor/profile/v2");
+    const body = (await get.json()) as {
+      data: {
+        answers: {
+          answers: {
+            expectedFinancialChangeKinds?: unknown;
+            alphaLossImpact?: unknown;
+            restrictionDetails?: unknown;
+          };
+        };
+      };
+    };
+    expect(
+      body.data.answers.answers.expectedFinancialChangeKinds,
+    ).toBeUndefined();
+    expect(body.data.answers.answers.alphaLossImpact).toBeUndefined();
+    expect(body.data.answers.answers.restrictionDetails).toBeUndefined();
+  });
+
+  test("Review → Edit resolves correct steps with conditional branches HIDDEN", async ({
+    page,
+  }) => {
+    await start(page);
+    await pickSingle(page, "individual");
+    await pickSingle(page, "long_term_wealth");
+    await pickSingle(page, "gt_10y");
+    await pickSingle(page, "gradual");
+    await page.getByTestId("ip-next").click();
+    await pickSingle(page, "100_200k");
+    await pickSingle(page, "very_predictable");
+    await pickSingle(page, "500k_1m");
+    await pickSingle(page, "250_500k");
+    await pickSingle(page, "10_25pct");
+    await pickSingle(page, "gt_6mo");
+    await pickSingle(page, "none");
+    await pickSingle(page, "very_unlikely");
+    await pickSingle(page, "experienced");
+    await pickSingle(page, "5_10y");
+    await pickMulti(page, ["stocks"]);
+    await pickSingle(page, "stay");
+    await pickSingle(page, "pct_20");
+    await page.getByTestId("ip-opt-scale-4").click();
+    await pickSingle(page, "plan_b");
+    await pickMulti(page, ["none"]);
+    await pickSingle(page, "no");
+    await pickMulti(page, ["disciplined_long_term"]);
+    await expect(page.getByTestId("ip-review")).toBeVisible();
+
+    // With restrictionDetails / changeKinds / alpha ALL hidden, editing a
+    // question that sits AFTER those hidden branches must open exactly that
+    // question (PR #65 round 2 — no filtered-index drift).
+    await page.getByTestId("ip-edit-expectedFinancialChange").click();
+    await expect(
+      page.getByTestId("ip-step-expectedFinancialChange"),
+    ).toBeVisible();
+    await pickSingle(page, "no"); // returns to review
+    await expect(page.getByTestId("ip-review")).toBeVisible();
+    await page.getByTestId("ip-edit-productIntent").click();
+    await expect(page.getByTestId("ip-step-productIntent")).toBeVisible();
+  });
+
+  test("Review → Edit resolves correct steps with branches VISIBLE; structured details round-trip", async ({
+    page,
+  }) => {
+    await start(page);
+    await completeQuestionnaire(
+      page,
+      { expectedFinancialChange: "yes" },
+      {
+        restrictions: ["specific_companies"],
+        details: "ACME, Globex",
+        changeKinds: ["retirement"],
+      },
+    );
+    await expect(page.getByTestId("ip-result")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    const get = await page.request.get("/api/v1/investor/profile/v2");
+    const body = (await get.json()) as {
+      data: {
+        answers: {
+          answers: {
+            restrictionDetails?: { excludedCompanies?: string[] };
+            expectedFinancialChangeKinds?: string[];
+          };
+        };
+      };
+    };
+    expect(
+      body.data.answers.answers.restrictionDetails?.excludedCompanies,
+    ).toEqual(["ACME", "Globex"]);
+    expect(body.data.answers.answers.expectedFinancialChangeKinds).toEqual([
+      "retirement",
+    ]);
+  });
+
   test("a draft saved mid-flow resumes after reload — server-side, not browser storage", async ({
     page,
   }) => {
@@ -435,9 +580,7 @@ test.describe("Investor Profile v2 questionnaire", () => {
 });
 
 test.describe("Investor Profile v2 draft isolation", () => {
-  test("one user's draft is invisible to another account", async ({
-    browser,
-  }) => {
+  test("one user's draft is invisible to another user", async ({ browser }) => {
     const signalCtx = await browser.newContext();
     await signalCtx.addCookies(
       await e2eAuthCookies(E2E_USERS.signal.eligibilityCookie),
@@ -461,8 +604,11 @@ test.describe("Investor Profile v2 draft isolation", () => {
     const body = (await res.json()) as {
       data: { answers?: { goal?: string } } | null;
     };
-    // The managed user sees no draft, or at most their OWN — never the
-    // signal user's education_family answer.
+    // USER-level isolation: the managed user sees no draft, or at most their
+    // OWN — never the signal user's education_family answer. ACCOUNT-level
+    // isolation for one authId owning multiple accounts is proven at the
+    // persistence seam in investor-profile-invariants.test.ts (the e2e seed
+    // has one account per user).
     expect(body.data?.answers?.goal ?? null).not.toBe("education_family");
 
     await signalCtx.close();

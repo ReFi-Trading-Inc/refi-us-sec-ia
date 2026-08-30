@@ -203,6 +203,26 @@ export const RESTRICTION_KINDS = [
 ] as const;
 export type RestrictionKind = (typeof RESTRICTION_KINDS)[number];
 
+/** Structured restriction identities, keyed by the category they belong to. */
+export interface RestrictionDetails {
+  employerSecurities?: string[];
+  legallyRestrictedSecurities?: string[];
+  excludedCompanies?: string[];
+  excludedIndustries?: string[];
+  other?: string;
+}
+
+/** Which detail field each restriction kind requires (none/"none" require none). */
+export const RESTRICTION_DETAIL_FIELD: Partial<
+  Record<RestrictionKind, keyof RestrictionDetails>
+> = {
+  employer_securities: "employerSecurities",
+  legally_restricted: "legallyRestrictedSecurities",
+  specific_companies: "excludedCompanies",
+  specific_industries: "excludedIndustries",
+  other: "other",
+};
+
 export const EXPECTED_FINANCIAL_CHANGES = ["no", "maybe", "yes"] as const;
 export type ExpectedFinancialChange =
   (typeof EXPECTED_FINANCIAL_CHANGES)[number];
@@ -266,14 +286,20 @@ export interface InvestorProfileAnswers {
   growthProtectionPreference?: GrowthProtectionPreference;
   riskTradeoffChoice?: RiskTradeoffChoice;
 
+  /**
+   * Required on a completed retail questionnaire: ["none"] is the explicit
+   * "no restrictions" confirmation — empty/omitted is NOT equivalent
+   * (PR #65 review round 2). Product-specific information, unlike optional
+   * segmentation fields.
+   */
   restrictions?: RestrictionKind[];
   /**
-   * Bounded free text naming the restricted companies/industries/securities.
-   * Required whenever any non-"none" restriction is selected — a category
-   * without an identity is unusable for direct-index exclusions. Collection
-   * stays minimal; nothing here claims construction-time enforcement.
+   * Structured, machine-readable restriction details — the relationship
+   * between each selected restriction category and its identities is
+   * explicit, so downstream direct-index exclusions never parse prose.
+   * Bounded and minimal; nothing here claims construction-time enforcement.
    */
-  restrictionDetails?: string;
+  restrictionDetails?: RestrictionDetails;
   expectedFinancialChange?: ExpectedFinancialChange;
   /** Required (non-empty) when expectedFinancialChange === "yes". */
   expectedFinancialChangeKinds?: FinancialChangeKind[];
@@ -433,4 +459,47 @@ export interface AdvisoryConsentRecord {
   contentHash: string;
   acknowledgedAt: string;
   profileVersion: number;
+}
+
+// ─── Canonicalization (PR #65 review round 2) ───────────────────────────────
+
+/**
+ * Remove branch answers whose parent no longer activates them, so hidden
+ * child data can never survive into the immutable record as a stale or
+ * contradictory advisory fact. The server applies this DETERMINISTICALLY
+ * before validation, hashing and persistence (normalize, not reject — the
+ * documented choice, tested in the invariants suite); the UI additionally
+ * prunes proactively when a parent choice changes.
+ */
+export function canonicalizeAnswers(
+  a: InvestorProfileAnswers,
+): InvestorProfileAnswers {
+  const out: InvestorProfileAnswers = { ...a };
+
+  if (out.expectedFinancialChange !== "yes") {
+    delete out.expectedFinancialChangeKinds;
+  }
+
+  const activeKinds = (out.restrictions ?? []).filter((r) => r !== "none");
+  if (activeKinds.length === 0) {
+    delete out.restrictionDetails;
+  } else if (out.restrictionDetails) {
+    const kept: RestrictionDetails = {};
+    for (const kind of activeKinds) {
+      const field = RESTRICTION_DETAIL_FIELD[kind];
+      if (!field) continue;
+      const v = out.restrictionDetails[field];
+      if (v !== undefined) {
+        // Typed per-field assignment keeps arrays and the string separate.
+        (kept as Record<string, unknown>)[field] = v;
+      }
+    }
+    out.restrictionDetails = kept;
+  }
+
+  if (!(out.productIntent ?? []).includes("explore_alpha")) {
+    delete out.alphaLossImpact;
+  }
+
+  return out;
 }

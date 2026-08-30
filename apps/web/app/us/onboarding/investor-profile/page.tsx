@@ -20,20 +20,24 @@
  * per-reason not-fit copy, per-constraint capped-fit copy, and neutral
  * component labels (the portfolio taxonomy names only the final profile).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, StatusBanner } from "@ui/components";
 import { investorProfileCopy as copy } from "../../_content/investor-profile";
 import {
   COMPONENT_LEVEL_LABELS,
+  RESTRICTION_DETAIL_FIELD,
   RISK_BAND_LABELS,
+  canonicalizeAnswers,
   type ConsistencyFlag,
   type InvestorProfileAnswers,
   type InvestorProfileAssessment,
   type ReasonCode,
+  type RestrictionDetails,
+  type RestrictionKind,
 } from "@lib/sec203a/investor-profile";
 
 type SectionId = keyof typeof copy.sections;
-type StepKind = "info" | "single" | "multi" | "scale" | "text";
+type StepKind = "info" | "single" | "multi" | "scale" | "restriction-details";
 
 interface StepDef {
   id: string;
@@ -46,6 +50,11 @@ interface StepDef {
   options?: Record<string, string>;
   /** Multi-select value that is mutually exclusive with every other value. */
   exclusiveValue?: string;
+  /**
+   * Multi-select that demands an explicit answer: Continue stays disabled
+   * until at least one value (which may be the explicit "none") is chosen.
+   */
+  requireSelection?: boolean;
 }
 
 const STEPS: StepDef[] = [
@@ -228,11 +237,12 @@ const STEPS: StepDef[] = [
     helper: copy.restrictions.helper,
     options: copy.restrictions.options,
     exclusiveValue: "none",
+    requireSelection: true,
   },
   {
     id: "restrictionDetails",
     section: "review",
-    kind: "text",
+    kind: "restriction-details",
     field: "restrictionDetails",
     question: copy.restrictionDetails.question,
     helper: copy.restrictionDetails.helper,
@@ -294,10 +304,6 @@ const FLAG_REVISIT: Record<ConsistencyFlag, [string, string]> = {
   INCONSISTENT_LOSS_BEHAVIOR: ["drawdownBehavior", "lossThreshold"],
 };
 
-function asText(v: unknown): string {
-  return typeof v === "string" ? v : "";
-}
-
 const KNOWLEDGE_DISPLAY: Record<number, string> = {
   1: "Learning",
   2: "Comfortable with the basics",
@@ -334,14 +340,28 @@ const EMPTY_ANSWERS: InvestorProfileAnswers = { questionnaireVersion: 2 };
 
 export default function InvestorProfilePage() {
   const [phase, setPhase] = useState<Phase>("loading");
-  const [stepIndex, setStepIndex] = useState(0);
+  const [stepId, setStepId] = useState<string>(STEPS[0]?.id ?? "accountType");
   const [answers, setAnswers] = useState<InvestorProfileAnswers>(EMPTY_ANSWERS);
-  const [textValue, setTextValue] = useState("");
+  const [detailsDraft, setDetailsDraft] = useState<RestrictionDetails>({});
   const [returnToReview, setReturnToReview] = useState(false);
   const [pendingFlags, setPendingFlags] = useState<ConsistencyFlag[]>([]);
   const [result, setResult] = useState<SubmitResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Draft-session identity + monotonic revisions + a serialized save queue
+  // (PR #65 round 2): an older autosave can never overwrite a newer one, and
+  // flushPendingDraftWrites() guarantees zero writes can land after the
+  // submit/clear transaction. The server independently ignores stale
+  // revisions and tombstoned sessions.
+  const [sessionId] = useState<string>(() =>
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `s-${String(Date.now())}`,
+  );
+  const draftRevisionRef = useRef(0);
+  const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const submittedRef = useRef(false);
 
   // Server-side resume: one GET on mount decides welcome vs resumed. All
   // state updates happen asynchronously after the fetch settles (never
@@ -356,16 +376,20 @@ export default function InvestorProfilePage() {
           const body = (await res.json()) as {
             data: {
               answers?: InvestorProfileAnswers;
-              stepIndex?: number;
+              currentStepId?: string;
             } | null;
           };
           if (
             body.data?.answers?.questionnaireVersion === 2 &&
-            typeof body.data.stepIndex === "number" &&
-            body.data.stepIndex > 0
+            typeof body.data.currentStepId === "string" &&
+            body.data.currentStepId !== STEPS[0]?.id
           ) {
             setAnswers(body.data.answers);
-            setStepIndex(Math.min(body.data.stepIndex, STEPS.length - 1));
+            setStepId(
+              STEPS.some((st) => st.id === body.data?.currentStepId)
+                ? body.data.currentStepId
+                : (STEPS[0]?.id ?? "accountType"),
+            );
             setPhase("steps");
             return;
           }
@@ -378,18 +402,37 @@ export default function InvestorProfilePage() {
   }, []);
 
   const saveDraft = useCallback(
-    (next: InvestorProfileAnswers, index: number) => {
-      // Fire-and-forget autosave after every answered screen. Nothing is
-      // stored in the browser.
-      void fetch("/api/v1/investor/profile/v2/draft", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ answers: next, stepIndex: index }),
-      }).catch(() => undefined);
+    (next: InvestorProfileAnswers, nextStepId: string) => {
+      if (submittedRef.current) return;
+      draftRevisionRef.current += 1;
+      const draftRevision = draftRevisionRef.current;
+      // Serialized: each save awaits its predecessor, so revisions reach the
+      // server in order; the server additionally ignores anything stale.
+      saveQueueRef.current = saveQueueRef.current.then(async () => {
+        if (submittedRef.current) return;
+        try {
+          await fetch("/api/v1/investor/profile/v2/draft", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({
+              answers: next,
+              currentStepId: nextStepId,
+              sessionId,
+              draftRevision,
+            }),
+          });
+        } catch {
+          // Autosave failure is silent; the next save carries newer state.
+        }
+      });
     },
-    [],
+    [sessionId],
   );
+
+  const flushPendingDraftWrites = useCallback(async () => {
+    await saveQueueRef.current;
+  }, []);
 
   const visibleSteps = useMemo(
     () =>
@@ -412,15 +455,35 @@ export default function InvestorProfilePage() {
     ],
   );
 
-  const step = visibleSteps[Math.min(stepIndex, visibleSteps.length - 1)];
+  // stepId is the canonical navigation identity; the index is derived from
+  // the CURRENT visible sequence (PR #65 round 2 — never a stale full-array
+  // position). An id hidden by a branch resolves to the nearest following
+  // visible step.
+  const stepPos = useMemo(() => {
+    const direct = visibleSteps.findIndex((st) => st.id === stepId);
+    if (direct !== -1) return direct;
+    const fullIdx = STEPS.findIndex((st) => st.id === stepId);
+    for (let i = fullIdx + 1; i < STEPS.length; i++) {
+      const candidate = STEPS[i];
+      if (!candidate) continue;
+      const vis = visibleSteps.findIndex((st) => st.id === candidate.id);
+      if (vis !== -1) return vis;
+    }
+    return Math.max(visibleSteps.length - 1, 0);
+  }, [stepId, visibleSteps]);
+  const step = visibleSteps[stepPos];
   const sectionIndex = step ? SECTION_ORDER.indexOf(step.section) : 0;
 
   const advance = useCallback(
-    (next: InvestorProfileAnswers) => {
+    (raw: InvestorProfileAnswers) => {
+      // Canonicalize proactively (PR #65 round 2): changing a parent answer
+      // immediately prunes any now-hidden child answers, so no stale branch
+      // data survives in state, drafts, or the eventual immutable record.
+      const next = canonicalizeAnswers(raw);
       // Non-single-owner accounts exit the retail flow immediately: an entity
       // has its own onboarding, and a JOINT profile needs both owners — a
       // one-person retail assessment is never built for it (PR #65 review).
-      if (stepIndex === 0) {
+      if (step?.id === "accountType") {
         if (next.accountType === "joint") {
           setAnswers(next);
           setPhase("jointExit");
@@ -435,93 +498,128 @@ export default function InvestorProfilePage() {
           return;
         }
       }
+      // Recompute visibility against the NEW answers so branch steps appear
+      // and disappear correctly on this very transition.
+      const nextVisible = STEPS.filter((st) => {
+        if (st.id === "alphaLossImpact") {
+          return (next.productIntent ?? []).includes("explore_alpha");
+        }
+        if (st.id === "restrictionDetails") {
+          return (next.restrictions ?? []).some((r) => r !== "none");
+        }
+        if (st.id === "expectedFinancialChangeKinds") {
+          return next.expectedFinancialChange === "yes";
+        }
+        return true;
+      });
       if (returnToReview) {
         setReturnToReview(false);
         setAnswers(next);
         setPhase("review");
-        saveDraft(next, stepIndex);
+        saveDraft(next, step?.id ?? STEPS[0]?.id ?? "accountType");
         return;
       }
-      const nextIndex = stepIndex + 1;
+      const currentPos = nextVisible.findIndex((st) => st.id === step?.id);
+      const nextStep = nextVisible[currentPos + 1];
       setAnswers(next);
-      if (nextIndex >= visibleSteps.length) {
+      if (!nextStep) {
         setPhase("review");
+        saveDraft(next, step?.id ?? STEPS[0]?.id ?? "accountType");
       } else {
-        setStepIndex(nextIndex);
+        setStepId(nextStep.id);
+        saveDraft(next, nextStep.id);
       }
-      saveDraft(next, nextIndex);
     },
-    [returnToReview, saveDraft, stepIndex, visibleSteps.length],
+    [returnToReview, saveDraft, step],
   );
 
   const back = useCallback(() => {
     if (phase === "review") {
+      const last = visibleSteps[visibleSteps.length - 1];
+      if (last) setStepId(last.id);
       setPhase("steps");
-      setStepIndex(visibleSteps.length - 1);
       return;
     }
-    if (stepIndex === 0) {
+    if (stepPos === 0) {
       setPhase("welcome");
     } else {
-      setStepIndex(stepIndex - 1);
+      const prev = visibleSteps[stepPos - 1];
+      if (prev) setStepId(prev.id);
     }
-  }, [phase, stepIndex, visibleSteps.length]);
+  }, [phase, stepPos, visibleSteps]);
 
-  const jumpTo = useCallback((stepId: string) => {
-    const idx = STEPS.findIndex((s) => s.id === stepId);
-    if (idx >= 0) {
-      setReturnToReview(true);
-      setStepIndex(idx);
-      setPhase("steps");
-    }
-  }, []);
-
-  const submit = useCallback(async (payload: InvestorProfileAnswers) => {
-    setSubmitting(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/v1/investor/profile/v2", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-      const body = (await res.json()) as {
-        data?: {
-          needsClarification?: boolean;
-          consistencyFlags?: ConsistencyFlag[];
-          profileVersion?: number;
-          assessment?: InvestorProfileAssessment;
-        };
-        error?: { message?: string };
-      };
-      if (res.status === 409 && body.data?.needsClarification) {
-        setPendingFlags(body.data.consistencyFlags ?? []);
-        setPhase("clarify");
-        return;
+  const jumpTo = useCallback(
+    (targetId: string) => {
+      // Resolve against the CURRENT visible sequence only (PR #65 round 2).
+      if (visibleSteps.some((st) => st.id === targetId)) {
+        if (targetId === "restrictionDetails") {
+          setDetailsDraft(answers.restrictionDetails ?? {});
+        }
+        setReturnToReview(true);
+        setStepId(targetId);
+        setPhase("steps");
       }
-      if (res.status === 201 && body.data?.assessment) {
-        setResult({
-          profileVersion: body.data.profileVersion ?? 1,
-          assessment: body.data.assessment,
+    },
+    [answers.restrictionDetails, visibleSteps],
+  );
+
+  const submit = useCallback(
+    async (payload: InvestorProfileAnswers) => {
+      setSubmitting(true);
+      setError(null);
+      try {
+        // Zero draft writes may land after the submit/clear transaction:
+        // drain the serialized queue first, then submit with the session id
+        // so the server tombstones it.
+        await flushPendingDraftWrites();
+        const res = await fetch("/api/v1/investor/profile/v2", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            ...canonicalizeAnswers(payload),
+            draftSessionId: sessionId,
+          }),
         });
-        setPhase("result");
-        return;
+        const body = (await res.json()) as {
+          data?: {
+            needsClarification?: boolean;
+            consistencyFlags?: ConsistencyFlag[];
+            profileVersion?: number;
+            assessment?: InvestorProfileAssessment;
+          };
+          error?: { message?: string };
+        };
+        if (res.status === 409 && body.data?.needsClarification) {
+          setPendingFlags(body.data.consistencyFlags ?? []);
+          setPhase("clarify");
+          return;
+        }
+        if (res.status === 201 && body.data?.assessment) {
+          submittedRef.current = true;
+          setResult({
+            profileVersion: body.data.profileVersion ?? 1,
+            assessment: body.data.assessment,
+          });
+          setPhase("result");
+          return;
+        }
+        setError(
+          body.error?.message ??
+            "We couldn't save your profile. Nothing was lost — please try again.",
+        );
+        setPhase("review");
+      } catch {
+        setError(
+          "We couldn't reach ReFi. Your progress is saved — please try again.",
+        );
+        setPhase("review");
+      } finally {
+        setSubmitting(false);
       }
-      setError(
-        body.error?.message ??
-          "We couldn't save your profile. Nothing was lost — please try again.",
-      );
-      setPhase("review");
-    } catch {
-      setError(
-        "We couldn't reach ReFi. Your progress is saved — please try again.",
-      );
-      setPhase("review");
-    } finally {
-      setSubmitting(false);
-    }
-  }, []);
+    },
+    [flushPendingDraftWrites, sessionId],
+  );
 
   // "Keep both" reconciles ONLY the flag currently displayed; if further
   // unresolved flags remain the server returns the next one (PR #65 review —
@@ -772,7 +870,12 @@ export default function InvestorProfilePage() {
               ? value.map((v) => s.options?.[v] ?? v).join(", ")
               : typeof value === "number"
                 ? String(value)
-                : (s.options?.[value as string] ?? String(value));
+                : typeof value === "object"
+                  ? Object.values(value)
+                      .flat()
+                      .filter((v) => typeof v === "string")
+                      .join(", ")
+                  : (s.options?.[value as string] ?? String(value));
             return (
               <li
                 key={s.id}
@@ -945,6 +1048,10 @@ export default function InvestorProfilePage() {
                 </Button>
                 <Button
                   data-testid="ip-next"
+                  disabled={
+                    step.requireSelection === true &&
+                    (multiValue ?? []).length === 0
+                  }
                   onClick={() => {
                     advance(answers);
                   }}
@@ -955,18 +1062,52 @@ export default function InvestorProfilePage() {
             </>
           )}
 
-          {step.kind === "text" && field && (
+          {step.kind === "restriction-details" && (
             <>
-              <textarea
-                className="mt-6 w-full rounded border border-neutral-300 p-3"
-                rows={3}
-                maxLength={500}
-                data-testid="ip-text-input"
-                value={textValue || asText(answers[field])}
-                onChange={(e) => {
-                  setTextValue(e.target.value);
-                }}
-              />
+              <div className="mt-6 flex flex-col gap-4">
+                {(answers.restrictions ?? [])
+                  .filter((r): r is RestrictionKind => r !== "none")
+                  .map((kind) => {
+                    const detailField = RESTRICTION_DETAIL_FIELD[kind];
+                    if (!detailField) return null;
+                    const label =
+                      copy.restrictionDetails.fields[
+                        kind as keyof typeof copy.restrictionDetails.fields
+                      ];
+                    const current = detailsDraft[detailField];
+                    const displayValue = Array.isArray(current)
+                      ? current.join(", ")
+                      : (current ?? "");
+                    return (
+                      <label key={kind} className="flex flex-col gap-1">
+                        <span className="text-sm text-neutral-600">
+                          {label}
+                        </span>
+                        <input
+                          className="rounded border border-neutral-300 p-3"
+                          maxLength={detailField === "other" ? 300 : 500}
+                          data-testid={`ip-detail-${kind}`}
+                          value={displayValue}
+                          onChange={(e) => {
+                            const raw = e.target.value;
+                            setDetailsDraft((d) => ({
+                              ...d,
+                              [detailField]:
+                                detailField === "other"
+                                  ? raw
+                                  : raw
+                                      .split(",")
+                                      .map((v) => v.trim())
+                                      .filter((v) => v.length > 0)
+                                      .slice(0, 20)
+                                      .map((v) => v.slice(0, 80)),
+                            }));
+                          }}
+                        />
+                      </label>
+                    );
+                  })}
+              </div>
               <div className="mt-6 flex gap-3">
                 <Button
                   variant="secondary"
@@ -977,13 +1118,18 @@ export default function InvestorProfilePage() {
                 </Button>
                 <Button
                   data-testid="ip-next"
-                  disabled={
-                    (textValue || asText(answers[field])).trim().length === 0
-                  }
+                  disabled={(answers.restrictions ?? [])
+                    .filter((r) => r !== "none")
+                    .some((kind) => {
+                      const detailField = RESTRICTION_DETAIL_FIELD[kind];
+                      if (!detailField) return false;
+                      const v = detailsDraft[detailField];
+                      return Array.isArray(v)
+                        ? v.length === 0
+                        : (v ?? "").trim().length === 0;
+                    })}
                   onClick={() => {
-                    const v = (textValue || asText(answers[field])).trim();
-                    setTextValue("");
-                    advance({ ...answers, [field]: v });
+                    advance({ ...answers, restrictionDetails: detailsDraft });
                   }}
                 >
                   Continue

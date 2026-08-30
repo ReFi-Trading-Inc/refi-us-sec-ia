@@ -85,7 +85,18 @@ const draftAnswers = z.object({
     .optional(),
   riskTradeoffChoice: member(RISK_TRADEOFF_CHOICES).optional(),
   restrictions: z.array(member(RESTRICTION_KINDS)).optional(),
-  restrictionDetails: z.string().max(500).optional(),
+  restrictionDetails: z
+    .object({
+      employerSecurities: z.array(z.string().min(1).max(80)).max(20).optional(),
+      legallyRestrictedSecurities: z
+        .array(z.string().min(1).max(80))
+        .max(20)
+        .optional(),
+      excludedCompanies: z.array(z.string().min(1).max(80)).max(20).optional(),
+      excludedIndustries: z.array(z.string().min(1).max(80)).max(20).optional(),
+      other: z.string().max(300).optional(),
+    })
+    .optional(),
   expectedFinancialChange: member(EXPECTED_FINANCIAL_CHANGES).optional(),
   expectedFinancialChangeKinds: z
     .array(member(FINANCIAL_CHANGE_KINDS))
@@ -97,7 +108,12 @@ const draftAnswers = z.object({
 
 const draftBody = z.object({
   answers: draftAnswers,
-  stepIndex: z.number().int().min(0).max(50),
+  /** Stable step identity — never a filtered-array index (PR #65 round 2). */
+  currentStepId: z.string().min(1).max(64),
+  /** Per-wizard-run session; a submission tombstones it. */
+  sessionId: z.string().min(1).max(64),
+  /** Monotonic per session; the server ignores stale revisions. */
+  draftRevision: z.number().int().min(1).max(1_000_000),
 });
 
 type DraftBody = z.infer<typeof draftBody>;
@@ -107,7 +123,9 @@ export const GET = bffRead({
   upstreamGap: "G-003",
   fetch: async (ctx) => {
     if (!ctx.auth) return null;
-    return getProfileDraftV2(ctx.auth.authId);
+    // Account derived from authenticated server context — never from the
+    // browser (PR #65 round 2: drafts are auth+account scoped).
+    return getProfileDraftV2(ctx.auth.authId, ctx.auth.accountId ?? null);
   },
 });
 
@@ -117,14 +135,20 @@ export const POST = bffMutate<DraftBody>({
   upstreamGap: "G-003",
   parse: (body) => draftBody.parse(body),
   apply: async (ctx) => {
-    const draft = await saveProfileDraftV2({
+    const result = await saveProfileDraftV2({
       authId: ctx.auth.authId,
+      accountId: ctx.auth.accountId ?? null,
+      sessionId: ctx.input.sessionId,
+      draftRevision: ctx.input.draftRevision,
       answers: ctx.input.answers,
-      stepIndex: ctx.input.stepIndex,
+      currentStepId: ctx.input.currentStepId,
       correlationId: ctx.correlationId,
     });
     return {
-      data: { savedAt: draft.lastUpdatedAt, stepIndex: draft.stepIndex },
+      data: {
+        stored: result.stored,
+        draftRevision: result.draft?.draftRevision ?? null,
+      },
       status: 200,
     };
   },

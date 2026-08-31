@@ -8,6 +8,14 @@ and Daniel's verbal response of 2026-08-24.
 **Status:** tracked in this folder's canon as of the C2a branch; supersedes nothing —
 companion to SHIP_CONTRACT.md and open-items.md.
 
+> **ADDENDUM 2026-08-30.** The §8 item 7 checkpoint is answered early by direct
+> observation of Daniel's backend snapshot — see
+> [backend-observation-2026-08-30.md](backend-observation-2026-08-30.md).
+> Headline: 68 → 300 checked items in six days, but MC-05 (this repository's
+> entire integration surface) is still 0/294 and `apps/investor-api` does not
+> exist. Finding 2's arithmetic holds; its MC-03 observation-window framing is
+> superseded (MC-03 is 77/173 with activation evidence).
+
 ---
 
 ## Verdict

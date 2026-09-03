@@ -11,6 +11,7 @@ the copies here are authoritative.
 | [capability-dispositions.md](capability-dispositions.md)                     | Pre-C0 disposition tables @ 607a7ae — partially superseded; local-change dispositions and critical-path map remain current                                                                                                                                       |
 | [open-items.md](open-items.md)                                               | **Live register** — external dependencies, decided-but-unimplemented items, hygiene, workstream state. Update this one.                                                                                                                                          |
 | [package-reconciliation-2026-09-03.md](package-reconciliation-2026-09-03.md) | Reconciliation of Daniel's v1.1.0-alpha.2 contract package against the Ship Contract — D-SIGNAL-02 received, target Alpha is execution-capable (target-level conflict), D-LAUNCH-06 still open, GCP-target architecture posture, 12 frontend-owned bindings owed |
+| [client-contract-diff-2026-09-03.md](client-contract-diff-2026-09-03.md)     | Measured v1.1.0-alpha.2 → `packages/api-clients` diff for all 41 operations, and the proposed smallest client-generation PR — review before code                                                                                                                 |
 
 Working papers that are correspondence or superseded planning (Dan message drafts,
 the pre-reset landing plan, salvage matrix, coverage matrix) are preserved outside

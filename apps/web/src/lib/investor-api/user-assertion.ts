@@ -26,8 +26,11 @@
  *   jti         unique per BFF→backend CALL (not per user action)
  *   sid         the BFF session id
  *   auth_time   time of the UNDERLYING user authentication, not the mint time
- *   amr         REQUIRED in v1 — non-empty array of authentication methods
- *   acr         optional; Daniel 2026-08-19 may add it later, never instead
+ *   amr         OPTIONAL (v1.1.0-alpha.2, ATD-040..042) — when present, a
+ *               non-empty array of unique method strings, preserved unchanged
+ *   acr         PROHIBITED — reserved for a later contract version; minting
+ *               with `acr` throws
+ *   sub/sid/jti ^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$ (BffAssertionClaims)
  *   account_id  MUST NOT appear — investor-api resolves and re-authorizes
  *               account ownership server-side on every account request
  *
@@ -80,27 +83,27 @@ export const REQUIRED_ASSERTION_CLAIMS = [
 ] as const;
 
 /**
- * The authentication-method claim, REQUIRED and non-empty.
+ * The authentication-method claim — OPTIONAL in v1.1.0-alpha.2.
  *
- * Daniel 2026-08-19, narrowing the 2026-08-17 "amr or acr": identity-ccid will
- * include `auth_time` and "a non-empty `amr` array describing the
- * authentication method", and "`acr` may be added later, but `amr` will be the
- * required v1 method claim". So `acr` is an ADDITION, never a substitution —
- * an assertion carrying only `acr` is not mintable, because investor-api reads
- * `amr`.
- *
- * The values themselves are exported with the contract, "initially covering
- * email verification code and email magic link". We do not enumerate them
- * here: guessing the spellings would produce a set that silently disagrees
- * with `v1.0.0-dev.1`.
+ * Daniel's package (README "Token and key direction"; ATD-040..043, completed
+ * 2026-09-03) supersedes the 2026-08-19 "amr required" reading: "`auth_time`
+ * remains required, `amr` is optional, and `acr` is reserved/not used for this
+ * Alpha." When `amr` is present it must be a non-empty array of unique,
+ * non-empty strings and must be preserved unchanged from the identity result —
+ * never synthesised. `BffAssertionClaims.amr` items are 1–128 chars.
  */
-export const REQUIRED_AUTH_METHOD_CLAIM = "amr" as const;
+export const OPTIONAL_AUTH_METHOD_CLAIM = "amr" as const;
+export const AUTH_METHOD_VALUE_MAX_LENGTH = 128;
 
 /**
- * Optional and additive. Present only if identity-ccid sends it; never
- * synthesised, and never accepted in place of `amr`.
+ * Reserved and PROHIBITED for this Alpha (`acr` is "prohibited until an
+ * additive assurance-policy version admits it"). Minting with it throws so a
+ * caller cannot smuggle an assurance level the verifier will reject.
  */
-export const OPTIONAL_AUTH_METHOD_CLAIM = "acr" as const;
+export const PROHIBITED_ASSURANCE_CLAIM = "acr" as const;
+
+/** `BffAssertionClaims` pattern for `sub`, `sid`, and `jti`. */
+export const ASSERTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/;
 
 // ─── Issuer validation ──────────────────────────────────────────────────────
 
@@ -322,13 +325,8 @@ export interface UserAssertionInput {
    * caller may not have it — in which case minting throws rather than
    * inventing a method.
    */
-  amr?: string[];
-  /**
-   * Authentication context class reference. Additive, not alternative:
-   * present only when identity-ccid sends it, and never accepted in place of
-   * `amr`.
-   */
-  acr?: string;
+  /** Optional; forwarded unchanged when the identity result carried it. */
+  amr?: readonly string[];
 }
 
 export interface MintedUserAssertion {
@@ -348,16 +346,54 @@ export class MissingAuthTimeError extends Error {
   }
 }
 
-export class MissingAuthMethodError extends Error {
-  constructor() {
+export class InvalidAuthMethodError extends Error {
+  constructor(reason: string) {
     super(
-      "Cannot mint a user assertion without a non-empty `amr`. " +
-        "Daniel 2026-08-19: identity-ccid sends a non-empty `amr` array and it is " +
-        "the required v1 method claim; `acr` is additive and never a substitute. " +
-        "An absent `amr` means the identity-ccid assertion was not propagated — " +
-        "synthesising one would assert an authentication method we did not observe.",
+      `Cannot mint a user assertion with a malformed \`amr\`: ${reason}. ` +
+        "v1.1.0-alpha.2: `amr` is optional, but when present it must be a " +
+        "non-empty array of unique non-empty strings copied unchanged from the " +
+        "identity result. An empty array would assert authentication by no method.",
     );
-    this.name = "MissingAuthMethodError";
+    this.name = "InvalidAuthMethodError";
+  }
+}
+
+export class ProhibitedClaimError extends Error {
+  constructor(claim: string) {
+    super(
+      `Cannot mint a user assertion carrying \`${claim}\`: v1.1.0-alpha.2 reserves ` +
+        "it and the verifier rejects it. It is admitted only by a later, additive " +
+        "assurance-policy contract version.",
+    );
+    this.name = "ProhibitedClaimError";
+  }
+}
+
+export class ClaimPatternError extends Error {
+  constructor(claim: string) {
+    super(
+      `Cannot mint a user assertion: \`${claim}\` does not match the BffAssertionClaims ` +
+        "pattern ^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$. Opaque ids from identity-ccid " +
+        "and BFF session ids must be used verbatim, never emails or wallets.",
+    );
+    this.name = "ClaimPatternError";
+  }
+}
+
+function validateAuthMethods(amr: readonly string[] | undefined): void {
+  if (amr === undefined) return;
+  if (amr.length === 0) {
+    throw new InvalidAuthMethodError("empty array");
+  }
+  if (new Set(amr).size !== amr.length) {
+    throw new InvalidAuthMethodError("duplicate values");
+  }
+  for (const value of amr) {
+    if (value.length === 0 || value.length > AUTH_METHOD_VALUE_MAX_LENGTH) {
+      throw new InvalidAuthMethodError(
+        "values must be 1–128 character strings",
+      );
+    }
   }
 }
 
@@ -378,9 +414,13 @@ export async function mintUserAssertion(
   if (!Number.isFinite(input.authTime) || input.authTime <= 0) {
     throw new MissingAuthTimeError();
   }
-  if (!input.amr?.length) {
-    throw new MissingAuthMethodError();
+  if (PROHIBITED_ASSURANCE_CLAIM in input) {
+    throw new ProhibitedClaimError(PROHIBITED_ASSURANCE_CLAIM);
   }
+  validateAuthMethods(input.amr);
+  if (!ASSERTION_ID_PATTERN.test(input.userId))
+    throw new ClaimPatternError("sub");
+  if (!ASSERTION_ID_PATTERN.test(input.sid)) throw new ClaimPatternError("sid");
 
   const env = getServerEnv();
   // Enforced here rather than in the env schema: nothing mints yet, and making
@@ -405,16 +445,18 @@ export async function mintUserAssertion(
 
   const now = Math.floor(Date.now() / 1000);
   const exp = now + USER_ASSERTION_TTL_SECONDS;
+  // A v4 UUID is 36 chars of [0-9a-f-] starting with a hex digit, so it
+  // satisfies the BffAssertionClaims `jti` pattern; asserted so a future change
+  // cannot silently break it.
   const jti = crypto.randomUUID();
+  if (!ASSERTION_ID_PATTERN.test(jti)) throw new ClaimPatternError("jti");
 
   const token = await new SignJWT({
     sid: input.sid,
     auth_time: input.authTime,
-    // Unconditional: the guard above already refused an absent or empty
-    // `amr`, so there is no branch in which this assertion is minted without
-    // one. `acr` stays conditional — it is additive and may simply not exist.
-    amr: input.amr,
-    ...(input.acr ? { acr: input.acr } : {}),
+    // Optional and forwarded verbatim (order preserved); never synthesised.
+    // `acr` is never emitted — the guard above throws if a caller supplies it.
+    ...(input.amr ? { amr: [...input.amr] } : {}),
   })
     .setProtectedHeader({ alg: USER_ASSERTION_ALG, kid, typ: "JWT" })
     .setIssuer(env.BFF_ASSERTION_ISSUER)

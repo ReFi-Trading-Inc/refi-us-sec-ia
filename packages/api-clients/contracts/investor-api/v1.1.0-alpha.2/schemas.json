@@ -1,0 +1,4608 @@
+{
+  "$defs": {
+    "Account": {
+      "additionalProperties": false,
+      "properties": {
+        "account_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "authorization": {
+          "$ref": "#/$defs/AccountAuthorization"
+        },
+        "managed_enabled": {
+          "type": "boolean"
+        },
+        "management_scope_status": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "product_mode": {
+          "const": "automated_portfolio_management"
+        },
+        "reconciliation_hold_status": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "status",
+        "product_mode",
+        "authorization",
+        "managed_enabled"
+      ],
+      "type": "object"
+    },
+    "AccountActionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "enum": [
+            "join_template",
+            "update_allocation",
+            "leave_template"
+          ],
+          "type": "string"
+        },
+        "parameters": {
+          "additionalProperties": false,
+          "properties": {
+            "allocation_percent": {
+              "pattern": "^(?:0\\.(?:0*[1-9][0-9]*)|1(?:\\.0+)?)$",
+              "type": "string"
+            },
+            "allocation_preview_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "template_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "template_id"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "action",
+        "parameters"
+      ],
+      "type": "object"
+    },
+    "AccountAuthorization": {
+      "additionalProperties": false,
+      "properties": {
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_evaluated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "reason_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "state_version": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "AUTHORIZED",
+            "DENIED",
+            "PENDING",
+            "SUSPENDED"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "state_version",
+        "status",
+        "reason_codes",
+        "expires_at",
+        "policy_version",
+        "last_evaluated_at"
+      ],
+      "type": "object"
+    },
+    "AccountAuthorizationEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AccountAuthorization"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AccountEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/Account"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AccountEvent": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "compliance_profile_attestation.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "consent.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "brokerage_connection.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "brokerage_sync.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "allocation.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "preference.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "action_receipt.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "recommendation.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "account_intent.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "risk_decision.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "execution_plan.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "order.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "fill.recorded"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "reconciliation.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "valuation.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "data": {
+              "$ref": "#/$defs/AccountEventData"
+            },
+            "event_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "event_type": {
+              "const": "trading_control.updated"
+            },
+            "occurred_at": {
+              "format": "date-time",
+              "type": "string"
+            }
+          },
+          "required": [
+            "event_id",
+            "event_type",
+            "account_id",
+            "occurred_at",
+            "correlation_id",
+            "data"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AccountEventData": {
+      "additionalProperties": false,
+      "properties": {
+        "entity_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "reason_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,127}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "record_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state_version": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "entity_id",
+        "status",
+        "reason_codes"
+      ],
+      "type": "object"
+    },
+    "AccountEventStream": {
+      "contentMediaType": "text/event-stream",
+      "description": "SSE frames whose data member validates as AccountEvent.",
+      "type": "string"
+    },
+    "AccountMembership": {
+      "additionalProperties": false,
+      "properties": {
+        "account_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "allocation_fingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allocation_percent": {
+          "anyOf": [
+            {
+              "pattern": "^(?:0\\.(?:0*[1-9][0-9]*)|1(?:\\.0+)?)$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "allocation_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effective_from": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "effective_to": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "joined_target_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "joined_target_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "membership_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "portfolio_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ACTIVE",
+            "ENDED",
+            "PENDING"
+          ],
+          "type": "string"
+        },
+        "template_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_id",
+        "template_id",
+        "portfolio_id",
+        "membership_version",
+        "status",
+        "allocation_percent",
+        "allocation_version",
+        "allocation_fingerprint",
+        "joined_target_version",
+        "joined_target_fingerprint",
+        "effective_from",
+        "effective_to"
+      ],
+      "type": "object"
+    },
+    "AccountMembershipPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AccountMembership"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "AccountMembershipPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AccountMembershipPage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AccountPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Account"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "AccountPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AccountPage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AccountPosition": {
+      "additionalProperties": false,
+      "properties": {
+        "account_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "account_snapshot_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "attributed_qty": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "available_to_sell_qty": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "average_price": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "broker_asset_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "currency": {
+          "const": "USD"
+        },
+        "display_name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "externally_observed_qty": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "fresh_until": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "freshness_status": {
+          "enum": [
+            "FRESH",
+            "STALE"
+          ],
+          "type": "string"
+        },
+        "held_qty": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "listing_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "market_value": {
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "pending_buy_qty": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "pending_sell_qty": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "reference_price": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "security_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "source_observed_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "symbol": {
+          "pattern": "^[A-Z][A-Z0-9.-]{0,14}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "account_snapshot_id",
+        "account_id",
+        "security_id",
+        "listing_id",
+        "broker_asset_id",
+        "symbol",
+        "display_name",
+        "held_qty",
+        "attributed_qty",
+        "externally_observed_qty",
+        "pending_buy_qty",
+        "pending_sell_qty",
+        "available_to_sell_qty",
+        "average_price",
+        "reference_price",
+        "market_value",
+        "currency",
+        "source_observed_at",
+        "fresh_until",
+        "freshness_status"
+      ],
+      "type": "object"
+    },
+    "AccountPositionPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AccountPosition"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "AccountPositionPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AccountPositionPage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AccountRecord": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "compliance_profile_attestation"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "consent_receipt"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "brokerage_connection"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "brokerage_sync"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "allocation"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "preference"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "action_receipt"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "recommendation"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "account_intent"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "risk_decision"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "execution_plan"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "order"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "fill"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "reconciliation"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "valuation"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "account_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "correlation_id": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "created_at": {
+              "format": "date-time",
+              "type": "string"
+            },
+            "details": {
+              "$ref": "#/$defs/AccountRecordDetails"
+            },
+            "record_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            "record_type": {
+              "const": "trading_control"
+            },
+            "source_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "record_id",
+            "record_type",
+            "account_id",
+            "correlation_id",
+            "created_at",
+            "source_version",
+            "details"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "AccountRecordDetails": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "currency": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Z]{3}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effective_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "entity_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "notional": {
+          "anyOf": [
+            {
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "quantity": {
+          "anyOf": [
+            {
+              "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,127}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "related_record_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "entity_id",
+        "status",
+        "reason_codes",
+        "effective_at"
+      ],
+      "type": "object"
+    },
+    "AccountRecordEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AccountRecord"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AccountRecordPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AccountRecord"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "AccountRecordPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AccountRecordPage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AccountValuation": {
+      "additionalProperties": false,
+      "properties": {
+        "account_environment": {
+          "enum": [
+            "paper",
+            "live"
+          ],
+          "type": "string"
+        },
+        "account_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "account_snapshot_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "as_of_time": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "broker_connection_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "broker_observed_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "buying_power": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "cash": {
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "currency": {
+          "const": "USD"
+        },
+        "equity": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "fresh_until": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "freshness_status": {
+          "enum": [
+            "FRESH",
+            "STALE"
+          ],
+          "type": "string"
+        },
+        "management_scope_status": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "open_order_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "pending_buy_notional": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "pending_sell_notional": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "position_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reconciliation_hold_status": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "reconciliation_run_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "status": {
+          "maxLength": 32,
+          "minLength": 1,
+          "type": "string"
+        },
+        "unknown_order_count": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "account_snapshot_id",
+        "account_id",
+        "broker_connection_id",
+        "account_environment",
+        "reconciliation_run_id",
+        "as_of_time",
+        "broker_observed_at",
+        "fresh_until",
+        "freshness_status",
+        "status",
+        "currency",
+        "equity",
+        "cash",
+        "buying_power",
+        "pending_buy_notional",
+        "pending_sell_notional",
+        "open_order_count",
+        "unknown_order_count",
+        "position_count",
+        "management_scope_status",
+        "reconciliation_hold_status"
+      ],
+      "type": "object"
+    },
+    "AccountValuationEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AccountValuation"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AccountValuationPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AccountValuation"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "AccountValuationPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AccountValuationPage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AcknowledgmentConfirmationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "consent_receipt_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "continuation_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "continuation_ref",
+        "consent_receipt_id"
+      ],
+      "type": "object"
+    },
+    "AcknowledgmentContinuation": {
+      "additionalProperties": false,
+      "properties": {
+        "continuation_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "effective_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "mutation_applied": {
+          "const": false
+        },
+        "policy_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "required_disclosure_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "required_disclosure_key": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "required_disclosure_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "retry_idempotency_key": {
+          "const": "new_key"
+        }
+      },
+      "required": [
+        "policy_version",
+        "required_disclosure_key",
+        "required_disclosure_version",
+        "required_disclosure_hash",
+        "effective_at",
+        "continuation_ref",
+        "expires_at",
+        "mutation_applied",
+        "retry_idempotency_key"
+      ],
+      "type": "object"
+    },
+    "ActionReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "account_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "action_receipt_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "aggregate_version": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "duplicate": {
+          "type": "boolean"
+        },
+        "effect": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ACCEPTED",
+            "APPLIED",
+            "REJECTED",
+            "DUPLICATE"
+          ],
+          "type": "string"
+        },
+        "status_path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "action_receipt_id",
+        "account_id",
+        "status",
+        "effect",
+        "aggregate_version",
+        "duplicate",
+        "status_path"
+      ],
+      "type": "object"
+    },
+    "ActionReceiptEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/ActionReceipt"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AdvisoryProfile": {
+      "additionalProperties": false,
+      "properties": {
+        "advisory_profile_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "effective_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "pass_fail": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "REVIEW"
+          ],
+          "type": "string"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "profile_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "profile_status": {
+          "enum": [
+            "ACTIVE",
+            "FAILED",
+            "EXPIRED",
+            "SUPERSEDED"
+          ],
+          "type": "string"
+        },
+        "profile_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "questionnaire_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "questionnaire_version": {
+          "type": "string"
+        },
+        "reason_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "response_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "response_schema_version": {
+          "type": "string"
+        },
+        "risk_calibration": {
+          "enum": [
+            "CONSERVATIVE",
+            "MODERATE",
+            "GROWTH",
+            "AGGRESSIVE",
+            "UNAVAILABLE"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "advisory_profile_id",
+        "profile_version",
+        "profile_status",
+        "pass_fail",
+        "risk_calibration",
+        "reason_codes",
+        "questionnaire_id",
+        "questionnaire_version",
+        "response_schema_version",
+        "policy_version",
+        "response_hash",
+        "profile_fingerprint",
+        "effective_at",
+        "expires_at"
+      ],
+      "type": "object"
+    },
+    "AdvisoryProfileEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AdvisoryProfile"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AdvisoryProfilePage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AdvisoryProfile"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "AdvisoryProfilePageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AdvisoryProfilePage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AllocationPreview": {
+      "additionalProperties": false,
+      "properties": {
+        "account_environment": {
+          "enum": [
+            "paper",
+            "live"
+          ],
+          "type": "string"
+        },
+        "account_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "account_snapshot_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "allocation_notional": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "allocation_percent": {
+          "pattern": "^(?:0\\.(?:0*[1-9][0-9]*)|1(?:\\.0+)?)$",
+          "type": "string"
+        },
+        "allocation_preview_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "broker_connection_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "capability_snapshot_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "coverage_weight": {
+          "pattern": "^(?:0\\.(?:0*[1-9][0-9]*)|1(?:\\.0+)?)$",
+          "type": "string"
+        },
+        "effective_min_order": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "estimated_buy_leg_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "estimated_held_leg_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "estimated_investable_notional": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "estimated_noop_leg_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "estimated_sell_leg_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "estimated_suppressed_notional": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "feasible": {
+          "type": "boolean"
+        },
+        "preview_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "price_set_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "price_set_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "reason_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,127}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "target_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "target_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "template_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "tracking_difference_weight": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "allocation_preview_id",
+        "account_id",
+        "template_id",
+        "allocation_percent",
+        "account_snapshot_id",
+        "broker_connection_id",
+        "account_environment",
+        "target_version",
+        "target_fingerprint",
+        "price_set_id",
+        "price_set_fingerprint",
+        "capability_snapshot_id",
+        "allocation_notional",
+        "estimated_investable_notional",
+        "estimated_suppressed_notional",
+        "estimated_held_leg_count",
+        "estimated_buy_leg_count",
+        "estimated_sell_leg_count",
+        "estimated_noop_leg_count",
+        "coverage_weight",
+        "tracking_difference_weight",
+        "effective_min_order",
+        "feasible",
+        "reason_codes",
+        "preview_fingerprint",
+        "expires_at"
+      ],
+      "type": "object"
+    },
+    "AllocationPreviewEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AllocationPreview"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "AllocationPreviewRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "allocation_percent": {
+          "pattern": "^(?:0\\.(?:0*[1-9][0-9]*)|1(?:\\.0+)?)$",
+          "type": "string"
+        },
+        "template_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "template_id",
+        "allocation_percent"
+      ],
+      "type": "object"
+    },
+    "BffAssertionClaims": {
+      "additionalProperties": false,
+      "properties": {
+        "amr": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "aud": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "auth_time": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "exp": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "iat": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "iss": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "jti": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "nbf": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sid": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "sub": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "iss",
+        "aud",
+        "sub",
+        "iat",
+        "nbf",
+        "exp",
+        "jti",
+        "sid",
+        "auth_time"
+      ],
+      "type": "object"
+    },
+    "BrokerageConnection": {
+      "additionalProperties": false,
+      "properties": {
+        "account_environment": {
+          "enum": [
+            "paper",
+            "live"
+          ],
+          "type": "string"
+        },
+        "account_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "action_receipt_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "broker": {
+          "const": "alpaca"
+        },
+        "broker_account_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "connection_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "connection_status": {
+          "enum": [
+            "PENDING_VALIDATION",
+            "CONNECTED",
+            "STALE",
+            "ERROR",
+            "DISCONNECTING",
+            "DISCONNECTED",
+            "REVOKED"
+          ],
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "credential_status": {
+          "enum": [
+            "PENDING",
+            "VALID",
+            "INVALID",
+            "ROTATING",
+            "REVOKED"
+          ],
+          "type": "string"
+        },
+        "last_synced_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state_version": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status_path": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sync_run_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "validated_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "connection_id",
+        "account_id",
+        "broker",
+        "account_environment",
+        "connection_status",
+        "credential_status",
+        "state_version",
+        "created_at",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "BrokerageConnectionEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/BrokerageConnection"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "BrokerageConnectionPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/BrokerageConnection"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "BrokerageConnectionPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/BrokerageConnectionPage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "BrokerageConnectionRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "account_environment": {
+          "enum": [
+            "paper",
+            "live"
+          ],
+          "type": "string"
+        },
+        "broker": {
+          "const": "alpaca"
+        },
+        "credentials": {
+          "$ref": "#/$defs/BrokerageCredentials"
+        }
+      },
+      "required": [
+        "broker",
+        "account_environment",
+        "credentials"
+      ],
+      "type": "object"
+    },
+    "BrokerageCredentialRotationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "credentials": {
+          "$ref": "#/$defs/BrokerageCredentials"
+        }
+      },
+      "required": [
+        "credentials"
+      ],
+      "type": "object"
+    },
+    "BrokerageCredentials": {
+      "additionalProperties": false,
+      "properties": {
+        "api_key": {
+          "maxLength": 512,
+          "minLength": 8,
+          "type": "string",
+          "writeOnly": true
+        },
+        "api_secret": {
+          "maxLength": 512,
+          "minLength": 8,
+          "type": "string",
+          "writeOnly": true
+        }
+      },
+      "required": [
+        "api_key",
+        "api_secret"
+      ],
+      "type": "object"
+    },
+    "BrokerageDisconnectReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "connection_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "disconnect_receipt_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "positions_unchanged": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "ACCEPTED",
+            "DISCONNECTING",
+            "COMPLETE",
+            "BLOCKED"
+          ],
+          "type": "string"
+        },
+        "status_path": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "disconnect_receipt_id",
+        "connection_id",
+        "status",
+        "positions_unchanged",
+        "status_path",
+        "accepted_at"
+      ],
+      "type": "object"
+    },
+    "BrokerageDisconnectReceiptEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/BrokerageDisconnectReceipt"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "BrokerageSyncReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "connection_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ACCEPTED",
+            "RUNNING",
+            "COMPLETE",
+            "BLOCKED"
+          ],
+          "type": "string"
+        },
+        "status_path": {
+          "maxLength": 1024,
+          "minLength": 1,
+          "type": "string"
+        },
+        "sync_receipt_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "sync_run_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sync_receipt_id",
+        "connection_id",
+        "sync_run_id",
+        "status",
+        "status_path",
+        "accepted_at"
+      ],
+      "type": "object"
+    },
+    "BrokerageSyncReceiptEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/BrokerageSyncReceipt"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "ComplianceProfileAttestation": {
+      "additionalProperties": false,
+      "properties": {
+        "account_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "attestation_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "authorization": {
+          "$ref": "#/$defs/AccountAuthorization"
+        },
+        "decision_sequence": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "decision_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "effective_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "investor_profile": {
+          "additionalProperties": false,
+          "properties": {
+            "profile_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "questionnaire_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_band": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "eligible",
+                "ineligible",
+                "pending",
+                "expired",
+                "withdrawn"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "profile_version",
+            "questionnaire_version",
+            "risk_band"
+          ],
+          "type": "object"
+        },
+        "kyc": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ref": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "level": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "provider": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "pending",
+                "not_required",
+                "expired",
+                "withdrawn"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "payload_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "received_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": "1.0"
+        },
+        "status": {
+          "enum": [
+            "ACCEPTED",
+            "SUPERSEDED",
+            "EXPIRED"
+          ],
+          "type": "string"
+        },
+        "trading_eligibility": {
+          "enum": [
+            "eligible",
+            "ineligible",
+            "pending"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "attestation_id",
+        "schema_version",
+        "decision_version",
+        "decision_sequence",
+        "kyc",
+        "investor_profile",
+        "trading_eligibility",
+        "effective_at",
+        "expires_at",
+        "evidence_sha256",
+        "account_id",
+        "payload_sha256",
+        "authorization",
+        "status",
+        "received_at"
+      ],
+      "type": "object"
+    },
+    "ComplianceProfileAttestationEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/ComplianceProfileAttestation"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "ComplianceProfileAttestationPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ComplianceProfileAttestation"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "ComplianceProfileAttestationPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/ComplianceProfileAttestationPage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "ComplianceProfileAttestationRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "attestation_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "decision_sequence": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "decision_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "effective_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "evidence_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "expires_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "investor_profile": {
+          "additionalProperties": false,
+          "properties": {
+            "profile_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "questionnaire_version": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "risk_band": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "eligible",
+                "ineligible",
+                "pending",
+                "expired",
+                "withdrawn"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "profile_version",
+            "questionnaire_version",
+            "risk_band"
+          ],
+          "type": "object"
+        },
+        "kyc": {
+          "additionalProperties": false,
+          "properties": {
+            "evidence_ref": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "level": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "provider": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "passed",
+                "failed",
+                "pending",
+                "not_required",
+                "expired",
+                "withdrawn"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "status"
+          ],
+          "type": "object"
+        },
+        "schema_version": {
+          "const": "1.0"
+        },
+        "trading_eligibility": {
+          "enum": [
+            "eligible",
+            "ineligible",
+            "pending"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "attestation_id",
+        "schema_version",
+        "decision_version",
+        "decision_sequence",
+        "kyc",
+        "investor_profile",
+        "trading_eligibility",
+        "effective_at",
+        "evidence_sha256"
+      ],
+      "type": "object"
+    },
+    "ConsentPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ConsentReceipt"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "ConsentPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/ConsentPage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "ConsentReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "account_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "consent_key": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "consent_receipt_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "disclosure_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "disclosure_key": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "disclosure_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ACTIVE",
+            "WITHDRAWN",
+            "EXPIRED"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "consent_receipt_id",
+        "account_id",
+        "consent_key",
+        "disclosure_key",
+        "disclosure_version",
+        "disclosure_hash",
+        "status",
+        "recorded_at",
+        "expires_at"
+      ],
+      "type": "object"
+    },
+    "ConsentReceiptEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/ConsentReceipt"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "ConsentRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "account_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "action": {
+          "enum": [
+            "ACCEPT",
+            "WITHDRAW"
+          ],
+          "type": "string"
+        },
+        "consent_key": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "disclosure_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "disclosure_key": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "disclosure_version": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "account_id",
+        "consent_key",
+        "disclosure_key",
+        "disclosure_version",
+        "disclosure_hash",
+        "action"
+      ],
+      "type": "object"
+    },
+    "Disclosure": {
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "content_ref": {
+          "format": "uri",
+          "type": "string"
+        },
+        "disclosure_key": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "disclosure_version": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "effective_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "locale": {
+          "pattern": "^[a-z]{2}-[A-Z]{2}$",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "EFFECTIVE",
+            "RETIRED"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "disclosure_key",
+        "disclosure_version",
+        "locale",
+        "content_hash",
+        "content_ref",
+        "effective_at",
+        "status"
+      ],
+      "type": "object"
+    },
+    "DisclosurePage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Disclosure"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "DisclosurePageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/DisclosurePage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "EligibilityStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "decided_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "ELIGIBLE",
+            "INELIGIBLE",
+            "PENDING"
+          ],
+          "type": "string"
+        },
+        "eligibility_decision_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "expires_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "jurisdiction": {
+          "const": "US"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "reason_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "eligibility_decision_id",
+        "decision",
+        "jurisdiction",
+        "reason_codes",
+        "policy_version",
+        "decided_at",
+        "expires_at"
+      ],
+      "type": "object"
+    },
+    "EligibilityStatusEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/EligibilityStatus"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "Error": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+          "type": "string"
+        },
+        "continuation": {
+          "$ref": "#/$defs/AcknowledgmentContinuation"
+        },
+        "correlation_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "correlation_id"
+      ],
+      "type": "object"
+    },
+    "ErrorEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/Error"
+        }
+      },
+      "required": [
+        "error"
+      ],
+      "type": "object"
+    },
+    "Es256ProtectedHeader": {
+      "additionalProperties": false,
+      "properties": {
+        "alg": {
+          "const": "ES256"
+        },
+        "kid": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "typ": {
+          "const": "JWT"
+        }
+      },
+      "required": [
+        "alg",
+        "typ",
+        "kid"
+      ],
+      "type": "object"
+    },
+    "Freshness": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "properties": {
+              "freshness_reason_codes": {
+                "minItems": 1
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "freshness_status": {
+                "const": "fresh"
+              }
+            },
+            "required": [
+              "freshness_status"
+            ]
+          },
+          "then": {
+            "properties": {
+              "freshness_reason_codes": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "expires_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "fresh_until": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "freshness_policy_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "freshness_reason_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "freshness_status": {
+          "enum": [
+            "fresh",
+            "stale",
+            "expired"
+          ],
+          "type": "string"
+        },
+        "last_evaluated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "source_as_of": {
+          "format": "date-time",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_as_of",
+        "last_evaluated_at",
+        "fresh_until",
+        "expires_at",
+        "freshness_status",
+        "freshness_policy_version",
+        "freshness_reason_codes"
+      ],
+      "type": "object"
+    },
+    "IdentityExchange": {
+      "additionalProperties": false,
+      "properties": {
+        "expires_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "identity_result": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "token_type": {
+          "const": "JWT"
+        }
+      },
+      "required": [
+        "identity_result",
+        "token_type",
+        "expires_at"
+      ],
+      "type": "object"
+    },
+    "IdentityExchangeEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/IdentityExchange"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "IdentityExchangeRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "acquisition": {
+          "additionalProperties": false,
+          "properties": {
+            "acquisition_source": {
+              "enum": [
+                "DIRECT",
+                "GAME"
+              ],
+              "type": "string"
+            },
+            "campaign_id": {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            "game_handoff_receipt_id": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "acquisition_source"
+          ],
+          "type": "object"
+        },
+        "challenge": {
+          "maxLength": 128,
+          "minLength": 22,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string",
+          "writeOnly": true
+        },
+        "identity_assertion": {
+          "maxLength": 16384,
+          "minLength": 32,
+          "type": "string",
+          "writeOnly": true
+        },
+        "invitation_token": {
+          "maxLength": 128,
+          "minLength": 22,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string",
+          "writeOnly": true
+        },
+        "network_context": {
+          "maxLength": 128,
+          "minLength": 22,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string",
+          "writeOnly": true
+        },
+        "nonce": {
+          "maxLength": 128,
+          "minLength": 22,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string",
+          "writeOnly": true
+        },
+        "redirect_uri": {
+          "format": "uri",
+          "maxLength": 512,
+          "minLength": 12,
+          "type": "string"
+        },
+        "state": {
+          "maxLength": 128,
+          "minLength": 22,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "type": "string",
+          "writeOnly": true
+        }
+      },
+      "required": [
+        "identity_assertion",
+        "state",
+        "challenge",
+        "nonce",
+        "redirect_uri",
+        "network_context"
+      ],
+      "type": "object"
+    },
+    "IdentityHandoffResult": {
+      "additionalProperties": false,
+      "properties": {
+        "amr": {
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "aud": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "auth_time": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "email": {
+          "format": "email",
+          "maxLength": 320,
+          "type": "string"
+        },
+        "email_verified": {
+          "const": true
+        },
+        "exp": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "iat": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "iss": {
+          "maxLength": 256,
+          "minLength": 1,
+          "type": "string"
+        },
+        "jti": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "nbf": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sid": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "sub": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "iss",
+        "aud",
+        "sub",
+        "iat",
+        "nbf",
+        "exp",
+        "jti",
+        "sid",
+        "auth_time",
+        "email",
+        "email_verified"
+      ],
+      "type": "object"
+    },
+    "Jwks": {
+      "additionalProperties": false,
+      "properties": {
+        "keys": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "alg": {
+                "const": "ES256"
+              },
+              "crv": {
+                "const": "P-256"
+              },
+              "kid": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "kty": {
+                "const": "EC"
+              },
+              "use": {
+                "const": "sig"
+              },
+              "x": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "y": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "kty",
+              "crv",
+              "alg",
+              "use",
+              "kid",
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "type": "object"
+    },
+    "KycStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "const": "CLOSED_US_INVITE_ALPHA"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "public_launch_eligible": {
+          "const": false
+        },
+        "status": {
+          "const": "NOT_REQUIRED"
+        }
+      },
+      "required": [
+        "status",
+        "level",
+        "policy_version",
+        "public_launch_eligible"
+      ],
+      "type": "object"
+    },
+    "KycStatusEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/KycStatus"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "OnboardingStatus": {
+      "additionalProperties": false,
+      "properties": {
+        "evaluated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "policy_version": {
+          "type": "string"
+        },
+        "required_steps": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "state": {
+          "enum": [
+            "WAITLISTED",
+            "INVITED",
+            "IDENTITY_VERIFIED",
+            "PROFILE_REQUIRED",
+            "DISCLOSURE_REQUIRED",
+            "CONSENT_REQUIRED",
+            "READY",
+            "INELIGIBLE",
+            "SUSPENDED"
+          ],
+          "type": "string"
+        },
+        "user_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "user_id",
+        "state",
+        "required_steps",
+        "policy_version",
+        "evaluated_at"
+      ],
+      "type": "object"
+    },
+    "OnboardingStatusEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/OnboardingStatus"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "Page": {
+      "additionalProperties": false,
+      "properties": {
+        "has_more": {
+          "type": "boolean"
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "next_cursor",
+        "has_more"
+      ],
+      "type": "object"
+    },
+    "PreferencePage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Preferences"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "PreferencePageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/PreferencePage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "PreferencePatch": {
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "drift_threshold"
+          ]
+        },
+        {
+          "required": [
+            "min_order"
+          ]
+        },
+        {
+          "required": [
+            "excluded_assets"
+          ]
+        },
+        {
+          "required": [
+            "fractional_enabled"
+          ]
+        }
+      ],
+      "dependentRequired": {
+        "consent_receipt_id": [
+          "continuation_ref"
+        ],
+        "continuation_ref": [
+          "consent_receipt_id"
+        ]
+      },
+      "properties": {
+        "consent_receipt_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "continuation_ref": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "drift_threshold": {
+          "pattern": "^(0(?:\\.[0-9]+)?|1(?:\\.0+)?)$",
+          "type": "string"
+        },
+        "excluded_assets": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+            "type": "string"
+          },
+          "maxItems": 100,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "fractional_enabled": {
+          "type": "boolean"
+        },
+        "min_order": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "Preferences": {
+      "additionalProperties": false,
+      "properties": {
+        "drift_threshold": {
+          "pattern": "^(0(?:\\.[0-9]+)?|1(?:\\.0+)?)$",
+          "type": "string"
+        },
+        "excluded_assets": {
+          "items": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+            "type": "string"
+          },
+          "maxItems": 100,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "fractional_enabled": {
+          "type": "boolean"
+        },
+        "min_order": {
+          "pattern": "^(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "preference_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "drift_threshold",
+        "min_order",
+        "excluded_assets",
+        "fractional_enabled",
+        "preference_fingerprint",
+        "updated_at"
+      ],
+      "type": "object"
+    },
+    "PreferencesEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/Preferences"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "Recommendation": {
+      "additionalProperties": false,
+      "properties": {
+        "account_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "estimated_turnover_percent": {
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "execution_eligible": {
+          "type": "boolean"
+        },
+        "freshness": {
+          "$ref": "#/$defs/Freshness"
+        },
+        "leg_count": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "recommendation_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "CURRENT",
+            "SUPERSEDED",
+            "EXPIRED",
+            "BLOCKED"
+          ],
+          "type": "string"
+        },
+        "template_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "recommendation_id",
+        "account_id",
+        "template_id",
+        "status",
+        "execution_eligible",
+        "leg_count",
+        "estimated_turnover_percent",
+        "freshness"
+      ],
+      "type": "object"
+    },
+    "RecommendationEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/Recommendation"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "RecommendationLeg": {
+      "additionalProperties": false,
+      "properties": {
+        "current_quantity": {
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "delta_quantity": {
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "executable": {
+          "type": "boolean"
+        },
+        "notional_delta": {
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "reason_codes": {
+          "items": {
+            "pattern": "^[A-Z][A-Z0-9_]{1,63}$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "recommendation_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "reference_price": {
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        },
+        "security_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "symbol": {
+          "pattern": "^[A-Z][A-Z0-9.-]{0,14}$",
+          "type": "string"
+        },
+        "target_quantity": {
+          "pattern": "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "recommendation_id",
+        "security_id",
+        "symbol",
+        "current_quantity",
+        "target_quantity",
+        "delta_quantity",
+        "reference_price",
+        "notional_delta",
+        "reason_codes",
+        "executable"
+      ],
+      "type": "object"
+    },
+    "RecommendationLegPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/RecommendationLeg"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "RecommendationLegPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/RecommendationLegPage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "RecommendationPage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Recommendation"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "RecommendationPageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/RecommendationPage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "Template": {
+      "additionalProperties": false,
+      "properties": {
+        "benchmark": {
+          "const": "SPX"
+        },
+        "constituent_count": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "fresh_until": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "freshness_status": {
+          "enum": [
+            "FRESH",
+            "STALE",
+            "EXPIRED"
+          ],
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "portfolio_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        },
+        "product_mode": {
+          "const": "automated_portfolio_management"
+        },
+        "source_as_of": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "target_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "target_version": {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        "template_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "template_id",
+        "name",
+        "product_mode",
+        "portfolio_id",
+        "benchmark",
+        "target_version",
+        "target_fingerprint",
+        "constituent_count",
+        "source_as_of",
+        "fresh_until",
+        "freshness_status"
+      ],
+      "type": "object"
+    },
+    "TemplateEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/Template"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "TemplatePage": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/Template"
+          },
+          "type": "array"
+        },
+        "page": {
+          "$ref": "#/$defs/Page"
+        }
+      },
+      "required": [
+        "items",
+        "page"
+      ],
+      "type": "object"
+    },
+    "TemplatePageEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/TemplatePage"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "WaitlistReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "status": {
+          "const": "WAITLISTED"
+        },
+        "waitlist_receipt_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "waitlist_receipt_id",
+        "status",
+        "created_at"
+      ],
+      "type": "object"
+    },
+    "WaitlistReceiptEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/WaitlistReceipt"
+        }
+      },
+      "required": [
+        "data"
+      ],
+      "type": "object"
+    },
+    "WaitlistRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "acquisition_source": {
+          "enum": [
+            "DIRECT",
+            "GAME"
+          ],
+          "type": "string"
+        },
+        "campaign_id": {
+          "maxLength": 64,
+          "minLength": 1,
+          "type": "string"
+        },
+        "game_handoff_receipt_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "acquisition_source"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://contracts.refi.trading/investor/v1.1.0-alpha.2/schemas.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ReFinity Investor API v1.1.0-alpha.2 closed schemas"
+}

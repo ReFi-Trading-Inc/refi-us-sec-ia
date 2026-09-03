@@ -6,26 +6,31 @@
     ".": "./src/index.ts",
     "./hooks/*": "./src/hooks/*.ts",
     "./mocks": "./src/mocks/index.ts",
-    "./generated/*": "./src/generated/*.ts"
+    "./generated/*": "./src/generated/*.ts",
+    "./investor-api": "./src/investor-api/index.ts"
   },
   "scripts": {
-    "generate": "mkdir -p src/generated && openapi-typescript openapi/refi-api.yaml -o src/generated/_openapi.gen.ts",
+    "generate": "mkdir -p src/generated && openapi-typescript openapi/refi-api.yaml -o src/generated/_openapi.gen.ts && openapi-typescript contracts/investor-api/v1.1.0-alpha.2/openapi.json -o src/generated/investor-api.gen.ts",
     "build": "pnpm generate",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings=0",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:contract": "vitest run src/__tests__/investor-api-conformance.test.ts"
   },
   "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
     "openapi-fetch": "^0.13.0"
   },
   "devDependencies": {
     "@refi/config": "workspace:*",
     "@tanstack/react-query": "^5.0.0",
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.0.0",
     "eslint": "^9.0.0",
     "msw": "^2.10.0",
     "openapi-typescript": "^7.0.0",
     "react": "^19.0.0",
-    "@types/react": "^19.0.0",
     "tsx": "^4.0.0",
     "typescript": "^6.0.0",
     "vitest": "^3.0.0"

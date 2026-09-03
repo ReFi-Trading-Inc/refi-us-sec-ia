@@ -4145,9 +4145,12 @@ await section(
     USER_ASSERTION_TTL_SECONDS,
     INVESTOR_API_DEV_AUDIENCE,
     REQUIRED_ASSERTION_CLAIMS,
-    REQUIRED_AUTH_METHOD_CLAIM,
     OPTIONAL_AUTH_METHOD_CLAIM,
-    MissingAuthMethodError,
+    PROHIBITED_ASSURANCE_CLAIM,
+    ASSERTION_ID_PATTERN,
+    InvalidAuthMethodError,
+    ProhibitedClaimError,
+    ClaimPatternError,
     assertPublishableIssuer,
     mintUserAssertion,
     getPublicJwks,
@@ -4174,12 +4177,15 @@ await section(
         ["iss", "aud", "sub", "iat", "nbf", "exp", "jti", "sid", "auth_time"],
         "Required claim list drifted from Daniel's §2.",
       );
-      // Daniel 2026-08-19 narrowed the 2026-08-17 "amr or acr": `amr` is the
-      // required v1 method claim and arrives non-empty; `acr` "may be added
-      // later" and is therefore additive, never a substitute. An assertion
-      // carrying only `acr` must not be mintable.
-      assert.equal(REQUIRED_AUTH_METHOD_CLAIM, "amr");
-      assert.equal(OPTIONAL_AUTH_METHOD_CLAIM, "acr");
+      // v1.1.0-alpha.2 (package README; ATD-040..042): `auth_time` required,
+      // `amr` OPTIONAL and preserved unchanged when present, `acr` PROHIBITED.
+      assert.equal(OPTIONAL_AUTH_METHOD_CLAIM, "amr");
+      assert.equal(PROHIBITED_ASSURANCE_CLAIM, "acr");
+      assert.equal(
+        ASSERTION_ID_PATTERN.source,
+        "^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$",
+        "sub/sid/jti pattern drifted from BffAssertionClaims.",
+      );
       // Daniel 2026-08-19: investor-api uses only the explicitly configured
       // JWKS URL and never derives one from `iss`. The helper that did exactly
       // that derivation was deleted 2026-08-24; its reappearance would be a
@@ -4284,10 +4290,10 @@ await section(
 
       const authTime = Math.floor(Date.now() / 1000) - 42;
       const minted = await mintUserAssertion({
-        userId: "user-opaque-1",
-        sid: "sid-1",
+        userId: "usr_alpha_invited_01",
+        sid: "session_alpha_00000001",
         authTime,
-        amr: ["otp"],
+        amr: ["email_link", "email_otp"],
       });
 
       const { payload, protectedHeader } = await jose.jwtVerify(
@@ -4313,13 +4319,21 @@ await section(
           `Required claim "${claim}" is missing from the minted assertion.`,
         );
       }
-      assert.ok(
-        Array.isArray(payload["amr"]) &&
-          (payload["amr"] as unknown[]).length > 0,
-        "`amr` must be present and non-empty — the required v1 method claim.",
+      assert.deepEqual(
+        payload["amr"],
+        ["email_link", "email_otp"],
+        "`amr` must be forwarded unchanged and in order when present.",
       );
-      assert.equal(payload.sub, "user-opaque-1");
-      assert.equal(payload["sid"], "sid-1");
+      assert.equal(payload["acr"], undefined, "`acr` must never be emitted.");
+      assert.equal(payload.sub, "usr_alpha_invited_01");
+      assert.equal(payload["sid"], "session_alpha_00000001");
+      for (const claim of ["sub", "sid", "jti"] as const) {
+        assert.match(
+          String(payload[claim]),
+          ASSERTION_ID_PATTERN,
+          `${claim} must satisfy the BffAssertionClaims pattern.`,
+        );
+      }
       assert.equal(
         payload["auth_time"],
         authTime,
@@ -4345,10 +4359,9 @@ await section(
 
   await section("user assertion: each mint gets a unique jti", async () => {
     const base = {
-      userId: "user-opaque-1",
-      sid: "sid-1",
+      userId: "usr_alpha_invited_01",
+      sid: "session_alpha_00000001",
       authTime: Math.floor(Date.now() / 1000) - 10,
-      amr: ["otp"],
     };
     const a = await mintUserAssertion(base);
     const b = await mintUserAssertion(base);
@@ -4360,54 +4373,68 @@ await section(
   });
 
   await section(
-    "user assertion: fails closed without auth_time or amr",
+    "user assertion: auth_time required, amr optional-but-valid, acr prohibited, ids patterned",
     async () => {
+      const now = Math.floor(Date.now() / 1000);
+      const ok = {
+        userId: "usr_alpha_invited_01",
+        sid: "session_alpha_00000001",
+      };
       await assert.rejects(
-        mintUserAssertion({
-          userId: "u",
-          sid: "s",
-          authTime: 0,
-          amr: ["otp"],
-        }),
+        mintUserAssertion({ ...ok, authTime: 0, amr: ["email_otp"] }),
         /underlying auth_time/,
         "A missing auth_time must throw, never fall back to now.",
       );
+      // amr absent is VALID in v1.1.0-alpha.2 (ATD-041) and must not be synthesised.
+      const withoutAmr = await mintUserAssertion({ ...ok, authTime: now });
+      const jwks = await getPublicJwks();
+      const current = jwks.keys.find((k) => k.kid === "test-key-1");
+      assert.ok(current, "current signing key must be published");
+      const { payload } = await jose.jwtVerify(
+        withoutAmr.token,
+        await jose.importJWK(current, "ES256"),
+        { algorithms: ["ES256"] },
+      );
+      assert.equal(payload["amr"], undefined, "Absent `amr` must stay absent.");
       await assert.rejects(
-        mintUserAssertion({
-          userId: "u",
-          sid: "s",
-          authTime: Math.floor(Date.now() / 1000),
-        }),
-        MissingAuthMethodError,
-        "An assertion with no `amr` must be refused.",
+        mintUserAssertion({ ...ok, authTime: now, amr: [] }),
+        InvalidAuthMethodError,
+        "An EMPTY `amr` asserts authentication by no method and must be refused.",
       );
       await assert.rejects(
         mintUserAssertion({
-          userId: "u",
-          sid: "s",
-          authTime: Math.floor(Date.now() / 1000),
-          amr: [],
+          ...ok,
+          authTime: now,
+          amr: ["email_otp", "email_otp"],
         }),
-        MissingAuthMethodError,
-        "An EMPTY `amr` is not a method claim. Daniel 2026-08-19 specifies a " +
-          "non-empty array, and `[]` would assert that authentication happened " +
-          "by no method at all.",
+        InvalidAuthMethodError,
+        "Duplicate `amr` values violate uniqueItems.",
       );
-      // `acr` is additive, never a substitute (Daniel 2026-08-19). This is the
-      // case the previous "amr or acr" reading would have let through.
       await assert.rejects(
         mintUserAssertion({
-          userId: "u",
-          sid: "s",
-          authTime: Math.floor(Date.now() / 1000),
+          ...ok,
+          authTime: now,
           acr: "urn:example:loa2",
+        } as never),
+        ProhibitedClaimError,
+        "`acr` is reserved/prohibited in v1.1.0-alpha.2 and must never be minted.",
+      );
+      await assert.rejects(
+        mintUserAssertion({
+          userId: "investor@example.invalid",
+          sid: ok.sid,
+          authTime: now,
         }),
-        MissingAuthMethodError,
-        "`acr` alone must not satisfy the method requirement.",
+        ClaimPatternError,
+        "An email is not an opaque subject id.",
+      );
+      await assert.rejects(
+        mintUserAssertion({ userId: ok.userId, sid: "short", authTime: now }),
+        ClaimPatternError,
+        "sid must satisfy the BffAssertionClaims pattern.",
       );
     },
   );
-
   await section("jwks: publishes public material only, with kid", async () => {
     const jwks = await getPublicJwks();
     assert.ok(jwks.keys.length >= 1, "JWKS must publish at least one key.");

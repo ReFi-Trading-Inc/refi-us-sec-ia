@@ -33,8 +33,10 @@ yaml path string directly.
 
 ## 1. Operations already represented
 
-**Zero** of the 41 package operations exist in `refi-api.yaml`. The overlap is
-conceptual only, via `routes.ts` constants:
+**Zero exact package operation matches** (path + method) exist in the
+hand-written `refi-api.yaml`: 0 of 41. The overlap that does exist is
+conceptual and path-level, recorded separately here via the `routes.ts`
+constants:
 
 | `routes.ts` constant          | Package operation(s)                                                              | Match                        |
 | ----------------------------- | --------------------------------------------------------------------------------- | ---------------------------- |
@@ -76,8 +78,14 @@ or `createAccountAction` operations is not** — those stay blocked (reconciliat
 
 ## 3. Removed / obsolete on our side
 
-**All 20 yaml operations are obsolete against the package.** None has a
-same-path successor; the package is a different API.
+**All 20 operations in the hand-written YAML are obsolete as the authoritative
+outbound Investor API contract.** None has a same-path successor in the
+package; the package is a different API. This is a statement about the
+_outbound contract_ only. Some of the underlying concepts remain valid as
+**BFF-local** functionality that Daniel's Investor API never owned (browser
+session handling is the clear case); those concepts live on in
+`apps/web/app/api/**`, not in the outbound client, and their disposition below
+says so.
 
 | Yaml operation(s)                                                                      | Disposition                                                                                                                |
 | -------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -235,16 +243,25 @@ getBearer(): Promise<string>, mintAssertion(): Promise<string>}` as injected
    10 s / ≤2 jittered retries on transport or 502/503/504 with a fresh
    assertion per attempt. Marked `server-only`; **no export reaches browser
    bundles** (a tripwire test greps `apps/web/app/**/*.tsx` for the import).
-4. **Runtime validation from `schemas.json`.** Ajv 2020 draft, compiled per
-   `$defs` name; unknown field / enum / variant ⇒ typed
-   `ContractVersionMismatch` error, never silently ignored. Decimal strings
-   stay strings.
-5. **Contract tests against the loopback simulator only.** A vitest suite that
-   spawns `python3.11 tools/conformance.py serve --port <ephemeral>` from the
-   **un-vendored** package path via an env var (`REFI_CONTRACT_PACKAGE_DIR`) and
-   skips with a clear message when Python ≥ 3.11 is absent; runs the README
-   journey (identity exchange → listAccounts → onboarding/eligibility/kyc →
-   templates → records → SSE resume). No network to any `.run.app` or
+4. **Runtime validation from `schemas.json`.** `schemas.json` is **JSON Schema
+   2020-12**; validation must use Ajv's 2020-12 mode (`Ajv2020` from
+   `ajv/dist/2020`), never the default draft-07 instance, so `$defs`,
+   `if/then/else` and `unevaluatedProperties` semantics are honoured rather
+   than silently downgraded. Compiled per `$defs` name; unknown field / enum /
+   variant ⇒ typed `ContractVersionMismatch` error, never silently ignored.
+   Decimal strings stay strings.
+5. **Contract tests against the loopback simulator only — blocking in CI.**
+   A vitest suite spawns `tools/conformance.py serve --port <ephemeral>` from
+   the **un-vendored** package path (`REFI_CONTRACT_PACKAGE_DIR`) and runs the
+   README journey (identity exchange → listAccounts →
+   onboarding/eligibility/kyc → templates → records → SSE resume), plus
+   `conformance.py validate` and `self-test` as separate assertions.
+   **CI must install and pin Python ≥ 3.11** (`actions/setup-python` with an
+   exact version) and run this suite as a required check; a missing or wrong
+   Python runtime in CI is a **configuration failure, not a skip**. Only the
+   local developer convenience command (`pnpm test:contract --local`) may skip
+   with an explicit message when Python ≥ 3.11 is absent, and that path is
+   never what the protected branch gate runs. No network to any `.run.app` or
    `refi.internal` host; a test asserts the client refuses non-loopback
    `baseUrl` unless an explicit `allowRemote` flag is set (which nothing sets).
 6. **`routes.ts` becomes derived.** Replace the 12 hand-written constants with
@@ -264,7 +281,9 @@ any brokerage/allocation/action UI, any launch-scope wording.
 
 **Gates:** `pnpm typecheck`, `pnpm lint`, `pnpm test` (adds the hash test, the
 schema-validation tests, the loopback contract suite, the no-browser-import
-tripwire), `pnpm route-manifest` unchanged (no new BFF routes).
+tripwire), `pnpm route-manifest` unchanged (no new BFF routes). The CI
+workflow change that pins Python ≥ 3.11 is part of the same PR — the suite
+must be visibly red in CI without it before it is green with it.
 
 **Estimated diff:** ~4 vendored JSON files (≈430 KB, no logic), 5–6 new TS
 files, 2 edited (`routes.ts`, `user-assertion.ts`), 1 `package.json` script.

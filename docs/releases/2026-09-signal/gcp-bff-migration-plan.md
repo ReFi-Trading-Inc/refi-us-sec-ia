@@ -18,6 +18,12 @@ or CORS semantics change during the transition (§3, §10).
 
 ---
 
+**Revision 2 (2026-09-03, same day):** corrected on Zeshan's review — public edge
+is an external HTTPS load balancer with Cloud Run ingress restricted (§2, §9);
+CSRF preservation is a tested claim, not an assumed one (§10, Gate 0); the
+page-coupling measurement is restated from `main` (§3); KMS protection level
+and Secret Manager scope are decisions, not defaults (§6, §8).
+
 ## 1. Current Vercel responsibilities (measured)
 
 The Vercel project `refi-us-sec-ia-web` runs one Next.js application that is
@@ -72,35 +78,52 @@ standalone Next.js image the Dockerfile already builds, but reached only via
 `/api/*` and `/.well-known/*` paths from the outside world (§3 explains why the
 same image is still the right unit in phase 1).
 
-| Responsibility                           | Target implementation                                                                                                |
-| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| BFF route handlers, JWKS route           | Same code, same container; ingress `all` (browser-facing) with `roles/run.invoker` for `allUsers`                    |
-| Outbound to identity-ccid / Investor API | ID token from the metadata server, audience = target service URL, signed by the **BFF runtime service account** (§5) |
-| User-assertion signing                   | Cloud KMS asymmetric sign, non-exportable P-256 key (§6)                                                             |
-| JWKS publication                         | Public JWK read from KMS `getPublicKey`, cached in-process, served at `/.well-known/jwks.json` (§7)                  |
-| Secrets                                  | Secret Manager, mounted as env vars via Cloud Run secret references (§8)                                             |
-| Durable store                            | Firestore via ADC — the path `store.ts:14-15` already documents                                                      |
-| Headers/CSP                              | Unchanged; `proxy.ts` runs inside the container                                                                      |
-| Logs                                     | Cloud Logging via stdout JSON; redaction rules §14                                                                   |
+| Responsibility                           | Target implementation                                                                                                                                                                                                                                                                                                                                                                                 |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| BFF route handlers, JWKS route           | Same code, same container; reached **only through the external HTTPS load balancer** (§9): ingress `internal-and-cloud-load-balancing`, LB path rules forward only `/api/*` and `/.well-known/*`, default route fails closed. `roles/run.invoker` for `allUsers` is what lets the LB call the service, but the raw `run.app` URL is not internet-reachable and is disabled once the LB path is proven |
+| Outbound to identity-ccid / Investor API | ID token from the metadata server, audience = target service URL, signed by the **BFF runtime service account** (§5)                                                                                                                                                                                                                                                                                  |
+| User-assertion signing                   | Cloud KMS asymmetric sign, non-exportable P-256 key (§6)                                                                                                                                                                                                                                                                                                                                              |
+| JWKS publication                         | Public JWK read from KMS `getPublicKey`, cached in-process, served at `/.well-known/jwks.json` (§7)                                                                                                                                                                                                                                                                                                   |
+| Secrets                                  | Secret Manager, mounted as env vars via Cloud Run secret references (§8)                                                                                                                                                                                                                                                                                                                              |
+| Durable store                            | Firestore via ADC — the path `store.ts:14-15` already documents                                                                                                                                                                                                                                                                                                                                       |
+| Headers/CSP                              | Unchanged; `proxy.ts` runs inside the container                                                                                                                                                                                                                                                                                                                                                       |
+| Logs                                     | Cloud Logging via stdout JSON; redaction rules §14                                                                                                                                                                                                                                                                                                                                                    |
 
 The existing `infra/terraform/modules/cloud-run-service` already provisions a v2
 service with its own runner service account (`main.tf:73`) and a public invoker
-binding (`main.tf:79-85`). That public binding is correct for the browser-facing
-BFF and **must not** be reused for anything that fronts Daniel's private
-services.
+binding (`main.tf:79-85`). Because the service runs the **whole Next.js image**,
+that binding is acceptable **only together with** restricted ingress: with
+ingress `all` the raw `run.app` URL would serve pages and every other app route
+as a second public application origin, which this plan forbids. The module
+therefore needs an `ingress` input set to `internal-and-cloud-load-balancing`
+for the BFF, and the binding **must not** be reused for anything that fronts
+Daniel's private services.
 
 ## 3. Does frontend hosting move now or later? (measured, then decided)
 
 **Coupling measurement.**
 
-| Measure                                              | Result                                                                                                                                                          |
-| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Page routes (`page.tsx`) under `apps/web/app`        | 23 total, 9 under `/us/app/**`                                                                                                                                  |
-| Browser code calling the BFF with a **relative** URL | 3 call sites: `app/us/app/support/page.tsx:37`, `app/us/alpha-claim/_components/AlphaClaimClient.tsx:64`, `app/us/eligibility/page.tsx:96`                      |
-| Browser code with an absolute BFF base               | 0. `NEXT_PUBLIC_API_BASE_URL` is consumed only by `packages/api-clients/src/client.ts:28` (legacy browser-direct client) and its MSW handlers                   |
-| Cookie `Domain` attribute set anywhere               | None. `us_eligibility_v1` is host-only, `path=/us`, `SameSite=Lax` (`eligibility/route.ts:111-117`); `us_session_v1` is read at `bff/auth.ts:63`, minted by MSW |
-| Colocation                                           | API handlers and pages are one Next.js app, one build, one `server.js`; there is no separate BFF package                                                        |
-| Server-side data access from pages                   | Pages read the prototype/durable store **in-process** through the `bffRead`/`bffMutate` wrappers (`bff/handler.ts:1-11`); they do not HTTP-call the BFF         |
+| Measure                                              | Result                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Page routes (`page.tsx`) under `apps/web/app`        | 23 total, 9 under `/us/app/**`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Browser code calling the BFF with a **relative** URL | 3 call sites: `app/us/app/support/page.tsx:37`, `app/us/alpha-claim/_components/AlphaClaimClient.tsx:64`, `app/us/eligibility/page.tsx:96`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Browser code with an absolute BFF base               | 0. `NEXT_PUBLIC_API_BASE_URL` is consumed only by `packages/api-clients/src/client.ts:28` (legacy browser-direct client) and its MSW handlers                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| Cookie `Domain` attribute set anywhere               | None. `us_eligibility_v1` is host-only, `path=/us`, `SameSite=Lax` (`eligibility/route.ts:111-117`); `us_session_v1` is read at `bff/auth.ts:63`, minted by MSW                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Colocation                                           | API handlers and pages are one Next.js app, one build, one `server.js`; there is no separate BFF package                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Server-side data access from pages                   | **None.** Re-measured on `main @ 9f45f05`: no `page.tsx`/`layout.tsx` under `apps/web/app/us` imports `bffRead`, `bffMutate`, `prototype-store`, `getServerEnv`, `user-assertion`, or `investor-api/*`; 17 of 23 are `"use client"` components (e.g. `us/app/portfolio/page.tsx:22,39` uses `useSimulation()`); the 6 server components (`us/page`, `us/layout`, `us/app/layout`, `us/alpha-claim/page`, `us/disclosures/page`, `us/onboarding/page`) import only content, brand, UI and client wrappers and make zero `next/headers` calls. `bffRead`/`bffMutate` are used exclusively by `apps/web/app/api/**` route handlers |
+
+**The decision question.** _If pages stay on Vercel, does any trust-sensitive
+server-side data access, credential use, assertion signing, private Investor
+API access, or account authorization remain on Vercel?_ On today's `main` the
+answer is **no**: pages are presentation/client-only, and the only page-adjacent
+server logic is `proxy.ts:71,81`, which checks cookie **presence** for
+redirects and verifies nothing. Every trust-sensitive path (`bff/auth.ts`,
+`bff/handler.ts`, `user-assertion.ts`, the JWKS route, the prototype/durable
+store) is under `apps/web/app/api/**` or `apps/web/app/.well-known/**` and
+moves with the BFF. **This measurement must be repeated immediately before
+migration implementation** — PR #65 and the coming client-integration slices
+can add server components or server actions that would change the answer, and
+any that hold server-side authority must be pulled into the BFF boundary.
 
 **Interpretation.** The browser-to-BFF surface is small (3 relative calls) and
 the cookies are host-only and `Lax`. That means the **only** thing that binds
@@ -196,8 +219,10 @@ Until he answers, this plan carries both paths and implements neither.
 ## 6. Cloud KMS ES256 assertion signing
 
 **Key.** One `CryptoKey` per tier, purpose `ASYMMETRIC_SIGN`, algorithm
-`EC_SIGN_P256_SHA256`, protection level `SOFTWARE` (HSM is optional; the
-threat model gain is small for an assertion key whose TTL is 60 s), rotation
+`EC_SIGN_P256_SHA256`. **Protection level:** `SOFTWARE` is acceptable for the
+**dev** tier as development architecture. The staging/production protection
+level is an explicit security-and-cost decision to be taken separately, not
+set by this design; `HSM` remains an available production option. Rotation
 disabled at the KMS level (rotation is a deliberate runbook step, §7, because
 the verifier caches our JWKS). The private material is **non-exportable** by
 construction.
@@ -268,14 +293,14 @@ version state change, all with UTC timestamps.
 
 ## 8. Secret Manager usage
 
-| Env var today                                                                      | Target                                                                                                                  |
-| ---------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `SESSION_SECRET`, `SESSION_JWT_SECRET`, `IP_HASH_SECRET`, `ELIGIBILITY_JWT_SECRET` | Secret Manager secrets, one per tier, referenced as Cloud Run secret env vars; `secretAccessor` for the runtime SA only |
-| `ALPHA_HANDOFF_PUBLIC_KEY_JWK`, `ALPHA_HANDOFF_ISSUER`, `ALPHA_HANDOFF_AUDIENCE`   | Public values, but keep them in Secret Manager for change control and versioning; not sensitive                         |
-| `BFF_ASSERTION_PRIVATE_KEY_JWK`                                                    | **Ceases to exist.** The key lives in KMS; the app holds a key resource name, not material                              |
-| `BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK`                                            | Replaced by a KMS previous-version reference                                                                            |
-| `GCP_SERVICE_ACCOUNT_KEY`                                                          | **Ceases to exist.** ADC via the runtime SA (`store.ts:14-15`)                                                          |
-| `BFF_ASSERTION_ISSUER`, `INVESTOR_API_AUDIENCE`, `REFI_*`, `NEXT_PUBLIC_*`         | Plain env vars on the service (non-secret configuration)                                                                |
+| Env var today                                                                      | Target                                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SESSION_SECRET`, `SESSION_JWT_SECRET`, `IP_HASH_SECRET`, `ELIGIBILITY_JWT_SECRET` | Secret Manager secrets, one per tier, referenced as Cloud Run secret env vars; `secretAccessor` for the runtime SA only                                                                      |
+| `ALPHA_HANDOFF_PUBLIC_KEY_JWK`, `ALPHA_HANDOFF_ISSUER`, `ALPHA_HANDOFF_AUDIENCE`   | **Plain versioned configuration** (service env vars under Terraform). Public values do not belong in Secret Manager merely for change control; Secret Manager is reserved for actual secrets |
+| `BFF_ASSERTION_PRIVATE_KEY_JWK`                                                    | **Ceases to exist.** The key lives in KMS; the app holds a key resource name, not material                                                                                                   |
+| `BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK`                                            | Replaced by a KMS previous-version reference                                                                                                                                                 |
+| `GCP_SERVICE_ACCOUNT_KEY`                                                          | **Ceases to exist.** ADC via the runtime SA (`store.ts:14-15`)                                                                                                                               |
+| `BFF_ASSERTION_ISSUER`, `INVESTOR_API_AUDIENCE`, `REFI_*`, `NEXT_PUBLIC_*`         | Plain env vars on the service (non-secret configuration)                                                                                                                                     |
 
 The existing `modules/secret-manager` module (`main.tf:1-17`) already models
 secret + version + accessor binding and can be reused as-is.
@@ -291,10 +316,22 @@ paths. Two viable shapes:
 | Cloud Run **custom domain mapping**           | Simplest; Google-managed certificate; no LB cost                    | Regional availability constraints; no Cloud Armor; no path routing |
 | **Global external HTTPS LB** + serverless NEG | Cloud Armor, path rules, one IP for future services, header control | More Terraform; small fixed monthly cost                           |
 
-Recommendation: start with the LB + serverless NEG because path-based routing
-is what lets the same hostname later front pages too (phase 2), and because
-Cloud Armor rate limiting is the natural home for the EL-03 eligibility
-rate-limit control that is in-memory today.
+Decision: **external HTTPS load balancer + serverless NEG**, not a bare domain
+mapping. The LB is the only public edge:
+
+- Cloud Run ingress = `internal-and-cloud-load-balancing` — Google documents
+  this setting precisely for letting internet traffic in through the external
+  Application Load Balancer while preventing direct internet access to the
+  `run.app` URL;
+- LB URL map forwards **only** `/api/*` and `/.well-known/*` to the BFF
+  backend; the default route fails closed (a fixed 404 backend or a fail-closed
+  bucket), so no page or other app route is reachable via this hostname;
+- optionally **disable the default `run.app` URL** once the LB path is proven,
+  so the raw service URL is not an alternate public application origin;
+- Cloud Armor attached where justified — its rate limiting is the natural home
+  for the EL-03 eligibility rate-limit control that is in-memory today;
+- path-based routing is also what would let the same hostname front pages in
+  phase 2, if that decision is ever taken.
 
 Cutover steps (each reversible by a DNS change):
 
@@ -327,11 +364,48 @@ every navigation. Two patterns avoid it:
 - **Preferred — same origin via rewrite.** Vercel's Next.js config gains
   `rewrites()` for `/api/:path*` and `/.well-known/:path*` to the Cloud Run
   URL. The browser still sees one origin; the cookie is set on and sent to
-  `refi.trading`; `SameSite=Lax` keeps protecting cross-site POSTs; the
-  same-origin CSRF check in `bffMutate` (`src/lib/bff/origin.ts`) keeps
-  working because `Origin`/`Host` are the page origin. The rewrite must forward
-  `x-forwarded-for` and `x-correlation-id` unchanged so `proxy.ts:61-66` and
-  the EL-03 rate limiter see the real client.
+  `refi.trading`; `SameSite=Lax` keeps protecting cross-site POSTs. The
+  same-origin CSRF check in `bffMutate` is **intended to preserve browser
+  same-origin semantics, subject to the mandatory proxy-fidelity acceptance
+  test below (Gate 0)** — it is not assumed to survive the proxy hop. The
+  rewrite must forward `x-forwarded-for` and `x-correlation-id` unchanged so
+  `proxy.ts:61-66` and the EL-03 rate limiter see the real client.
+
+**Why CSRF is a tested claim, not an assumed one.** The implemented control
+(`src/lib/bff/origin.ts:39-43`, used by `bff/handler.ts:143` and mirrored at
+`alpha-claim/route.ts:153`) compares the browser-declared `Origin`, falling
+back to the `Referer` origin, against **`req.nextUrl.origin`** — the origin the
+server resolves for itself. It deliberately does not treat any forwarded header
+as the sole trust authority. A Vercel external rewrite into Cloud Run creates a
+proxy boundary: depending on how `Host` and the `x-forwarded-*` headers reach
+Next.js inside the container (and behind the LB), the app may resolve
+`nextUrl.origin` as the Cloud Run or LB host while the browser declares the
+public frontend origin — and every legitimate same-origin POST would then be
+rejected, or, worse, a fix that trusts forwarded headers would silently weaken
+CS-02. **`isSameOrigin()` must not be modified merely to make the proxy work**
+until the measured request-header behaviour is known; the `req.nextUrl.origin`
+trust property is preserved unless a separately reviewed proxy-origin
+architecture replaces it.
+
+**Gate 0 — proxy-fidelity acceptance (before any migration implementation).**
+Run the real Vercel → LB → Cloud Run path against a 0 %-traffic candidate and
+record, with request/response header captures:
+
+1. a same-origin POST from the frontend passes CS-02 (`bffMutate` accepts);
+2. a cross-origin POST is still `403`;
+3. an origin-less request (no `Origin`, no `Referer`) is still `403`;
+4. a malformed `Referer` is still `403`;
+5. the comparison remains exact scheme + host + port (no suffix or prefix
+   matching introduced);
+6. no forwarded header (`x-forwarded-host`, `x-forwarded-proto`, `Host`
+   rewritten by the proxy) has become the sole trust authority — document
+   exactly which header `nextUrl.origin` is derived from in the deployed
+   configuration.
+
+If Gate 0 fails, the fix is an architecture change reviewed on its own (for
+example, terminating the public origin at the LB for both pages and BFF), not a
+relaxation of `isSameOrigin()`.
+
 - **Fallback — shared registrable domain.** Set `Domain=refi.trading` on both
   cookies and serve pages and BFF from sibling hosts. This widens the cookie
   scope to every `*.refi.trading` host (including marketing) and is therefore
@@ -351,9 +425,10 @@ same-origin. This is deliberate; the BFF should never grow an
 `Access-Control-Allow-Origin` header, because the package forbids browser-
 direct access to private services and a permissive CORS policy on the BFF is
 the first step toward exactly that. The same-origin mutation guard in
-`bffMutate` stays the CSRF control. If the fallback (sibling hosts) is ever
-used, CORS must be an exact-origin allowlist with credentials, and the guard
-must be taught the sibling origin explicitly.
+`bffMutate` stays the CSRF control, on the terms set by Gate 0 (§10). If the
+fallback (sibling hosts) is ever used, CORS must be an exact-origin allowlist
+with credentials, and the guard must be taught the sibling origin explicitly
+through a reviewed change, not by trusting forwarded headers.
 
 ## 12. Deployment and rollback strategy
 
@@ -468,6 +543,12 @@ Vercel is removed (for the BFF in phase 1; for pages only after a separate
 phase-2 decision) when **all** of the following are on file with UTC
 timestamps and, where applicable, the image digest:
 
+0. **Gate 0 passed** (§10): the six proxy-fidelity checks recorded against the
+   real Vercel → LB → Cloud Run path, with the header captures on file and
+   `isSameOrigin()` unchanged. Plus: the raw `run.app` URL returns no page
+   content from the public internet (ingress restricted or default URL
+   disabled), and a request for a non-BFF path via `bff-dev.refi.trading`
+   fails closed at the LB.
 1. `https://bff-dev.refi.trading/.well-known/jwks.json` returns 200 from Cloud
    Run with a KMS-published ES256 key, and one full rotation (§7) has been
    performed with both `kid`s observed during overlap and verification

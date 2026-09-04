@@ -14,22 +14,36 @@ here. Companion: [package-reconciliation-2026-09-03.md](package-reconciliation-2
 
 ## 0. How "browser-direct" was measured
 
-`apiFetch` (`packages/api-clients/src/client.ts:15`) resolves a relative path
-against `NEXT_PUBLIC_API_BASE_URL`. Three deployment facts govern what those
-calls actually do today:
+**Revision 2 (2026-09-04):** the first revision of this section overstated
+what the local audit could see. It claimed that an unset
+`NEXT_PUBLIC_REFI_DATA_ADAPTER` meant MSW fixtures answer the legacy hooks in
+production. That does not follow from the code: `apps/web/app/_msw/init.ts`
+returns immediately when `NEXT_PUBLIC_REFI_ENV === "prod"`, and the repository
+environment contract requires production builds to set
+`NEXT_PUBLIC_REFI_ENV=prod`. The claim is withdrawn below; the classification
+(§1–§7) never depended on it.
 
-| Environment                  | `NEXT_PUBLIC_API_BASE_URL`                                                     | `NEXT_PUBLIC_REFI_DATA_ADAPTER`        | Effect on `apiFetch`                                                                              |
-| ---------------------------- | ------------------------------------------------------------------------------ | -------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| E2E (`playwright.config.ts`) | `http://localhost:3000` (same origin)                                          | unset → `mock`                         | MSW intercepts the 24 mocked legacy paths in the browser; unhandled paths pass to the BFF         |
-| Local (`.env.local`)         | `http://localhost:3000`                                                        | unset → `mock`                         | same                                                                                              |
-| Vercel Production            | not readable from this workstation (`vercel env pull` returned an empty value) | **unset → `mock`** (`_msw/init.ts:10`) | The legacy hooks are answered by **MSW fixtures in production**; no legacy call reaches a backend |
-| `.env.example`               | `https://api-staging.refi.trading`                                             | —                                      | The documented intent: browser → external API, bypassing every server in this repository          |
+`apiFetch` (`packages/api-clients/src/client.ts:15`) sends the request to
+`NEXT_PUBLIC_API_BASE_URL + legacyPath`. **The defining property of a
+"browser-direct" call is that browser `apiFetch` talks directly to
+`NEXT_PUBLIC_API_BASE_URL` using a legacy external-API contract rather than
+calling a manifested ReFi BFF route.** The legacy families measured here are
+`/v1/*`, `/auth/*`, `/ccid/*`, `/compliance/*`, and `/siwe/*`. The BFF
+namespaces (`/api/v1/investor/*`, `/api/us/*`) are the _opposite_ side of that
+boundary.
 
-So "browser-direct today" means: the call is issued from browser code to a
-path outside this repository's BFF (`/api/v1/investor/*`, `/api/us/*`),
-gated by nothing in `apps/web/app/api/**`. Whether it is currently absorbed by
-MSW does not change its classification — the wire shape, the trust boundary,
-and the replacement contract are the same.
+What actually happens to such a call today depends on the environment:
+
+| Environment                  | `NEXT_PUBLIC_API_BASE_URL`                                                     | `NEXT_PUBLIC_REFI_ENV` / adapter                                                | Effect on a legacy `apiFetch` call                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E2E (`playwright.config.ts`) | `http://localhost:3000` (same origin)                                          | `NEXT_PUBLIC_REFI_ENV=prod` set by the config; adapter unset                    | `initMsw()` is disabled under `prod`, so nothing intercepts. The request goes to the configured network URL — the Next origin — where a legacy `/v1/*`, `/auth/*`, `/ccid/*` path normally has **no matching BFF route** (there is no rewrite translating `/v1/brokers/account` into `/api/v1/investor/...`). Suites that need these pages mock the legacy paths with `page.route` (`onboarding.spec.ts`, `recommendations.spec.ts`). |
+| Local (`.env.local`)         | `http://localhost:3000`                                                        | `dev`; adapter unset → `mock`                                                   | MSW handles the 24 mocked legacy paths in the browser. An unhandled request falls through to the configured network URL (`onUnhandledRequest: "bypass"`); with the same-origin base it reaches the Next origin and normally has no matching BFF route. This is not BFF routing.                                                                                                                                                       |
+| Vercel Production            | not readable from this workstation (`vercel env pull` returned an empty value) | `NEXT_PUBLIC_REFI_ENV` not readable either; contract says `prod`; adapter unset | **Not fully observable from the local audit.** The adapter value alone is insufficient to determine MSW behavior because `initMsw()` is disabled when `NEXT_PUBLIC_REFI_ENV=prod`. Treat the actual production destination of legacy browser calls as **unverified** until the deployed build and its environment are inspected directly.                                                                                             |
+| `.env.example`               | `https://api-staging.refi.trading`                                             | `dev`                                                                           | The documented intent: browser → external API host, bypassing every server in this repository.                                                                                                                                                                                                                                                                                                                                        |
+
+Whether a given deployment mocks, drops, or forwards these calls does not
+change their classification: the wire shape, the trust boundary crossed, and
+the replacement contract are the same in every case.
 
 **Three hook families are NOT browser-direct** and are excluded from the
 totals: `hooks/exceptions.ts`, `hooks/remediation.ts`, `hooks/subscription-mode.ts`

@@ -540,7 +540,17 @@ async function seedUser(opts: {
   }
 }
 
-export default async function globalSetup() {
+import { startInvestorApiSimulator } from "./investor-api-simulator";
+
+export default async function globalSetup(): Promise<() => void> {
+  // Daniel's deterministic simulator is the BFF's Investor API upstream in
+  // E2E (C1b-2). Started here; Playwright calls the returned teardown.
+  const stopSimulator = await startInvestorApiSimulator();
+  await seedPrototypeStore();
+  return stopSimulator;
+}
+
+async function seedPrototypeStore() {
   const root = storeRoot();
   // Clean only the entity directories we seed — never the whole prototype
   // store, which other tests may populate.

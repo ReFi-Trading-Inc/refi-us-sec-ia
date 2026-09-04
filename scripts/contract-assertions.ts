@@ -4695,6 +4695,398 @@ await section(
   );
 }
 
+// ─── C1b-2 slice 1 — disclosure/consent through the frozen Investor API client
+{
+  const { createInvestorApiClient, ContractVersionMismatchError } =
+    await import("../packages/api-clients/src/investor-api/index.ts");
+  const {
+    acknowledgeDisclosure,
+    listEffectiveDisclosures,
+    consentIdempotencyKey,
+  } = await import("../apps/web/src/lib/investor-api/disclosure-consent.ts");
+
+  const HASH = "2".repeat(64);
+  const disclosure = {
+    content_hash: HASH,
+    content_ref:
+      "https://example.invalid/disclosures/automated-portfolio-alpha-1",
+    disclosure_key: "automated_portfolio_alpha",
+    disclosure_version: 1,
+    effective_at: "2026-09-01T00:00:00Z",
+    locale: "en-US",
+    status: "EFFECTIVE",
+  };
+  const receipt = {
+    account_id: "acct-ca-000001",
+    consent_key: "automated_portfolio_alpha",
+    consent_receipt_id: "consent_alpha_00000001",
+    disclosure_hash: HASH,
+    disclosure_key: "automated_portfolio_alpha",
+    disclosure_version: 1,
+    expires_at: "2026-12-01T00:00:00Z",
+    recorded_at: "2026-09-01T00:00:00Z",
+    status: "ACTIVE",
+  };
+  const headers = {
+    "Content-Type": "application/json",
+    "Cache-Control": "private, no-store",
+    "X-Correlation-Id": "corr_ca",
+  };
+  type Seen = { url: string; method: string; headers: Headers; body: unknown };
+  function fakeUpstream(opts: {
+    disclosures?: unknown;
+    consentStatus?: number;
+    consentBody?: unknown;
+  }) {
+    const seen: Seen[] = [];
+    const fetchImpl = async (
+      url: URL | RequestInfo,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const u = url.toString();
+      const method = init?.method ?? "GET";
+      const body =
+        typeof init?.body === "string"
+          ? (JSON.parse(init.body) as unknown)
+          : undefined;
+      seen.push({ url: u, method, headers: new Headers(init?.headers), body });
+      if (u.endsWith("/api/v1/investor/disclosures") && method === "GET") {
+        return new Response(
+          JSON.stringify(
+            opts.disclosures ?? {
+              data: {
+                items: [disclosure],
+                page: { has_more: false, next_cursor: null },
+              },
+            },
+          ),
+          { status: 200, headers },
+        );
+      }
+      if (u.endsWith("/api/v1/investor/consents") && method === "POST") {
+        return new Response(
+          JSON.stringify(opts.consentBody ?? { data: receipt }),
+          {
+            status: opts.consentStatus ?? 201,
+            headers,
+          },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "RESOURCE_NOT_FOUND",
+            message: "x",
+            correlation_id: "corr_ca",
+          },
+        }),
+        { status: 404, headers },
+      );
+    };
+    const client = createInvestorApiClient({
+      identityCcid: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("id-b"),
+      },
+      investorApi: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("inv-b"),
+      },
+      mintAssertion: () => Promise.resolve("assertion"),
+      fetch: fetchImpl as typeof fetch,
+    });
+    return { client, seen };
+  }
+  const selection = {
+    disclosureKey: "automated_portfolio_alpha",
+    disclosureVersion: 1,
+    disclosureHash: HASH,
+  };
+
+  await section(
+    "disclosures: read maps to listEffectiveDisclosures through the frozen client",
+    async () => {
+      const { client, seen } = fakeUpstream({});
+      const out = await listEffectiveDisclosures(client);
+      assert.equal(out.items.length, 1);
+      assert.equal(out.items[0]?.disclosure_key, "automated_portfolio_alpha");
+      assert.equal(seen.length, 1);
+      assert.ok(seen[0]?.url.endsWith("/api/v1/investor/disclosures"));
+      assert.equal(seen[0]?.headers.get("Authorization"), "Bearer inv-b");
+      assert.equal(
+        seen[0]?.headers.get("X-Refinity-User-Assertion"),
+        "assertion",
+      );
+    },
+  );
+
+  await section(
+    "consent: recordConsent receives the EXACT listed version/hash, ACCEPT, deterministic Idempotency-Key",
+    async () => {
+      const { client, seen } = fakeUpstream({});
+      const out = await acknowledgeDisclosure(client, {
+        accountId: "acct-ca-000001",
+        selection,
+      });
+      assert.equal(out.kind, "recorded");
+      const post = seen.find((s) => s.method === "POST");
+      assert.ok(post, "recordConsent must be called");
+      assert.ok(post.url.endsWith("/api/v1/investor/consents"));
+      assert.deepEqual(post.body, {
+        account_id: "acct-ca-000001",
+        consent_key: "automated_portfolio_alpha",
+        disclosure_key: "automated_portfolio_alpha",
+        disclosure_version: 1,
+        disclosure_hash: HASH,
+        action: "ACCEPT",
+      });
+      const key = post.headers.get("Idempotency-Key");
+      assert.equal(
+        key,
+        consentIdempotencyKey("acct-ca-000001", selection, "ACCEPT"),
+      );
+      assert.ok(
+        key !== null && key.length >= 8 && key.length <= 128,
+        "Idempotency-Key within contract bounds",
+      );
+      // A replay of the same tuple produces the SAME key (byte-identical body → backend replay).
+      const again = fakeUpstream({});
+      await acknowledgeDisclosure(again.client, {
+        accountId: "acct-ca-000001",
+        selection,
+      });
+      assert.equal(
+        again.seen
+          .find((s) => s.method === "POST")
+          ?.headers.get("Idempotency-Key"),
+        key,
+      );
+      // A different tuple is a different key.
+      assert.notEqual(
+        consentIdempotencyKey(
+          "acct-ca-000001",
+          { ...selection, disclosureVersion: 2 },
+          "ACCEPT",
+        ),
+        key,
+      );
+      assert.equal(
+        seen.filter((s) => s.method === "POST").length,
+        1,
+        "mutation issued exactly once — no automatic retry",
+      );
+    },
+  );
+
+  await section(
+    "consent: Alpha 1:1 consent/disclosure mapping — consent_key is a COPY of the listed disclosure_key (Daniel 2026-09-04), not a merged field",
+    async () => {
+      // Owner decision, Daniel 2026-09-04: "consent must equal disclosure right
+      // now … obtain disclosure key then copy it into consent key"; the fields
+      // stay separate because later releases add multiple disclosures
+      // (automated trading, trading risk, …). This pins the CURRENT Alpha rule
+      // only — it is not a permanent schema equivalence.
+      for (const key of [
+        "automated_portfolio_alpha",
+        "unified_alpha_disclosure_v2",
+      ]) {
+        const listed = {
+          ...disclosure,
+          disclosure_key: key,
+          disclosure_version: 7,
+          content_hash: "a".repeat(64),
+        };
+        const up = fakeUpstream({
+          disclosures: {
+            data: {
+              items: [listed],
+              page: { has_more: false, next_cursor: null },
+            },
+          },
+          consentBody: {
+            data: {
+              ...receipt,
+              consent_key: key,
+              disclosure_key: key,
+              disclosure_version: 7,
+              disclosure_hash: "a".repeat(64),
+            },
+          },
+        });
+        const out = await acknowledgeDisclosure(up.client, {
+          accountId: "acct-ca-000001",
+          selection: {
+            disclosureKey: key,
+            disclosureVersion: 7,
+            disclosureHash: "a".repeat(64),
+          },
+        });
+        assert.equal(out.kind, "recorded");
+        const post = up.seen.find((s) => s.method === "POST");
+        assert.ok(post, "recordConsent must be called");
+        const body = post.body as Record<string, unknown>;
+        // 1:1 for Alpha: both fields carry the listed key; changing X changes both.
+        assert.equal(body["consent_key"], key);
+        assert.equal(body["disclosure_key"], key);
+        // The key ORIGINATES from listEffectiveDisclosures (the GET preceded the POST
+        // and the value equals what the upstream listed) — no mapping table, no
+        // alternate key generation anywhere in the request path.
+        assert.equal(up.seen[0]?.method, "GET");
+        assert.ok(up.seen[0]?.url.endsWith("/api/v1/investor/disclosures"));
+        // Version and hash are exact copies of the listed tuple.
+        assert.equal(body["disclosure_version"], 7);
+        assert.equal(body["disclosure_hash"], "a".repeat(64));
+        assert.equal(body["action"], "ACCEPT");
+        // The two fields remain DISTINCT keys in the request model — a future
+        // contract where consent_key !== disclosure_key needs no model rewrite.
+        assert.deepEqual(Object.keys(body).sort(), [
+          "account_id",
+          "action",
+          "consent_key",
+          "disclosure_hash",
+          "disclosure_key",
+          "disclosure_version",
+        ]);
+      }
+      const src = readFileSync(
+        join(REPO_ROOT, "apps/web/src/lib/investor-api/disclosure-consent.ts"),
+        "utf8",
+      );
+      assert.ok(
+        /consent_key:\s*match\.disclosure_key/.test(src),
+        "consent_key must be a copy of the listed disclosure_key (Alpha 1:1), not derived elsewhere",
+      );
+      assert.ok(
+        !/consentKeyFor|CONSENT_KEY_MAP|consentTaxonomy/.test(src),
+        "no frontend consent taxonomy or mapping table may exist in this slice",
+      );
+    },
+  );
+
+  await section(
+    "consent: a stale version or hash never reaches recordConsent",
+    async () => {
+      const stale = fakeUpstream({});
+      const out = await acknowledgeDisclosure(stale.client, {
+        accountId: "acct-ca-000001",
+        selection: { ...selection, disclosureVersion: 2 },
+      });
+      assert.equal(out.kind, "stale");
+      assert.equal(stale.seen.filter((s) => s.method === "POST").length, 0);
+      const wrongHash = fakeUpstream({});
+      const out2 = await acknowledgeDisclosure(wrongHash.client, {
+        accountId: "acct-ca-000001",
+        selection: { ...selection, disclosureHash: "3".repeat(64) },
+      });
+      assert.equal(out2.kind, "stale");
+      const unknown = fakeUpstream({});
+      const out3 = await acknowledgeDisclosure(unknown.client, {
+        accountId: "acct-ca-000001",
+        selection: { ...selection, disclosureKey: "not_listed" },
+      });
+      assert.equal(out3.kind, "not_effective");
+      assert.equal(unknown.seen.filter((s) => s.method === "POST").length, 0);
+    },
+  );
+
+  await section(
+    "consent: contract drift fails closed — unknown field / wrong status are ContractVersionMismatchError",
+    async () => {
+      const extra = fakeUpstream({
+        disclosures: {
+          data: {
+            items: [{ ...disclosure, surprise: true }],
+            page: { has_more: false, next_cursor: null },
+          },
+        },
+      });
+      await assert.rejects(
+        acknowledgeDisclosure(extra.client, {
+          accountId: "acct-ca-000001",
+          selection,
+        }),
+        ContractVersionMismatchError,
+        "an unknown field on a disclosure must not be silently ignored",
+      );
+      const wrongStatus = fakeUpstream({ consentStatus: 200 });
+      await assert.rejects(
+        acknowledgeDisclosure(wrongStatus.client, {
+          accountId: "acct-ca-000001",
+          selection,
+        }),
+        ContractVersionMismatchError,
+        "recordConsent success_status is 201 in contract.json; another 2xx is a mismatch",
+      );
+      const badReceipt = fakeUpstream({
+        consentBody: { data: { ...receipt, status: "MAYBE" } },
+      });
+      await assert.rejects(
+        acknowledgeDisclosure(badReceipt.client, {
+          accountId: "acct-ca-000001",
+          selection,
+        }),
+        ContractVersionMismatchError,
+      );
+    },
+  );
+
+  await section(
+    "consent: a contract-declared backend error becomes an upstream_error outcome, not a throw",
+    async () => {
+      const conflict = fakeUpstream({
+        consentStatus: 409,
+        consentBody: {
+          error: {
+            code: "VERSION_CONFLICT",
+            message: "safe text",
+            correlation_id: "corr_ca_2",
+          },
+        },
+      });
+      const out = await acknowledgeDisclosure(conflict.client, {
+        accountId: "acct-ca-000001",
+        selection,
+      });
+      assert.equal(out.kind, "upstream_error");
+      if (out.kind === "upstream_error") {
+        assert.equal(out.status, 409);
+        assert.equal(out.code, "VERSION_CONFLICT");
+        assert.equal(out.correlationId, "corr_ca_2");
+      }
+    },
+  );
+
+  await section(
+    "boundary: the Documents page and legacy MSW no longer carry the browser-direct acknowledge call",
+    async () => {
+      const page = readFileSync(
+        join(REPO_ROOT, "apps/web/app/us/app/documents/page.tsx"),
+        "utf8",
+      );
+      assert.ok(
+        !page.includes("/v1/documents/acknowledge"),
+        "legacy browser-direct path removed from the page",
+      );
+      assert.ok(
+        !page.includes("apiFetch"),
+        "legacy apiFetch import removed from the page",
+      );
+      assert.ok(
+        !page.includes("@refi/api-clients/investor-api"),
+        "the server-only client is never imported by the page",
+      );
+      const msw = readFileSync(
+        join(REPO_ROOT, "packages/api-clients/src/mocks/handlers.ts"),
+        "utf8",
+      );
+      assert.ok(
+        !msw.includes("/v1/documents/acknowledge"),
+        "legacy MSW handler removed",
+      );
+    },
+  );
+}
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

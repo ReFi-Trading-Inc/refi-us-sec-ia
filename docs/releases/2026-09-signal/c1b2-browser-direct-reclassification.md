@@ -206,6 +206,32 @@ Parked (D, named for completeness, **not** to be implemented):
 `createBrokerageConnection` · `disconnectBrokerageConnection` ·
 `createAllocationPreview` · `createAccountAction`.
 
+## 7a. Implementation progress
+
+| Row                                                                                                    | Slice                                     | State                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 21 — `POST /v1/documents/acknowledge` → `recordConsent`; disclosures read → `listEffectiveDisclosures` | C1b-2 slice 1 (`c1b2/disclosure-consent`) | **implemented, in review** — browser → same-origin BFF (`/api/v1/investor/disclosures`, `…/[id]/acknowledge`) → frozen #70 client; legacy inline `apiFetch` and its MSW handler removed; simulator-backed E2E and contract assertions. Connected refinity-dev remains pending the backend test user and connection addendum. |
+
+Remaining after slice 1: **A 10 · B 4 · C 7 · D 4** (E/F 0). C1b-2 is not closed.
+
+**Owner decision — Daniel, 2026-09-04 (consent/disclosure semantics).** For
+Alpha, the unified disclosure has a 1:1 consent/disclosure relationship. The
+frontend obtains `disclosure_key` from `listEffectiveDisclosures` and copies
+that exact value into `consent_key` when calling `recordConsent`. The fields
+remain distinct because later releases will support multiple disclosure
+categories such as automated trading and trading risk. The Alpha disclosure's
+`disclosure_version` and `content_hash` identify the unified disclosure
+presented to the investor and are sent exactly as listed. Pinned by the
+contract assertion "Alpha 1:1 consent/disclosure mapping"; this is the current
+Alpha rule, not a permanent schema equivalence, and no frontend consent
+taxonomy or mapping logic exists.
+
+**Documentation drift noted (not blocking).** The package README says an exact
+idempotent replay of `recordConsent` returns 200; `contract.json` pins
+`success_status` 201, which the generated client and Daniel's deterministic
+simulator both enforce. For v1.1.0-alpha.2 the executable contract governs and
+accepted success statuses are not broadened.
+
 ## 8. Statement
 
 **No runtime behavior changed.** This document and the `open-items.md` state

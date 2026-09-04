@@ -26,6 +26,12 @@ export {
   type OperationId,
 } from "./routes";
 export {
+  AUTH_POLICY_EXCEPTIONS,
+  DEFAULT_AUTH_POLICY,
+  authPolicyFor,
+  type AuthPolicy,
+} from "./auth-policy";
+export {
   assertMatches,
   hasSchema,
   problemsAgainst,
@@ -40,15 +46,26 @@ export {
   RemoteBaseUrlNotAllowedError,
 } from "./errors";
 export {
+  DEFAULT_MAX_BUFFERED_CHARS,
+  SseProtocolError,
+  parseSseFrames,
+  type SseFrame,
+  type SseParseOptions,
+} from "./sse";
+export {
+  DeadlineExceededError,
   InvestorApiClient,
   createInvestorApiClient,
   CONTRACT_OPERATION_IDS,
   MAX_READ_RETRIES,
   READ_BUDGET_MS,
+  STREAM_CONNECT_TIMEOUT_MS,
+  type AccountEvent,
   type CallOptions,
   type InvestorApiClientOptions,
+  type InvestorApiEventStream,
   type InvestorApiResult,
-  type InvestorApiStreamResult,
   type OperationRequestBody,
   type OperationResponse,
+  type ValidatedAccountEvent,
 } from "./client";

@@ -314,18 +314,41 @@ describe.skipIf(!python)(
       expect((denied as InvestorApiError).code).toBe("AUTHENTICATION_FAILED");
     });
 
-    it("SSE: first stream returns an event; resuming with Last-Event-ID returns nothing new", async () => {
-      const first = await client.stream({ path: { account_id: ACCOUNT } });
-      expect(first.status).toBe(200);
-      expect(first.headers.get("Content-Type")).toContain("text/event-stream");
-      const eventId = first.text.split("\n")[0]?.replace(/^id: /, "");
-      expect(eventId).toBeTruthy();
+    it("SSE: a real event is incrementally parsed and schema-validated; resume with Last-Event-ID yields nothing new", async () => {
+      const opened = await client.stream({ path: { account_id: ACCOUNT } });
+      expect(opened.status).toBe(200);
+      expect(opened.headers.get("Content-Type")).toContain("text/event-stream");
+      const iterator = opened.events[Symbol.asyncIterator]();
+      const first = await iterator.next();
+      expect(first.done).toBe(false);
+      if (first.done) throw new Error("no event");
+      expect(first.value.eventId).toBe(first.value.event.event_id);
+      expect(first.value.eventName).toBe(first.value.event.event_type);
+      expect(first.value.event.account_id).toBe(ACCOUNT);
+      expect(first.value.event.data.state_version).toBeGreaterThan(0);
+      // Drain and make sure the parser reaches a clean end of stream.
+      let more = 0;
+      for await (const _ of { [Symbol.asyncIterator]: () => iterator })
+        more += 1;
+      expect(more).toBe(0);
+
       const resumed = await client.stream({
         path: { account_id: ACCOUNT },
-        lastEventId: eventId,
+        lastEventId: first.value.eventId ?? "",
       });
       expect(resumed.status).toBe(200);
-      expect(resumed.text).toBe("");
+      let count = 0;
+      for await (const _ of resumed.events) count += 1;
+      expect(count).toBe(0);
+    });
+
+    it("SSE: the identity JWKS journey obtains no credentials against the simulator", async () => {
+      const noCreds = createInvestorApiClient({
+        baseUrl,
+        getBearer: () => Promise.reject(new Error("must not be called")),
+        mintAssertion: () => Promise.reject(new Error("must not be called")),
+      });
+      expect((await noCreds.call("getIdentityJwks")).status).toBe(200);
     });
 
     it("identity: exchangeIdentity and public JWKS answer per contract", async () => {

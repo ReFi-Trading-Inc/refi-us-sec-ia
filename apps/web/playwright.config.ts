@@ -58,6 +58,13 @@ export default defineConfig({
     timeout: 300_000,
     env: {
       NEXT_PUBLIC_REFI_ENV: "prod",
+      // C1b-2: the BFF's Investor API upstream is Daniel's loopback simulator
+      // (started by e2e/global-setup.ts) with its fixture credentials. This is
+      // simulator evidence, never a connected refinity-dev journey.
+      REFI_INVESTOR_API_BASE_URL: "http://127.0.0.1:8765",
+      REFI_IDENTITY_CCID_BASE_URL: "http://127.0.0.1:8765",
+      REFI_INVESTOR_API_CREDENTIAL_MODE: "simulator-fixture",
+      REFI_INVESTOR_API_ASSERTION_MODE: "simulator-fixture",
       NEXT_PUBLIC_API_BASE_URL: "http://localhost:3000",
       NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "test",
       NEXT_PUBLIC_POSTHOG_KEY: "test",

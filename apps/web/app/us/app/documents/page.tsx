@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { Badge, Button, Card, CardContent, StatusBanner } from "@ui/components";
-import { useMutation } from "@tanstack/react-query";
-import { apiFetch } from "@refi/api-clients";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { disclosureDocuments } from "../../_content/disclosures";
 import { appCopy } from "../../_content/app-copy";
 
@@ -13,15 +12,89 @@ const requiredIds = disclosureDocuments
   .filter((d) => d.required)
   .map((d) => d.id);
 
+/**
+ * Wire shapes of the same-origin BFF routes this page uses. The browser talks
+ * ONLY to the ReFi BFF (`/api/v1/investor/disclosures[...]`); the BFF talks to
+ * Daniel's Investor API through the frozen v1.1.0-alpha.2 client. The former
+ * browser-direct acknowledge call to the legacy external API is gone (C1b-2
+ * reclassification row 21).
+ */
+interface EffectiveDisclosure {
+  disclosure_key: string;
+  disclosure_version: number;
+  content_hash: string;
+  content_ref: string;
+  effective_at: string;
+  locale: string;
+  status: "EFFECTIVE" | "RETIRED";
+}
+
+interface DisclosuresRead {
+  data: {
+    disclosures: EffectiveDisclosure[];
+    hasMore: boolean;
+    upstream: { state: string; reason?: string; code?: string };
+  };
+}
+
+interface AckResponse {
+  data?: { ok: boolean; reason?: string };
+  error?: { message?: string };
+}
+
+async function readDisclosures(): Promise<DisclosuresRead["data"]> {
+  const res = await fetch("/api/v1/investor/disclosures", {
+    credentials: "include",
+  });
+  if (!res.ok)
+    throw new Error(`disclosures read failed: ${String(res.status)}`);
+  const body = (await res.json()) as DisclosuresRead;
+  return body.data;
+}
+
+async function acknowledgeAll(items: EffectiveDisclosure[]): Promise<void> {
+  // One consent per effective disclosure, each naming the EXACT version and
+  // hash the backend listed. Sequential so a stale/refused item stops the
+  // batch with a precise error instead of half-recorded consents.
+  for (const d of items) {
+    const res = await fetch(
+      `/api/v1/investor/disclosures/${encodeURIComponent(d.disclosure_key)}/acknowledge`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          disclosure_version: d.disclosure_version,
+          disclosure_hash: d.content_hash,
+        }),
+      },
+    );
+    const body = (await res.json()) as AckResponse;
+    if (!(res.status === 201 && body.data?.ok === true)) {
+      throw new Error(
+        body.data?.reason ??
+          body.error?.message ??
+          `HTTP ${String(res.status)}`,
+      );
+    }
+  }
+}
+
 export default function DocumentsPage() {
   const [acknowledged, setAcknowledged] = useState(false);
   const [checked, setChecked] = useState(false);
 
+  const effective = useQuery({
+    queryKey: ["investor", "disclosures", "effective"],
+    queryFn: readDisclosures,
+    staleTime: 0,
+  });
+  const effectiveItems =
+    effective.data?.disclosures.filter((d) => d.status === "EFFECTIVE") ?? [];
+  const upstreamState = effective.data?.upstream.state;
+
   const acknowledge = useMutation({
-    mutationFn: () =>
-      apiFetch<{ ok: boolean }>("/v1/documents/acknowledge", {
-        method: "POST",
-      }),
+    mutationFn: () => acknowledgeAll(effectiveItems),
     onSuccess: () => {
       setAcknowledged(true);
     },
@@ -106,21 +179,61 @@ export default function DocumentsPage() {
             </h2>
             <p className="text-xs text-charcoal-400">
               Once documents are published, you will need to acknowledge all{" "}
-              {requiredIds.length} required documents before activating managed
-              execution.
+              {requiredIds.length} required documents. Effective disclosures are
+              listed by ReFi&apos;s records system; your acknowledgment is
+              recorded against the exact published version.
             </p>
+          </div>
+
+          <div
+            data-testid="effective-disclosures"
+            className="flex flex-col gap-1"
+          >
+            {effective.isPending && (
+              <p className="text-xs text-charcoal-500">
+                Checking effective disclosures…
+              </p>
+            )}
+            {effective.isError && (
+              <StatusBanner variant="error">
+                Could not load effective disclosures.
+              </StatusBanner>
+            )}
+            {effective.isSuccess && upstreamState !== "ok" && (
+              <StatusBanner variant="warning">
+                Effective disclosures are not available right now (
+                {upstreamState}). Nothing has been recorded.
+              </StatusBanner>
+            )}
+            {effective.isSuccess &&
+              upstreamState === "ok" &&
+              effectiveItems.length === 0 && (
+                <p className="text-xs text-charcoal-500">
+                  No disclosures are effective yet.
+                </p>
+              )}
+            {effectiveItems.map((d) => (
+              <p
+                key={`${d.disclosure_key}-${String(d.disclosure_version)}`}
+                data-testid={`effective-disclosure-${d.disclosure_key}`}
+                className="text-xs text-charcoal-300"
+              >
+                {d.disclosure_key} · {documents.version} {d.disclosure_version}{" "}
+                · {documents.effectiveDate} {d.effective_at.slice(0, 10)}
+              </p>
+            ))}
           </div>
 
           {acknowledged ? (
             <StatusBanner variant="success" title="Acknowledged">
-              You have confirmed receipt of all required documents. This will be
-              enforced at account activation.
+              Your consent to the effective disclosures has been recorded.
             </StatusBanner>
           ) : (
             <>
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
+                  data-testid="disclosure-consent-checkbox"
                   checked={checked}
                   onChange={(e) => {
                     setChecked(e.target.checked);
@@ -128,20 +241,31 @@ export default function DocumentsPage() {
                   className="mt-0.5 h-4 w-4 rounded border border-charcoal-600 bg-charcoal-800 text-mint-400 focus:ring-mint-400 focus:ring-offset-charcoal-900"
                 />
                 <span className="text-xs text-charcoal-300">
-                  I have read and understood all required documents. I consent
-                  to electronic delivery of all regulatory disclosures.
+                  I have read and understood the effective disclosures listed
+                  above. I consent to electronic delivery of all regulatory
+                  disclosures.
                 </span>
               </label>
 
               {acknowledge.isError && (
                 <StatusBanner variant="error">
-                  Could not record acknowledgment. Please try again.
+                  Could not record acknowledgment (
+                  {acknowledge.error instanceof Error
+                    ? acknowledge.error.message
+                    : "unknown"}
+                  ). Nothing was recorded — please try again.
                 </StatusBanner>
               )}
 
               <Button
                 size="sm"
-                disabled={!checked || acknowledge.isPending}
+                data-testid="disclosure-consent-confirm"
+                disabled={
+                  !checked ||
+                  acknowledge.isPending ||
+                  upstreamState !== "ok" ||
+                  effectiveItems.length === 0
+                }
                 onClick={() => {
                   acknowledge.mutate();
                 }}

@@ -206,6 +206,14 @@ Parked (D, named for completeness, **not** to be implemented):
 `createBrokerageConnection` · `disconnectBrokerageConnection` ·
 `createAllocationPreview` · `createAccountAction`.
 
+## 7a. Implementation progress
+
+| Row                                                                                                    | Slice                                     | State                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------ | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 21 — `POST /v1/documents/acknowledge` → `recordConsent`; disclosures read → `listEffectiveDisclosures` | C1b-2 slice 1 (`c1b2/disclosure-consent`) | **implemented, in review** — browser → same-origin BFF (`/api/v1/investor/disclosures`, `…/[id]/acknowledge`) → frozen #70 client; legacy inline `apiFetch` and its MSW handler removed; simulator-backed E2E and contract assertions. Connected refinity-dev remains pending the backend test user and connection addendum. |
+
+Remaining after slice 1: **A 10 · B 4 · C 7 · D 4** (E/F 0). C1b-2 is not closed.
+
 ## 8. Statement
 
 **No runtime behavior changed.** This document and the `open-items.md` state

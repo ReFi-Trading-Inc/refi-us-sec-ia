@@ -101,7 +101,7 @@
       "source": "apps/web/app/api/v1/investor/disclosures/route.ts",
       "route": "/api/v1/investor/disclosures",
       "methods": ["GET"],
-      "purpose": "Disclosure document registry list with version and acknowledgment state.",
+      "purpose": "Effective disclosures read through the frozen v1.1.0-alpha.2 Investor API client (listEffectiveDisclosures): key, integer version, content hash, effective date, status. Fails closed with an explicit upstream state; never fabricates a document. C1b-2 slice 1.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read"
@@ -111,7 +111,7 @@
       "source": "apps/web/app/api/v1/investor/disclosures/[id]/acknowledge/route.ts",
       "route": "/api/v1/investor/disclosures/[id]/acknowledge",
       "methods": ["POST"],
-      "purpose": "Idempotent disclosure acknowledgment per (user, doc, version) with HMAC-hashed IP/UA; replays return the original record.",
+      "purpose": "Records ACCEPT consent for one effective disclosure through the frozen v1.1.0-alpha.2 Investor API client (recordConsent) with the exact disclosure_version/disclosure_hash the backend lists; stale tuples are refused (409); deterministic Idempotency-Key, no automatic mutation retry; contract drift fails closed (502). C1b-2 slice 1.",
       "owner": "investor-bff",
       "auth": {
         "POST": "bff-mutate"

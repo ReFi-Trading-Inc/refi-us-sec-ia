@@ -157,6 +157,30 @@ const serverSchema = clientSchema.extend({
    * enforced in bffMutate, not merely documented in the allowlist.
    */
   REFI_RELEASE_STAGE: z.enum(["signal", "managed_paper"]).default("signal"),
+  /**
+   * Investor API upstream (C1b-2). Two runtime targets per Daniel's package,
+   * configured separately; loopback unless REFI_INVESTOR_API_ALLOW_REMOTE=1
+   * (reviewed promotion only — the connected Dev services are
+   * provisioned_not_enabled). Unset = the BFF reports "not configured" and
+   * records nothing. Never read from the package's connection document.
+   */
+  REFI_INVESTOR_API_BASE_URL: z.url().optional(),
+  REFI_IDENTITY_CCID_BASE_URL: z.url().optional(),
+  REFI_INVESTOR_API_ALLOW_REMOTE: z.enum(["0", "1"]).default("0"),
+  /**
+   * How the BFF obtains the Google service credential for Daniel's services.
+   * "unconfigured" (default) fails closed: native Cloud Run invocation vs WIF
+   * is pending Daniel's answer. "simulator-fixture" sends the deterministic
+   * simulator's fixture bearer and is valid ONLY against the loopback
+   * simulator.
+   */
+  REFI_INVESTOR_API_CREDENTIAL_MODE: z
+    .enum(["unconfigured", "simulator-fixture"])
+    .default("unconfigured"),
+  /** "mint" = real ES256 assertion from the session (user-assertion.ts); "simulator-fixture" for the simulator only. */
+  REFI_INVESTOR_API_ASSERTION_MODE: z
+    .enum(["mint", "simulator-fixture"])
+    .default("mint"),
 });
 
 function formatError(error: z.ZodError): string {
@@ -266,6 +290,16 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
       process.env["REFI_RELEASE_STAGE"],
       "REFI_RELEASE_STAGE",
     ),
+    REFI_INVESTOR_API_BASE_URL:
+      process.env["REFI_INVESTOR_API_BASE_URL"] || undefined,
+    REFI_IDENTITY_CCID_BASE_URL:
+      process.env["REFI_IDENTITY_CCID_BASE_URL"] || undefined,
+    REFI_INVESTOR_API_ALLOW_REMOTE:
+      process.env["REFI_INVESTOR_API_ALLOW_REMOTE"] || undefined,
+    REFI_INVESTOR_API_CREDENTIAL_MODE:
+      process.env["REFI_INVESTOR_API_CREDENTIAL_MODE"] || undefined,
+    REFI_INVESTOR_API_ASSERTION_MODE:
+      process.env["REFI_INVESTOR_API_ASSERTION_MODE"] || undefined,
     // No withFallback: a signing key must never have a committed default.
     BFF_ASSERTION_PRIVATE_KEY_JWK:
       process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"] || undefined,

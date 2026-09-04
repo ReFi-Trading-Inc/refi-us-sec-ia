@@ -109,6 +109,11 @@ jobs:
         run: pnpm --filter @refi/api-clients build
       - name: Install Playwright browser
         run: pnpm --filter @refi/web exec playwright install --with-deps chromium
+      # Daniel's v1.1.0-alpha.2 loopback simulator is the BFF's Investor API
+      # upstream in E2E (C1b-2); e2e/global-setup.ts starts it with Python.
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
       # The Playwright webServer builds and starts the production artifact
       # itself, and supplies its own environment (see apps/web/playwright.config.ts).
       # Nothing is exported here, so this job cannot diverge from a local run.

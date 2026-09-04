@@ -60,7 +60,7 @@ const {
   answersSnapshotHash,
   appendProfileAnswers,
   appendProfileAssessment,
-  clearProfileDraftV2,
+  closeProfileDraftsV2,
   getProfileAnswers,
   getProfileDraftV2,
   latestProfileVersion,
@@ -711,7 +711,14 @@ describe("draft revisions, tombstones, and account scoping", () => {
 
   test("a late autosave cannot resurrect a draft after its session was closed by submission", async () => {
     await saveProfileDraftV2(base(6));
-    await clearProfileDraftV2("auth-draft", "acct-A", "session-1", "t-clear");
+    // Finality is server-derived: no session id is passed; the active
+    // session is read from server state and tombstoned.
+    const closed = await closeProfileDraftsV2({
+      authId: "auth-draft",
+      accountId: "acct-A",
+      correlationId: "t-clear",
+    });
+    expect(closed.closedSessionIds).toEqual(["session-1"]);
     // Pending autosave from the CLOSED session lands after the clear:
     const late = await saveProfileDraftV2(base(7));
     expect(late.stored).toBe(false);
@@ -765,7 +772,12 @@ describe("draft revisions, tombstones, and account scoping", () => {
     const promoted = await getProfileDraftV2("auth-pre", "acct-new");
     expect(promoted?.answers.goal).toBe("major_purchase");
     // Submission clears both scopes for the session.
-    await clearProfileDraftV2("auth-pre", "acct-new", "sPre", "t-pre-clear");
+    await closeProfileDraftsV2({
+      authId: "auth-pre",
+      accountId: "acct-new",
+      clientSessionHint: "bogus-hint",
+      correlationId: "t-pre-clear",
+    });
     expect(await getProfileDraftV2("auth-pre", "acct-new")).toBeNull();
     expect(await getProfileDraftV2("auth-pre", null)).toBeNull();
   });

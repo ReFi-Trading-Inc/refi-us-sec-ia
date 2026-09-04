@@ -350,16 +350,30 @@ export default function InvestorProfilePage() {
   const [error, setError] = useState<string | null>(null);
 
   // Draft-session identity + monotonic revisions + a serialized save queue
-  // (PR #65 round 2): an older autosave can never overwrite a newer one, and
-  // flushPendingDraftWrites() guarantees zero writes can land after the
-  // submit/clear transaction. The server independently ignores stale
-  // revisions and tombstoned sessions.
-  const [sessionId] = useState<string>(() =>
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `s-${String(Date.now())}`,
-  );
+  // (PR #65 rounds 2–3): an older autosave can never overwrite a newer one,
+  // and flushPendingDraftWrites() guarantees zero writes can land after the
+  // submit/close transaction. The server independently ignores stale
+  // revisions, refuses saves from an unrelated session while a draft is
+  // active, and tombstones closed sessions.
+  //
+  // SESSION CONTINUITY: a resumed draft continues its EXISTING logical
+  // session. After the GET below, sessionIdRef/draftRevisionRef adopt the
+  // server draft's sessionId/draftRevision, so the next autosave is revision
+  // N+1 of the same draft — never a fresh "session B" over session A. A fresh
+  // random session is used only when there is no resumable draft.
+  const sessionIdRef = useRef<string | null>(null);
   const draftRevisionRef = useRef(0);
+  // Lazily minted OUTSIDE render (react-hooks purity): only reached when no
+  // server draft supplied a session to adopt.
+  const currentSessionId = useCallback((): string => {
+    if (sessionIdRef.current === null) {
+      sessionIdRef.current =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `s-${String(Date.now())}`;
+    }
+    return sessionIdRef.current;
+  }, []);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const submittedRef = useRef(false);
 
@@ -377,8 +391,21 @@ export default function InvestorProfilePage() {
             data: {
               answers?: InvestorProfileAnswers;
               currentStepId?: string;
+              sessionId?: string;
+              draftRevision?: number;
             } | null;
           };
+          // Adopt the server draft's continuation identity whenever a draft
+          // exists — even one parked on the first step — so no autosave from
+          // this page ever competes with it as a different session.
+          if (
+            body.data?.answers?.questionnaireVersion === 2 &&
+            typeof body.data.sessionId === "string" &&
+            typeof body.data.draftRevision === "number"
+          ) {
+            sessionIdRef.current = body.data.sessionId;
+            draftRevisionRef.current = body.data.draftRevision;
+          }
           if (
             body.data?.answers?.questionnaireVersion === 2 &&
             typeof body.data.currentStepId === "string" &&
@@ -418,7 +445,7 @@ export default function InvestorProfilePage() {
             body: JSON.stringify({
               answers: next,
               currentStepId: nextStepId,
-              sessionId,
+              sessionId: currentSessionId(),
               draftRevision,
             }),
           });
@@ -427,7 +454,7 @@ export default function InvestorProfilePage() {
         }
       });
     },
-    [sessionId],
+    [currentSessionId],
   );
 
   const flushPendingDraftWrites = useCallback(async () => {
@@ -578,7 +605,9 @@ export default function InvestorProfilePage() {
           credentials: "include",
           body: JSON.stringify({
             ...canonicalizeAnswers(payload),
-            draftSessionId: sessionId,
+            // Correlation hint only — the server derives which draft session
+            // to close from its own state.
+            draftSessionId: currentSessionId(),
           }),
         });
         const body = (await res.json()) as {
@@ -618,7 +647,7 @@ export default function InvestorProfilePage() {
         setSubmitting(false);
       }
     },
-    [flushPendingDraftWrites, sessionId],
+    [flushPendingDraftWrites, currentSessionId],
   );
 
   // "Keep both" reconciles ONLY the flag currently displayed; if further

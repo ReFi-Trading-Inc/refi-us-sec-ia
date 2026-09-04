@@ -193,7 +193,7 @@
       "source": "apps/web/app/api/v1/investor/profile/v2/draft/route.ts",
       "route": "/api/v1/investor/profile/v2/draft",
       "methods": ["GET", "POST"],
-      "purpose": "Mutable autosave/resume draft for the questionnaire-v2 profile, keyed to the authenticated identity so sensitive banded answers never persist in browser storage; promoted to the immutable version chain (and cleared) by the v2 submit route.",
+      "purpose": "Mutable autosave/resume draft for the questionnaire-v2 profile, scoped to the authenticated identity PLUS the selected account (with an explicit pre-account scope that promotes one-way into the first account-scoped save), so sensitive banded answers never persist in browser storage. One logical draft session per scope: GET returns sessionId/draftRevision for continuation, stale revisions and unrelated sessions are refused, and the v2 submit route closes the active session(s) server-side when it promotes the answers into the immutable version chain.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read",

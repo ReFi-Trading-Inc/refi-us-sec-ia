@@ -24,15 +24,62 @@ test.describe.configure({ mode: "serial" });
  * left by an earlier test (or an earlier local run — the prototype store
  * persists between runs) would otherwise resume mid-flow.
  */
+type DraftView = {
+  sessionId: string;
+  draftRevision: number;
+  currentStepId: string;
+  answers: Record<string, unknown>;
+} | null;
+
+async function readDraft(page: Page): Promise<DraftView> {
+  const res = await page.request.get("/api/v1/investor/profile/v2/draft");
+  expect(res.status()).toBe(200);
+  return ((await res.json()) as { data: DraftView }).data;
+}
+
+async function saveDraft(
+  page: Page,
+  body: {
+    sessionId: string;
+    draftRevision: number;
+    currentStepId?: string;
+    answers?: Record<string, unknown>;
+  },
+) {
+  const res = await postSameOrigin(page, "/api/v1/investor/profile/v2/draft", {
+    data: {
+      answers: body.answers ?? { questionnaireVersion: 2 },
+      currentStepId: body.currentStepId ?? "accountType",
+      sessionId: body.sessionId,
+      draftRevision: body.draftRevision,
+    },
+  });
+  expect(res.status()).toBe(200);
+  return (
+    (await res.json()) as {
+      data: {
+        stored: boolean;
+        draftRevision: number | null;
+        sessionId: string | null;
+        reason?: string;
+      };
+    }
+  ).data;
+}
+
+/**
+ * Park the caller's draft on step 0 WITHIN its existing logical session (a
+ * different session must not take over an active draft — PR #65 round 3);
+ * a fresh session is only used when the scope has no active draft.
+ */
 async function resetDraft(page: Page) {
   await page.goto("/us/app/home", { waitUntil: "domcontentloaded" });
-  await postSameOrigin(page, "/api/v1/investor/profile/v2/draft", {
-    data: {
-      answers: { questionnaireVersion: 2 },
-      currentStepId: "accountType",
-      sessionId: `reset-${String(Date.now())}-${String(Math.random())}`,
-      draftRevision: 1,
-    },
+  const existing = await readDraft(page);
+  await saveDraft(page, {
+    sessionId:
+      existing?.sessionId ??
+      `reset-${String(Date.now())}-${String(Math.random())}`,
+    draftRevision: (existing?.draftRevision ?? 0) + 1,
   });
 }
 
@@ -576,6 +623,132 @@ test.describe("Investor Profile v2 questionnaire", () => {
     });
     expect(storageDump).not.toContain("retirement");
     expect(storageDump).not.toContain("investor-profile");
+  });
+});
+
+test.describe("Investor Profile v2 draft finality (PR #65 round 3)", () => {
+  test.beforeEach(async ({ context }) => {
+    await context.addCookies(
+      await e2eAuthCookies(E2E_USERS.signal.eligibilityCookie),
+    );
+  });
+
+  test("resume continues session A at revision N+1; submit closes it server-side; late A save cannot resurrect", async ({
+    page,
+  }) => {
+    await start(page);
+    await pickSingle(page, "individual");
+    await pickSingle(page, "retirement");
+    await expect(page.getByTestId("ip-step-horizon")).toBeVisible();
+    const before = await readDraft(page);
+    if (before === null) throw new Error("expected an active server draft");
+    const sessionA = before.sessionId;
+    const revN = before.draftRevision;
+
+    // Reload → resume adopts session A and revision N (no session B minted).
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("ip-step-horizon")).toBeVisible({
+      timeout: 30_000,
+    });
+    await pickSingle(page, "gt_10y");
+    await expect(page.getByTestId("ip-step-withdrawalPattern")).toBeVisible();
+    await expect(async () => {
+      const after = await readDraft(page);
+      expect(after?.sessionId).toBe(sessionA);
+      expect(after?.draftRevision ?? 0).toBeGreaterThan(revN);
+      expect(after?.currentStepId).toBe("withdrawalPattern");
+    }).toPass({ timeout: 10_000 });
+    const resumed = await readDraft(page);
+    if (resumed === null) throw new Error("expected the resumed server draft");
+    const revResumed = resumed.draftRevision;
+
+    // Direct valid submit WITHOUT draftSessionId: finality must be server-derived.
+    const submit = await postSameOrigin(page, "/api/v1/investor/profile/v2", {
+      data: apiAnswers({}),
+    });
+    expect(submit.status()).toBe(201);
+    expect(await readDraft(page)).toBeNull();
+
+    // Late autosave from the closed session A: not stored, draft stays closed.
+    const late = await saveDraft(page, {
+      sessionId: sessionA,
+      draftRevision: revResumed + 100,
+      currentStepId: "withdrawalPattern",
+      answers: { questionnaireVersion: 2, accountType: "individual" },
+    });
+    expect(late.stored).toBe(false);
+    expect(late.reason).toBe("session_closed");
+    expect(await readDraft(page)).toBeNull();
+  });
+
+  test("a bogus client draftSessionId cannot defeat server-derived closing", async ({
+    page,
+  }) => {
+    await page.goto("/us/app/home", { waitUntil: "domcontentloaded" });
+    // Scope was closed by the previous test → a fresh session is admitted.
+    const sessionC = `c-${String(Date.now())}`;
+    const created = await saveDraft(page, {
+      sessionId: sessionC,
+      draftRevision: 1,
+      currentStepId: "goal",
+      answers: { questionnaireVersion: 2, accountType: "individual" },
+    });
+    expect(created.stored).toBe(true);
+    expect((await readDraft(page))?.sessionId).toBe(sessionC);
+
+    const submit = await postSameOrigin(page, "/api/v1/investor/profile/v2", {
+      data: { ...apiAnswers({}), draftSessionId: "bogus-session-id" },
+    });
+    expect(submit.status()).toBe(201);
+    expect(await readDraft(page)).toBeNull();
+    const late = await saveDraft(page, {
+      sessionId: sessionC,
+      draftRevision: 2,
+    });
+    expect(late.stored).toBe(false);
+    expect(late.reason).toBe("session_closed");
+    expect(await readDraft(page)).toBeNull();
+  });
+
+  test("an unrelated session cannot silently take over an active draft", async ({
+    page,
+  }) => {
+    await page.goto("/us/app/home", { waitUntil: "domcontentloaded" });
+    const sessionE = `e-${String(Date.now())}`;
+    const e1 = await saveDraft(page, {
+      sessionId: sessionE,
+      draftRevision: 1,
+      currentStepId: "goal",
+      answers: { questionnaireVersion: 2, accountType: "individual" },
+    });
+    expect(e1.stored).toBe(true);
+    const takeover = await saveDraft(page, {
+      sessionId: `b-${String(Date.now())}`,
+      draftRevision: 1,
+      currentStepId: "horizon",
+      answers: { questionnaireVersion: 2, accountType: "trust" },
+    });
+    expect(takeover.stored).toBe(false);
+    expect(takeover.reason).toBe("session_mismatch");
+    const still = await readDraft(page);
+    expect(still?.sessionId).toBe(sessionE);
+    expect(still?.currentStepId).toBe("goal");
+    // Session E continues normally at the next revision.
+    const e2 = await saveDraft(page, {
+      sessionId: sessionE,
+      draftRevision: 2,
+      currentStepId: "horizon",
+    });
+    expect(e2.stored).toBe(true);
+    // Stale revision from E is ignored.
+    const stale = await saveDraft(page, {
+      sessionId: sessionE,
+      draftRevision: 2,
+      currentStepId: "goal",
+    });
+    expect(stale.stored).toBe(false);
+    expect(stale.reason).toBe("stale_revision");
+    expect((await readDraft(page))?.currentStepId).toBe("horizon");
   });
 });
 

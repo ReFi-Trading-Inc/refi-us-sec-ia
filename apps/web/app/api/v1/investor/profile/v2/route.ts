@@ -52,7 +52,7 @@ import {
 import {
   appendProfileAnswers,
   appendProfileAssessment,
-  clearProfileDraftV2,
+  closeProfileDraftsV2,
   getProfileAnswers,
   getProfileAssessment,
   latestProfileVersion,
@@ -124,9 +124,11 @@ const answersBody = z.object({
 
   reconciledFlags: z.array(member(CONSISTENCY_FLAGS)).optional(),
   /**
-   * Transport-only: names the questionnaire draft session so a successful
-   * submission tombstones it (a late autosave cannot resurrect the cleared
-   * draft). Stripped by canonicalization before hashing/persistence.
+   * Transport-only correlation hint (defence in depth). Draft finality is
+   * SERVER-derived: the submit handler reads the active draft session(s) for
+   * this identity/account from server state and closes them; this hint is
+   * merely added to the tombstone, never trusted as the sole truth. Stripped
+   * before canonicalization, hashing and persistence.
    */
   draftSessionId: z.string().min(1).max(64).optional(),
 });
@@ -211,9 +213,12 @@ export const POST = bffMutate<SubmitBody>({
       };
     }
 
-    // Canonicalize FIRST (PR #65 round 2): branch answers whose parent no
-    // longer activates them are removed deterministically, so stale child
-    // data can never reach the engine, the hash, or the immutable record.
+    // Order of operations: wire/vocabulary validation first (the Zod schema
+    // in `parse`), then branch canonicalization BEFORE policy assessment,
+    // hashing and immutable persistence (PR #65 round 2): branch answers
+    // whose parent no longer activates them are removed deterministically,
+    // so stale-but-valid child data can never reach the engine, the hash, or
+    // the immutable record.
     const { draftSessionId, ...submitted } = ctx.input;
     const canonical = canonicalizeAnswers(submitted);
 
@@ -265,12 +270,18 @@ export const POST = bffMutate<SubmitBody>({
       correlationId: ctx.correlationId,
     });
 
-    await clearProfileDraftV2(
-      ctx.auth.authId,
-      ctx.auth.accountId ?? null,
-      draftSessionId ?? "unknown-session",
-      ctx.correlationId,
-    );
+    // Draft finality is server-derived: the active draft session(s) for this
+    // identity/account are read from server state under the draft lock and
+    // tombstoned. The client hint is supplementary only. A submission with no
+    // prior draft is legitimate — nothing to close, nothing fails.
+    await closeProfileDraftsV2({
+      authId: ctx.auth.authId,
+      accountId: ctx.auth.accountId,
+      ...(draftSessionId !== undefined
+        ? { clientSessionHint: draftSessionId }
+        : {}),
+      correlationId: ctx.correlationId,
+    });
 
     return {
       data: {

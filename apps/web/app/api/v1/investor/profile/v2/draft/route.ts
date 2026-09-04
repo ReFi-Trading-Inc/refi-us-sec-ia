@@ -8,10 +8,20 @@
  * never sit in browser storage (review of PR #65; OWASP HTML5 guidance —
  * localStorage persists across sessions, is XSS-readable, and survives for
  * the next user of the machine profile). Drafts are keyed by the
- * authenticated identity — one user's draft is structurally invisible to
- * another — and are MUTABLE working state: submission promotes the answers
- * into the immutable version chain via POST /api/v1/investor/profile/v2,
- * which also clears the draft.
+ * authenticated identity PLUS the selected account scope (auth + account):
+ * one user's draft is structurally invisible to another, and one account's
+ * draft is separate from another account's. Pre-account onboarding is the
+ * explicit "preaccount" scope with one-way promotion — an account with no
+ * draft of its own resumes the preaccount draft, and its next save lands
+ * account-scoped. Drafts are MUTABLE working state: submission promotes the
+ * answers into the immutable version chain via POST
+ * /api/v1/investor/profile/v2, which closes the active draft session(s)
+ * server-side.
+ *
+ * Session continuity: GET returns the draft with its sessionId and
+ * draftRevision; a resuming client adopts BOTH and continues at revision
+ * N+1. A save from an unrelated session while a draft is active is refused
+ * (stored:false, reason "session_mismatch") — no implicit takeover.
  *
  * Validation is deliberately partial-tolerant: a draft is an incomplete form,
  * so per-field vocabulary is enforced but cross-field completeness rules
@@ -148,6 +158,8 @@ export const POST = bffMutate<DraftBody>({
       data: {
         stored: result.stored,
         draftRevision: result.draft?.draftRevision ?? null,
+        sessionId: result.draft?.sessionId ?? null,
+        ...(result.reason ? { reason: result.reason } : {}),
       },
       status: 200,
     };

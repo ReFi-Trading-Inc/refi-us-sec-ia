@@ -177,7 +177,7 @@ export async function getProfileAssessment(
 // ── Mutable questionnaire draft (auth + account scoped) ─────────────────────
 //
 // Autosave/resume state for the in-progress questionnaire. PR #65 review
-// round 2 hardened three properties:
+// rounds 2–3 fixed four properties:
 //
 //   OWNERSHIP  The draft key is authId + accountId. The auth contract allows
 //              one authenticated user to own zero, one, or many accounts, and
@@ -186,22 +186,47 @@ export async function getProfileAssessment(
 //              identity. Pre-account onboarding is modelled EXPLICITLY as the
 //              "preaccount" scope with one-way promotion: reads for an
 //              account fall back to the preaccount draft until the first
-//              account-scoped save lands; submission clears both.
+//              account-scoped save lands; submission closes both.
 //
 //   ORDERING   Saves carry (sessionId, draftRevision). A save whose revision
 //              is not strictly greater than the stored revision for the same
 //              session is IGNORED (stored: false) — an older request can
 //              never overwrite a newer draft, regardless of network order.
 //              Revisions are client-serialized but server-VERIFIED; no
-//              competing-request timestamps anywhere.
+//              competing-request timestamps anywhere. The read → decide →
+//              write sequence runs inside a per-identity in-process critical
+//              section (see `withDraftLock`), so within the prototype store's
+//              supported single-process model two concurrent saves can never
+//              let a lower revision replace a higher one.
 //
-//   FINALITY   Submission closes the draft session with a tombstone naming
-//              the sessionId. A late autosave from that session cannot
-//              resurrect the cleared draft; a NEW questionnaire run uses a
-//              fresh sessionId and proceeds normally.
+//   SESSION    One logical draft session per scope. A resumed draft continues
+//              its EXISTING sessionId/draftRevision (the client adopts them
+//              from GET). A save from an unrelated sessionId while a draft is
+//              active is refused (stored: false, reason "session_mismatch") —
+//              there is no implicit takeover path. A fresh session is only
+//              admitted when the scope holds no active draft (empty, or closed
+//              by a submission).
+//
+//   FINALITY   Submission closes the ACTIVE draft session(s) as determined
+//              from server-side state — never from a browser-supplied id
+//              alone. The tombstone names every closed session (the server-
+//              derived one plus any client hint, as defence in depth); a late
+//              autosave from any of them cannot resurrect the cleared draft.
+//              A submission with no prior draft is legitimate and simply
+//              records nothing to close.
 //
 // Drafts are MUTABLE working state, never part of the immutable version
 // chain; submission promotes answers via appendProfileAnswers.
+//
+// CONCURRENCY MODEL — read this before changing the store. `kvStore` is the
+// documented single-process filesystem prototype store. The critical section
+// below is an in-process mutex keyed by authId; it makes the compare-and-set
+// atomic ONLY within one Node process. It does NOT make the filesystem store
+// safe across processes or replicas. A future multi-process or real KV
+// implementation must provide equivalent compare-and-set / transactional
+// semantics (e.g. conditional writes on the stored revision) — the tests in
+// scripts/contract-assertions.ts encode the invariant such an implementation
+// must keep.
 
 export const PREACCOUNT_SCOPE = "preaccount";
 
@@ -220,8 +245,21 @@ export interface InvestorProfileDraftV2 {
 interface DraftTombstone {
   kind: "closed";
   authId: string;
-  closedSessionId: string;
+  /** Every session closed by the submission: server-derived first, then any client hint. */
+  closedSessionIds: string[];
+  /** Legacy (round-2) tombstones named a single session; read-compatible. */
+  closedSessionId?: string;
   meta: PrototypeMeta;
+}
+
+/** Closed session ids of a tombstone, tolerating the legacy single-id shape. */
+function closedIdsOf(record: DraftTombstone): string[] {
+  const ids = Array.isArray(record.closedSessionIds)
+    ? record.closedSessionIds
+    : [];
+  return typeof record.closedSessionId === "string"
+    ? [...ids, record.closedSessionId]
+    : ids;
 }
 
 type DraftRecord = InvestorProfileDraftV2 | DraftTombstone;
@@ -232,51 +270,119 @@ function draftKey(authId: string, accountId: string | null): string {
   return `${authId}__${accountId ?? PREACCOUNT_SCOPE}`;
 }
 
+// ── In-process critical section per authenticated identity ─────────────────
+//
+// Both draft scopes of one identity (account + preaccount) share one lock so
+// a save and a submission-close for the same person are strictly ordered.
+const draftLocks = new Map<string, Promise<void>>();
+
+async function withDraftLock<T>(
+  authId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = draftLocks.get(authId) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const chained = previous.then(() => current);
+  draftLocks.set(authId, chained);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (draftLocks.get(authId) === chained) draftLocks.delete(authId);
+  }
+}
+
+/**
+ * Test-only interleaving seam. `beforeWrite` runs INSIDE the critical section
+ * after the record has been read and the decision taken, immediately before
+ * the write. Tests use it to hold one operation while a competing one is
+ * started, proving the competitor cannot slip between read and write.
+ */
+export interface DraftTestHooks {
+  beforeWrite?: () => Promise<void>;
+}
+
+export type SaveDraftRejection =
+  "stale_revision" | "session_closed" | "session_mismatch";
+
 export interface SaveDraftResult {
   stored: boolean;
   draft: InvestorProfileDraftV2 | null;
+  reason?: SaveDraftRejection;
 }
 
-export async function saveProfileDraftV2(args: {
-  authId: string;
-  accountId: string | null;
-  sessionId: string;
-  draftRevision: number;
-  answers: InvestorProfileAnswers;
-  currentStepId: string;
-  correlationId: string;
-}): Promise<SaveDraftResult> {
-  const key = draftKey(args.authId, args.accountId);
-  const existing = await draftStore.get(key);
-  if (
-    existing?.kind === "closed" &&
-    existing.closedSessionId === args.sessionId
-  ) {
-    // The session was closed by a successful submission — a late autosave
-    // must not resurrect it.
-    return { stored: false, draft: null };
-  }
-  if (
-    existing?.kind === "draft" &&
-    existing.sessionId === args.sessionId &&
-    existing.draftRevision >= args.draftRevision
-  ) {
-    // Stale or duplicate revision: newer state wins, always.
-    return { stored: false, draft: existing };
-  }
-  const draft: InvestorProfileDraftV2 = {
-    kind: "draft",
-    authId: args.authId,
-    accountId: args.accountId,
-    sessionId: args.sessionId,
-    draftRevision: args.draftRevision,
-    answers: args.answers,
-    currentStepId: args.currentStepId,
-    lastUpdatedAt: new Date().toISOString(),
-    meta: makePrototypeMeta(args.correlationId),
-  };
-  await draftStore.put(key, draft);
-  return { stored: true, draft };
+function isClosedFor(record: DraftRecord | null, sessionId: string): boolean {
+  return record?.kind === "closed" && closedIdsOf(record).includes(sessionId);
+}
+
+export async function saveProfileDraftV2(
+  args: {
+    authId: string;
+    accountId: string | null;
+    sessionId: string;
+    draftRevision: number;
+    answers: InvestorProfileAnswers;
+    currentStepId: string;
+    correlationId: string;
+  },
+  hooks: DraftTestHooks = {},
+): Promise<SaveDraftResult> {
+  return withDraftLock(args.authId, async () => {
+    const key = draftKey(args.authId, args.accountId);
+    const existing = await draftStore.get(key);
+    const preaccount =
+      args.accountId !== null
+        ? await draftStore.get(draftKey(args.authId, null))
+        : null;
+
+    if (
+      isClosedFor(existing, args.sessionId) ||
+      isClosedFor(preaccount, args.sessionId)
+    ) {
+      // The session was closed by a successful submission — a late autosave
+      // must not resurrect it.
+      return { stored: false, draft: null, reason: "session_closed" };
+    }
+    if (existing?.kind === "draft" && existing.sessionId !== args.sessionId) {
+      // An active draft belongs to another session: no implicit takeover.
+      return { stored: false, draft: existing, reason: "session_mismatch" };
+    }
+    if (
+      existing === null &&
+      preaccount?.kind === "draft" &&
+      preaccount.sessionId !== args.sessionId
+    ) {
+      // Account scope is empty but the preaccount draft this account would
+      // resume belongs to another session: the resume path must adopt it.
+      return { stored: false, draft: preaccount, reason: "session_mismatch" };
+    }
+    if (
+      existing?.kind === "draft" &&
+      existing.sessionId === args.sessionId &&
+      existing.draftRevision >= args.draftRevision
+    ) {
+      // Stale or duplicate revision: newer state wins, always.
+      return { stored: false, draft: existing, reason: "stale_revision" };
+    }
+    const draft: InvestorProfileDraftV2 = {
+      kind: "draft",
+      authId: args.authId,
+      accountId: args.accountId,
+      sessionId: args.sessionId,
+      draftRevision: args.draftRevision,
+      answers: args.answers,
+      currentStepId: args.currentStepId,
+      lastUpdatedAt: new Date().toISOString(),
+      meta: makePrototypeMeta(args.correlationId),
+    };
+    if (hooks.beforeWrite) await hooks.beforeWrite();
+    await draftStore.put(key, draft);
+    return { stored: true, draft };
+  });
 }
 
 export async function getProfileDraftV2(
@@ -294,23 +400,63 @@ export async function getProfileDraftV2(
   return null;
 }
 
-/** Close the draft session (tombstone) in both the account and preaccount scopes. */
-export async function clearProfileDraftV2(
-  authId: string,
-  accountId: string | null,
-  sessionId: string,
-  correlationId: string,
-): Promise<void> {
-  const tombstone: DraftTombstone = {
-    kind: "closed",
-    authId,
-    closedSessionId: sessionId,
-    meta: makePrototypeMeta(correlationId),
-  };
-  await draftStore.put(draftKey(authId, accountId), tombstone);
-  if (accountId !== null) {
-    await draftStore.put(draftKey(authId, null), tombstone);
-  }
+export interface CloseDraftsResult {
+  /** Sessions the tombstone names: server-derived active sessions plus the hint. */
+  closedSessionIds: string[];
+  /** Whether any active draft actually existed in either scope. */
+  hadActiveDraft: boolean;
+}
+
+/**
+ * Close the identity's active draft session(s) after a successful submission.
+ *
+ * Server-derived: the sessions to close are read from the account and
+ * preaccount scopes under the same critical section that saves use, so a
+ * concurrent save cannot land between the read and the tombstone. The
+ * optional `clientSessionHint` is transport-only defence in depth — it is
+ * ADDED to the tombstone, never trusted as the sole truth, so a bogus or
+ * missing hint cannot leave the real draft resumable. No prior draft is a
+ * legitimate state (direct valid submission): nothing to close, no error.
+ */
+export async function closeProfileDraftsV2(
+  args: {
+    authId: string;
+    accountId: string | null;
+    clientSessionHint?: string;
+    correlationId: string;
+  },
+  hooks: DraftTestHooks = {},
+): Promise<CloseDraftsResult> {
+  return withDraftLock(args.authId, async () => {
+    const scopes: Array<string | null> =
+      args.accountId !== null ? [args.accountId, null] : [null];
+    const closed = new Set<string>();
+    let hadActiveDraft = false;
+    for (const scope of scopes) {
+      const record = await draftStore.get(draftKey(args.authId, scope));
+      if (record?.kind === "draft") {
+        closed.add(record.sessionId);
+        hadActiveDraft = true;
+      } else if (record?.kind === "closed") {
+        for (const id of closedIdsOf(record)) closed.add(id);
+      }
+    }
+    if (args.clientSessionHint) closed.add(args.clientSessionHint);
+    if (closed.size === 0) {
+      return { closedSessionIds: [], hadActiveDraft: false };
+    }
+    const tombstone: DraftTombstone = {
+      kind: "closed",
+      authId: args.authId,
+      closedSessionIds: [...closed],
+      meta: makePrototypeMeta(args.correlationId),
+    };
+    if (hooks.beforeWrite) await hooks.beforeWrite();
+    for (const scope of scopes) {
+      await draftStore.put(draftKey(args.authId, scope), tombstone);
+    }
+    return { closedSessionIds: [...closed], hadActiveDraft };
+  });
 }
 
 /** Idempotent per (account, document, documentVersion, profileVersion). */

@@ -13,10 +13,14 @@
  *     disclosure the backend currently lists. The BFF re-reads the effective
  *     list and refuses a client tuple that does not match it (stale) — it
  *     never reconstructs or normalises a version or hash.
- *   - `consent_key`: the package gives no derivation rule beyond its example,
- *     where `consent_key === disclosure_key` (`examples.json` →
- *     `requests.ConsentRequest`). That is what is sent; flagged as an
- *     example-derived assumption for Daniel, not a contract inference.
+ *   - `consent_key` — OWNER DECISION (Daniel, 2026-09-04): for Alpha the
+ *     unified disclosure has a 1:1 consent/disclosure relationship — "consent
+ *     must equal disclosure right now … obtain disclosure key then copy it into
+ *     consent key". So the BFF COPIES the `disclosure_key` returned by
+ *     `listEffectiveDisclosures` into `consent_key`. This is "copy for Alpha",
+ *     NOT "these are the same concept": the fields stay distinct because later
+ *     releases add separate disclosures (automated trading, trading risk, …)
+ *     where `consent_key !== disclosure_key`. Do not merge, alias, or map them.
  *   - `Idempotency-Key` is deterministic over (account, key, version, hash,
  *     action): a genuine replay reuses the same key with a byte-identical
  *     body, so the backend can answer with the original receipt; a changed
@@ -132,8 +136,8 @@ export async function acknowledgeDisclosure(
       idempotencyKey: consentIdempotencyKey(accountId, selection, action),
       body: {
         account_id: accountId,
-        // Example-derived (see header): the package's only ConsentRequest
-        // example uses the disclosure key as the consent key.
+        // Alpha 1:1 rule (Daniel 2026-09-04, see header): copy the listed
+        // disclosure key into the consent key. Distinct field on purpose.
         consent_key: match.disclosure_key,
         disclosure_key: match.disclosure_key,
         disclosure_version: match.disclosure_version,

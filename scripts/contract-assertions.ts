@@ -4879,6 +4879,91 @@ await section(
   );
 
   await section(
+    "consent: Alpha 1:1 consent/disclosure mapping — consent_key is a COPY of the listed disclosure_key (Daniel 2026-09-04), not a merged field",
+    async () => {
+      // Owner decision, Daniel 2026-09-04: "consent must equal disclosure right
+      // now … obtain disclosure key then copy it into consent key"; the fields
+      // stay separate because later releases add multiple disclosures
+      // (automated trading, trading risk, …). This pins the CURRENT Alpha rule
+      // only — it is not a permanent schema equivalence.
+      for (const key of [
+        "automated_portfolio_alpha",
+        "unified_alpha_disclosure_v2",
+      ]) {
+        const listed = {
+          ...disclosure,
+          disclosure_key: key,
+          disclosure_version: 7,
+          content_hash: "a".repeat(64),
+        };
+        const up = fakeUpstream({
+          disclosures: {
+            data: {
+              items: [listed],
+              page: { has_more: false, next_cursor: null },
+            },
+          },
+          consentBody: {
+            data: {
+              ...receipt,
+              consent_key: key,
+              disclosure_key: key,
+              disclosure_version: 7,
+              disclosure_hash: "a".repeat(64),
+            },
+          },
+        });
+        const out = await acknowledgeDisclosure(up.client, {
+          accountId: "acct-ca-000001",
+          selection: {
+            disclosureKey: key,
+            disclosureVersion: 7,
+            disclosureHash: "a".repeat(64),
+          },
+        });
+        assert.equal(out.kind, "recorded");
+        const post = up.seen.find((s) => s.method === "POST");
+        assert.ok(post, "recordConsent must be called");
+        const body = post.body as Record<string, unknown>;
+        // 1:1 for Alpha: both fields carry the listed key; changing X changes both.
+        assert.equal(body["consent_key"], key);
+        assert.equal(body["disclosure_key"], key);
+        // The key ORIGINATES from listEffectiveDisclosures (the GET preceded the POST
+        // and the value equals what the upstream listed) — no mapping table, no
+        // alternate key generation anywhere in the request path.
+        assert.equal(up.seen[0]?.method, "GET");
+        assert.ok(up.seen[0]?.url.endsWith("/api/v1/investor/disclosures"));
+        // Version and hash are exact copies of the listed tuple.
+        assert.equal(body["disclosure_version"], 7);
+        assert.equal(body["disclosure_hash"], "a".repeat(64));
+        assert.equal(body["action"], "ACCEPT");
+        // The two fields remain DISTINCT keys in the request model — a future
+        // contract where consent_key !== disclosure_key needs no model rewrite.
+        assert.deepEqual(Object.keys(body).sort(), [
+          "account_id",
+          "action",
+          "consent_key",
+          "disclosure_hash",
+          "disclosure_key",
+          "disclosure_version",
+        ]);
+      }
+      const src = readFileSync(
+        join(REPO_ROOT, "apps/web/src/lib/investor-api/disclosure-consent.ts"),
+        "utf8",
+      );
+      assert.ok(
+        /consent_key:\s*match\.disclosure_key/.test(src),
+        "consent_key must be a copy of the listed disclosure_key (Alpha 1:1), not derived elsewhere",
+      );
+      assert.ok(
+        !/consentKeyFor|CONSENT_KEY_MAP|consentTaxonomy/.test(src),
+        "no frontend consent taxonomy or mapping table may exist in this slice",
+      );
+    },
+  );
+
+  await section(
     "consent: a stale version or hash never reaches recordConsent",
     async () => {
       const stale = fakeUpstream({});

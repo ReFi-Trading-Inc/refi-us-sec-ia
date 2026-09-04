@@ -47,8 +47,13 @@ jobs:
         run: pnpm route-manifest
       - name: Contract assertions (taxonomy, receipts-vs-access-log, immutability)
         run: pnpm contract-test
-      - name: Unit tests (@refi/api-clients)
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.11"
+      - name: Unit tests (@refi/api-clients) — includes Daniel's v1.1.0-alpha.2 conformance validator + simulator (blocking; Python 3.11 pinned above)
         run: pnpm --filter @refi/api-clients test
+        env:
+          REFI_CONTRACT_STRICT: "1"
       - name: Scan copy for blocked terms
         run: pnpm scan-copy
         env:

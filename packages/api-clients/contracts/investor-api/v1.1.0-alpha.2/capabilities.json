@@ -1,0 +1,1459 @@
+{
+  "binding_register": [
+    {
+      "acceptance_condition": "Matches [a-z][a-z0-9_-]{1,31} and identifies the same provider as the supplied issuer, audience and JWKS.",
+      "binding_id": "frontend_upstream_identity_provider_id",
+      "blocks_frontend_development": false,
+      "current_state": "The frontend identity product/provider has not been identified in the handoff facts.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the stable lowercase provider identifier used to namespace the upstream identity mapping.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "lowercase_provider_identifier"
+    },
+    {
+      "acceptance_condition": "Exact HTTPS issuer is stable in Dev and matches a cryptographically verified test assertion.",
+      "binding_id": "frontend_upstream_identity_issuer",
+      "blocks_frontend_development": false,
+      "current_state": "No exact upstream user-identity token issuer has been supplied.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the exact HTTPS iss claim emitted for the identity assertion sent to identity-ccid.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "https_uri"
+    },
+    {
+      "acceptance_condition": "Value is non-empty, at most 256 characters and matches a verified Dev assertion exactly.",
+      "binding_id": "frontend_upstream_identity_audience",
+      "blocks_frontend_development": false,
+      "current_state": "No exact upstream user-identity token audience has been supplied.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the exact aud value emitted for the identity assertion sent to identity-ccid.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "string"
+    },
+    {
+      "acceptance_condition": "HTTPS GET returns a valid JWKS containing at least one unique usable ES256 public key and supports bounded rotation testing.",
+      "binding_id": "frontend_upstream_identity_jwks_url",
+      "blocks_frontend_development": false,
+      "current_state": "The upstream user-identity JWKS endpoint is distinct from the BFF assertion JWKS and is not yet supplied.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the exact HTTPS JWKS URL for verifying upstream user-identity assertions.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "https_uri"
+    },
+    {
+      "acceptance_condition": "Array is non-empty, unique, exact and every URI is HTTPS with no credentials or fragment.",
+      "binding_id": "frontend_identity_redirect_uris",
+      "blocks_frontend_development": false,
+      "current_state": "No exact frontend identity callback allowlist has been supplied.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies every exact HTTPS redirect URI used by the Dev BFF identity flow.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "https_uri_array"
+    },
+    {
+      "acceptance_condition": "HTTPS GET returns 200 with a valid JWKS containing at least one unique usable ES256 public key, and signed test assertions pass new-kid refresh and rotation checks.",
+      "binding_id": "frontend_bff_jwks_url",
+      "blocks_frontend_development": false,
+      "current_state": "The URL is agreed and the BFF base is reachable, but a 2026-09-03 probe of this JWKS route returned HTTP 503.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend deploys the BFF assertion JWKS at this already-selected URL; no new URL decision is requested.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": "https://bff-dev.refi.trading/.well-known/jwks.json",
+      "value_state": "selected_not_operational",
+      "value_type": "https_uri"
+    },
+    {
+      "acceptance_condition": "Issuer is stable, HTTPS and matches the iss claim in a real frontend workload token.",
+      "binding_id": "wif_oidc_issuer",
+      "blocks_frontend_development": false,
+      "current_state": "The WIF pool exists, but its OIDC provider cannot be created until the frontend workload issuer is known.",
+      "delivery": "secure_owner_exchange",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the exact HTTPS issuer used by its deployed BFF workload identity tokens.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "https_uri"
+    },
+    {
+      "acceptance_condition": "Contains 1-10 unique non-whitespace values, each at most 256 characters, and a real token matches one allowed value.",
+      "binding_id": "wif_allowed_audiences",
+      "blocks_frontend_development": false,
+      "current_state": "No allowed WIF workload-token audiences have been supplied.",
+      "delivery": "secure_owner_exchange",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the bounded audience set emitted for its deployed BFF workload tokens.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "string_array_1_to_10"
+    },
+    {
+      "acceptance_condition": "Array is non-empty and unique; each subject is 1-127 non-whitespace characters and negative subjects fail impersonation.",
+      "binding_id": "wif_allowed_subjects",
+      "blocks_frontend_development": false,
+      "current_state": "No immutable frontend BFF workload subjects have been supplied; the backend therefore creates no provider or impersonation grant.",
+      "delivery": "secure_owner_exchange",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the exact immutable sub claim value for each Dev BFF workload identity that may impersonate the fixed BFF service account.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "immutable_subject_array"
+    },
+    {
+      "acceptance_condition": "Credentials validate against the selected paper host and are stored only as a pinned Secret Manager version.",
+      "binding_id": "alpaca_fixture_credential_pair",
+      "blocks_frontend_development": false,
+      "current_state": "No real Alpaca credential pair has been loaded through the protected local bootstrap flow.",
+      "delivery": "protected_local_bootstrap",
+      "include_in_connection_addendum": false,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-096",
+        "ATD-114",
+        "ATD-115"
+      ],
+      "owner": "backend-owner",
+      "required_action": "Backend owner supplies one real Alpaca paper-account credential pair locally; frontend must never receive this fixture secret.",
+      "required_fields": [
+        "api_key",
+        "api_secret"
+      ],
+      "required_for": [
+        "direct_alpaca_credential_validation_and_sync",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": true,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "protected_secret_pair"
+    },
+    {
+      "acceptance_condition": "The fixture validates against https://paper-api.alpaca.markets; the same production-grade lifecycle is exercised as live.",
+      "binding_id": "alpaca_fixture_account_environment",
+      "blocks_frontend_development": false,
+      "current_state": "Paper is selected for the backend-owned connected Dev fixture; credentials have not yet been bootstrapped.",
+      "delivery": "protected_local_bootstrap",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-096",
+        "ATD-114",
+        "ATD-115"
+      ],
+      "owner": "backend-owner",
+      "required_action": "Backend owner confirms the protected fixture input and completes local bootstrap.",
+      "required_for": [
+        "direct_alpaca_credential_validation_and_sync",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": "paper",
+      "value_state": "selected_not_operational",
+      "value_type": "enum:paper|live"
+    },
+    {
+      "acceptance_condition": "Identifier is bound to the approved invite-only U.S. Alpha cohort and release evidence.",
+      "binding_id": "closed_alpha_campaign_scope",
+      "blocks_frontend_development": false,
+      "current_state": "The final invite-only Alpha campaign/cohort identifier is not selected.",
+      "delivery": "release_approval",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-118",
+        "ATD-124",
+        "ATD-134"
+      ],
+      "owner": "backend-owner",
+      "required_action": "Backend owner selects the opaque campaign identifier at release approval.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "opaque_identifier"
+    },
+    {
+      "acceptance_condition": "Both teams acknowledge the contact reference and delivery channel.",
+      "binding_id": "support.integration_contact",
+      "blocks_frontend_development": false,
+      "current_state": "No joint day-to-day integration contact reference is recorded.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "joint_binding",
+      "later_gates": [
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend+frontend-system",
+      "required_action": "Frontend and backend each identify an integration contact and agree the reference included in the addendum.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "contact_reference"
+    },
+    {
+      "acceptance_condition": "Both teams acknowledge the contact reference and protected communication path.",
+      "binding_id": "support.security_contact",
+      "blocks_frontend_development": false,
+      "current_state": "No joint security contact reference is recorded.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "joint_binding",
+      "later_gates": [
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend+frontend-system",
+      "required_action": "Frontend and backend agree the contact used for credential, token, JWKS and data-security escalation.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "contact_reference"
+    },
+    {
+      "acceptance_condition": "Contact and response path are verified and included in the hash-bound addendum.",
+      "binding_id": "support.trading_operations_contact",
+      "blocks_frontend_development": false,
+      "current_state": "The backend trading-operations contact has not been published for the Alpha connection addendum.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend publishes the trading-operations contact before connected acceptance.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "contact_reference"
+    },
+    {
+      "acceptance_condition": "Both teams verify access and the permitted escalation-field policy.",
+      "binding_id": "support.escalation_channel",
+      "blocks_frontend_development": false,
+      "current_state": "No shared secure escalation channel reference is recorded.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "joint_binding",
+      "later_gates": [
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend+frontend-system",
+      "required_action": "Frontend and backend agree a secure channel that excludes credentials, tokens and prohibited payloads.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "secure_channel_reference"
+    },
+    {
+      "acceptance_condition": "BFF can invoke the identity exchange with the required Google audience and positive/negative trust tests pass.",
+      "binding_id": "identity_ccid_base_url",
+      "blocks_frontend_development": false,
+      "current_state": "Cloud Run service and revision are Ready, but IDENTITY_FEATURE_STATE is disabled and frontend trust inputs are blank.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-121",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend binds verified frontend trust, deploys the accepted revision and activates the Alpha feature state.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": "https://identity-ccid-74kl57biwa-uw.a.run.app",
+      "value_state": "provisioned_not_enabled",
+      "value_type": "https_uri"
+    },
+    {
+      "acceptance_condition": "Unauthenticated HTTPS GET returns 200 with only supported public ES256 keys and bounded cache headers; identity-result verification and rotation pass.",
+      "binding_id": "identity_ccid_jwks_url",
+      "blocks_frontend_development": false,
+      "current_state": "The public route and KMS-backed signing implementation exist, but unauthenticated access returned HTTP 403 on 2026-09-03.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-121",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend exposes this JWKS route without a Google credential while retaining application-level authentication on protected identity routes.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": "https://identity-ccid-74kl57biwa-uw.a.run.app/.well-known/jwks.json",
+      "value_state": "provisioned_not_enabled",
+      "value_type": "https_uri"
+    },
+    {
+      "acceptance_condition": "The authorized BFF can invoke all package routes with both credentials and negative caller/user/ownership tests pass.",
+      "binding_id": "investor_api_base_url",
+      "blocks_frontend_development": false,
+      "current_state": "Cloud Run service and revision are Ready, but INVESTOR_API_FEATURE_STATE is disabled and the BFF assertion JWKS is unbound.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-121",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend binds the operational frontend BFF JWKS, deploys the accepted revision and activates only the approved Alpha scope.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": "https://investor-api-74kl57biwa-uw.a.run.app",
+      "value_state": "provisioned_not_enabled",
+      "value_type": "https_uri"
+    },
+    {
+      "acceptance_condition": "Provider resource is ACTIVE and only the approved subjects can impersonate the fixed BFF service account; negative subjects are denied.",
+      "binding_id": "wif_provider_name",
+      "blocks_frontend_development": false,
+      "current_state": "The WIF pool is ACTIVE but has zero providers; no frontend identity can impersonate the BFF service account.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend creates the fixed provider and restricted impersonation grants after validating the frontend issuer, allowed audiences and immutable subjects.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "gcp_resource_name"
+    },
+    {
+      "acceptance_condition": "Every required service revision is Ready, receives intended traffic and resolves to the recorded immutable image digest.",
+      "binding_id": "dev_service_revisions_and_image_digests",
+      "blocks_frontend_development": false,
+      "current_state": "Current provisioned revisions are development checkpoints, not the accepted connected-Alpha release set.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-123",
+        "ATD-132",
+        "ATD-134",
+        "ATD-137"
+      ],
+      "owner": "backend",
+      "required_action": "Backend records the final service revisions and immutable image digests after parallel deployment and acceptance.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "service_revision_digest_map"
+    },
+    {
+      "acceptance_condition": "Identifiers resolve through the package routes for the owning fixture user and uniformly fail for another user.",
+      "binding_id": "real_connected_fixture_ids",
+      "blocks_frontend_development": false,
+      "current_state": "No real connected fixture journey has produced the account-safe identifier set.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-111",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend runs the protected real paper-account journey and records only safe opaque fixture identifiers.",
+      "required_fields": [
+        "user_id",
+        "account_id",
+        "connection_id",
+        "portfolio_id",
+        "recommendation_id",
+        "intent_id",
+        "order_id",
+        "record_id"
+      ],
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "opaque_identifier_map"
+    }
+  ],
+  "connected_alpha_verified": false,
+  "connected_capabilities": [
+    {
+      "availability_scope": "package",
+      "capability_id": "frontend_client_generation",
+      "claim": "OpenAPI and closed schemas are ready for client generation.",
+      "depends_on_bindings": [],
+      "frontend_development_required": true,
+      "later_gates": [],
+      "owner": "backend",
+      "status": "available"
+    },
+    {
+      "availability_scope": "package",
+      "capability_id": "deterministic_frontend_simulator",
+      "claim": "Standalone validation and deterministic frontend journeys pass.",
+      "depends_on_bindings": [],
+      "frontend_development_required": true,
+      "later_gates": [],
+      "owner": "backend",
+      "status": "available"
+    },
+    {
+      "availability_scope": "source_and_local_runtime",
+      "capability_id": "implemented_http_boundary",
+      "claim": "All declared route, schema, auth and ownership boundaries exist.",
+      "depends_on_bindings": [],
+      "frontend_development_required": true,
+      "later_gates": [],
+      "owner": "backend",
+      "status": "available"
+    },
+    {
+      "availability_scope": "connected_dev",
+      "capability_id": "frontend_identity_and_wif_binding",
+      "claim": "Real frontend trust and service invocation are not yet bound.",
+      "depends_on_bindings": [
+        "frontend_upstream_identity_provider_id",
+        "frontend_upstream_identity_issuer",
+        "frontend_upstream_identity_audience",
+        "frontend_upstream_identity_jwks_url",
+        "frontend_identity_redirect_uris",
+        "frontend_bff_jwks_url",
+        "wif_oidc_issuer",
+        "wif_allowed_audiences",
+        "wif_allowed_subjects",
+        "wif_provider_name",
+        "identity_ccid_base_url",
+        "identity_ccid_jwks_url",
+        "investor_api_base_url"
+      ],
+      "frontend_development_required": false,
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend+frontend-system",
+      "status": "pending_external"
+    },
+    {
+      "availability_scope": "connected_dev",
+      "capability_id": "direct_alpaca_credential_validation_and_sync",
+      "claim": "No real credential validation, rotation, revoke or sync is claimed.",
+      "depends_on_bindings": [
+        "alpaca_fixture_credential_pair",
+        "alpaca_fixture_account_environment"
+      ],
+      "frontend_development_required": false,
+      "later_gates": [
+        "ATD-101",
+        "ATD-109B",
+        "ATD-114"
+      ],
+      "owner": "backend",
+      "status": "pending_backend"
+    },
+    {
+      "availability_scope": "connected_dev",
+      "capability_id": "canonical_account_valuation_and_positions",
+      "claim": "No real Alpaca-backed canonical account snapshot is claimed.",
+      "depends_on_bindings": [
+        "alpaca_fixture_credential_pair",
+        "alpaca_fixture_account_environment"
+      ],
+      "frontend_development_required": false,
+      "later_gates": [
+        "ATD-102",
+        "ATD-109C",
+        "ATD-114"
+      ],
+      "owner": "backend",
+      "status": "pending_backend"
+    },
+    {
+      "availability_scope": "connected_dev",
+      "capability_id": "allocation_subscription_and_automatic_trading",
+      "claim": "No automatic order, fill or reconciliation lifecycle is claimed.",
+      "depends_on_bindings": [
+        "alpaca_fixture_credential_pair",
+        "alpaca_fixture_account_environment",
+        "closed_alpha_campaign_scope"
+      ],
+      "frontend_development_required": false,
+      "later_gates": [
+        "ATD-103",
+        "ATD-108",
+        "ATD-115",
+        "ATD-116A"
+      ],
+      "owner": "backend",
+      "status": "pending_backend"
+    },
+    {
+      "availability_scope": "connected_dev",
+      "capability_id": "account_records_and_event_lifecycle",
+      "claim": "Schemas are implemented; real lifecycle chronology is unverified.",
+      "depends_on_bindings": [
+        "real_connected_fixture_ids"
+      ],
+      "frontend_development_required": false,
+      "later_gates": [
+        "ATD-105",
+        "ATD-106",
+        "ATD-109F",
+        "ATD-115"
+      ],
+      "owner": "backend",
+      "status": "pending_backend"
+    },
+    {
+      "availability_scope": "connected_dev",
+      "capability_id": "connected_dev_contract_conformance",
+      "claim": "No real cross-system or connected Alpha result is claimed.",
+      "depends_on_bindings": [
+        "frontend_upstream_identity_provider_id",
+        "frontend_upstream_identity_issuer",
+        "frontend_upstream_identity_audience",
+        "frontend_upstream_identity_jwks_url",
+        "frontend_identity_redirect_uris",
+        "frontend_bff_jwks_url",
+        "wif_oidc_issuer",
+        "wif_allowed_audiences",
+        "wif_allowed_subjects",
+        "alpaca_fixture_credential_pair",
+        "alpaca_fixture_account_environment",
+        "closed_alpha_campaign_scope",
+        "support.integration_contact",
+        "support.security_contact",
+        "support.trading_operations_contact",
+        "support.escalation_channel",
+        "identity_ccid_base_url",
+        "identity_ccid_jwks_url",
+        "investor_api_base_url",
+        "wif_provider_name",
+        "dev_service_revisions_and_image_digests",
+        "real_connected_fixture_ids"
+      ],
+      "frontend_development_required": false,
+      "later_gates": [
+        "ATD-110",
+        "ATD-112",
+        "ATD-132",
+        "ATD-134"
+      ],
+      "owner": "backend+frontend-system",
+      "status": "pending_external"
+    }
+  ],
+  "contract_implemented": true,
+  "contract_version": "v1.1.0-alpha.2",
+  "explicitly_deferred": [
+    "snaptrade",
+    "amr_enforcement",
+    "reusable_kyc_provider",
+    "blockchain_audit_anchor",
+    "staging_environment",
+    "production_environment"
+  ],
+  "frontend_development": {
+    "must_not_wait_for_binding_ids": [
+      "frontend_upstream_identity_provider_id",
+      "frontend_upstream_identity_issuer",
+      "frontend_upstream_identity_audience",
+      "frontend_upstream_identity_jwks_url",
+      "frontend_identity_redirect_uris",
+      "frontend_bff_jwks_url",
+      "wif_oidc_issuer",
+      "wif_allowed_audiences",
+      "wif_allowed_subjects",
+      "alpaca_fixture_credential_pair",
+      "alpaca_fixture_account_environment",
+      "closed_alpha_campaign_scope",
+      "support.integration_contact",
+      "support.security_contact",
+      "support.trading_operations_contact",
+      "support.escalation_channel",
+      "identity_ccid_base_url",
+      "identity_ccid_jwks_url",
+      "investor_api_base_url",
+      "wif_provider_name",
+      "dev_service_revisions_and_image_digests",
+      "real_connected_fixture_ids"
+    ],
+    "ready": true,
+    "required_binding_ids": [],
+    "required_capability_ids": [
+      "frontend_client_generation",
+      "deterministic_frontend_simulator",
+      "implemented_http_boundary"
+    ]
+  },
+  "readiness_states": {
+    "backend_connected_release_ready": false,
+    "backend_services_provisioned": true,
+    "connected_alpaca_verified": false,
+    "connected_alpha_verified": false,
+    "external_trust_bound": false,
+    "frontend_contract_ready": true
+  },
+  "routes": [
+    {
+      "method": "POST",
+      "operation_id": "exchangeIdentity",
+      "path": "/api/v1/identity/exchanges",
+      "runtime_owner": "identity-ccid",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getIdentityJwks",
+      "path": "/.well-known/jwks.json",
+      "runtime_owner": "identity-ccid",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getOnboardingStatus",
+      "path": "/api/v1/investor/onboarding/status",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "operation_id": "joinWaitlist",
+      "path": "/api/v1/investor/waitlist",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getEligibility",
+      "path": "/api/v1/investor/eligibility",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getKycStatus",
+      "path": "/api/v1/investor/kyc",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listAdvisoryProfiles",
+      "path": "/api/v1/investor/advisory-profiles",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getCurrentAdvisoryProfile",
+      "path": "/api/v1/investor/advisory-profiles/current",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listEffectiveDisclosures",
+      "path": "/api/v1/investor/disclosures",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listConsents",
+      "path": "/api/v1/investor/consents",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "operation_id": "recordConsent",
+      "path": "/api/v1/investor/consents",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listAccounts",
+      "path": "/api/v1/investor/accounts",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getAccount",
+      "path": "/api/v1/investor/accounts/{account_id}",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getAccountAuthorization",
+      "path": "/api/v1/investor/accounts/{account_id}/authorization",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listComplianceProfileAttestations",
+      "path": "/api/v1/investor/accounts/{account_id}/compliance-profile-attestations",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getCurrentComplianceProfileAttestation",
+      "path": "/api/v1/investor/accounts/{account_id}/compliance-profile-attestations/current",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "operation_id": "createComplianceProfileAttestation",
+      "path": "/api/v1/investor/accounts/{account_id}/compliance-profile-attestations",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listBrokerageConnections",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "operation_id": "createBrokerageConnection",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getBrokerageConnection",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections/{connection_id}",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "operation_id": "rotateBrokerageCredentials",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections/{connection_id}/credentials/rotate",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "operation_id": "syncBrokerageConnection",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections/{connection_id}/sync",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "DELETE",
+      "operation_id": "disconnectBrokerageConnection",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections/{connection_id}",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getAccountValuation",
+      "path": "/api/v1/investor/accounts/{account_id}/valuation",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listAccountValuations",
+      "path": "/api/v1/investor/accounts/{account_id}/valuations",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listAccountPositions",
+      "path": "/api/v1/investor/accounts/{account_id}/positions",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listTemplates",
+      "path": "/api/v1/investor/templates",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getTemplate",
+      "path": "/api/v1/investor/templates/{template_id}",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listAccountMemberships",
+      "path": "/api/v1/investor/accounts/{account_id}/memberships",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "operation_id": "createAllocationPreview",
+      "path": "/api/v1/investor/accounts/{account_id}/allocation-previews",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getAccountPreferences",
+      "path": "/api/v1/investor/accounts/{account_id}/preferences",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "PATCH",
+      "operation_id": "updateAccountPreferences",
+      "path": "/api/v1/investor/accounts/{account_id}/preferences",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listAccountPreferenceHistory",
+      "path": "/api/v1/investor/accounts/{account_id}/preferences/history",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listAccountRecommendations",
+      "path": "/api/v1/investor/accounts/{account_id}/recommendations",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getAccountRecommendation",
+      "path": "/api/v1/investor/accounts/{account_id}/recommendations/{recommendation_id}",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listAccountRecommendationLegs",
+      "path": "/api/v1/investor/accounts/{account_id}/recommendations/{recommendation_id}/legs",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "POST",
+      "operation_id": "createAccountAction",
+      "path": "/api/v1/investor/accounts/{account_id}/actions",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getAccountActionReceipt",
+      "path": "/api/v1/investor/accounts/{account_id}/actions/{action_receipt_id}",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "listAccountRecords",
+      "path": "/api/v1/investor/accounts/{account_id}/records",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "getAccountRecord",
+      "path": "/api/v1/investor/accounts/{account_id}/records/{record_id}",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    },
+    {
+      "method": "GET",
+      "operation_id": "streamAccountEvents",
+      "path": "/api/v1/investor/accounts/{account_id}/events",
+      "runtime_owner": "investor-api",
+      "status": "implemented"
+    }
+  ],
+  "schema_version": "2.1",
+  "schemas": [
+    {
+      "name": "Account",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountActionRequest",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountAuthorization",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountAuthorizationEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountEvent",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountEventData",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountEventStream",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountMembership",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountMembershipPage",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountMembershipPageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountPage",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountPageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountPosition",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountPositionPage",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountPositionPageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountRecord",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountRecordDetails",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountRecordEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountRecordPage",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountRecordPageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountValuation",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountValuationEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountValuationPage",
+      "status": "implemented"
+    },
+    {
+      "name": "AccountValuationPageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AcknowledgmentConfirmationRequest",
+      "status": "implemented"
+    },
+    {
+      "name": "AcknowledgmentContinuation",
+      "status": "implemented"
+    },
+    {
+      "name": "ActionReceipt",
+      "status": "implemented"
+    },
+    {
+      "name": "ActionReceiptEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AdvisoryProfile",
+      "status": "implemented"
+    },
+    {
+      "name": "AdvisoryProfileEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AdvisoryProfilePage",
+      "status": "implemented"
+    },
+    {
+      "name": "AdvisoryProfilePageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AllocationPreview",
+      "status": "implemented"
+    },
+    {
+      "name": "AllocationPreviewEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "AllocationPreviewRequest",
+      "status": "implemented"
+    },
+    {
+      "name": "BffAssertionClaims",
+      "status": "implemented"
+    },
+    {
+      "name": "BrokerageConnection",
+      "status": "implemented"
+    },
+    {
+      "name": "BrokerageConnectionEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "BrokerageConnectionPage",
+      "status": "implemented"
+    },
+    {
+      "name": "BrokerageConnectionPageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "BrokerageConnectionRequest",
+      "status": "implemented"
+    },
+    {
+      "name": "BrokerageCredentialRotationRequest",
+      "status": "implemented"
+    },
+    {
+      "name": "BrokerageCredentials",
+      "status": "implemented"
+    },
+    {
+      "name": "BrokerageDisconnectReceipt",
+      "status": "implemented"
+    },
+    {
+      "name": "BrokerageDisconnectReceiptEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "BrokerageSyncReceipt",
+      "status": "implemented"
+    },
+    {
+      "name": "BrokerageSyncReceiptEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "ComplianceProfileAttestation",
+      "status": "implemented"
+    },
+    {
+      "name": "ComplianceProfileAttestationEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "ComplianceProfileAttestationPage",
+      "status": "implemented"
+    },
+    {
+      "name": "ComplianceProfileAttestationPageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "ComplianceProfileAttestationRequest",
+      "status": "implemented"
+    },
+    {
+      "name": "ConsentPage",
+      "status": "implemented"
+    },
+    {
+      "name": "ConsentPageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "ConsentReceipt",
+      "status": "implemented"
+    },
+    {
+      "name": "ConsentReceiptEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "ConsentRequest",
+      "status": "implemented"
+    },
+    {
+      "name": "Disclosure",
+      "status": "implemented"
+    },
+    {
+      "name": "DisclosurePage",
+      "status": "implemented"
+    },
+    {
+      "name": "DisclosurePageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "EligibilityStatus",
+      "status": "implemented"
+    },
+    {
+      "name": "EligibilityStatusEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "Error",
+      "status": "implemented"
+    },
+    {
+      "name": "ErrorEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "Es256ProtectedHeader",
+      "status": "implemented"
+    },
+    {
+      "name": "Freshness",
+      "status": "implemented"
+    },
+    {
+      "name": "IdentityExchange",
+      "status": "implemented"
+    },
+    {
+      "name": "IdentityExchangeEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "IdentityExchangeRequest",
+      "status": "implemented"
+    },
+    {
+      "name": "IdentityHandoffResult",
+      "status": "implemented"
+    },
+    {
+      "name": "Jwks",
+      "status": "implemented"
+    },
+    {
+      "name": "KycStatus",
+      "status": "implemented"
+    },
+    {
+      "name": "KycStatusEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "OnboardingStatus",
+      "status": "implemented"
+    },
+    {
+      "name": "OnboardingStatusEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "Page",
+      "status": "implemented"
+    },
+    {
+      "name": "PreferencePage",
+      "status": "implemented"
+    },
+    {
+      "name": "PreferencePageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "PreferencePatch",
+      "status": "implemented"
+    },
+    {
+      "name": "Preferences",
+      "status": "implemented"
+    },
+    {
+      "name": "PreferencesEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "Recommendation",
+      "status": "implemented"
+    },
+    {
+      "name": "RecommendationEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "RecommendationLeg",
+      "status": "implemented"
+    },
+    {
+      "name": "RecommendationLegPage",
+      "status": "implemented"
+    },
+    {
+      "name": "RecommendationLegPageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "RecommendationPage",
+      "status": "implemented"
+    },
+    {
+      "name": "RecommendationPageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "Template",
+      "status": "implemented"
+    },
+    {
+      "name": "TemplateEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "TemplatePage",
+      "status": "implemented"
+    },
+    {
+      "name": "TemplatePageEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "WaitlistReceipt",
+      "status": "implemented"
+    },
+    {
+      "name": "WaitlistReceiptEnvelope",
+      "status": "implemented"
+    },
+    {
+      "name": "WaitlistRequest",
+      "status": "implemented"
+    }
+  ]
+}

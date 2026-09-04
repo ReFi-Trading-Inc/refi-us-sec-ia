@@ -1,0 +1,922 @@
+{
+  "contract_version": "v1.1.0-alpha.2",
+  "environment": "refinity-dev",
+  "error_profiles": {
+    "account_truth_read": {
+      "codes": [
+        "AUTHENTICATION_FAILED",
+        "RESOURCE_NOT_FOUND",
+        "BROKERAGE_CONNECTION_PENDING",
+        "BROKERAGE_NOT_CONNECTED",
+        "ACCOUNT_TRUTH_STALE",
+        "RECONCILIATION_BLOCKED",
+        "CURSOR_INVALID",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE"
+      ],
+      "statuses": [
+        401,
+        404,
+        409,
+        422,
+        429,
+        503
+      ]
+    },
+    "allocation_mutation": {
+      "codes": [
+        "AUTHENTICATION_FAILED",
+        "RESOURCE_NOT_FOUND",
+        "ALLOCATION_INVALID",
+        "ALLOCATION_PREVIEW_STALE",
+        "BROKERAGE_NOT_CONNECTED",
+        "ACCOUNT_TRUTH_STALE",
+        "COMPLIANCE_ATTESTATION_REQUIRED",
+        "COMPLIANCE_ATTESTATION_EXPIRED",
+        "ACCOUNT_BASELINE_ADOPTION_REQUIRED",
+        "EXTERNAL_ACTIVITY_RECONCILIATION_HOLD",
+        "RECONCILIATION_BLOCKED",
+        "ACKNOWLEDGMENT_REQUIRED",
+        "IDEMPOTENCY_KEY_REUSED",
+        "VERSION_CONFLICT",
+        "EXECUTION_DISABLED",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE"
+      ],
+      "statuses": [
+        401,
+        404,
+        409,
+        422,
+        429,
+        503
+      ]
+    },
+    "attestation_mutation": {
+      "codes": [
+        "AUTHENTICATION_FAILED",
+        "RESOURCE_NOT_FOUND",
+        "COMPLIANCE_ATTESTATION_REPLAYED",
+        "ATTESTATION_SEQUENCE_CONFLICT",
+        "IDEMPOTENCY_KEY_REUSED",
+        "VALIDATION_ERROR",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE"
+      ],
+      "statuses": [
+        401,
+        404,
+        409,
+        422,
+        429,
+        503
+      ]
+    },
+    "authenticated_read": {
+      "codes": [
+        "AUTHENTICATION_FAILED",
+        "RESOURCE_NOT_FOUND",
+        "ACCOUNT_TRUTH_STALE",
+        "RECONCILIATION_BLOCKED",
+        "VALIDATION_ERROR",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE"
+      ],
+      "statuses": [
+        401,
+        404,
+        409,
+        422,
+        429,
+        503
+      ]
+    },
+    "brokerage_mutation": {
+      "codes": [
+        "AUTHENTICATION_FAILED",
+        "RESOURCE_NOT_FOUND",
+        "ACCOUNT_ENVIRONMENT_INVALID",
+        "BROKER_CREDENTIALS_INVALID",
+        "BROKER_ACCOUNT_INELIGIBLE",
+        "BROKERAGE_CONNECTION_PENDING",
+        "BROKERAGE_NOT_CONNECTED",
+        "RECONCILIATION_BLOCKED",
+        "ACKNOWLEDGMENT_REQUIRED",
+        "IDEMPOTENCY_KEY_REUSED",
+        "VERSION_CONFLICT",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE"
+      ],
+      "statuses": [
+        401,
+        404,
+        409,
+        422,
+        429,
+        503
+      ]
+    },
+    "event_stream": {
+      "codes": [
+        "AUTHENTICATION_FAILED",
+        "RESOURCE_NOT_FOUND",
+        "CURSOR_INVALID",
+        "CURSOR_EXPIRED",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE"
+      ],
+      "statuses": [
+        401,
+        404,
+        409,
+        422,
+        429,
+        503
+      ]
+    },
+    "idempotent_mutation": {
+      "codes": [
+        "AUTHENTICATION_FAILED",
+        "RESOURCE_NOT_FOUND",
+        "IDEMPOTENCY_KEY_REUSED",
+        "VERSION_CONFLICT",
+        "VALIDATION_ERROR",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE"
+      ],
+      "statuses": [
+        401,
+        404,
+        409,
+        422,
+        429,
+        503
+      ]
+    },
+    "identity_exchange": {
+      "codes": [
+        "AUTHENTICATION_FAILED",
+        "IDENTITY_ASSERTION_INVALID",
+        "IDENTITY_ASSERTION_REPLAYED",
+        "INVITATION_REQUIRED",
+        "INVITATION_INVALID",
+        "NONCE_INVALID",
+        "RATE_LIMITED",
+        "SERVICE_UNAVAILABLE"
+      ],
+      "statuses": [
+        400,
+        401,
+        404,
+        409,
+        422,
+        429,
+        503
+      ]
+    }
+  },
+  "excluded_public_operations": [
+    "POST /api/v1/investor/eligibility",
+    "POST /api/v1/investor/advisory-profiles",
+    "intent creation or promotion",
+    "risk decision mutation",
+    "execution-plan mutation",
+    "broker order submit, cancel or replace",
+    "liquidation",
+    "cash or securities transfer",
+    "broker configuration or secret read",
+    "Admin mutation"
+  ],
+  "product": {
+    "account_environments": [
+      "paper",
+      "live"
+    ],
+    "connected_alpha_verified": false,
+    "initial_broker": "alpaca",
+    "initial_portfolio": "SP500-Following",
+    "mode": "automated_portfolio_management",
+    "paper_and_live_share_one_lifecycle": true
+  },
+  "record_variants": [
+    "compliance_profile_attestation",
+    "consent_receipt",
+    "brokerage_connection",
+    "brokerage_sync",
+    "allocation",
+    "preference",
+    "action_receipt",
+    "recommendation",
+    "account_intent",
+    "risk_decision",
+    "execution_plan",
+    "order",
+    "fill",
+    "reconciliation",
+    "valuation",
+    "trading_control"
+  ],
+  "route_policy": {
+    "browser_direct_access": false,
+    "closed_request_and_response_objects": true,
+    "correlation_header": "X-Correlation-Id",
+    "financial_values": "decimal_strings",
+    "mutation_idempotency_header": "Idempotency-Key",
+    "optimistic_concurrency_header": "If-Match",
+    "owned_resource_mismatch": "404_RESOURCE_NOT_FOUND",
+    "product_route_count": 41,
+    "resource_identifiers": "opaque",
+    "response_cache_control": "private, no-store",
+    "sse_resume_header": "Last-Event-ID"
+  },
+  "routes": [
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-107"
+      ],
+      "error_profile": "identity_exchange",
+      "method": "POST",
+      "operation_id": "exchangeIdentity",
+      "path": "/api/v1/identity/exchanges",
+      "repository_port": "IdentityExchangeRepository.exchange",
+      "request_schema": "IdentityExchangeRequest",
+      "response_schema": "IdentityExchangeEnvelope",
+      "runtime_owner": "identity-ccid",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getIdentityJwks",
+      "path": "/.well-known/jwks.json",
+      "repository_port": "IdentitySigningKeyProvider.get_public_jwks",
+      "request_schema": null,
+      "response_schema": "Jwks",
+      "runtime_owner": "identity-ccid",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100",
+        "ATD-100A",
+        "ATD-107",
+        "ATD-108"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getOnboardingStatus",
+      "path": "/api/v1/investor/onboarding/status",
+      "repository_port": "InvestorProjectionRepository.get_onboarding_status",
+      "request_schema": null,
+      "response_schema": "OnboardingStatusEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-107"
+      ],
+      "error_profile": "idempotent_mutation",
+      "method": "POST",
+      "operation_id": "joinWaitlist",
+      "path": "/api/v1/investor/waitlist",
+      "repository_port": "InvestorCommandRepository.join_waitlist",
+      "request_schema": "WaitlistRequest",
+      "response_schema": "WaitlistReceiptEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 202
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-107",
+        "ATD-108"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getEligibility",
+      "path": "/api/v1/investor/eligibility",
+      "repository_port": "ComplianceProjectionRepository.get_eligibility",
+      "request_schema": null,
+      "response_schema": "EligibilityStatusEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-107",
+        "ATD-108"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getKycStatus",
+      "path": "/api/v1/investor/kyc",
+      "repository_port": "ComplianceProjectionRepository.get_kyc_status",
+      "request_schema": null,
+      "response_schema": "KycStatusEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-107",
+        "ATD-108"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listAdvisoryProfiles",
+      "path": "/api/v1/investor/advisory-profiles",
+      "repository_port": "ComplianceProjectionRepository.list_advisory_profiles",
+      "request_schema": null,
+      "response_schema": "AdvisoryProfilePageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-107",
+        "ATD-108"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getCurrentAdvisoryProfile",
+      "path": "/api/v1/investor/advisory-profiles/current",
+      "repository_port": "ComplianceProjectionRepository.get_current_advisory_profile",
+      "request_schema": null,
+      "response_schema": "AdvisoryProfileEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listEffectiveDisclosures",
+      "path": "/api/v1/investor/disclosures",
+      "repository_port": "ConsentRepository.list_effective_disclosures",
+      "request_schema": null,
+      "response_schema": "DisclosurePageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listConsents",
+      "path": "/api/v1/investor/consents",
+      "repository_port": "ConsentRepository.list_consents",
+      "request_schema": null,
+      "response_schema": "ConsentPageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-106",
+        "ATD-107"
+      ],
+      "error_profile": "idempotent_mutation",
+      "method": "POST",
+      "operation_id": "recordConsent",
+      "path": "/api/v1/investor/consents",
+      "repository_port": "ConsentRepository.record_consent",
+      "request_schema": "ConsentRequest",
+      "response_schema": "ConsentReceiptEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 201
+    },
+    {
+      "atd_requirements": [
+        "ATD-100",
+        "ATD-100A",
+        "ATD-107",
+        "ATD-108"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listAccounts",
+      "path": "/api/v1/investor/accounts",
+      "repository_port": "InvestorProjectionRepository.list_accounts",
+      "request_schema": null,
+      "response_schema": "AccountPageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100",
+        "ATD-100A",
+        "ATD-107",
+        "ATD-108"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getAccount",
+      "path": "/api/v1/investor/accounts/{account_id}",
+      "repository_port": "InvestorProjectionRepository.get_account",
+      "request_schema": null,
+      "response_schema": "AccountEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getAccountAuthorization",
+      "path": "/api/v1/investor/accounts/{account_id}/authorization",
+      "repository_port": "AccountAuthorizationRepository.get_current_authorization",
+      "request_schema": null,
+      "response_schema": "AccountAuthorizationEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-106",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listComplianceProfileAttestations",
+      "path": "/api/v1/investor/accounts/{account_id}/compliance-profile-attestations",
+      "repository_port": "ComplianceAttestationRepository.list_attestations",
+      "request_schema": null,
+      "response_schema": "ComplianceProfileAttestationPageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-106",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getCurrentComplianceProfileAttestation",
+      "path": "/api/v1/investor/accounts/{account_id}/compliance-profile-attestations/current",
+      "repository_port": "ComplianceAttestationRepository.get_current_attestation",
+      "request_schema": null,
+      "response_schema": "ComplianceProfileAttestationEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-106",
+        "ATD-107"
+      ],
+      "error_profile": "attestation_mutation",
+      "method": "POST",
+      "operation_id": "createComplianceProfileAttestation",
+      "path": "/api/v1/investor/accounts/{account_id}/compliance-profile-attestations",
+      "repository_port": "ComplianceAttestationRepository.record_attestation",
+      "request_schema": "ComplianceProfileAttestationRequest",
+      "response_schema": "ComplianceProfileAttestationEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 201
+    },
+    {
+      "atd_requirements": [
+        "ATD-101",
+        "ATD-107",
+        "ATD-109",
+        "ATD-109A"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listBrokerageConnections",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections",
+      "repository_port": "BrokerageConnectionRepository.list_connections",
+      "request_schema": null,
+      "response_schema": "BrokerageConnectionPageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-101",
+        "ATD-107",
+        "ATD-109",
+        "ATD-109A",
+        "ATD-109B"
+      ],
+      "error_profile": "brokerage_mutation",
+      "method": "POST",
+      "operation_id": "createBrokerageConnection",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections",
+      "repository_port": "BrokerageConnectionCommandPort.register_credentials",
+      "request_schema": "BrokerageConnectionRequest",
+      "response_schema": "BrokerageConnectionEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 202
+    },
+    {
+      "atd_requirements": [
+        "ATD-101",
+        "ATD-107",
+        "ATD-109A",
+        "ATD-109E"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getBrokerageConnection",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections/{connection_id}",
+      "repository_port": "BrokerageConnectionRepository.get_connection",
+      "request_schema": null,
+      "response_schema": "BrokerageConnectionEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-101",
+        "ATD-107",
+        "ATD-109",
+        "ATD-109A"
+      ],
+      "error_profile": "brokerage_mutation",
+      "method": "POST",
+      "operation_id": "rotateBrokerageCredentials",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections/{connection_id}/credentials/rotate",
+      "repository_port": "BrokerageConnectionCommandPort.rotate_credentials",
+      "request_schema": "BrokerageCredentialRotationRequest",
+      "response_schema": "BrokerageConnectionEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 202
+    },
+    {
+      "atd_requirements": [
+        "ATD-101",
+        "ATD-107",
+        "ATD-109B",
+        "ATD-109E"
+      ],
+      "error_profile": "brokerage_mutation",
+      "method": "POST",
+      "operation_id": "syncBrokerageConnection",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections/{connection_id}/sync",
+      "repository_port": "BrokerageSyncCommandPort.request_sync",
+      "request_schema": null,
+      "response_schema": "BrokerageSyncReceiptEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 202
+    },
+    {
+      "atd_requirements": [
+        "ATD-101",
+        "ATD-107",
+        "ATD-109",
+        "ATD-109A"
+      ],
+      "error_profile": "brokerage_mutation",
+      "method": "DELETE",
+      "operation_id": "disconnectBrokerageConnection",
+      "path": "/api/v1/investor/accounts/{account_id}/brokerage-connections/{connection_id}",
+      "repository_port": "BrokerageConnectionCommandPort.disconnect",
+      "request_schema": "AcknowledgmentConfirmationRequest",
+      "response_schema": "BrokerageDisconnectReceiptEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 202
+    },
+    {
+      "atd_requirements": [
+        "ATD-102",
+        "ATD-107",
+        "ATD-109A",
+        "ATD-109C",
+        "ATD-109E"
+      ],
+      "error_profile": "account_truth_read",
+      "method": "GET",
+      "operation_id": "getAccountValuation",
+      "path": "/api/v1/investor/accounts/{account_id}/valuation",
+      "repository_port": "AccountTruthRepository.get_latest_valuation",
+      "request_schema": null,
+      "response_schema": "AccountValuationEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-102",
+        "ATD-107",
+        "ATD-109C",
+        "ATD-109E"
+      ],
+      "error_profile": "account_truth_read",
+      "method": "GET",
+      "operation_id": "listAccountValuations",
+      "path": "/api/v1/investor/accounts/{account_id}/valuations",
+      "repository_port": "AccountTruthRepository.list_valuations",
+      "request_schema": null,
+      "response_schema": "AccountValuationPageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-102",
+        "ATD-107",
+        "ATD-109A",
+        "ATD-109C",
+        "ATD-109E"
+      ],
+      "error_profile": "account_truth_read",
+      "method": "GET",
+      "operation_id": "listAccountPositions",
+      "path": "/api/v1/investor/accounts/{account_id}/positions",
+      "repository_port": "AccountTruthRepository.list_positions",
+      "request_schema": null,
+      "response_schema": "AccountPositionPageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-103",
+        "ATD-107",
+        "ATD-108"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listTemplates",
+      "path": "/api/v1/investor/templates",
+      "repository_port": "PortfolioProjectionRepository.list_templates",
+      "request_schema": null,
+      "response_schema": "TemplatePageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-103",
+        "ATD-107",
+        "ATD-108"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getTemplate",
+      "path": "/api/v1/investor/templates/{template_id}",
+      "repository_port": "PortfolioProjectionRepository.get_template",
+      "request_schema": null,
+      "response_schema": "TemplateEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-103",
+        "ATD-107",
+        "ATD-108"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listAccountMemberships",
+      "path": "/api/v1/investor/accounts/{account_id}/memberships",
+      "repository_port": "AccountMembershipRepository.list_memberships",
+      "request_schema": null,
+      "response_schema": "AccountMembershipPageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-103",
+        "ATD-107"
+      ],
+      "error_profile": "allocation_mutation",
+      "method": "POST",
+      "operation_id": "createAllocationPreview",
+      "path": "/api/v1/investor/accounts/{account_id}/allocation-previews",
+      "repository_port": "AccountAllocationRepository.create_preview",
+      "request_schema": "AllocationPreviewRequest",
+      "response_schema": "AllocationPreviewEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 201
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getAccountPreferences",
+      "path": "/api/v1/investor/accounts/{account_id}/preferences",
+      "repository_port": "AccountPreferenceRepository.get_preferences",
+      "request_schema": null,
+      "response_schema": "PreferencesEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-106",
+        "ATD-107"
+      ],
+      "error_profile": "idempotent_mutation",
+      "method": "PATCH",
+      "operation_id": "updateAccountPreferences",
+      "path": "/api/v1/investor/accounts/{account_id}/preferences",
+      "repository_port": "AccountPreferenceRepository.update_preferences",
+      "request_schema": "PreferencePatch",
+      "response_schema": "ActionReceiptEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 202
+    },
+    {
+      "atd_requirements": [
+        "ATD-100A",
+        "ATD-106",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listAccountPreferenceHistory",
+      "path": "/api/v1/investor/accounts/{account_id}/preferences/history",
+      "repository_port": "AccountPreferenceRepository.list_preference_history",
+      "request_schema": null,
+      "response_schema": "PreferencePageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-104",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listAccountRecommendations",
+      "path": "/api/v1/investor/accounts/{account_id}/recommendations",
+      "repository_port": "RecommendationProjectionRepository.list_recommendations",
+      "request_schema": null,
+      "response_schema": "RecommendationPageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-104",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getAccountRecommendation",
+      "path": "/api/v1/investor/accounts/{account_id}/recommendations/{recommendation_id}",
+      "repository_port": "RecommendationProjectionRepository.get_recommendation",
+      "request_schema": null,
+      "response_schema": "RecommendationEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-104",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listAccountRecommendationLegs",
+      "path": "/api/v1/investor/accounts/{account_id}/recommendations/{recommendation_id}/legs",
+      "repository_port": "RecommendationProjectionRepository.list_recommendation_legs",
+      "request_schema": null,
+      "response_schema": "RecommendationLegPageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-103",
+        "ATD-106",
+        "ATD-107",
+        "ATD-108"
+      ],
+      "error_profile": "allocation_mutation",
+      "method": "POST",
+      "operation_id": "createAccountAction",
+      "path": "/api/v1/investor/accounts/{account_id}/actions",
+      "repository_port": "AccountActionRepository.create_action",
+      "request_schema": "AccountActionRequest",
+      "response_schema": "ActionReceiptEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 202
+    },
+    {
+      "atd_requirements": [
+        "ATD-103",
+        "ATD-106",
+        "ATD-107"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getAccountActionReceipt",
+      "path": "/api/v1/investor/accounts/{account_id}/actions/{action_receipt_id}",
+      "repository_port": "AccountActionRepository.get_action_receipt",
+      "request_schema": null,
+      "response_schema": "ActionReceiptEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-105",
+        "ATD-106",
+        "ATD-107",
+        "ATD-109C",
+        "ATD-109D"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "listAccountRecords",
+      "path": "/api/v1/investor/accounts/{account_id}/records",
+      "repository_port": "AccountActivityProjectionRepository.list_records",
+      "request_schema": null,
+      "response_schema": "AccountRecordPageEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-105",
+        "ATD-106",
+        "ATD-107",
+        "ATD-109D",
+        "ATD-109F"
+      ],
+      "error_profile": "authenticated_read",
+      "method": "GET",
+      "operation_id": "getAccountRecord",
+      "path": "/api/v1/investor/accounts/{account_id}/records/{record_id}",
+      "repository_port": "AccountActivityProjectionRepository.get_record",
+      "request_schema": null,
+      "response_schema": "AccountRecordEnvelope",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    },
+    {
+      "atd_requirements": [
+        "ATD-105",
+        "ATD-106",
+        "ATD-107",
+        "ATD-109D",
+        "ATD-109E"
+      ],
+      "error_profile": "event_stream",
+      "method": "GET",
+      "operation_id": "streamAccountEvents",
+      "path": "/api/v1/investor/accounts/{account_id}/events",
+      "repository_port": "AccountActivityProjectionRepository.stream_events",
+      "request_schema": null,
+      "response_schema": "AccountEventStream",
+      "runtime_owner": "investor-api",
+      "success_status": 200
+    }
+  ],
+  "schema_version": "3.0",
+  "source_authority": "docs/planning/frontend_contract_delivery_alignment_checklist.md#target-contract-specification",
+  "sse_event_variants": [
+    "compliance_profile_attestation.updated",
+    "consent.updated",
+    "brokerage_connection.updated",
+    "brokerage_sync.updated",
+    "allocation.updated",
+    "preference.updated",
+    "action_receipt.updated",
+    "recommendation.updated",
+    "account_intent.updated",
+    "risk_decision.updated",
+    "execution_plan.updated",
+    "order.updated",
+    "fill.recorded",
+    "reconciliation.updated",
+    "valuation.updated",
+    "trading_control.updated"
+  ],
+  "status": "public_boundary_implemented_connected_alpha_pending"
+}

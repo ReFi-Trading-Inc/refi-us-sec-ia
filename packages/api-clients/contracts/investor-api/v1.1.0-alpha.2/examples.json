@@ -1,0 +1,619 @@
+{
+  "authentication": {
+    "authorization": "Bearer fixture-google-oidc",
+    "user_assertion": "fixture-user-assertion"
+  },
+  "contract_version": "v1.1.0-alpha.2",
+  "errors": {
+    "account_truth_stale": {
+      "error": {
+        "code": "ACCOUNT_TRUTH_STALE",
+        "correlation_id": "corr_alpha_stale",
+        "message": "request could not be completed"
+      }
+    },
+    "acknowledgment_required": {
+      "error": {
+        "code": "ACKNOWLEDGMENT_REQUIRED",
+        "continuation": {
+          "continuation_ref": "continuation_alpha_0001",
+          "effective_at": "2026-09-01T00:00:00Z",
+          "expires_at": "2026-12-01T00:00:00Z",
+          "mutation_applied": false,
+          "policy_version": "preference-expansion-1",
+          "required_disclosure_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+          "required_disclosure_key": "signal_preference_expansion",
+          "required_disclosure_version": 1,
+          "retry_idempotency_key": "new_key"
+        },
+        "correlation_id": "corr_alpha_ack",
+        "message": "account action was not applied"
+      }
+    },
+    "resource_not_found": {
+      "error": {
+        "code": "RESOURCE_NOT_FOUND",
+        "correlation_id": "corr_alpha_404",
+        "message": "resource not found"
+      }
+    },
+    "service_unavailable": {
+      "error": {
+        "code": "SERVICE_UNAVAILABLE",
+        "correlation_id": "corr_alpha_unavailable",
+        "message": "request could not be completed"
+      }
+    },
+    "version_conflict": {
+      "error": {
+        "code": "VERSION_CONFLICT",
+        "correlation_id": "corr_alpha_conflict",
+        "message": "account action was not applied"
+      }
+    }
+  },
+  "identity": {
+    "BffAssertionClaims": {
+      "amr": [
+        "email_link"
+      ],
+      "aud": "urn:refinity:investor-api:dev",
+      "auth_time": 1788220800,
+      "exp": 1788220862,
+      "iat": 1788220802,
+      "iss": "urn:refinity:bff:dev",
+      "jti": "assertion_alpha_00000001",
+      "nbf": 1788220802,
+      "sid": "session_alpha_00000001",
+      "sub": "usr_alpha_invited_01"
+    },
+    "Es256ProtectedHeader": {
+      "alg": "ES256",
+      "kid": "example-only",
+      "typ": "JWT"
+    },
+    "IdentityHandoffResult": {
+      "amr": [
+        "email_link"
+      ],
+      "aud": "urn:refinity:frontend-bff:dev",
+      "auth_time": 1788220800,
+      "email": "investor@example.invalid",
+      "email_verified": true,
+      "exp": 1788221101,
+      "iat": 1788220801,
+      "iss": "urn:refinity:identity-ccid:dev",
+      "jti": "exchange_alpha_00000001",
+      "nbf": 1788220801,
+      "sid": "session_alpha_00000001",
+      "sub": "usr_alpha_invited_01"
+    },
+    "Jwks": {
+      "keys": [
+        {
+          "alg": "ES256",
+          "crv": "P-256",
+          "kid": "example-only",
+          "kty": "EC",
+          "use": "sig",
+          "x": "example-public-x-not-a-key",
+          "y": "example-public-y-not-a-key"
+        }
+      ]
+    }
+  },
+  "ids": {
+    "account": "acct_alpha_owned_01",
+    "foreign_account": "acct_alpha_other_02",
+    "second_user": "usr_alpha_isolation_02",
+    "template": "template_us_sp500_following_v1",
+    "user": "usr_alpha_invited_01"
+  },
+  "requests": {
+    "AccountActionRequest": {
+      "action": "join_template",
+      "parameters": {
+        "allocation_percent": "0.25",
+        "allocation_preview_id": "preview_alpha_0001",
+        "template_id": "template_us_sp500_following_v1"
+      }
+    },
+    "AcknowledgmentConfirmationRequest": {
+      "consent_receipt_id": "consent_alpha_00000001",
+      "continuation_ref": "continuation_alpha_0001"
+    },
+    "AllocationPreviewRequest": {
+      "allocation_percent": "0.25",
+      "template_id": "template_us_sp500_following_v1"
+    },
+    "BrokerageConnectionRequest": {
+      "account_environment": "paper",
+      "broker": "alpaca",
+      "credentials": {
+        "api_key": "fixture-only",
+        "api_secret": "fixture-only"
+      }
+    },
+    "BrokerageCredentialRotationRequest": {
+      "credentials": {
+        "api_key": "fixture-only",
+        "api_secret": "fixture-only"
+      }
+    },
+    "ComplianceProfileAttestationRequest": {
+      "attestation_id": "attestation_alpha_0001",
+      "decision_sequence": 1,
+      "decision_version": "frontend-alpha-1",
+      "effective_at": "2026-09-02T00:00:00Z",
+      "evidence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expires_at": "2026-09-02T00:05:00Z",
+      "investor_profile": {
+        "profile_version": "profile-alpha-1",
+        "questionnaire_version": "questionnaire-alpha-1",
+        "risk_band": "moderate",
+        "status": "eligible"
+      },
+      "kyc": {
+        "status": "passed"
+      },
+      "schema_version": "1.0",
+      "trading_eligibility": "eligible"
+    },
+    "ConsentRequest": {
+      "account_id": "acct_alpha_owned_01",
+      "action": "ACCEPT",
+      "consent_key": "automated_portfolio_alpha",
+      "disclosure_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "disclosure_key": "automated_portfolio_alpha",
+      "disclosure_version": 1
+    },
+    "IdentityExchangeRequest": {
+      "acquisition": {
+        "acquisition_source": "DIRECT"
+      },
+      "challenge": "fixture_challenge_value_0001",
+      "identity_assertion": "fixture-upstream-identity-assertion-token",
+      "network_context": "fixture_network_context_0001",
+      "nonce": "fixture_nonce_value_0001",
+      "redirect_uri": "https://frontend.example.invalid/auth/callback",
+      "state": "fixture_state_value_0001"
+    },
+    "PreferencePatch": {
+      "drift_threshold": "0.01",
+      "excluded_assets": [
+        "security_us_aapl"
+      ],
+      "fractional_enabled": true,
+      "min_order": "10"
+    },
+    "WaitlistRequest": {
+      "acquisition_source": "GAME",
+      "campaign_id": "man-vs-machine-alpha",
+      "game_handoff_receipt_id": "game_receipt_alpha_0001"
+    }
+  },
+  "responses": {
+    "AccountAuthorizationEnvelope": {
+      "data": {
+        "expires_at": "2026-12-01T00:00:00Z",
+        "last_evaluated_at": "2026-09-01T00:00:00Z",
+        "policy_version": "closed-us-alpha-1",
+        "reason_codes": [],
+        "state_version": 1,
+        "status": "AUTHORIZED"
+      }
+    },
+    "AccountEnvelope": {
+      "data": {
+        "account_id": "acct_alpha_owned_01",
+        "authorization": {
+          "expires_at": "2026-12-01T00:00:00Z",
+          "last_evaluated_at": "2026-09-01T00:00:00Z",
+          "policy_version": "closed-us-alpha-1",
+          "reason_codes": [],
+          "state_version": 1,
+          "status": "AUTHORIZED"
+        },
+        "managed_enabled": true,
+        "management_scope_status": "ACTIVE",
+        "product_mode": "automated_portfolio_management",
+        "reconciliation_hold_status": "CLEAR",
+        "status": "active"
+      }
+    },
+    "AccountEvent": {
+      "account_id": "acct_alpha_owned_01",
+      "correlation_id": "corr_alpha_00000001",
+      "data": {
+        "entity_id": "recommendation_alpha_0001",
+        "reason_codes": [],
+        "record_id": "record_alpha_00000001",
+        "state_version": 1,
+        "status": "CURRENT"
+      },
+      "event_id": "event_alpha_00000001",
+      "event_type": "recommendation.updated",
+      "occurred_at": "2026-09-02T00:00:00Z"
+    },
+    "AccountMembershipEnvelope": {
+      "data": {
+        "account_id": "acct_alpha_owned_01",
+        "allocation_fingerprint": "4444444444444444444444444444444444444444444444444444444444444444",
+        "allocation_percent": "0.25",
+        "allocation_version": 1,
+        "effective_from": "2026-09-02T00:00:00Z",
+        "effective_to": null,
+        "joined_target_fingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+        "joined_target_version": "target_alpha_0001",
+        "membership_version": 1,
+        "portfolio_id": "portfolio_sp500_following_01",
+        "status": "ACTIVE",
+        "template_id": "template_us_sp500_following_v1"
+      }
+    },
+    "AccountPositionEnvelope": {
+      "data": {
+        "account_id": "acct_alpha_owned_01",
+        "account_snapshot_id": "snapshot_alpha_0001",
+        "attributed_qty": "1",
+        "available_to_sell_qty": "1",
+        "average_price": "200",
+        "broker_asset_id": "alpaca-asset-aapl",
+        "currency": "USD",
+        "display_name": "Apple Inc.",
+        "externally_observed_qty": "0",
+        "fresh_until": "2026-09-02T00:05:00Z",
+        "freshness_status": "FRESH",
+        "held_qty": "1",
+        "listing_id": "listing_us_aapl_xnas",
+        "market_value": "205.25",
+        "pending_buy_qty": "0",
+        "pending_sell_qty": "0",
+        "reference_price": "205.25",
+        "security_id": "security_us_aapl",
+        "source_observed_at": "2026-09-02T00:00:00Z",
+        "symbol": "AAPL"
+      }
+    },
+    "AccountRecordEnvelope": {
+      "data": {
+        "account_id": "acct_alpha_owned_01",
+        "correlation_id": "corr_alpha_00000001",
+        "created_at": "2026-09-02T00:00:00Z",
+        "details": {
+          "completed_at": null,
+          "currency": "USD",
+          "effective_at": "2026-09-02T00:00:00Z",
+          "entity_id": "recommendation_alpha_0001",
+          "notional": "6250.0625",
+          "quantity": null,
+          "reason_codes": [],
+          "related_record_id": null,
+          "status": "CURRENT"
+        },
+        "record_id": "record_alpha_00000001",
+        "record_type": "recommendation",
+        "source_version": "recommendation-alpha-2"
+      }
+    },
+    "AccountValuationEnvelope": {
+      "data": {
+        "account_environment": "paper",
+        "account_id": "acct_alpha_owned_01",
+        "account_snapshot_id": "snapshot_alpha_0001",
+        "as_of_time": "2026-09-02T00:00:00Z",
+        "broker_connection_id": "brokerconn_alpha_0001",
+        "broker_observed_at": "2026-09-02T00:00:00Z",
+        "buying_power": "2000",
+        "cash": "1000",
+        "currency": "USD",
+        "equity": "25000.25",
+        "fresh_until": "2026-09-02T00:05:00Z",
+        "freshness_status": "FRESH",
+        "management_scope_status": "ACTIVE",
+        "open_order_count": 0,
+        "pending_buy_notional": "0",
+        "pending_sell_notional": "0",
+        "position_count": 1,
+        "reconciliation_hold_status": "CLEAR",
+        "reconciliation_run_id": "reconciliation_alpha_0001",
+        "status": "READY",
+        "unknown_order_count": 0
+      }
+    },
+    "ActionReceiptEnvelope": {
+      "data": {
+        "account_id": "acct_alpha_owned_01",
+        "action_receipt_id": "action_alpha_00000001",
+        "aggregate_version": 2,
+        "duplicate": false,
+        "effect": "queued",
+        "status": "ACCEPTED",
+        "status_path": "/api/v1/investor/accounts/acct_alpha_owned_01/actions/action_alpha_00000001"
+      }
+    },
+    "AdvisoryProfileEnvelope": {
+      "data": {
+        "advisory_profile_id": "profile_alpha_00000001",
+        "effective_at": "2026-09-01T00:00:00Z",
+        "expires_at": "2026-12-01T00:00:00Z",
+        "pass_fail": "PASS",
+        "policy_version": "suitability-alpha-1",
+        "profile_fingerprint": "6666666666666666666666666666666666666666666666666666666666666666",
+        "profile_status": "ACTIVE",
+        "profile_version": 1,
+        "questionnaire_id": "questionnaire_signal_alpha",
+        "questionnaire_version": "frontend-alpha-placeholder-1",
+        "reason_codes": [],
+        "response_hash": "1111111111111111111111111111111111111111111111111111111111111111",
+        "response_schema_version": "1.0",
+        "risk_calibration": "MODERATE"
+      }
+    },
+    "AllocationPreviewEnvelope": {
+      "data": {
+        "account_environment": "paper",
+        "account_id": "acct_alpha_owned_01",
+        "account_snapshot_id": "snapshot_alpha_0001",
+        "allocation_notional": "6250.0625",
+        "allocation_percent": "0.25",
+        "allocation_preview_id": "preview_alpha_0001",
+        "broker_connection_id": "brokerconn_alpha_0001",
+        "capability_snapshot_id": "capability_alpha_0001",
+        "coverage_weight": "0.99",
+        "effective_min_order": "10",
+        "estimated_buy_leg_count": 420,
+        "estimated_held_leg_count": 1,
+        "estimated_investable_notional": "6200",
+        "estimated_noop_leg_count": 82,
+        "estimated_sell_leg_count": 0,
+        "estimated_suppressed_notional": "50.0625",
+        "expires_at": "2026-09-02T00:05:00Z",
+        "feasible": true,
+        "preview_fingerprint": "6666666666666666666666666666666666666666666666666666666666666666",
+        "price_set_fingerprint": "5555555555555555555555555555555555555555555555555555555555555555",
+        "price_set_id": "priceset_alpha_0001",
+        "reason_codes": [],
+        "target_fingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+        "target_version": "target_alpha_0001",
+        "template_id": "template_us_sp500_following_v1",
+        "tracking_difference_weight": "0.01"
+      }
+    },
+    "BrokerageConnectionEnvelope": {
+      "data": {
+        "account_environment": "paper",
+        "account_id": "acct_alpha_owned_01",
+        "action_receipt_id": "action_brokerage_0001",
+        "broker": "alpaca",
+        "broker_account_id": "alpaca-account-fixture-01",
+        "connection_id": "brokerconn_alpha_0001",
+        "connection_status": "CONNECTED",
+        "created_at": "2026-09-02T00:00:00Z",
+        "credential_status": "VALID",
+        "last_synced_at": "2026-09-02T00:00:00Z",
+        "stale_at": "2026-09-02T00:05:00Z",
+        "state_version": 2,
+        "status_path": "/api/v1/investor/accounts/acct_alpha_owned_01/brokerage-connections/brokerconn_alpha_0001",
+        "sync_run_id": "sync_alpha_0001",
+        "updated_at": "2026-09-02T00:00:00Z",
+        "validated_at": "2026-09-02T00:00:00Z"
+      }
+    },
+    "BrokerageDisconnectReceiptEnvelope": {
+      "data": {
+        "accepted_at": "2026-09-02T00:00:00Z",
+        "connection_id": "brokerconn_alpha_0001",
+        "disconnect_receipt_id": "disconnect_alpha_0001",
+        "positions_unchanged": true,
+        "status": "DISCONNECTING",
+        "status_path": "/api/v1/investor/accounts/acct_alpha_owned_01/brokerage-connections/brokerconn_alpha_0001"
+      }
+    },
+    "BrokerageSyncReceiptEnvelope": {
+      "data": {
+        "accepted_at": "2026-09-02T00:00:00Z",
+        "connection_id": "brokerconn_alpha_0001",
+        "status": "ACCEPTED",
+        "status_path": "/api/v1/investor/accounts/acct_alpha_owned_01/brokerage-connections/brokerconn_alpha_0001",
+        "sync_receipt_id": "syncreceipt_alpha_0001",
+        "sync_run_id": "sync_alpha_0001"
+      }
+    },
+    "ComplianceProfileAttestationEnvelope": {
+      "data": {
+        "account_id": "acct_alpha_owned_01",
+        "attestation_id": "attestation_alpha_0001",
+        "authorization": {
+          "expires_at": "2026-12-01T00:00:00Z",
+          "last_evaluated_at": "2026-09-01T00:00:00Z",
+          "policy_version": "closed-us-alpha-1",
+          "reason_codes": [],
+          "state_version": 1,
+          "status": "AUTHORIZED"
+        },
+        "decision_sequence": 1,
+        "decision_version": "frontend-alpha-1",
+        "effective_at": "2026-09-02T00:00:00Z",
+        "evidence_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "expires_at": "2026-09-02T00:05:00Z",
+        "investor_profile": {
+          "profile_version": "profile-alpha-1",
+          "questionnaire_version": "questionnaire-alpha-1",
+          "risk_band": "moderate",
+          "status": "eligible"
+        },
+        "kyc": {
+          "status": "passed"
+        },
+        "payload_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "received_at": "2026-09-02T00:00:00Z",
+        "schema_version": "1.0",
+        "status": "ACCEPTED",
+        "trading_eligibility": "eligible"
+      }
+    },
+    "ConsentReceiptEnvelope": {
+      "data": {
+        "account_id": "acct_alpha_owned_01",
+        "consent_key": "automated_portfolio_alpha",
+        "consent_receipt_id": "consent_alpha_00000001",
+        "disclosure_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "disclosure_key": "automated_portfolio_alpha",
+        "disclosure_version": 1,
+        "expires_at": "2026-12-01T00:00:00Z",
+        "recorded_at": "2026-09-01T00:00:00Z",
+        "status": "ACTIVE"
+      }
+    },
+    "DisclosureEnvelope": {
+      "data": {
+        "content_hash": "2222222222222222222222222222222222222222222222222222222222222222",
+        "content_ref": "https://example.invalid/disclosures/automated-portfolio-alpha-1",
+        "disclosure_key": "automated_portfolio_alpha",
+        "disclosure_version": 1,
+        "effective_at": "2026-09-01T00:00:00Z",
+        "locale": "en-US",
+        "status": "EFFECTIVE"
+      }
+    },
+    "EligibilityStatusEnvelope": {
+      "data": {
+        "decided_at": "2026-09-01T00:00:00Z",
+        "decision": "ELIGIBLE",
+        "eligibility_decision_id": "elig_alpha_00000001",
+        "expires_at": "2026-12-01T00:00:00Z",
+        "jurisdiction": "US",
+        "policy_version": "closed-us-alpha-1",
+        "reason_codes": []
+      }
+    },
+    "IdentityExchangeEnvelope": {
+      "data": {
+        "expires_at": "2026-09-02T00:05:00Z",
+        "identity_result": "fixture.compact.es256-jwt",
+        "token_type": "JWT"
+      }
+    },
+    "Jwks": {
+      "keys": [
+        {
+          "alg": "ES256",
+          "crv": "P-256",
+          "kid": "backend-test-key-1",
+          "kty": "EC",
+          "use": "sig",
+          "x": "fixture-public-coordinate-x",
+          "y": "fixture-public-coordinate-y"
+        }
+      ]
+    },
+    "KycStatusEnvelope": {
+      "data": {
+        "level": "CLOSED_US_INVITE_ALPHA",
+        "policy_version": "closed-us-alpha-1",
+        "public_launch_eligible": false,
+        "status": "NOT_REQUIRED"
+      }
+    },
+    "OnboardingStatusEnvelope": {
+      "data": {
+        "evaluated_at": "2026-09-01T00:00:00Z",
+        "policy_version": "closed-us-alpha-1",
+        "required_steps": [],
+        "state": "READY",
+        "user_id": "usr_alpha_invited_01"
+      }
+    },
+    "PreferencesEnvelope": {
+      "data": {
+        "drift_threshold": "0.01",
+        "excluded_assets": [
+          "security_us_aapl"
+        ],
+        "fractional_enabled": true,
+        "min_order": "10",
+        "preference_fingerprint": "4444444444444444444444444444444444444444444444444444444444444444",
+        "updated_at": "2026-09-01T00:00:00Z",
+        "version": 1
+      }
+    },
+    "RecommendationEnvelope": {
+      "data": {
+        "account_id": "acct_alpha_owned_01",
+        "estimated_turnover_percent": "8.25",
+        "execution_eligible": true,
+        "freshness": {
+          "expires_at": "2026-12-01T00:00:00Z",
+          "fresh_until": "2026-12-01T00:00:00Z",
+          "freshness_policy_version": "automated-portfolio-freshness-1",
+          "freshness_reason_codes": [],
+          "freshness_status": "fresh",
+          "last_evaluated_at": "2026-09-01T00:00:00Z",
+          "source_as_of": "2026-09-01T00:00:00Z"
+        },
+        "leg_count": 503,
+        "recommendation_id": "recommendation_alpha_0001",
+        "status": "CURRENT",
+        "template_id": "template_us_sp500_direct_index_v1"
+      }
+    },
+    "RecommendationLegEnvelope": {
+      "data": {
+        "current_quantity": "1",
+        "delta_quantity": "0.25",
+        "executable": true,
+        "notional_delta": "50",
+        "reason_codes": [
+          "TARGET_DELTA"
+        ],
+        "recommendation_id": "recommendation_alpha_0001",
+        "reference_price": "200",
+        "security_id": "security_us_aapl",
+        "symbol": "AAPL",
+        "target_quantity": "1.25"
+      }
+    },
+    "TemplateEnvelope": {
+      "data": {
+        "benchmark": "SPX",
+        "constituent_count": 503,
+        "fresh_until": "2026-09-02T00:05:00Z",
+        "freshness_status": "FRESH",
+        "name": "SP500-Following",
+        "portfolio_id": "portfolio_sp500_following_01",
+        "product_mode": "automated_portfolio_management",
+        "source_as_of": "2026-09-02T00:00:00Z",
+        "target_fingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+        "target_version": "target_alpha_0001",
+        "template_id": "template_us_sp500_following_v1"
+      }
+    },
+    "WaitlistReceiptEnvelope": {
+      "data": {
+        "created_at": "2026-09-01T00:00:00Z",
+        "status": "WAITLISTED",
+        "waitlist_receipt_id": "wait_alpha_00000001"
+      }
+    }
+  },
+  "scenarios": {
+    "async_pending": "BrokerageSyncReceiptEnvelope",
+    "concurrency": "version_conflict",
+    "cursor_paging": {
+      "first": null,
+      "next": "fixture-opaque-account-bound-cursor"
+    },
+    "denial": "acknowledgment_required",
+    "foreign_resource": "resource_not_found",
+    "idempotent_replay": "same request and Idempotency-Key returns the same receipt",
+    "sse_resume": {
+      "dedupe_by": "event_id",
+      "header": "Last-Event-ID",
+      "value": "event_alpha_00000001"
+    },
+    "stale": "account_truth_stale",
+    "success": "AccountValuationEnvelope"
+  },
+  "schema_version": "1.0"
+}

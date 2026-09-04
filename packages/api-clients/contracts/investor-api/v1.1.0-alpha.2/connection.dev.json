@@ -1,0 +1,608 @@
+{
+  "backend_owner_inputs_not_requested_from_frontend": [
+    "alpaca_fixture_credential_pair",
+    "alpaca_fixture_account_environment",
+    "closed_alpha_campaign_scope"
+  ],
+  "backend_pending_deliverables": [
+    "support.trading_operations_contact",
+    "identity_ccid_base_url",
+    "identity_ccid_jwks_url",
+    "investor_api_base_url",
+    "wif_provider_name",
+    "dev_service_revisions_and_image_digests",
+    "real_connected_fixture_ids"
+  ],
+  "binding_status": "pending_external_and_backend",
+  "connection_bindings": {
+    "alpaca_fixture_account_environment": {
+      "acceptance_condition": "The fixture validates against https://paper-api.alpaca.markets; the same production-grade lifecycle is exercised as live.",
+      "blocks_frontend_development": false,
+      "current_state": "Paper is selected for the backend-owned connected Dev fixture; credentials have not yet been bootstrapped.",
+      "delivery": "protected_local_bootstrap",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-096",
+        "ATD-114",
+        "ATD-115"
+      ],
+      "owner": "backend-owner",
+      "required_action": "Backend owner confirms the protected fixture input and completes local bootstrap.",
+      "required_for": [
+        "direct_alpaca_credential_validation_and_sync",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": "paper",
+      "value_state": "selected_not_operational",
+      "value_type": "enum:paper|live"
+    },
+    "alpaca_fixture_credential_pair": {
+      "acceptance_condition": "Credentials validate against the selected paper host and are stored only as a pinned Secret Manager version.",
+      "blocks_frontend_development": false,
+      "current_state": "No real Alpaca credential pair has been loaded through the protected local bootstrap flow.",
+      "delivery": "protected_local_bootstrap",
+      "include_in_connection_addendum": false,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-096",
+        "ATD-114",
+        "ATD-115"
+      ],
+      "owner": "backend-owner",
+      "required_action": "Backend owner supplies one real Alpaca paper-account credential pair locally; frontend must never receive this fixture secret.",
+      "required_fields": [
+        "api_key",
+        "api_secret"
+      ],
+      "required_for": [
+        "direct_alpaca_credential_validation_and_sync",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": true,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "protected_secret_pair"
+    },
+    "closed_alpha_campaign_scope": {
+      "acceptance_condition": "Identifier is bound to the approved invite-only U.S. Alpha cohort and release evidence.",
+      "blocks_frontend_development": false,
+      "current_state": "The final invite-only Alpha campaign/cohort identifier is not selected.",
+      "delivery": "release_approval",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-118",
+        "ATD-124",
+        "ATD-134"
+      ],
+      "owner": "backend-owner",
+      "required_action": "Backend owner selects the opaque campaign identifier at release approval.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "opaque_identifier"
+    },
+    "dev_service_revisions_and_image_digests": {
+      "acceptance_condition": "Every required service revision is Ready, receives intended traffic and resolves to the recorded immutable image digest.",
+      "blocks_frontend_development": false,
+      "current_state": "Current provisioned revisions are development checkpoints, not the accepted connected-Alpha release set.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-123",
+        "ATD-132",
+        "ATD-134",
+        "ATD-137"
+      ],
+      "owner": "backend",
+      "required_action": "Backend records the final service revisions and immutable image digests after parallel deployment and acceptance.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "service_revision_digest_map"
+    },
+    "frontend_bff_jwks_url": {
+      "acceptance_condition": "HTTPS GET returns 200 with a valid JWKS containing at least one unique usable ES256 public key, and signed test assertions pass new-kid refresh and rotation checks.",
+      "blocks_frontend_development": false,
+      "current_state": "The URL is agreed and the BFF base is reachable, but a 2026-09-03 probe of this JWKS route returned HTTP 503.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend deploys the BFF assertion JWKS at this already-selected URL; no new URL decision is requested.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": "https://bff-dev.refi.trading/.well-known/jwks.json",
+      "value_state": "selected_not_operational",
+      "value_type": "https_uri"
+    },
+    "frontend_identity_redirect_uris": {
+      "acceptance_condition": "Array is non-empty, unique, exact and every URI is HTTPS with no credentials or fragment.",
+      "blocks_frontend_development": false,
+      "current_state": "No exact frontend identity callback allowlist has been supplied.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies every exact HTTPS redirect URI used by the Dev BFF identity flow.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "https_uri_array"
+    },
+    "frontend_upstream_identity_audience": {
+      "acceptance_condition": "Value is non-empty, at most 256 characters and matches a verified Dev assertion exactly.",
+      "blocks_frontend_development": false,
+      "current_state": "No exact upstream user-identity token audience has been supplied.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the exact aud value emitted for the identity assertion sent to identity-ccid.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "string"
+    },
+    "frontend_upstream_identity_issuer": {
+      "acceptance_condition": "Exact HTTPS issuer is stable in Dev and matches a cryptographically verified test assertion.",
+      "blocks_frontend_development": false,
+      "current_state": "No exact upstream user-identity token issuer has been supplied.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the exact HTTPS iss claim emitted for the identity assertion sent to identity-ccid.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "https_uri"
+    },
+    "frontend_upstream_identity_jwks_url": {
+      "acceptance_condition": "HTTPS GET returns a valid JWKS containing at least one unique usable ES256 public key and supports bounded rotation testing.",
+      "blocks_frontend_development": false,
+      "current_state": "The upstream user-identity JWKS endpoint is distinct from the BFF assertion JWKS and is not yet supplied.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the exact HTTPS JWKS URL for verifying upstream user-identity assertions.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "https_uri"
+    },
+    "frontend_upstream_identity_provider_id": {
+      "acceptance_condition": "Matches [a-z][a-z0-9_-]{1,31} and identifies the same provider as the supplied issuer, audience and JWKS.",
+      "blocks_frontend_development": false,
+      "current_state": "The frontend identity product/provider has not been identified in the handoff facts.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the stable lowercase provider identifier used to namespace the upstream identity mapping.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "lowercase_provider_identifier"
+    },
+    "identity_ccid_base_url": {
+      "acceptance_condition": "BFF can invoke the identity exchange with the required Google audience and positive/negative trust tests pass.",
+      "blocks_frontend_development": false,
+      "current_state": "Cloud Run service and revision are Ready, but IDENTITY_FEATURE_STATE is disabled and frontend trust inputs are blank.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-121",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend binds verified frontend trust, deploys the accepted revision and activates the Alpha feature state.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": "https://identity-ccid-74kl57biwa-uw.a.run.app",
+      "value_state": "provisioned_not_enabled",
+      "value_type": "https_uri"
+    },
+    "identity_ccid_jwks_url": {
+      "acceptance_condition": "Unauthenticated HTTPS GET returns 200 with only supported public ES256 keys and bounded cache headers; identity-result verification and rotation pass.",
+      "blocks_frontend_development": false,
+      "current_state": "The public route and KMS-backed signing implementation exist, but unauthenticated access returned HTTP 403 on 2026-09-03.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-121",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend exposes this JWKS route without a Google credential while retaining application-level authentication on protected identity routes.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": "https://identity-ccid-74kl57biwa-uw.a.run.app/.well-known/jwks.json",
+      "value_state": "provisioned_not_enabled",
+      "value_type": "https_uri"
+    },
+    "investor_api_base_url": {
+      "acceptance_condition": "The authorized BFF can invoke all package routes with both credentials and negative caller/user/ownership tests pass.",
+      "blocks_frontend_development": false,
+      "current_state": "Cloud Run service and revision are Ready, but INVESTOR_API_FEATURE_STATE is disabled and the BFF assertion JWKS is unbound.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-121",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend binds the operational frontend BFF JWKS, deploys the accepted revision and activates only the approved Alpha scope.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": "https://investor-api-74kl57biwa-uw.a.run.app",
+      "value_state": "provisioned_not_enabled",
+      "value_type": "https_uri"
+    },
+    "real_connected_fixture_ids": {
+      "acceptance_condition": "Identifiers resolve through the package routes for the owning fixture user and uniformly fail for another user.",
+      "blocks_frontend_development": false,
+      "current_state": "No real connected fixture journey has produced the account-safe identifier set.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-111",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend runs the protected real paper-account journey and records only safe opaque fixture identifiers.",
+      "required_fields": [
+        "user_id",
+        "account_id",
+        "connection_id",
+        "portfolio_id",
+        "recommendation_id",
+        "intent_id",
+        "order_id",
+        "record_id"
+      ],
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "opaque_identifier_map"
+    },
+    "support.escalation_channel": {
+      "acceptance_condition": "Both teams verify access and the permitted escalation-field policy.",
+      "blocks_frontend_development": false,
+      "current_state": "No shared secure escalation channel reference is recorded.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "joint_binding",
+      "later_gates": [
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend+frontend-system",
+      "required_action": "Frontend and backend agree a secure channel that excludes credentials, tokens and prohibited payloads.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "secure_channel_reference"
+    },
+    "support.integration_contact": {
+      "acceptance_condition": "Both teams acknowledge the contact reference and delivery channel.",
+      "blocks_frontend_development": false,
+      "current_state": "No joint day-to-day integration contact reference is recorded.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "joint_binding",
+      "later_gates": [
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend+frontend-system",
+      "required_action": "Frontend and backend each identify an integration contact and agree the reference included in the addendum.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "contact_reference"
+    },
+    "support.security_contact": {
+      "acceptance_condition": "Both teams acknowledge the contact reference and protected communication path.",
+      "blocks_frontend_development": false,
+      "current_state": "No joint security contact reference is recorded.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "joint_binding",
+      "later_gates": [
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend+frontend-system",
+      "required_action": "Frontend and backend agree the contact used for credential, token, JWKS and data-security escalation.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "contact_reference"
+    },
+    "support.trading_operations_contact": {
+      "acceptance_condition": "Contact and response path are verified and included in the hash-bound addendum.",
+      "blocks_frontend_development": false,
+      "current_state": "The backend trading-operations contact has not been published for the Alpha connection addendum.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend publishes the trading-operations contact before connected acceptance.",
+      "required_for": [
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "contact_reference"
+    },
+    "wif_allowed_audiences": {
+      "acceptance_condition": "Contains 1-10 unique non-whitespace values, each at most 256 characters, and a real token matches one allowed value.",
+      "blocks_frontend_development": false,
+      "current_state": "No allowed WIF workload-token audiences have been supplied.",
+      "delivery": "secure_owner_exchange",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the bounded audience set emitted for its deployed BFF workload tokens.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "string_array_1_to_10"
+    },
+    "wif_allowed_subjects": {
+      "acceptance_condition": "Array is non-empty and unique; each subject is 1-127 non-whitespace characters and negative subjects fail impersonation.",
+      "blocks_frontend_development": false,
+      "current_state": "No immutable frontend BFF workload subjects have been supplied; the backend therefore creates no provider or impersonation grant.",
+      "delivery": "secure_owner_exchange",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the exact immutable sub claim value for each Dev BFF workload identity that may impersonate the fixed BFF service account.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "immutable_subject_array"
+    },
+    "wif_oidc_issuer": {
+      "acceptance_condition": "Issuer is stable, HTTPS and matches the iss claim in a real frontend workload token.",
+      "blocks_frontend_development": false,
+      "current_state": "The WIF pool exists, but its OIDC provider cannot be created until the frontend workload issuer is known.",
+      "delivery": "secure_owner_exchange",
+      "include_in_connection_addendum": true,
+      "kind": "external_input",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "frontend-system",
+      "required_action": "Frontend supplies the exact HTTPS issuer used by its deployed BFF workload identity tokens.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_external",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "https_uri"
+    },
+    "wif_provider_name": {
+      "acceptance_condition": "Provider resource is ACTIVE and only the approved subjects can impersonate the fixed BFF service account; negative subjects are denied.",
+      "blocks_frontend_development": false,
+      "current_state": "The WIF pool is ACTIVE but has zero providers; no frontend identity can impersonate the BFF service account.",
+      "delivery": "connection_addendum",
+      "include_in_connection_addendum": true,
+      "kind": "backend_output",
+      "later_gates": [
+        "ATD-107",
+        "ATD-112",
+        "ATD-123",
+        "ATD-134"
+      ],
+      "owner": "backend",
+      "required_action": "Backend creates the fixed provider and restricted impersonation grants after validating the frontend issuer, allowed audiences and immutable subjects.",
+      "required_for": [
+        "frontend_identity_and_wif_binding",
+        "connected_dev_contract_conformance"
+      ],
+      "sensitive": false,
+      "status": "pending_backend",
+      "value": null,
+      "value_state": "not_supplied",
+      "value_type": "gcp_resource_name"
+    }
+  },
+  "contract_version": "v1.1.0-alpha.2",
+  "environment": "refinity-dev",
+  "frontend_development_blockers": [],
+  "frontend_required_actions": [
+    "frontend_upstream_identity_provider_id",
+    "frontend_upstream_identity_issuer",
+    "frontend_upstream_identity_audience",
+    "frontend_upstream_identity_jwks_url",
+    "frontend_identity_redirect_uris",
+    "frontend_bff_jwks_url",
+    "wif_oidc_issuer",
+    "wif_allowed_audiences",
+    "wif_allowed_subjects",
+    "support.integration_contact",
+    "support.security_contact",
+    "support.escalation_channel"
+  ],
+  "issuance_observations": {
+    "frontend_bff_base_http_status": 200,
+    "frontend_bff_jwks_http_status": 503,
+    "identity_ccid_cloud_run_ready": true,
+    "identity_ccid_feature_state": "disabled",
+    "identity_ccid_public_jwks_http_status": 403,
+    "investor_api_cloud_run_ready": true,
+    "investor_api_feature_state": "disabled",
+    "observed_at": "2026-09-03",
+    "wif_pool_state": "ACTIVE",
+    "wif_provider_count": 0
+  },
+  "logical_values": {
+    "backend_identity_jwks_path": "/.well-known/jwks.json",
+    "bff_assertion_audience": "urn:refinity:investor-api:dev",
+    "bff_assertion_issuer": "urn:refinity:bff:dev",
+    "bff_service_account": "refinity-dev-investor-bff-sa@refinity-dev.iam.gserviceaccount.com",
+    "frontend_bff_base_url": "https://bff-dev.refi.trading",
+    "identity_ccid_google_oidc_audience": "https://identity-ccid.dev.refi.internal",
+    "identity_result_audience": "urn:refinity:frontend-bff:dev",
+    "identity_result_issuer": "urn:refinity:identity-ccid:dev",
+    "investor_api_google_oidc_audience": "https://investor-api.dev.refi.internal",
+    "planned_wif_provider_id": "frontend-system-oidc",
+    "project_id": "refinity-dev",
+    "project_number": "182665799543",
+    "region": "us-west1",
+    "wif_pool_id": "refinity-dev-frontend-system",
+    "wif_pool_resource_name": "projects/182665799543/locations/global/workloadIdentityPools/refinity-dev-frontend-system"
+  },
+  "rules": [
+    "A null value is genuinely not yet supplied or produced and must not be guessed.",
+    "A non-null value with a non-ready value_state is selected or provisioned but must not be treated as operational.",
+    "Only frontend_required_actions are requests to the frontend team.",
+    "Backend outputs become operational only in a later hash-bound connection addendum after their acceptance conditions pass."
+  ],
+  "schema_version": "2.1"
+}

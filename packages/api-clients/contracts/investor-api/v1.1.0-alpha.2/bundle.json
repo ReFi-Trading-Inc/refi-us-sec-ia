@@ -1,0 +1,60 @@
+{
+  "artifacts": [
+    {
+      "path": "README.md",
+      "sha256": "b00f4745728dbef098e632f8699348875fdc419742fb832acca60c03ca7eced8"
+    },
+    {
+      "path": "capabilities.json",
+      "sha256": "b906842af69f0d0425c330a09130a05e97a76adf283e933f1b112c028101313d"
+    },
+    {
+      "path": "connection.dev.json",
+      "sha256": "8f72b865a51a26b6ed93334c99622f6710bd25ecb94f486030c31fae3870b092"
+    },
+    {
+      "path": "contract.json",
+      "sha256": "83928fb32fb53b98ce612ab41237f4fa4b1174bdbd86ebed6a84d0539d9b1d27"
+    },
+    {
+      "path": "examples.json",
+      "sha256": "b3a45bf691a5b0b93bff1854a3614f5c1dd19f98b37c69073794b367c7f7f740"
+    },
+    {
+      "path": "openapi.json",
+      "sha256": "fba0cff90d62dc9e883e71367b5632efc9168a02bf73df00537bead6d44dfae9"
+    },
+    {
+      "path": "schemas.json",
+      "sha256": "e2a4569eb934c1252b0e504a80aac19c13510ef9444f6b13f5fe6ecfa0f3cda3"
+    },
+    {
+      "path": "tools/conformance.py",
+      "sha256": "374b5d4982a1f16a9162050e77596dba38aaa4dc727b54f8ca7df49dd90e83fc"
+    }
+  ],
+  "connected_alpha_verified": false,
+  "contract_implemented": true,
+  "contract_version": "v1.1.0-alpha.2",
+  "generator": {
+    "path": "scripts/contracts/build_investor_alpha_handoff.py",
+    "version": "2"
+  },
+  "package_content_sha256": "c1b53c906653ca8860bf66cfc0df8fa862ff34d6cbf77298ac83cb55f006cb09",
+  "package_id": "v1.1.0-alpha.2-frontend-handoff",
+  "readiness_states": {
+    "backend_connected_release_ready": false,
+    "backend_services_provisioned": true,
+    "connected_alpaca_verified": false,
+    "connected_alpha_verified": false,
+    "external_trust_bound": false,
+    "frontend_contract_ready": true
+  },
+  "schema_version": "2.0",
+  "source": {
+    "path": "contracts/frontend/investor-api-v1.1.0-alpha.2.json",
+    "revision": "b51556df2a28b531dad0a81d0001685da110bfdf7b2bd38e8e2ac899f22e0278",
+    "revision_kind": "contract_content_sha256",
+    "sha256": "b51556df2a28b531dad0a81d0001685da110bfdf7b2bd38e8e2ac899f22e0278"
+  }
+}

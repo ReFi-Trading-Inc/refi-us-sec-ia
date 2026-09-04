@@ -1,0 +1,3 @@
+# Vendored third-party contract packages are byte-identical copies verified by
+# SHA-256 against their bundle.json; formatting them would break the hashes.
+packages/api-clients/contracts/investor-api/v*/

@@ -35,9 +35,11 @@
  *   parse/validation, retry delays and retries; a hanging fetch or a stalled
  *   body is aborted at the deadline; at most two retries on transport failure
  *   or 502/503/504, each with a new assertion, and only if time remains.
- * - Success is the EXACT `success_status`, the declared media type, and the
- *   declared `Cache-Control` policy (`private, no-store` for all private
- *   responses; a bounded public policy for the public JWKS).
+ * - Success is the EXACT `success_status`, the declared media type, the
+ *   declared `X-Correlation-Id` header (1–128 chars) and the declared
+ *   `Cache-Control` policy (`private, no-store` for all private responses; a
+ *   bounded public policy for the public JWKS). Error responses must carry the
+ *   same correlation header and the private no-store policy.
  * - Every JSON failure must be a valid `ErrorEnvelope` whose HTTP status and
  *   `error.code` are allowed by the route's `error_profile`; anything else is a
  *   contract mismatch, never an invented `UNKNOWN_ERROR`.
@@ -296,6 +298,28 @@ function cacheControlProblems(headers: Headers, policy: AuthPolicy): string[] {
   ];
 }
 
+/** `components.headers.CorrelationId`: present, 1–128 characters. */
+const CORRELATION_ID_MAX_LENGTH = 128;
+
+/**
+ * Shared response-header validation for success AND error responses: the
+ * declared `X-Correlation-Id` must be present and 1–128 characters. No
+ * equality with the request id or the envelope's `correlation_id` is
+ * required — the package does not require it — and the caller-generated
+ * request id stays the logical call identifier.
+ */
+function correlationHeaderProblems(headers: Headers): string[] {
+  const raw = headers.get("X-Correlation-Id");
+  if (raw === null) return ["X-Correlation-Id response header is absent"];
+  const value = raw.trim();
+  if (value.length === 0 || value.length > CORRELATION_ID_MAX_LENGTH) {
+    return [
+      `X-Correlation-Id response header length ${String(value.length)} is outside 1–${String(CORRELATION_ID_MAX_LENGTH)}`,
+    ];
+  }
+  return [];
+}
+
 function parseRetryAfter(headers: Headers): number | null {
   const raw = headers.get("Retry-After");
   if (raw === null) return null;
@@ -333,6 +357,20 @@ async function failureFromResponse(
     throw new ContractVersionMismatchError("ErrorEnvelope", "response", [
       `HTTP ${String(res.status)} error body is "${mediaType || "(none)"}", contract requires application/json`,
     ]);
+  }
+  // Daniel's reusable error responses declare the same private no-store
+  // policy and correlation header as private successes; the public JWKS
+  // caching exception never applies to an error response.
+  const headerProblems = [
+    ...correlationHeaderProblems(res.headers),
+    ...cacheControlProblems(res.headers, "google+assertion"),
+  ];
+  if (headerProblems.length > 0) {
+    throw new ContractVersionMismatchError(
+      "ErrorEnvelope",
+      "response",
+      headerProblems,
+    );
   }
   const text = await readTextUnderSignal(res, signal, route.operation_id);
   let parsed: unknown;
@@ -393,6 +431,7 @@ function assertSuccessShape(
       `Content-Type "${mediaType || "(none)"}" received, contract requires ${expectedMediaType}`,
     );
   }
+  problems.push(...correlationHeaderProblems(res.headers));
   problems.push(...cacheControlProblems(res.headers, policy));
   if (problems.length > 0) {
     throw new ContractVersionMismatchError(

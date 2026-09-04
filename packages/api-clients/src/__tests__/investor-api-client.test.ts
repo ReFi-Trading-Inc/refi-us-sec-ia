@@ -400,7 +400,11 @@ describe("error responses fail closed on schema or profile drift", () => {
 
     const broken = new Response("{not json", {
       status: 422,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Cache-Control": PRIVATE_CACHE_CONTROL,
+        "X-Correlation-Id": "corr_x",
+      },
     });
     const client2 = makeClient(() => Promise.resolve(broken));
     const err2 = await client2.call("listAccounts").catch((e: unknown) => e);
@@ -441,6 +445,120 @@ describe("error responses fail closed on schema or profile drift", () => {
       .catch((e: unknown) => e);
     expect(e3).toBeInstanceOf(InvestorApiError);
     expect((e3 as InvestorApiError).code).toBe("ALLOCATION_INVALID");
+  });
+
+  it("error responses must carry private, no-store: missing or cacheable Cache-Control → mismatch", async () => {
+    const cases: [number, string, string | null][] = [
+      [404, "RESOURCE_NOT_FOUND", null],
+      [404, "RESOURCE_NOT_FOUND", "public"],
+      [404, "RESOURCE_NOT_FOUND", "public, max-age=60"],
+      [429, "RATE_LIMITED", null],
+      [429, "RATE_LIMITED", "no-store"],
+      [401, "AUTHENTICATION_FAILED", "private, max-age=0"],
+    ];
+    for (const [status, code, cacheControl] of cases) {
+      const client = makeClient(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(envelope(code)), {
+            status,
+            headers: {
+              "Content-Type": "application/json",
+              "X-Correlation-Id": "corr_x",
+              ...(cacheControl === null
+                ? {}
+                : { "Cache-Control": cacheControl }),
+            },
+          }),
+        ),
+      );
+      const err = await client.call("listAccounts").catch((e: unknown) => e);
+      expect(
+        err,
+        `${String(status)} ${code} ${cacheControl ?? "(absent)"}`,
+      ).toBeInstanceOf(ContractVersionMismatchError);
+      expect((err as ContractVersionMismatchError).problems.join(" ")).toMatch(
+        /Cache-Control/,
+      );
+    }
+    // Conformant policy → the normal InvestorApiError; case/whitespace normalised.
+    const ok = makeClient(() =>
+      Promise.resolve(
+        json(429, envelope("RATE_LIMITED"), {
+          "Cache-Control": "Private,  No-Store",
+        }),
+      ),
+    );
+    const accepted = await ok.call("listAccounts").catch((e: unknown) => e);
+    expect(accepted).toBeInstanceOf(InvestorApiError);
+    expect((accepted as InvestorApiError).code).toBe("RATE_LIMITED");
+  });
+
+  it("the public JWKS caching exception never applies to an error response", async () => {
+    const client = makeClient(() =>
+      Promise.resolve(
+        json(404, envelope("RESOURCE_NOT_FOUND"), {
+          "Cache-Control": PUBLIC_JWKS_CACHE_CONTROL,
+        }),
+      ),
+    );
+    await expect(client.call("getIdentityJwks")).rejects.toBeInstanceOf(
+      ContractVersionMismatchError,
+    );
+  });
+
+  it("the declared X-Correlation-Id response header is required on errors and successes (1–128 chars)", async () => {
+    const withCorrelation = (
+      value: string | null,
+      body: unknown,
+      status = 200,
+    ) =>
+      makeClient(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(body), {
+            status,
+            headers: {
+              "Content-Type": "application/json",
+              "Cache-Control": PRIVATE_CACHE_CONTROL,
+              ...(value === null ? {} : { "X-Correlation-Id": value }),
+            },
+          }),
+        ),
+      );
+    for (const value of [null, "", "   ", "x".repeat(129)]) {
+      const onSuccess = await withCorrelation(value, exampleFor("listAccounts"))
+        .call("listAccounts")
+        .catch((e: unknown) => e);
+      expect(
+        onSuccess,
+        `success ${value === null ? "(absent)" : String(value.length)}`,
+      ).toBeInstanceOf(ContractVersionMismatchError);
+      expect(
+        (onSuccess as ContractVersionMismatchError).problems.join(" "),
+      ).toMatch(/X-Correlation-Id/);
+      const onError = await withCorrelation(
+        value,
+        envelope("RESOURCE_NOT_FOUND"),
+        404,
+      )
+        .call("listAccounts")
+        .catch((e: unknown) => e);
+      expect(
+        onError,
+        `error ${value === null ? "(absent)" : String(value.length)}`,
+      ).toBeInstanceOf(ContractVersionMismatchError);
+    }
+    // Boundary: 128 characters is valid; no equality with the request id is required.
+    const max = "c".repeat(128);
+    const result = await withCorrelation(max, exampleFor("listAccounts")).call(
+      "listAccounts",
+    );
+    expect(result.status).toBe(200);
+    expect(result.correlationId).toMatch(/^bff_/); // caller-generated request id stays the call identifier
+    const err = (await withCorrelation(max, envelope("RESOURCE_NOT_FOUND"), 404)
+      .call("listAccounts")
+      .catch((e: unknown) => e)) as InvestorApiError;
+    expect(err).toBeInstanceOf(InvestorApiError);
+    expect(err.correlationId).toBe("corr_x"); // the envelope's own value, carried, not compared
   });
 
   it("the safe display message is carried but never used to branch", async () => {
@@ -574,6 +692,7 @@ describe("exact success status, media type and cache-control are enforced", () =
             status: 200,
             headers: {
               "Content-Type": "application/json",
+              "X-Correlation-Id": "corr_x",
               ...(cacheControl === null
                 ? {}
                 : { "Cache-Control": cacheControl }),
@@ -767,6 +886,7 @@ describe("the 10 s read budget is one absolute end-to-end deadline", () => {
           headers: {
             "Content-Type": "application/json",
             "Cache-Control": PRIVATE_CACHE_CONTROL,
+            "X-Correlation-Id": "corr_x",
           },
         }),
       );

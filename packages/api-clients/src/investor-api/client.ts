@@ -7,35 +7,49 @@
  * the BFF talks to Daniel's services with the credentials each operation's
  * OpenAPI `security` declares (`auth-policy.ts`, verified against openapi.json):
  *
- *   Authorization: Bearer <google-oidc-id-token>     ← `getBearer()`  (injected)
- *   X-Refinity-User-Assertion: <fresh ES256 JWT>      ← `mintAssertion()` (injected)
+ *   Authorization: Bearer <google-oidc-id-token>     ← target.getBearer() (injected)
+ *   X-Refinity-User-Assertion: <fresh ES256 JWT>      ← mintAssertion()   (injected)
  *   X-Correlation-Id: <opaque, generated per call>
  *
- * The public identity JWKS route obtains NO credential — neither provider is
- * invoked. How the Google credential is obtained (metadata server on Cloud Run
- * vs an external OIDC → WIF exchange) is an architecture decision outside this
- * module — hence injection. The assertion is minted FRESH PER ATTEMPT.
+ * ─── Two runtime targets ───────────────────────────────────────────────────
+ * The package is ONE OpenAPI document with TWO runtime owners, each with its
+ * own service URL and its own Google OIDC target audience:
+ *
+ *   identity-ccid  → exchangeIdentity (Google bearer), getIdentityJwks (none)
+ *   investor-api   → the other 39 operations (Google bearer + user assertion)
+ *
+ * Each target is injected separately (`identityCcid`, `investorApi`) and
+ * resolved from `contract.json.routes[].runtime_owner`. The simulator points
+ * both at one loopback URL; connected Dev will not. The `.invalid` OpenAPI
+ * server entries and the package's connection document are never read as
+ * configuration.
+ * How a Google credential is obtained (metadata server vs external OIDC → WIF)
+ * is decided outside this module — hence injection.
  *
  * ─── Contract rules encoded here (package README + contract.json) ──────────
- * - Every Investor API POST/PATCH/DELETE requires `Idempotency-Key`; PATCH
- *   requires `If-Match`. Missing → thrown before any network call.
+ * - Investor API POST/PATCH/DELETE require `Idempotency-Key`; PATCH requires
+ *   `If-Match`. Missing → thrown before any network call.
  * - Mutations are NEVER retried automatically.
  * - Ordinary reads have ONE absolute deadline (10 s) covering bearer
- *   acquisition, assertion mint, fetch, retry delay and retries; a hanging
- *   fetch is aborted when the budget expires; at most two retries on transport
- *   failure or 502/503/504, each with a new assertion, and only if time remains.
- * - Success is the EXACT `success_status` from contract.json with the declared
- *   media type; any other 2xx is a contract mismatch.
+ *   acquisition, assertion mint, fetch, the COMPLETE response-body read, JSON
+ *   parse/validation, retry delays and retries; a hanging fetch or a stalled
+ *   body is aborted at the deadline; at most two retries on transport failure
+ *   or 502/503/504, each with a new assertion, and only if time remains.
+ * - Success is the EXACT `success_status`, the declared media type, and the
+ *   declared `Cache-Control` policy (`private, no-store` for all private
+ *   responses; a bounded public policy for the public JWKS).
  * - Every JSON failure must be a valid `ErrorEnvelope` whose HTTP status and
  *   `error.code` are allowed by the route's `error_profile`; anything else is a
  *   contract mismatch, never an invented `UNKNOWN_ERROR`.
  * - Requests are validated against `schemas.json` before sending; responses
- *   and every SSE event after receiving.
- * - `baseUrl` must be loopback unless `allowRemote` is set.
+ *   and every SSE event after receiving. An SSE frame's `id:` must equal the
+ *   validated event's `event_id`.
+ * - Each target's `baseUrl` must be loopback unless that target sets
+ *   `allowRemote` from a reviewed configuration path.
  * - Nothing here logs, traces, or returns a token, assertion, or credential.
  */
 import type { components, operations } from "../generated/investor-api.gen";
-import { authPolicyFor } from "./auth-policy";
+import { authPolicyFor, type AuthPolicy } from "./auth-policy";
 import {
   ContractVersionMismatchError,
   IdempotencyKeyRequiredError,
@@ -44,7 +58,11 @@ import {
   InvestorApiTransportError,
   RemoteBaseUrlNotAllowedError,
 } from "./errors";
-import { CONTRACT_DOCUMENT, type ContractRoute } from "./package";
+import {
+  CONTRACT_DOCUMENT,
+  type ContractRoute,
+  type RuntimeOwner,
+} from "./package";
 import { expandPath, routeFor, type OperationId } from "./routes";
 import { parseSseFrames, type SseFrame } from "./sse";
 import { assertMatches, hasSchema } from "./validation";
@@ -113,9 +131,9 @@ export interface InvestorApiResult<K extends OperationId> {
 
 /** One validated account event from the stream. */
 export interface ValidatedAccountEvent {
-  /** SSE `id:` in effect for this frame — the resume cursor. */
-  eventId: string | null;
-  /** SSE `event:` name (matches `event.event_type` on the wire). */
+  /** The event id — equal to both the SSE `id:` frame field and `event.event_id`. */
+  eventId: string;
+  /** SSE `event:` name (equal to `event.event_type` on the wire). */
   eventName: string | null;
   /** The decoded, schema-validated `AccountEvent`. */
   event: AccountEvent;
@@ -131,15 +149,27 @@ export interface InvestorApiEventStream {
   cancel(reason?: unknown): void;
 }
 
-export interface InvestorApiClientOptions {
+/** One backend runtime: its service base URL and its Google OIDC credential. */
+export interface RuntimeTarget {
+  /** Service base URL for this runtime. Loopback unless `allowRemote`. */
   baseUrl: string;
-  /** Google OIDC ID token for the target service. Injected; never read from env here. */
+  /**
+   * Google OIDC ID token minted for THIS runtime's target audience. Injected;
+   * never read from env or the package's connection document here.
+   */
   getBearer: () => Promise<string>;
-  /** Fresh single-use ES256 user assertion. Called once per attempt. */
+  /** Only a reviewed BFF configuration path may set this, per target. */
+  allowRemote?: boolean;
+}
+
+export interface InvestorApiClientOptions {
+  /** `identity-ccid`: identity exchange + public JWKS. */
+  identityCcid: RuntimeTarget;
+  /** `investor-api`: the 39 account/product operations. */
+  investorApi: RuntimeTarget;
+  /** Fresh single-use ES256 user assertion. Called once per Investor API attempt. */
   mintAssertion: () => Promise<string>;
   fetch?: typeof fetch;
-  /** Only a reviewed BFF configuration path may set this. */
-  allowRemote?: boolean;
   correlationId?: () => string;
   /** Absolute budget for an ordinary (non-stream) read, in ms. */
   readBudgetMs?: number;
@@ -163,6 +193,13 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set([
 const JSON_MEDIA_TYPE = "application/json";
 const SSE_MEDIA_TYPE = "text/event-stream";
 
+/** `components.headers.PrivateNoStore` — every private response. */
+export const PRIVATE_CACHE_CONTROL = "private, no-store";
+/** `components.headers.PublicJwksCache` — the public identity JWKS. */
+export const PUBLIC_JWKS_CACHE_CONTROL = "public, max-age=300, must-revalidate";
+/** Upper bound we accept for a public JWKS `max-age` (the contract's value). */
+const PUBLIC_JWKS_MAX_AGE_SECONDS = 300;
+
 interface ErrorProfile {
   readonly codes: readonly string[];
   readonly statuses: readonly number[];
@@ -179,14 +216,12 @@ function isMutation(route: ContractRoute): boolean {
   return route.method !== "GET";
 }
 
-function assertLoopbackOrAllowed(baseUrl: string, allowRemote: boolean): URL {
-  const url = new URL(baseUrl);
+function resolveBaseUrl(target: RuntimeTarget, owner: RuntimeOwner): URL {
+  const url = new URL(target.baseUrl);
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error(
-      `Investor API base URL must be http(s), got ${url.protocol}`,
-    );
+    throw new Error(`${owner} base URL must be http(s), got ${url.protocol}`);
   }
-  if (!allowRemote && !LOOPBACK_HOSTS.has(url.hostname)) {
+  if (!(target.allowRemote ?? false) && !LOOPBACK_HOSTS.has(url.hostname)) {
     throw new RemoteBaseUrlNotAllowedError(url.hostname);
   }
   return url;
@@ -200,6 +235,65 @@ function mediaTypeOf(headers: Headers): string {
   return (semicolon === -1 ? raw : raw.slice(0, semicolon))
     .trim()
     .toLowerCase();
+}
+
+/** Parse `Cache-Control` into lowercase directives → values. */
+function cacheDirectives(headers: Headers): Map<string, string | null> | null {
+  const raw = headers.get("Cache-Control");
+  if (raw === null) return null;
+  const out = new Map<string, string | null>();
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim().toLowerCase();
+    if (trimmed === "") continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) out.set(trimmed, null);
+    else out.set(trimmed.slice(0, eq).trim(), trimmed.slice(eq + 1).trim());
+  }
+  return out;
+}
+
+/**
+ * The contract's cache policy for a success response.
+ *
+ * - Private responses (40 operations): exactly `private, no-store`.
+ * - Public JWKS: the contract constant `public, max-age=300, must-revalidate`.
+ *   A STRICTER policy (`no-store`, or a shorter `max-age`) is also accepted,
+ *   because it never introduces caching the contract forbids — Daniel's own
+ *   simulator answers the JWKS route with `private, no-store` (a deviation
+ *   from his `PublicJwksCache` header, flagged to him). Absent, unbounded, or
+ *   longer-lived caching is a mismatch.
+ */
+function cacheControlProblems(headers: Headers, policy: AuthPolicy): string[] {
+  const directives = cacheDirectives(headers);
+  const received = headers.get("Cache-Control") ?? "";
+  if (directives === null) return ["Cache-Control header is absent"];
+  if (policy !== "none") {
+    const ok =
+      directives.size === 2 &&
+      directives.has("private") &&
+      directives.has("no-store");
+    return ok
+      ? []
+      : [
+          `Cache-Control "${received}" received, contract requires "${PRIVATE_CACHE_CONTROL}"`,
+        ];
+  }
+  if (directives.has("no-store")) return [];
+  const maxAge = directives.get("max-age");
+  const maxAgeSeconds =
+    maxAge === null || maxAge === undefined ? Number.NaN : Number(maxAge);
+  if (
+    directives.has("public") &&
+    Number.isFinite(maxAgeSeconds) &&
+    maxAgeSeconds >= 0 &&
+    maxAgeSeconds <= PUBLIC_JWKS_MAX_AGE_SECONDS &&
+    !directives.has("immutable")
+  ) {
+    return [];
+  }
+  return [
+    `Cache-Control "${received}" received, contract requires "${PUBLIC_JWKS_CACHE_CONTROL}" (or stricter)`,
+  ];
 }
 
 function parseRetryAfter(headers: Headers): number | null {
@@ -232,6 +326,7 @@ function profileFor(route: ContractRoute): ErrorProfile {
 async function failureFromResponse(
   res: Response,
   route: ContractRoute,
+  signal: AbortSignal,
 ): Promise<InvestorApiError> {
   const mediaType = mediaTypeOf(res.headers);
   if (mediaType !== JSON_MEDIA_TYPE) {
@@ -239,7 +334,7 @@ async function failureFromResponse(
       `HTTP ${String(res.status)} error body is "${mediaType || "(none)"}", contract requires application/json`,
     ]);
   }
-  const text = await res.text();
+  const text = await readTextUnderSignal(res, signal, route.operation_id);
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
@@ -284,6 +379,7 @@ function assertSuccessShape(
   res: Response,
   route: ContractRoute,
   expectedMediaType: string,
+  policy: AuthPolicy,
 ): void {
   const problems: string[] = [];
   if (res.status !== route.success_status) {
@@ -297,6 +393,7 @@ function assertSuccessShape(
       `Content-Type "${mediaType || "(none)"}" received, contract requires ${expectedMediaType}`,
     );
   }
+  problems.push(...cacheControlProblems(res.headers, policy));
   if (problems.length > 0) {
     throw new ContractVersionMismatchError(
       route.response_schema,
@@ -311,6 +408,13 @@ function composeSignals(
   b: AbortSignal,
 ): AbortSignal {
   return a === undefined ? b : AbortSignal.any([a, b]);
+}
+
+function abortReason(signal: AbortSignal): Error {
+  const reason: unknown = signal.reason;
+  return reason instanceof Error
+    ? reason
+    : new DOMException("The operation was aborted.", "AbortError");
 }
 
 /** Resolve `promise`, or reject as soon as `signal` aborts. */
@@ -336,11 +440,27 @@ function underSignal<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-function abortReason(signal: AbortSignal): Error {
-  const reason: unknown = signal.reason;
-  return reason instanceof Error
-    ? reason
-    : new DOMException("The operation was aborted.", "AbortError");
+/**
+ * Read the whole body under the SAME signal the request was sent with. The
+ * fetch signal aborts an in-flight body read, and `underSignal` guarantees the
+ * promise settles at the deadline even if a fetch implementation does not.
+ */
+async function readTextUnderSignal(
+  res: Response,
+  signal: AbortSignal,
+  operationId: string,
+): Promise<string> {
+  try {
+    return await underSignal(res.text(), signal);
+  } catch (cause) {
+    throw new InvestorApiTransportError(
+      signal.aborted
+        ? `${operationId}: response body aborted`
+        : `${operationId}: response body read failed`,
+      1,
+      signal.aborted ? abortReason(signal) : cause,
+    );
+  }
 }
 
 function sleepUnderSignal(ms: number, signal: AbortSignal): Promise<void> {
@@ -368,6 +488,14 @@ export class DeadlineExceededError extends Error {
   }
 }
 
+/** One logical call's time scope: composed signal + absolute deadline. */
+interface CallScope {
+  signal: AbortSignal;
+  /** Absolute deadline (ms, per `now()`), or +∞ when no deadline applies. */
+  deadlineAt: number;
+  dispose(): void;
+}
+
 type Resolved = Required<
   Pick<
     InvestorApiClientOptions,
@@ -379,19 +507,29 @@ type Resolved = Required<
     | "streamConnectTimeoutMs"
   >
 > &
-  Pick<InvestorApiClientOptions, "getBearer" | "mintAssertion">;
+  Pick<InvestorApiClientOptions, "mintAssertion">;
+
+interface ResolvedTarget {
+  baseUrl: URL;
+  getBearer: () => Promise<string>;
+}
 
 export class InvestorApiClient {
-  private readonly baseUrl: URL;
+  private readonly targets: Readonly<Record<RuntimeOwner, ResolvedTarget>>;
   private readonly opts: Resolved;
 
   constructor(options: InvestorApiClientOptions) {
-    this.baseUrl = assertLoopbackOrAllowed(
-      options.baseUrl,
-      options.allowRemote ?? false,
-    );
+    this.targets = {
+      "identity-ccid": {
+        baseUrl: resolveBaseUrl(options.identityCcid, "identity-ccid"),
+        getBearer: options.identityCcid.getBearer,
+      },
+      "investor-api": {
+        baseUrl: resolveBaseUrl(options.investorApi, "investor-api"),
+        getBearer: options.investorApi.getBearer,
+      },
+    };
     this.opts = {
-      getBearer: options.getBearer,
       mintAssertion: options.mintAssertion,
       fetch: options.fetch ?? globalThis.fetch.bind(globalThis),
       correlationId: options.correlationId ?? defaultCorrelationId,
@@ -403,40 +541,60 @@ export class InvestorApiClient {
     };
   }
 
+  /** The runtime target a route is served by (per `contract.json`). */
+  private targetFor(route: ContractRoute): ResolvedTarget {
+    return this.targets[route.runtime_owner];
+  }
+
   /** Typed call for any of the 41 contract operations except the SSE stream. */
   async call<K extends Exclude<OperationId, "streamAccountEvents">>(
     operationId: K,
     options: CallOptions<K> = {},
   ): Promise<InvestorApiResult<K>> {
     const route = routeFor(operationId);
-    const { res, correlationId } = await this.perform(
-      route,
-      operationId,
-      options,
-    );
-    assertSuccessShape(res, route, JSON_MEDIA_TYPE);
-    const text = await res.text();
-    let payload: unknown;
+    const policy = authPolicyFor(operationId);
+    // ONE absolute deadline for an ordinary read: bearer, mint, fetch, the
+    // complete body read, parse/validation, retry sleeps and retries all draw
+    // from it. Mutations are not retried and are bounded only by the caller's
+    // signal (an aborted mutation is recovered through the idempotent-replay
+    // path, a decision the caller owns).
+    const scope = this.openScope(options.signal, !isMutation(route));
     try {
-      payload = JSON.parse(text);
-    } catch {
-      throw new ContractVersionMismatchError(
-        route.response_schema,
-        "response",
-        [`HTTP ${String(res.status)} success body is not valid JSON`],
+      const { res, correlationId } = await this.perform(
+        route,
+        operationId,
+        options,
+        scope,
+        JSON_MEDIA_TYPE,
       );
+      assertSuccessShape(res, route, JSON_MEDIA_TYPE, policy);
+      const text = await readTextUnderSignal(res, scope.signal, operationId);
+      let payload: unknown;
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        throw new ContractVersionMismatchError(
+          route.response_schema,
+          "response",
+          [`HTTP ${String(res.status)} success body is not valid JSON`],
+        );
+      }
+      const schema = route.response_schema;
+      if (!hasSchema(schema)) {
+        throw new Error(
+          `contract.json names unknown response schema ${schema}`,
+        );
+      }
+      assertMatches(schema, payload, "response");
+      return {
+        status: res.status,
+        correlationId,
+        data: payload as OperationResponse<K>,
+        headers: res.headers,
+      };
+    } finally {
+      scope.dispose();
     }
-    const schema = route.response_schema;
-    if (!hasSchema(schema)) {
-      throw new Error(`contract.json names unknown response schema ${schema}`);
-    }
-    assertMatches(schema, payload, "response");
-    return {
-      status: res.status,
-      correlationId,
-      data: payload as OperationResponse<K>,
-      headers: res.headers,
-    };
   }
 
   /**
@@ -444,30 +602,42 @@ export class InvestorApiClient {
    * `streamConnectTimeoutMs`; once a valid `200 text/event-stream` is
    * established the ordinary read deadline does NOT apply — the caller's
    * signal / `cancel()` governs the live stream. Every event is validated
-   * against `AccountEvent` before it is yielded.
+   * against `AccountEvent`, and its SSE `id:` must equal `event_id`, before
+   * it is yielded.
    */
   async stream(
     options: CallOptions<"streamAccountEvents"> = {},
   ): Promise<InvestorApiEventStream> {
     const route = routeFor("streamAccountEvents");
-    const controller = new AbortController();
-    const connectTimer = setTimeout(() => {
-      controller.abort(
-        new DeadlineExceededError(this.opts.streamConnectTimeoutMs),
-      );
-    }, this.opts.streamConnectTimeoutMs);
+    const policy = authPolicyFor("streamAccountEvents");
+    const life = new AbortController(); // governs the live stream
     if (options.signal !== undefined) {
       const callerSignal = options.signal;
-      if (callerSignal.aborted) controller.abort(abortReason(callerSignal));
+      if (callerSignal.aborted) life.abort(abortReason(callerSignal));
       else
         callerSignal.addEventListener(
           "abort",
           () => {
-            controller.abort(abortReason(callerSignal));
+            life.abort(abortReason(callerSignal));
           },
           { once: true },
         );
     }
+    // Connection establishment only: composed with the life signal, disposed
+    // once headers are validated.
+    const connect = new AbortController();
+    const connectTimer = setTimeout(() => {
+      connect.abort(
+        new DeadlineExceededError(this.opts.streamConnectTimeoutMs),
+      );
+    }, this.opts.streamConnectTimeoutMs);
+    const connectScope: CallScope = {
+      signal: AbortSignal.any([life.signal, connect.signal]),
+      deadlineAt: Number.POSITIVE_INFINITY,
+      dispose: () => {
+        clearTimeout(connectTimer);
+      },
+    };
 
     let res: Response;
     let correlationId: string;
@@ -475,12 +645,13 @@ export class InvestorApiClient {
       ({ res, correlationId } = await this.perform(
         route,
         "streamAccountEvents",
-        { ...options, signal: controller.signal },
-        { noDeadline: true, accept: SSE_MEDIA_TYPE },
+        { ...options, signal: undefined },
+        connectScope,
+        SSE_MEDIA_TYPE,
       ));
-      assertSuccessShape(res, route, SSE_MEDIA_TYPE);
+      assertSuccessShape(res, route, SSE_MEDIA_TYPE, policy);
     } finally {
-      clearTimeout(connectTimer);
+      connectScope.dispose();
     }
     const body = res.body;
     if (body === null) {
@@ -497,7 +668,7 @@ export class InvestorApiClient {
       undefined
     > {
       for await (const frame of parseSseFrames(body, {
-        signal: controller.signal,
+        signal: life.signal,
       })) {
         yield validateFrame(frame);
       }
@@ -509,7 +680,32 @@ export class InvestorApiClient {
       headers: res.headers,
       events,
       cancel: (reason?: unknown) => {
-        controller.abort(reason);
+        life.abort(reason);
+      },
+    };
+  }
+
+  private openScope(
+    callerSignal: AbortSignal | undefined,
+    withDeadline: boolean,
+  ): CallScope {
+    if (!withDeadline) {
+      return {
+        signal: callerSignal ?? new AbortController().signal,
+        deadlineAt: Number.POSITIVE_INFINITY,
+        dispose: () => undefined,
+      };
+    }
+    const controller = new AbortController();
+    const budget = this.opts.readBudgetMs;
+    const timer = setTimeout(() => {
+      controller.abort(new DeadlineExceededError(budget));
+    }, budget);
+    return {
+      signal: composeSignals(callerSignal, controller.signal),
+      deadlineAt: this.opts.now() + budget,
+      dispose: () => {
+        clearTimeout(timer);
       },
     };
   }
@@ -518,13 +714,12 @@ export class InvestorApiClient {
     route: ContractRoute,
     operationId: K,
     options: CallOptions<K>,
-    mode: { noDeadline: boolean; accept: string } = {
-      noDeadline: false,
-      accept: JSON_MEDIA_TYPE,
-    },
+    scope: CallScope,
+    accept: string,
   ): Promise<{ res: Response; correlationId: string }> {
     const mutation = isMutation(route);
     const policy = authPolicyFor(operationId);
+    const target = this.targetFor(route);
     if (mutation && route.runtime_owner === "investor-api") {
       if (
         options.idempotencyKey === undefined ||
@@ -560,129 +755,108 @@ export class InvestorApiClient {
     const pathParams: Record<string, string> = options.path ?? {};
     const queryParams: Record<string, string | number | undefined> =
       options.query ?? {};
-    const url = new URL(expandPath(route.path, pathParams), this.baseUrl);
+    const url = new URL(expandPath(route.path, pathParams), target.baseUrl);
     for (const [key, value] of Object.entries(queryParams)) {
       if (value !== undefined) url.searchParams.set(key, String(value));
     }
 
     const correlationId = this.opts.correlationId();
-
-    // ONE absolute deadline for an ordinary read: bearer, mint, fetch, retry
-    // sleeps and retries all draw from it. Mutations are not retried and are
-    // bounded only by the caller's signal (an aborted mutation is recovered
-    // through the idempotent-replay path, a decision the caller owns).
-    const applyDeadline = !mode.noDeadline && !mutation;
-    const deadlineController = new AbortController();
-    const started = this.opts.now();
-    const deadlineAt = started + this.opts.readBudgetMs;
-    const deadlineTimer = applyDeadline
-      ? setTimeout(() => {
-          deadlineController.abort(
-            new DeadlineExceededError(this.opts.readBudgetMs),
-          );
-        }, this.opts.readBudgetMs)
-      : null;
-    const signal = applyDeadline
-      ? composeSignals(options.signal, deadlineController.signal)
-      : (options.signal ?? new AbortController().signal);
-
+    const { signal } = scope;
     const maxAttempts = mutation ? 1 : MAX_READ_RETRIES + 1;
     let lastError: unknown;
 
-    try {
-      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        const headers = new Headers({
-          Accept: mode.accept,
-          "X-Correlation-Id": correlationId,
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const headers = new Headers({
+        Accept: accept,
+        "X-Correlation-Id": correlationId,
+      });
+      // Credential acquisition draws from the same deadline as the fetch, and
+      // uses THIS runtime's Google credential (its own target audience).
+      try {
+        if (policy !== "none") {
+          const bearer = await underSignal(target.getBearer(), signal);
+          headers.set("Authorization", `Bearer ${bearer}`);
+        }
+        if (policy === "google+assertion") {
+          // Fresh assertion per ATTEMPT, never reused across retries.
+          const assertion = await underSignal(
+            this.opts.mintAssertion(),
+            signal,
+          );
+          headers.set("X-Refinity-User-Assertion", assertion);
+        }
+      } catch (cause) {
+        throw new InvestorApiTransportError(
+          `${operationId}: credential acquisition failed on attempt ${String(attempt)}`,
+          attempt,
+          cause,
+        );
+      }
+      if (bodyText !== undefined) headers.set("Content-Type", JSON_MEDIA_TYPE);
+      if (options.idempotencyKey !== undefined) {
+        headers.set("Idempotency-Key", options.idempotencyKey);
+      }
+      if (options.ifMatch !== undefined) {
+        headers.set("If-Match", options.ifMatch);
+      }
+      if (options.lastEventId !== undefined) {
+        headers.set("Last-Event-ID", options.lastEventId);
+      }
+
+      let res: Response;
+      try {
+        res = await this.opts.fetch(url, {
+          method: route.method,
+          headers,
+          body: bodyText,
+          signal,
+          redirect: "error",
+          // Private responses must never be served from or stored in any
+          // fetch-level cache; the request says so explicitly rather than
+          // relying on framework defaults. The public JWKS keeps the default.
+          ...(policy === "none" ? {} : { cache: "no-store" as RequestCache }),
         });
-        // Credential acquisition draws from the same deadline as the fetch.
-        try {
-          if (policy !== "none") {
-            const bearer = await underSignal(this.opts.getBearer(), signal);
-            headers.set("Authorization", `Bearer ${bearer}`);
-          }
-          if (policy === "google+assertion") {
-            // Fresh assertion per ATTEMPT, never reused across retries.
-            const assertion = await underSignal(
-              this.opts.mintAssertion(),
-              signal,
-            );
-            headers.set("X-Refinity-User-Assertion", assertion);
-          }
-        } catch (cause) {
+      } catch (cause) {
+        lastError = cause;
+        if (signal.aborted) {
           throw new InvestorApiTransportError(
-            `${operationId}: credential acquisition failed on attempt ${String(attempt)}`,
+            `${operationId}: aborted after ${String(attempt)} attempt(s)`,
+            attempt,
+            abortReason(signal),
+          );
+        }
+        if (mutation || !(await this.retryDelay(attempt, maxAttempts, scope))) {
+          throw new InvestorApiTransportError(
+            `${operationId}: transport failure after ${String(attempt)} attempt(s)`,
             attempt,
             cause,
           );
         }
-        if (bodyText !== undefined)
-          headers.set("Content-Type", JSON_MEDIA_TYPE);
-        if (options.idempotencyKey !== undefined) {
-          headers.set("Idempotency-Key", options.idempotencyKey);
-        }
-        if (options.ifMatch !== undefined)
-          headers.set("If-Match", options.ifMatch);
-        if (options.lastEventId !== undefined) {
-          headers.set("Last-Event-ID", options.lastEventId);
-        }
+        continue;
+      }
 
-        let res: Response;
-        try {
-          res = await this.opts.fetch(url, {
-            method: route.method,
-            headers,
-            body: bodyText,
-            signal,
-            redirect: "error",
-          });
-        } catch (cause) {
-          lastError = cause;
-          if (signal.aborted) {
-            throw new InvestorApiTransportError(
-              `${operationId}: aborted after ${String(attempt)} attempt(s)`,
-              attempt,
-              abortReason(signal),
-            );
-          }
-          if (
-            mutation ||
-            !(await this.retryDelay(attempt, maxAttempts, deadlineAt, signal))
-          ) {
-            throw new InvestorApiTransportError(
-              `${operationId}: transport failure after ${String(attempt)} attempt(s)`,
-              attempt,
-              cause,
-            );
-          }
-          continue;
-        }
+      if (res.ok) return { res, correlationId };
 
-        if (res.ok) return { res, correlationId };
-
-        if (!mutation && RETRYABLE_STATUSES.has(res.status)) {
-          if (await this.retryDelay(attempt, maxAttempts, deadlineAt, signal)) {
-            lastError = new InvestorApiTransportError(
-              `${operationId}: HTTP ${String(res.status)}`,
-              attempt,
-            );
-            continue;
-          }
-          // Out of retries. 503 is a contract-declared failure and must be a
-          // conformant envelope; 502/504 are infrastructure statuses the
-          // contract never declares, so they surface as transport failures.
-          if (profileFor(route).statuses.includes(res.status)) {
-            throw await failureFromResponse(res, route);
-          }
-          throw new InvestorApiTransportError(
-            `${operationId}: HTTP ${String(res.status)} after ${String(attempt)} attempt(s)`,
+      if (!mutation && RETRYABLE_STATUSES.has(res.status)) {
+        if (await this.retryDelay(attempt, maxAttempts, scope)) {
+          lastError = new InvestorApiTransportError(
+            `${operationId}: HTTP ${String(res.status)}`,
             attempt,
           );
+          continue;
         }
-        throw await failureFromResponse(res, route);
+        // Out of retries. 503 is a contract-declared failure and must be a
+        // conformant envelope; 502/504 are infrastructure statuses the
+        // contract never declares, so they surface as transport failures.
+        if (profileFor(route).statuses.includes(res.status)) {
+          throw await failureFromResponse(res, route, signal);
+        }
+        throw new InvestorApiTransportError(
+          `${operationId}: HTTP ${String(res.status)} after ${String(attempt)} attempt(s)`,
+          attempt,
+        );
       }
-    } finally {
-      if (deadlineTimer !== null) clearTimeout(deadlineTimer);
+      throw await failureFromResponse(res, route, signal);
     }
 
     throw new InvestorApiTransportError(
@@ -700,14 +874,13 @@ export class InvestorApiClient {
   private async retryDelay(
     attempt: number,
     maxAttempts: number,
-    deadlineAt: number,
-    signal: AbortSignal,
+    scope: CallScope,
   ): Promise<boolean> {
     if (attempt >= maxAttempts) return false;
-    const remaining = deadlineAt - this.opts.now();
+    const remaining = scope.deadlineAt - this.opts.now();
     const jitterMs = Math.floor(100 * attempt + this.opts.random() * 200);
     if (jitterMs >= remaining) return false;
-    await sleepUnderSignal(jitterMs, signal);
+    await sleepUnderSignal(jitterMs, scope.signal);
     return true;
   }
 }
@@ -723,12 +896,29 @@ function validateFrame(frame: SseFrame): ValidatedAccountEvent {
   }
   assertMatches("AccountEvent", payload, "response");
   const event = payload as AccountEvent;
-  if (frame.event !== null && frame.event !== event.event_type) {
-    throw new ContractVersionMismatchError("AccountEvent", "response", [
-      `SSE event name "${frame.event}" differs from payload event_type "${event.event_type}"`,
-    ]);
+  const problems: string[] = [];
+  if (frame.id === null) {
+    problems.push(
+      `SSE frame for event ${event.event_id} carries no id: field — no resume cursor`,
+    );
+  } else if (frame.id !== event.event_id) {
+    problems.push(
+      `SSE id "${frame.id}" differs from payload event_id "${event.event_id}"`,
+    );
   }
-  return { eventId: frame.id, eventName: frame.event, event };
+  if (frame.event !== null && frame.event !== event.event_type) {
+    problems.push(
+      `SSE event name "${frame.event}" differs from payload event_type "${event.event_type}"`,
+    );
+  }
+  if (problems.length > 0) {
+    throw new ContractVersionMismatchError(
+      "AccountEvent",
+      "response",
+      problems,
+    );
+  }
+  return { eventId: event.event_id, eventName: frame.event, event };
 }
 
 export function createInvestorApiClient(

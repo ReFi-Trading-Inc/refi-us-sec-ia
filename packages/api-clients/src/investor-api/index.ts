@@ -46,7 +46,7 @@ export {
   RemoteBaseUrlNotAllowedError,
 } from "./errors";
 export {
-  DEFAULT_MAX_BUFFERED_CHARS,
+  DEFAULT_MAX_PENDING_CHARS,
   SseProtocolError,
   parseSseFrames,
   type SseFrame,
@@ -58,6 +58,8 @@ export {
   createInvestorApiClient,
   CONTRACT_OPERATION_IDS,
   MAX_READ_RETRIES,
+  PRIVATE_CACHE_CONTROL,
+  PUBLIC_JWKS_CACHE_CONTROL,
   READ_BUDGET_MS,
   STREAM_CONNECT_TIMEOUT_MS,
   type AccountEvent,
@@ -67,5 +69,6 @@ export {
   type InvestorApiResult,
   type OperationRequestBody,
   type OperationResponse,
+  type RuntimeTarget,
   type ValidatedAccountEvent,
 } from "./client";

@@ -13,8 +13,11 @@ import { CONTRACT_PACKAGE_DIR } from "../investor-api/package";
 import {
   createInvestorApiClient,
   DeadlineExceededError,
+  PRIVATE_CACHE_CONTROL,
+  PUBLIC_JWKS_CACHE_CONTROL,
   READ_BUDGET_MS,
   type InvestorApiClientOptions,
+  type RuntimeTarget,
 } from "../investor-api/client";
 
 const examples = JSON.parse(
@@ -66,6 +69,7 @@ function exampleFor(operationId: string): unknown {
   throw new Error(`no example for ${operationId}`);
 }
 
+/** A private JSON response as the contract declares it (Cache-Control included). */
 function json(
   status: number,
   body: unknown,
@@ -75,6 +79,7 @@ function json(
     status,
     headers: {
       "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": PRIVATE_CACHE_CONTROL,
       "X-Correlation-Id": "corr_x",
       ...headers,
     },
@@ -97,14 +102,25 @@ type FetchLike = (
   init?: RequestInit,
 ) => Promise<Response>;
 
+const IDENTITY_HOST = "http://127.0.0.1:1";
+const INVESTOR_HOST = "http://localhost:2";
+
+function target(
+  baseUrl: string,
+  bearer: string,
+  extra: Partial<RuntimeTarget> = {},
+): RuntimeTarget {
+  return { baseUrl, getBearer: () => Promise.resolve(bearer), ...extra };
+}
+
 function makeClient(
   fetchImpl: FetchLike,
   overrides: Partial<InvestorApiClientOptions> = {},
 ) {
   let n = 0;
   return createInvestorApiClient({
-    baseUrl: "http://127.0.0.1:1",
-    getBearer: () => Promise.resolve("bearer-token"),
+    identityCcid: target(IDENTITY_HOST, "identity-bearer"),
+    investorApi: target(INVESTOR_HOST, "investor-bearer"),
     mintAssertion: () => Promise.resolve(`assertion-${String(++n)}`),
     fetch: fetchImpl,
     random: () => 0,
@@ -116,74 +132,154 @@ function headerOf(init: RequestInit | undefined, name: string): string | null {
   return new Headers(init?.headers).get(name);
 }
 
+function callOf(mock: ReturnType<typeof vi.fn>, call = 0): [URL, RequestInit] {
+  return mock.mock.calls[call] as unknown as [URL, RequestInit];
+}
+
 function initOf(mock: ReturnType<typeof vi.fn>, call = 0): RequestInit {
-  return (mock.mock.calls[call] as unknown as [URL, RequestInit])[1];
+  return callOf(mock, call)[1];
 }
 
 afterEach(() => {
   vi.useRealTimers();
 });
 
-// ─── 1. Credentials per operation ──────────────────────────────────────────
+// ─── 1. Two runtime targets ────────────────────────────────────────────────
 
-describe("credentials follow the contract's per-operation auth policy", () => {
-  it("investor-api reads send Google bearer + user assertion + correlation id", async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(json(200, exampleFor("listAccounts"))),
-    );
-    const client = makeClient(fetchMock);
-    const result = await client.call("listAccounts", {
-      query: { page_size: 10 },
-    });
-    expect(result.status).toBe(200);
-    const [url] = fetchMock.mock.calls[0] as unknown as [URL];
-    expect(url.toString()).toBe(
-      "http://127.0.0.1:1/api/v1/investor/accounts?page_size=10",
-    );
-    expect(headerOf(initOf(fetchMock), "Authorization")).toBe(
-      "Bearer bearer-token",
-    );
-    expect(headerOf(initOf(fetchMock), "X-Refinity-User-Assertion")).toBe(
-      "assertion-1",
-    );
-    expect(headerOf(initOf(fetchMock), "X-Correlation-Id")).toBe(
-      result.correlationId,
-    );
-    expect(result.correlationId).toMatch(/^bff_[0-9a-f]{32}$/);
-  });
-
-  it("the public identity JWKS obtains ZERO credentials — neither provider is invoked", async () => {
-    const getBearer = vi.fn(() => Promise.resolve("bearer-token"));
-    const mintAssertion = vi.fn(() => Promise.resolve("assertion"));
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(json(200, exampleFor("getIdentityJwks"))),
-    );
-    const client = makeClient(fetchMock, { getBearer, mintAssertion });
-    const result = await client.call("getIdentityJwks");
-    expect(result.status).toBe(200);
-    expect(getBearer).not.toHaveBeenCalled();
-    expect(mintAssertion).not.toHaveBeenCalled();
-    expect(headerOf(initOf(fetchMock), "Authorization")).toBeNull();
-    expect(headerOf(initOf(fetchMock), "X-Refinity-User-Assertion")).toBeNull();
-    expect(headerOf(initOf(fetchMock), "X-Correlation-Id")).toBe(
-      result.correlationId,
-    );
-  });
-
-  it("the identity exchange is Google-authenticated with no user assertion", async () => {
+describe("two runtime targets: routing and credentials are runtime-aware", () => {
+  it("exchangeIdentity → identity-ccid host + identity-ccid bearer, no assertion; investor bearer never invoked", async () => {
+    const identityBearer = vi.fn(() => Promise.resolve("identity-bearer"));
+    const investorBearer = vi.fn(() => Promise.resolve("investor-bearer"));
     const mintAssertion = vi.fn(() => Promise.resolve("assertion"));
     const fetchMock = vi.fn(() =>
       Promise.resolve(json(200, exampleFor("exchangeIdentity"))),
     );
-    const client = makeClient(fetchMock, { mintAssertion });
+    const client = makeClient(fetchMock, {
+      identityCcid: { baseUrl: IDENTITY_HOST, getBearer: identityBearer },
+      investorApi: { baseUrl: INVESTOR_HOST, getBearer: investorBearer },
+      mintAssertion,
+    });
     await client.call("exchangeIdentity", {
       body: examples.requests["IdentityExchangeRequest"] as never,
     });
+    const [url, init] = callOf(fetchMock);
+    expect(url.origin).toBe(IDENTITY_HOST);
+    expect(url.pathname).toBe("/api/v1/identity/exchanges");
+    expect(headerOf(init, "Authorization")).toBe("Bearer identity-bearer");
+    expect(headerOf(init, "X-Refinity-User-Assertion")).toBeNull();
+    expect(identityBearer).toHaveBeenCalledTimes(1);
+    expect(investorBearer).not.toHaveBeenCalled();
     expect(mintAssertion).not.toHaveBeenCalled();
-    expect(headerOf(initOf(fetchMock), "Authorization")).toBe(
-      "Bearer bearer-token",
+  });
+
+  it("getIdentityJwks → identity-ccid host, zero credentials, neither provider invoked", async () => {
+    const identityBearer = vi.fn(() => Promise.resolve("identity-bearer"));
+    const investorBearer = vi.fn(() => Promise.resolve("investor-bearer"));
+    const mintAssertion = vi.fn(() => Promise.resolve("assertion"));
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        json(200, exampleFor("getIdentityJwks"), {
+          "Cache-Control": PUBLIC_JWKS_CACHE_CONTROL,
+        }),
+      ),
     );
-    expect(headerOf(initOf(fetchMock), "X-Refinity-User-Assertion")).toBeNull();
+    const client = makeClient(fetchMock, {
+      identityCcid: { baseUrl: IDENTITY_HOST, getBearer: identityBearer },
+      investorApi: { baseUrl: INVESTOR_HOST, getBearer: investorBearer },
+      mintAssertion,
+    });
+    const result = await client.call("getIdentityJwks");
+    const [url, init] = callOf(fetchMock);
+    expect(url.origin).toBe(IDENTITY_HOST);
+    expect(url.pathname).toBe("/.well-known/jwks.json");
+    expect(headerOf(init, "Authorization")).toBeNull();
+    expect(headerOf(init, "X-Refinity-User-Assertion")).toBeNull();
+    expect(headerOf(init, "X-Correlation-Id")).toBe(result.correlationId);
+    expect(identityBearer).not.toHaveBeenCalled();
+    expect(investorBearer).not.toHaveBeenCalled();
+    expect(mintAssertion).not.toHaveBeenCalled();
+  });
+
+  it("every Investor API operation → investor-api host + investor bearer + fresh assertion; identity bearer never invoked", async () => {
+    const identityBearer = vi.fn(() => Promise.resolve("identity-bearer"));
+    const investorBearer = vi.fn(() => Promise.resolve("investor-bearer"));
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(json(200, exampleFor("listAccounts"))),
+    );
+    const client = makeClient(fetchMock, {
+      identityCcid: { baseUrl: IDENTITY_HOST, getBearer: identityBearer },
+      investorApi: { baseUrl: INVESTOR_HOST, getBearer: investorBearer },
+    });
+    const result = await client.call("listAccounts", {
+      query: { page_size: 10 },
+    });
+    const [url, init] = callOf(fetchMock);
+    expect(url.toString()).toBe(
+      `${INVESTOR_HOST}/api/v1/investor/accounts?page_size=10`,
+    );
+    expect(headerOf(init, "Authorization")).toBe("Bearer investor-bearer");
+    expect(headerOf(init, "X-Refinity-User-Assertion")).toBe("assertion-1");
+    expect(headerOf(init, "X-Correlation-Id")).toBe(result.correlationId);
+    expect(result.correlationId).toMatch(/^bff_[0-9a-f]{32}$/);
+    expect(investorBearer).toHaveBeenCalledTimes(1);
+    expect(identityBearer).not.toHaveBeenCalled();
+  });
+
+  it("collapsing both targets to one host is detectable: identity and investor calls land on different origins", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json(200, exampleFor("exchangeIdentity")))
+      .mockResolvedValueOnce(json(200, exampleFor("getAccount")));
+    const client = makeClient(fetchMock);
+    await client.call("exchangeIdentity", {
+      body: examples.requests["IdentityExchangeRequest"] as never,
+    });
+    await client.call("getAccount", { path: { account_id: ACCOUNT } });
+    const origins = new Set([
+      callOf(fetchMock, 0)[0].origin,
+      callOf(fetchMock, 1)[0].origin,
+    ]);
+    expect(origins.size).toBe(2);
+    expect(headerOf(initOf(fetchMock, 0), "Authorization")).not.toBe(
+      headerOf(initOf(fetchMock, 1), "Authorization"),
+    );
+  });
+
+  it("the simulator shape — both targets on one loopback URL — is allowed", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(json(200, exampleFor("listAccounts"))),
+    );
+    const client = makeClient(fetchMock, {
+      identityCcid: target("http://127.0.0.1:8765", "fixture"),
+      investorApi: target("http://127.0.0.1:8765", "fixture"),
+    });
+    expect((await client.call("listAccounts")).status).toBe(200);
+  });
+
+  it("remote promotion is explicit per target", () => {
+    const remote = "https://investor-api-example.a.run.app";
+    expect(() =>
+      createInvestorApiClient({
+        identityCcid: target(IDENTITY_HOST, "a"),
+        investorApi: target(remote, "b"),
+        mintAssertion: () => Promise.resolve("x"),
+      }),
+    ).toThrow(RemoteBaseUrlNotAllowedError);
+    expect(() =>
+      createInvestorApiClient({
+        identityCcid: target(IDENTITY_HOST, "a"),
+        investorApi: target(remote, "b", { allowRemote: true }),
+        mintAssertion: () => Promise.resolve("x"),
+      }),
+    ).not.toThrow();
+    // Promoting one target does not promote the other.
+    expect(() =>
+      createInvestorApiClient({
+        identityCcid: target(remote, "a"),
+        investorApi: target(INVESTOR_HOST, "b", { allowRemote: true }),
+        mintAssertion: () => Promise.resolve("x"),
+      }),
+    ).toThrow(RemoteBaseUrlNotAllowedError);
   });
 });
 
@@ -234,7 +330,7 @@ describe("idempotency and concurrency rules", () => {
   });
 });
 
-// ─── 2. Error responses fail closed on drift ───────────────────────────────
+// ─── Error responses fail closed on drift ──────────────────────────────────
 
 describe("error responses fail closed on schema or profile drift", () => {
   it("a conformant envelope with a profile-allowed status/code becomes InvestorApiError", async () => {
@@ -315,7 +411,6 @@ describe("error responses fail closed on schema or profile drift", () => {
   });
 
   it("an impossible status/code pair for the route's error profile fails loudly", async () => {
-    // listAccounts → authenticated_read: 409 is allowed, but ALLOCATION_INVALID is not.
     const wrongCode = makeClient(() =>
       Promise.resolve(json(409, envelope("ALLOCATION_INVALID"))),
     );
@@ -325,7 +420,6 @@ describe("error responses fail closed on schema or profile drift", () => {
       /ALLOCATION_INVALID/,
     );
 
-    // 400 is not a declared status for authenticated_read (it is for identity_exchange).
     const wrongStatus = makeClient(() =>
       Promise.resolve(json(400, envelope("VALIDATION_ERROR"))),
     );
@@ -335,7 +429,6 @@ describe("error responses fail closed on schema or profile drift", () => {
       /HTTP 400/,
     );
 
-    // Same code on a route whose profile allows it is fine.
     const allowed = makeClient(() =>
       Promise.resolve(json(422, envelope("ALLOCATION_INVALID"))),
     );
@@ -364,9 +457,9 @@ describe("error responses fail closed on schema or profile drift", () => {
   });
 });
 
-// ─── 3. Exact wire success status and media type ───────────────────────────
+// ─── Exact wire success status, media type, cache-control ──────────────────
 
-describe("exact success status and media type are enforced", () => {
+describe("exact success status, media type and cache-control are enforced", () => {
   const preview = () =>
     ({
       path: { account_id: ACCOUNT },
@@ -412,20 +505,14 @@ describe("exact success status and media type are enforced", () => {
   });
 
   it("JSON operations require the JSON media type; charset parameters are fine", async () => {
-    const utf8 = makeClient(() =>
-      Promise.resolve(
-        new Response(JSON.stringify(exampleFor("listAccounts")), {
-          status: 200,
-          headers: { "Content-Type": "application/json; charset=utf-8" },
-        }),
-      ),
-    );
-    expect((await utf8.call("listAccounts")).status).toBe(200);
     const text = makeClient(() =>
       Promise.resolve(
         new Response(JSON.stringify(exampleFor("listAccounts")), {
           status: 200,
-          headers: { "Content-Type": "text/plain" },
+          headers: {
+            "Content-Type": "text/plain",
+            "Cache-Control": PRIVATE_CACHE_CONTROL,
+          },
         }),
       ),
     );
@@ -434,12 +521,119 @@ describe("exact success status and media type are enforced", () => {
     );
   });
 
+  it("private responses must carry exactly `private, no-store`", async () => {
+    const absent = makeClient(() =>
+      Promise.resolve(
+        new Response(JSON.stringify(exampleFor("listAccounts")), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const e1 = await absent.call("listAccounts").catch((e: unknown) => e);
+    expect(e1).toBeInstanceOf(ContractVersionMismatchError);
+    expect((e1 as ContractVersionMismatchError).problems.join(" ")).toMatch(
+      /Cache-Control header is absent/,
+    );
+
+    const cacheable = makeClient(() =>
+      Promise.resolve(
+        json(200, exampleFor("listAccounts"), {
+          "Cache-Control": "public, max-age=60",
+        }),
+      ),
+    );
+    await expect(cacheable.call("listAccounts")).rejects.toBeInstanceOf(
+      ContractVersionMismatchError,
+    );
+
+    const partial = makeClient(() =>
+      Promise.resolve(
+        json(200, exampleFor("listAccounts"), { "Cache-Control": "no-store" }),
+      ),
+    );
+    await expect(partial.call("listAccounts")).rejects.toBeInstanceOf(
+      ContractVersionMismatchError,
+    );
+
+    const spaced = makeClient(() =>
+      Promise.resolve(
+        json(200, exampleFor("listAccounts"), {
+          "Cache-Control": "Private,  No-Store",
+        }),
+      ),
+    );
+    expect((await spaced.call("listAccounts")).status).toBe(200);
+  });
+
+  it("the public JWKS must carry a bounded public cache policy (or stricter)", async () => {
+    const jwks = (cacheControl: string | null) =>
+      makeClient(() =>
+        Promise.resolve(
+          new Response(JSON.stringify(exampleFor("getIdentityJwks")), {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              ...(cacheControl === null
+                ? {}
+                : { "Cache-Control": cacheControl }),
+            },
+          }),
+        ),
+      );
+    expect(
+      (await jwks(PUBLIC_JWKS_CACHE_CONTROL).call("getIdentityJwks")).status,
+    ).toBe(200);
+    expect(
+      (
+        await jwks("public, max-age=60, must-revalidate").call(
+          "getIdentityJwks",
+        )
+      ).status,
+    ).toBe(200);
+    // Daniel's simulator answers the JWKS route with private, no-store — stricter, accepted.
+    expect(
+      (await jwks(PRIVATE_CACHE_CONTROL).call("getIdentityJwks")).status,
+    ).toBe(200);
+    await expect(jwks(null).call("getIdentityJwks")).rejects.toBeInstanceOf(
+      ContractVersionMismatchError,
+    );
+    await expect(
+      jwks("public, max-age=86400").call("getIdentityJwks"),
+    ).rejects.toBeInstanceOf(ContractVersionMismatchError);
+    await expect(jwks("public").call("getIdentityJwks")).rejects.toBeInstanceOf(
+      ContractVersionMismatchError,
+    );
+    await expect(
+      jwks("public, max-age=300, immutable").call("getIdentityJwks"),
+    ).rejects.toBeInstanceOf(ContractVersionMismatchError);
+  });
+
+  it("private requests ask the fetch layer for no-store explicitly; the public JWKS does not", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(json(200, exampleFor("listAccounts")))
+      .mockResolvedValueOnce(
+        json(200, exampleFor("getIdentityJwks"), {
+          "Cache-Control": PUBLIC_JWKS_CACHE_CONTROL,
+        }),
+      );
+    const client = makeClient(fetchMock);
+    await client.call("listAccounts");
+    await client.call("getIdentityJwks");
+    expect(initOf(fetchMock, 0).cache).toBe("no-store");
+    expect(initOf(fetchMock, 1).cache).toBeUndefined();
+  });
+
   it("a success body that is not valid JSON is a contract mismatch", async () => {
     const client = makeClient(() =>
       Promise.resolve(
         new Response("{oops", {
           status: 200,
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": PRIVATE_CACHE_CONTROL,
+          },
         }),
       ),
     );
@@ -540,7 +734,7 @@ describe("read retry policy", () => {
   });
 });
 
-// ─── 6. Absolute read deadline ─────────────────────────────────────────────
+// ─── 2. Absolute read deadline through body consumption ────────────────────
 
 describe("the 10 s read budget is one absolute end-to-end deadline", () => {
   /** A fetch that never resolves until its signal aborts. */
@@ -552,6 +746,32 @@ describe("the 10 s read budget is one absolute end-to-end deadline", () => {
       });
     });
   });
+
+  /** Valid 200 JSON headers immediately; the body then stalls forever (until abort). */
+  function stalledBodyFetch(): ReturnType<typeof vi.fn> {
+    return vi.fn((_url: URL | RequestInfo, init?: RequestInit) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"data":'));
+          init?.signal?.addEventListener("abort", () => {
+            const reason: unknown = init.signal?.reason;
+            controller.error(
+              reason instanceof Error ? reason : new Error("aborted"),
+            );
+          });
+        },
+      });
+      return Promise.resolve(
+        new Response(body, {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "Cache-Control": PRIVATE_CACHE_CONTROL,
+          },
+        }),
+      );
+    });
+  }
 
   it("a hanging GET is aborted exactly at the budget, after one attempt", async () => {
     vi.useFakeTimers();
@@ -575,11 +795,38 @@ describe("the 10 s read budget is one absolute end-to-end deadline", () => {
     expect(hangingFetch).toHaveBeenCalledTimes(1);
   });
 
+  it("valid 200 headers then a stalled body: the call is aborted at the ORIGINAL absolute deadline", async () => {
+    vi.useFakeTimers();
+    const fetchMock = stalledBodyFetch();
+    const client = makeClient(fetchMock);
+    const pending = client.call("listAccounts").catch((e: unknown) => e);
+    await vi.advanceTimersByTimeAsync(READ_BUDGET_MS - 1);
+    let settled = false;
+    void pending.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false); // headers arrived long ago; body still stalled; deadline not reset
+    await vi.advanceTimersByTimeAsync(1);
+    const err = await pending;
+    expect(err).toBeInstanceOf(InvestorApiTransportError);
+    expect((err as InvestorApiTransportError).cause).toBeInstanceOf(
+      DeadlineExceededError,
+    );
+    expect((err as InvestorApiTransportError).message).toMatch(
+      /response body aborted/,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("the budget covers bearer acquisition and assertion minting too", async () => {
     vi.useFakeTimers();
     const fetchMock = vi.fn();
     const client = makeClient(fetchMock, {
-      getBearer: () => new Promise<string>(() => undefined), // hangs
+      investorApi: {
+        baseUrl: INVESTOR_HOST,
+        getBearer: () => new Promise<string>(() => undefined),
+      },
     });
     const pending = client.call("listAccounts").catch((e: unknown) => e);
     await vi.advanceTimersByTimeAsync(READ_BUDGET_MS);
@@ -604,9 +851,6 @@ describe("the 10 s read budget is one absolute end-to-end deadline", () => {
     await vi.advanceTimersByTimeAsync(READ_BUDGET_MS);
     const err = await pending;
     expect(err).toBeInstanceOf(InvestorApiTransportError);
-    // attempt 1 at t=0 (fails at 4 s), retry at ~4.1 s (fails at 8.1 s); a third
-    // attempt would start after ~8.3 s but could not complete inside 10 s, and
-    // the deadline aborts it — never more than MAX_READ_RETRIES retries.
     expect(slowFail.mock.calls.length).toBeLessThanOrEqual(3);
   });
 
@@ -681,19 +925,5 @@ describe("contract enforcement", () => {
       }),
     ).rejects.toBeInstanceOf(ContractVersionMismatchError);
     expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  it("refuses a non-loopback base URL unless allowRemote is set", () => {
-    const opts = {
-      baseUrl: "https://investor-api-example.a.run.app",
-      getBearer: () => Promise.resolve("b"),
-      mintAssertion: () => Promise.resolve("a"),
-    };
-    expect(() => createInvestorApiClient(opts)).toThrow(
-      RemoteBaseUrlNotAllowedError,
-    );
-    expect(() =>
-      createInvestorApiClient({ ...opts, allowRemote: true }),
-    ).not.toThrow();
   });
 });

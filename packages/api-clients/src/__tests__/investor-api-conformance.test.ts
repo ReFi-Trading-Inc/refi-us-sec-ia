@@ -148,6 +148,8 @@ describe.skipIf(!python)(
     let proc: ChildProcess | null = null;
     let baseUrl = "";
     let client: InvestorApiClient;
+    let identityBearerCalls = 0;
+    let investorBearerCalls = 0;
     const ACCOUNT = examples.ids.account;
 
     beforeAll(async () => {
@@ -170,9 +172,26 @@ describe.skipIf(!python)(
         },
       );
       await waitForServer(baseUrl, 20_000);
+      // The simulator serves BOTH runtime owners from one loopback URL and
+      // accepts one fixture bearer for both; the two targets are still wired
+      // separately, with counters proving each is used by its own owner.
+      identityBearerCalls = 0;
+      investorBearerCalls = 0;
       client = createInvestorApiClient({
-        baseUrl,
-        getBearer: () => Promise.resolve(FIXTURE_BEARER),
+        identityCcid: {
+          baseUrl,
+          getBearer: () => {
+            identityBearerCalls += 1;
+            return Promise.resolve(FIXTURE_BEARER);
+          },
+        },
+        investorApi: {
+          baseUrl,
+          getBearer: () => {
+            investorBearerCalls += 1;
+            return Promise.resolve(FIXTURE_BEARER);
+          },
+        },
         mintAssertion: () => Promise.resolve(FIXTURE_ASSERTION),
       });
     }, 30_000);
@@ -303,8 +322,14 @@ describe.skipIf(!python)(
       );
 
       const noAssertion = createInvestorApiClient({
-        baseUrl,
-        getBearer: () => Promise.resolve(FIXTURE_BEARER),
+        identityCcid: {
+          baseUrl,
+          getBearer: () => Promise.resolve(FIXTURE_BEARER),
+        },
+        investorApi: {
+          baseUrl,
+          getBearer: () => Promise.resolve(FIXTURE_BEARER),
+        },
         mintAssertion: () => Promise.resolve(""),
       });
       const denied = await noAssertion
@@ -334,7 +359,7 @@ describe.skipIf(!python)(
 
       const resumed = await client.stream({
         path: { account_id: ACCOUNT },
-        lastEventId: first.value.eventId ?? "",
+        lastEventId: first.value.eventId,
       });
       expect(resumed.status).toBe(200);
       let count = 0;
@@ -344,8 +369,14 @@ describe.skipIf(!python)(
 
     it("SSE: the identity JWKS journey obtains no credentials against the simulator", async () => {
       const noCreds = createInvestorApiClient({
-        baseUrl,
-        getBearer: () => Promise.reject(new Error("must not be called")),
+        identityCcid: {
+          baseUrl,
+          getBearer: () => Promise.reject(new Error("must not be called")),
+        },
+        investorApi: {
+          baseUrl,
+          getBearer: () => Promise.reject(new Error("must not be called")),
+        },
         mintAssertion: () => Promise.reject(new Error("must not be called")),
       });
       expect((await noCreds.call("getIdentityJwks")).status).toBe(200);
@@ -354,10 +385,21 @@ describe.skipIf(!python)(
     it("identity: exchangeIdentity and public JWKS answer per contract", async () => {
       const jwks = await client.call("getIdentityJwks");
       expect(jwks.status).toBe(200);
+      const before = {
+        identity: identityBearerCalls,
+        investor: investorBearerCalls,
+      };
       const exchanged = await client.call("exchangeIdentity", {
         body: examples.requests["IdentityExchangeRequest"] as never,
       });
       expect(exchanged.status).toBe(200);
+      // identity-ccid's own Google credential, not investor-api's.
+      expect(identityBearerCalls).toBe(before.identity + 1);
+      expect(investorBearerCalls).toBe(before.investor);
+      const reads = await client.call("getOnboardingStatus");
+      expect(reads.status).toBe(200);
+      expect(investorBearerCalls).toBe(before.investor + 1);
+      expect(identityBearerCalls).toBe(before.identity + 1);
     });
   },
 );

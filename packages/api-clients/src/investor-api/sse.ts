@@ -1,12 +1,24 @@
 /**
  * Incremental Server-Sent Events parser over a `ReadableStream<Uint8Array>`.
  *
- * Server-only. Frames are surfaced as they arrive — never held until the
- * connection closes — with bounded buffering. Comment lines (`:` prefix) and
- * frames with no `data` (keepalives) are not state changes and are not
- * yielded. Per the SSE specification an `id:` field persists as the last event
- * id until the next `id:` field, so a data-less `id:` frame still updates the
- * id carried by the next data frame.
+ * Server-only. Follows the WHATWG event-stream parsing rules that matter for
+ * a contract consumer:
+ *
+ * - lines end with CRLF, LF, or a lone CR; a CR at the very end of the input
+ *   received so far is held until the next chunk shows whether an LF follows;
+ * - an event is dispatched ONLY by a blank line — an incomplete event at end
+ *   of stream is discarded, never dispatched;
+ * - comment lines (`:` prefix) and events with no `data` (keepalives) change
+ *   no state and are never yielded;
+ * - `id:` persists as the last event id until the next `id:`; an `id:` value
+ *   containing U+0000 is ignored (the previous id stays in effect);
+ * - a single leading space after the field colon is stripped; multiple
+ *   `data:` lines join with LF.
+ *
+ * Buffering is bounded on what is actually PENDING: the incomplete current
+ * line plus the `data` accumulated for the undispatched event. A large chunk
+ * that carries many complete frames is processed frame by frame and never
+ * trips the cap; one genuinely oversized unfinished event does.
  */
 
 export interface SseFrame {
@@ -18,11 +30,14 @@ export interface SseFrame {
 
 export interface SseParseOptions {
   signal?: AbortSignal;
-  /** Hard cap on buffered, not-yet-dispatched characters; exceeding it is a protocol fault. */
-  maxBufferedChars?: number;
+  /**
+   * Cap on pending state: the incomplete line buffer plus the current
+   * undispatched event's accumulated `data`. Exceeding it is a protocol fault.
+   */
+  maxPendingChars?: number;
 }
 
-export const DEFAULT_MAX_BUFFERED_CHARS = 256 * 1024;
+export const DEFAULT_MAX_PENDING_CHARS = 256 * 1024;
 
 export class SseProtocolError extends Error {
   constructor(message: string) {
@@ -33,12 +48,31 @@ export class SseProtocolError extends Error {
 
 const CR = String.fromCharCode(13);
 const LF = String.fromCharCode(10);
+const NUL = String.fromCharCode(0);
+
+/**
+ * Find the end of the next complete line in `buffer`.
+ * Returns `[lineEnd, terminatorLength]`, or `null` if no complete line yet.
+ * A trailing lone CR is treated as incomplete unless `eof` is set, because
+ * the following chunk may begin with the LF of a CRLF pair.
+ */
+function nextLineBreak(buffer: string, eof: boolean): [number, number] | null {
+  for (let i = 0; i < buffer.length; i += 1) {
+    const ch = buffer[i];
+    if (ch === LF) return [i, 1];
+    if (ch === CR) {
+      if (i + 1 < buffer.length) return [i, buffer[i + 1] === LF ? 2 : 1];
+      return eof ? [i, 1] : null;
+    }
+  }
+  return null;
+}
 
 export async function* parseSseFrames(
   body: ReadableStream<Uint8Array>,
   options: SseParseOptions = {},
 ): AsyncGenerator<SseFrame, void, undefined> {
-  const maxBuffered = options.maxBufferedChars ?? DEFAULT_MAX_BUFFERED_CHARS;
+  const maxPending = options.maxPendingChars ?? DEFAULT_MAX_PENDING_CHARS;
   const reader = body.getReader();
   const decoder = new TextDecoder("utf-8");
   const onAbort = (): void => {
@@ -54,6 +88,7 @@ export async function* parseSseFrames(
   let lastEventId: string | null = null;
   let eventName: string | null = null;
   let dataLines: string[] = [];
+  let pendingDataChars = 0;
 
   const dispatch = (): SseFrame | null => {
     const frame: SseFrame | null =
@@ -62,11 +97,11 @@ export async function* parseSseFrames(
         : null;
     eventName = null;
     dataLines = [];
+    pendingDataChars = 0;
     return frame;
   };
 
-  const consumeLine = (rawLine: string): SseFrame | null => {
-    const line = rawLine.endsWith(CR) ? rawLine.slice(0, -1) : rawLine;
+  const consumeLine = (line: string): SseFrame | null => {
     if (line === "") return dispatch();
     if (line.startsWith(":")) return null; // comment / keepalive
     const colon = line.indexOf(":");
@@ -75,13 +110,19 @@ export async function* parseSseFrames(
     if (value.startsWith(" ")) value = value.slice(1);
     switch (field) {
       case "id":
-        lastEventId = value;
+        if (!value.includes(NUL)) lastEventId = value;
         return null;
       case "event":
         eventName = value;
         return null;
       case "data":
         dataLines.push(value);
+        pendingDataChars += value.length + 1;
+        if (pendingDataChars > maxPending) {
+          throw new SseProtocolError(
+            `SSE event accumulated more than ${String(maxPending)} data characters without a terminating blank line`,
+          );
+        }
         return null;
       default:
         // `retry:` and unknown fields carry no contract state.
@@ -89,32 +130,41 @@ export async function* parseSseFrames(
     }
   };
 
+  /** Consume every complete line in `buffer`, yielding dispatched frames. */
+  function* drain(eof: boolean): Generator<SseFrame, void, undefined> {
+    let brk = nextLineBreak(buffer, eof);
+    while (brk !== null) {
+      const [end, len] = brk;
+      const line = buffer.slice(0, end);
+      buffer = buffer.slice(end + len);
+      const frame = consumeLine(line);
+      if (frame) yield frame;
+      brk = nextLineBreak(buffer, eof);
+    }
+  }
+
   try {
     for (;;) {
       const { value, done } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      if (buffer.length > maxBuffered) {
+      // Complete lines first, so a big chunk of small frames never trips the
+      // cap; then bound what remains pending.
+      yield* drain(false);
+      if (buffer.length + pendingDataChars > maxPending) {
         throw new SseProtocolError(
-          `SSE frame exceeded ${String(maxBuffered)} buffered characters without a terminator`,
+          `SSE pending state exceeded ${String(maxPending)} characters without a line terminator`,
         );
       }
-      let newline = buffer.indexOf(LF);
-      while (newline !== -1) {
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
-        const frame = consumeLine(line);
-        if (frame) yield frame;
-        newline = buffer.indexOf(LF);
-      }
     }
-    // A final line terminated by EOF rather than a newline.
-    if (buffer.length > 0) {
-      const frame = consumeLine(buffer);
-      if (frame) yield frame;
-    }
-    const tail = dispatch();
-    if (tail) yield tail;
+    // End of stream: a trailing lone CR now terminates its line, but anything
+    // still undispatched (no blank line) is an incomplete event and is DROPPED.
+    buffer += decoder.decode();
+    yield* drain(true);
+    buffer = "";
+    eventName = null;
+    dataLines = [];
+    pendingDataChars = 0;
   } finally {
     options.signal?.removeEventListener("abort", onAbort);
     reader.releaseLock();

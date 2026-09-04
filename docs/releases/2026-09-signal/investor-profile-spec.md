@@ -962,23 +962,24 @@ The SEC does not prescribe a specific 20-question survey; the duty is
 principles-based. These decisions are therefore **not** silently decided by
 product or engineering:
 
-| #   | Decision                                                                    |
-| --- | --------------------------------------------------------------------------- |
-| 1   | Which answers are required before personalized advice                       |
-| 2   | Product-fit exclusion rules                                                 |
-| 3   | Risk-capacity policy (weights + hard constraints)                           |
-| 4   | Risk-willingness mapping (ordinal values, plan-card figures)                |
-| 5   | Inconsistency handling                                                      |
-| 6   | Profile-refresh frequency                                                   |
-| 7   | Whether/how a client can override ReFi's recommended risk level             |
-| 8   | Documentation of override                                                   |
-| 9   | Alpha financial-capacity policy                                             |
-| 10  | Alpha disclosure language                                                   |
-| 11  | CRS / ADV / advisory-agreement sequencing (the state-machine gate)          |
-| 12  | How refusals / incomplete answers are treated                               |
-| 13  | Records-retention requirements                                              |
-| 14  | Exact wording defining liquid net worth                                     |
-| 15  | Whether direct-index restrictions create additional suitability obligations |
+| #   | Decision                                                                                                                                                                                                                                                                                                |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Which answers are required before personalized advice                                                                                                                                                                                                                                                   |
+| 2   | Product-fit exclusion rules                                                                                                                                                                                                                                                                             |
+| 3   | Risk-capacity policy (weights + hard constraints)                                                                                                                                                                                                                                                       |
+| 4   | Risk-willingness mapping (ordinal values, plan-card figures)                                                                                                                                                                                                                                            |
+| 5   | Inconsistency handling                                                                                                                                                                                                                                                                                  |
+| 6   | Profile-refresh frequency                                                                                                                                                                                                                                                                               |
+| 7   | Whether/how a client can override ReFi's recommended risk level                                                                                                                                                                                                                                         |
+| 8   | Documentation of override                                                                                                                                                                                                                                                                               |
+| 9   | Alpha financial-capacity policy                                                                                                                                                                                                                                                                         |
+| 10  | Alpha disclosure language                                                                                                                                                                                                                                                                               |
+| 11  | CRS / ADV / advisory-agreement sequencing (the state-machine gate)                                                                                                                                                                                                                                      |
+| 12  | How refusals / incomplete answers are treated                                                                                                                                                                                                                                                           |
+| 13  | Records-retention requirements                                                                                                                                                                                                                                                                          |
+| 14  | Exact wording defining liquid net worth                                                                                                                                                                                                                                                                 |
+| 15  | Whether direct-index restrictions create additional suitability obligations                                                                                                                                                                                                                             |
+| 16  | Draft retention/expiry: abandoned server-side questionnaire drafts hold banded financial-profile information indefinitely if never submitted — counsel/privacy set the retention period and deletion trigger (recorded at PR #65 round-2 review rather than silently choosing a long retention in code) |
 
 Rule 203A-2(e) is principally about qualifying as an internet investment
 adviser for SEC registration; it does not replace the underlying fiduciary,

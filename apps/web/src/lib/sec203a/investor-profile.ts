@@ -203,9 +203,40 @@ export const RESTRICTION_KINDS = [
 ] as const;
 export type RestrictionKind = (typeof RESTRICTION_KINDS)[number];
 
+/** Structured restriction identities, keyed by the category they belong to. */
+export interface RestrictionDetails {
+  employerSecurities?: string[];
+  legallyRestrictedSecurities?: string[];
+  excludedCompanies?: string[];
+  excludedIndustries?: string[];
+  other?: string;
+}
+
+/** Which detail field each restriction kind requires (none/"none" require none). */
+export const RESTRICTION_DETAIL_FIELD: Partial<
+  Record<RestrictionKind, keyof RestrictionDetails>
+> = {
+  employer_securities: "employerSecurities",
+  legally_restricted: "legallyRestrictedSecurities",
+  specific_companies: "excludedCompanies",
+  specific_industries: "excludedIndustries",
+  other: "other",
+};
+
 export const EXPECTED_FINANCIAL_CHANGES = ["no", "maybe", "yes"] as const;
 export type ExpectedFinancialChange =
   (typeof EXPECTED_FINANCIAL_CHANGES)[number];
+
+/** Spec §3 Screen 21 branch — required when the answer is "yes". */
+export const FINANCIAL_CHANGE_KINDS = [
+  "income_employment",
+  "retirement",
+  "major_purchase",
+  "major_expense",
+  "savings_change",
+  "other",
+] as const;
+export type FinancialChangeKind = (typeof FINANCIAL_CHANGE_KINDS)[number];
 
 export const PRODUCT_INTENTS = [
   "disciplined_long_term",
@@ -230,7 +261,8 @@ export type AlphaLossImpact = (typeof ALPHA_LOSS_IMPACTS)[number];
  */
 export interface InvestorProfileAnswers {
   questionnaireVersion: 2;
-  accountType: AccountType;
+  /** Essential (spec §11): unanswered means no assessment may personalize. */
+  accountType?: AccountType;
 
   goal?: Goal;
   horizon?: Horizon;
@@ -254,8 +286,23 @@ export interface InvestorProfileAnswers {
   growthProtectionPreference?: GrowthProtectionPreference;
   riskTradeoffChoice?: RiskTradeoffChoice;
 
+  /**
+   * Required on a completed retail questionnaire: ["none"] is the explicit
+   * "no restrictions" confirmation — empty/omitted is NOT equivalent
+   * (PR #65 review round 2). Product-specific information, unlike optional
+   * segmentation fields.
+   */
   restrictions?: RestrictionKind[];
+  /**
+   * Structured, machine-readable restriction details — the relationship
+   * between each selected restriction category and its identities is
+   * explicit, so downstream direct-index exclusions never parse prose.
+   * Bounded and minimal; nothing here claims construction-time enforcement.
+   */
+  restrictionDetails?: RestrictionDetails;
   expectedFinancialChange?: ExpectedFinancialChange;
+  /** Required (non-empty) when expectedFinancialChange === "yes". */
+  expectedFinancialChangeKinds?: FinancialChangeKind[];
 
   productIntent?: ProductIntent[];
   alphaLossImpact?: AlphaLossImpact;
@@ -279,6 +326,19 @@ export const RISK_BAND_LABELS: Record<RiskBand, string> = {
   3: "Balanced",
   4: "Growth",
   5: "High Growth",
+};
+
+/**
+ * Neutral component-level labels for capacity and willingness. The portfolio
+ * taxonomy above describes ONLY the final permitted profile — "financial
+ * capacity: Growth" is a category error, so components get their own scale.
+ */
+export const COMPONENT_LEVEL_LABELS: Record<RiskBand, string> = {
+  1: "Very Low",
+  2: "Low",
+  3: "Moderate",
+  4: "High",
+  5: "Very High",
 };
 
 export type KnowledgeBand = 1 | 2 | 3 | 4;
@@ -343,6 +403,7 @@ export const REASON_CODES = [
   "PRODUCT_FIT_EMERGENCY_FUND",
   "PRODUCT_FIT_LOSS_INTOLERANT",
   "PRODUCT_FIT_ENTITY_ROUTED",
+  "PRODUCT_FIT_JOINT_UNSUPPORTED",
   "ALPHA_NOT_REQUESTED",
   "ALPHA_LOSS_IMPACT_FAILED",
   "ALPHA_CAPACITY_FAILED",
@@ -398,4 +459,47 @@ export interface AdvisoryConsentRecord {
   contentHash: string;
   acknowledgedAt: string;
   profileVersion: number;
+}
+
+// ─── Canonicalization (PR #65 review round 2) ───────────────────────────────
+
+/**
+ * Remove branch answers whose parent no longer activates them, so hidden
+ * child data can never survive into the immutable record as a stale or
+ * contradictory advisory fact. The server applies this DETERMINISTICALLY
+ * before validation, hashing and persistence (normalize, not reject — the
+ * documented choice, tested in the invariants suite); the UI additionally
+ * prunes proactively when a parent choice changes.
+ */
+export function canonicalizeAnswers(
+  a: InvestorProfileAnswers,
+): InvestorProfileAnswers {
+  const out: InvestorProfileAnswers = { ...a };
+
+  if (out.expectedFinancialChange !== "yes") {
+    delete out.expectedFinancialChangeKinds;
+  }
+
+  const activeKinds = (out.restrictions ?? []).filter((r) => r !== "none");
+  if (activeKinds.length === 0) {
+    delete out.restrictionDetails;
+  } else if (out.restrictionDetails) {
+    const kept: RestrictionDetails = {};
+    for (const kind of activeKinds) {
+      const field = RESTRICTION_DETAIL_FIELD[kind];
+      if (!field) continue;
+      const v = out.restrictionDetails[field];
+      if (v !== undefined) {
+        // Typed per-field assignment keeps arrays and the string separate.
+        (kept as Record<string, unknown>)[field] = v;
+      }
+    }
+    out.restrictionDetails = kept;
+  }
+
+  if (!(out.productIntent ?? []).includes("explore_alpha")) {
+    delete out.alphaLossImpact;
+  }
+
+  return out;
 }

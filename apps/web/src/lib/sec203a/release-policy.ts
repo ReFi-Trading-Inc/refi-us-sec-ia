@@ -52,6 +52,10 @@ export const SIGNAL_ALLOWED_ACTIONS = [
   "dismissSignal",
   "saveSignal",
   "submitSupportRequest",
+  // Draft autosave for the questionnaire-v2 profile: advice-side state with
+  // no execution reach — Signal-allowed (review of PR #65 authorized the
+  // dedicated draft path through CM-04 + bffMutate).
+  "saveProfileDraft",
 ] as const;
 
 /** Actions that exist only once Managed paper is enabled. */

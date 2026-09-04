@@ -324,7 +324,14 @@ function deriveProductFit(
 ): FitResult {
   const codes: ReasonCode[] = [];
 
-  if (a.accountType !== RETAIL_ACCOUNT_TYPE && a.accountType !== "joint") {
+  // Only the single-owner retail account proceeds. A joint account is NOT a
+  // one-person profile: until a two-owner methodology exists it exits/holds
+  // with its own truthful reason, never a retail assessment built from one
+  // owner's circumstances (review of PR #65; spec §3 Screen 1).
+  if (a.accountType === "joint") {
+    return { status: "not_fit", codes: ["PRODUCT_FIT_JOINT_UNSUPPORTED"] };
+  }
+  if (a.accountType !== undefined && a.accountType !== RETAIL_ACCOUNT_TYPE) {
     return { status: "not_fit", codes: ["PRODUCT_FIT_ENTITY_ROUTED"] };
   }
   if (essentialsMissing) {
@@ -409,7 +416,9 @@ export function assessInvestorProfile(
   options: AssessOptions = {},
 ): InvestorProfileAssessment {
   const essentialsMissing =
-    answers.goal === undefined || answers.horizon === undefined;
+    answers.accountType === undefined ||
+    answers.goal === undefined ||
+    answers.horizon === undefined;
 
   const capacity = deriveCapacity(answers);
   const willingnessBand = deriveWillingness(answers);

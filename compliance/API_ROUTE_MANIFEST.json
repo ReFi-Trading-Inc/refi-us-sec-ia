@@ -179,6 +179,28 @@
       }
     },
     {
+      "source": "apps/web/app/api/v1/investor/profile/v2/route.ts",
+      "route": "/api/v1/investor/profile/v2",
+      "methods": ["GET", "POST"],
+      "purpose": "Questionnaire-v2 investor profile: GET returns the latest immutable answers version and its policy assessment; POST submits answers, runs the deterministic server-side policy engine, blocks on unresolved consistency flags (clarification loop), and persists a new immutable version with assessment provenance.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read",
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/profile/v2/draft/route.ts",
+      "route": "/api/v1/investor/profile/v2/draft",
+      "methods": ["GET", "POST"],
+      "purpose": "Mutable autosave/resume draft for the questionnaire-v2 profile, scoped to the authenticated identity PLUS the selected account (with an explicit pre-account scope that promotes one-way into the first account-scoped save), so sensitive banded answers never persist in browser storage. One logical draft session per scope: GET returns sessionId/draftRevision for continuation, stale revisions and unrelated sessions are refused, and the v2 submit route closes the active session(s) server-side when it promotes the answers into the immutable version chain.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read",
+        "POST": "bff-mutate"
+      }
+    },
+    {
       "source": "apps/web/app/api/v1/investor/recommendations/route.ts",
       "route": "/api/v1/investor/recommendations",
       "methods": ["GET"],

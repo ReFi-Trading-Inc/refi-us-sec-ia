@@ -4489,6 +4489,212 @@ await section(
   });
 }
 
+// ─── Investor Profile v2 drafts — atomic revision ordering & finality ───────
+{
+  const drafts =
+    await import("../apps/web/src/lib/prototype-store/entities/investor-profile-v2.ts");
+  const { saveProfileDraftV2, getProfileDraftV2, closeProfileDraftsV2 } =
+    drafts;
+  const answers = { questionnaireVersion: 2 as const };
+  /** A manual gate: `hold` resolves when `release()` is called. */
+  function gate() {
+    let release!: () => void;
+    const hold = new Promise<void>((r) => {
+      release = r;
+    });
+    return { hold, release };
+  }
+  const base = (
+    authId: string,
+    sessionId: string,
+    rev: number,
+    step = "goal",
+  ) => ({
+    authId,
+    accountId: "acct-ca-1",
+    sessionId,
+    draftRevision: rev,
+    answers,
+    currentStepId: step,
+    correlationId: "corr-ca",
+  });
+
+  await section(
+    "drafts: concurrent rev 5 and rev 4 — rev 5 wins, final stored revision is 5",
+    async () => {
+      const authId = "auth-ca-order";
+      const g = gate();
+      // rev 5 enters the critical section, reads, decides, and PAUSES before
+      // its write; rev 4 is started while rev 5 is paused.
+      const five = saveProfileDraftV2(base(authId, "S", 5), {
+        beforeWrite: () => g.hold,
+      });
+      const four = saveProfileDraftV2(base(authId, "S", 4, "horizon"));
+      await new Promise((r) => setTimeout(r, 20)); // let rev 4 attempt to run
+      g.release();
+      const [r5, r4] = await Promise.all([five, four]);
+      assert.equal(r5.stored, true, "rev 5 must store");
+      assert.equal(r4.stored, false, "rev 4 must be rejected as stale");
+      assert.equal(r4.reason, "stale_revision");
+      const final = await getProfileDraftV2(authId, "acct-ca-1");
+      assert.equal(
+        final?.draftRevision,
+        5,
+        "a lower revision must never replace a higher one",
+      );
+      assert.equal(final?.currentStepId, "goal");
+    },
+  );
+
+  await section(
+    "drafts: a save cannot race through a submission tombstone (either order)",
+    async () => {
+      // Order A: close is paused before writing; a same-session save starts.
+      const authA = "auth-ca-tomb-a";
+      assert.equal(
+        (await saveProfileDraftV2(base(authA, "T", 1))).stored,
+        true,
+      );
+      const gA = gate();
+      const close = closeProfileDraftsV2(
+        { authId: authA, accountId: "acct-ca-1", correlationId: "corr-ca" },
+        { beforeWrite: () => gA.hold },
+      );
+      const lateSave = saveProfileDraftV2(base(authA, "T", 2, "horizon"));
+      await new Promise((r) => setTimeout(r, 20));
+      gA.release();
+      const [closed, saved] = await Promise.all([close, lateSave]);
+      assert.deepEqual(closed.closedSessionIds, ["T"]);
+      assert.equal(saved.stored, false);
+      assert.equal(saved.reason, "session_closed");
+      assert.equal(await getProfileDraftV2(authA, "acct-ca-1"), null);
+
+      // Order B: save is paused before writing; close starts. Close must see
+      // the saved session AFTER the save completes and tombstone it.
+      const authB = "auth-ca-tomb-b";
+      const gB = gate();
+      const save = saveProfileDraftV2(base(authB, "U", 1), {
+        beforeWrite: () => gB.hold,
+      });
+      const closeB = closeProfileDraftsV2({
+        authId: authB,
+        accountId: "acct-ca-1",
+        correlationId: "corr-ca",
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      gB.release();
+      const [savedB, closedB] = await Promise.all([save, closeB]);
+      assert.equal(savedB.stored, true);
+      assert.deepEqual(closedB.closedSessionIds, ["U"]);
+      assert.equal(await getProfileDraftV2(authB, "acct-ca-1"), null);
+      assert.equal(
+        (await saveProfileDraftV2(base(authB, "U", 2))).reason,
+        "session_closed",
+      );
+    },
+  );
+
+  await section(
+    "drafts: finality is server-derived — no hint, bogus hint, and no-draft cases",
+    async () => {
+      const authId = "auth-ca-final";
+      assert.equal(
+        (await saveProfileDraftV2(base(authId, "V", 3))).stored,
+        true,
+      );
+      // No hint at all: the active session is still closed.
+      const noHint = await closeProfileDraftsV2({
+        authId,
+        accountId: "acct-ca-1",
+        correlationId: "corr-ca",
+      });
+      assert.deepEqual(noHint.closedSessionIds, ["V"]);
+      assert.equal(noHint.hadActiveDraft, true);
+      assert.equal(
+        (await saveProfileDraftV2(base(authId, "V", 4))).reason,
+        "session_closed",
+      );
+
+      // Bogus hint with a new active session: the real session closes too.
+      assert.equal(
+        (await saveProfileDraftV2(base(authId, "W", 1))).stored,
+        true,
+      );
+      const bogus = await closeProfileDraftsV2({
+        authId,
+        accountId: "acct-ca-1",
+        clientSessionHint: "bogus",
+        correlationId: "corr-ca",
+      });
+      assert.ok(
+        bogus.closedSessionIds.includes("W") &&
+          bogus.closedSessionIds.includes("bogus"),
+      );
+      assert.equal(
+        (await saveProfileDraftV2(base(authId, "W", 2))).reason,
+        "session_closed",
+      );
+
+      // No prior draft anywhere: legitimate, nothing to close, no throw.
+      const none = await closeProfileDraftsV2({
+        authId: "auth-ca-nodraft",
+        accountId: "acct-ca-1",
+        correlationId: "corr-ca",
+      });
+      assert.equal(none.hadActiveDraft, false);
+      assert.deepEqual(none.closedSessionIds, []);
+    },
+  );
+
+  await section(
+    "drafts: no implicit session takeover; preaccount promotion adopts the existing session",
+    async () => {
+      const authId = "auth-ca-takeover";
+      assert.equal(
+        (await saveProfileDraftV2(base(authId, "A", 1))).stored,
+        true,
+      );
+      const b = await saveProfileDraftV2(base(authId, "B", 1, "horizon"));
+      assert.equal(b.stored, false);
+      assert.equal(b.reason, "session_mismatch");
+      assert.equal(
+        (await getProfileDraftV2(authId, "acct-ca-1"))?.sessionId,
+        "A",
+      );
+
+      // Preaccount draft P; an account-scoped save from another session must
+      // not bypass it, but the SAME session promotes one-way.
+      const authP = "auth-ca-preaccount";
+      const pre = await saveProfileDraftV2({
+        ...base(authP, "P", 1),
+        accountId: null,
+      });
+      assert.equal(pre.stored, true);
+      assert.equal(
+        (await getProfileDraftV2(authP, "acct-ca-1"))?.sessionId,
+        "P",
+      );
+      const other = await saveProfileDraftV2(base(authP, "Q", 1));
+      assert.equal(other.reason, "session_mismatch");
+      const promoted = await saveProfileDraftV2(base(authP, "P", 2, "horizon"));
+      assert.equal(promoted.stored, true);
+      assert.equal(
+        (await getProfileDraftV2(authP, "acct-ca-1"))?.accountId,
+        "acct-ca-1",
+      );
+      // Submission closes BOTH scopes.
+      const closed = await closeProfileDraftsV2({
+        authId: authP,
+        accountId: "acct-ca-1",
+        correlationId: "corr-ca",
+      });
+      assert.deepEqual(closed.closedSessionIds, ["P"]);
+      assert.equal(await getProfileDraftV2(authP, "acct-ca-1"), null);
+      assert.equal(await getProfileDraftV2(authP, null), null);
+    },
+  );
+}
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

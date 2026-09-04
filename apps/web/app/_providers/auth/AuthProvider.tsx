@@ -14,7 +14,6 @@ import {
   useSessionRefresh,
   useSignOut,
   type AuthSession,
-  type KycStatusValue,
 } from "@refi/api-clients";
 
 export type AuthContextValue = {
@@ -22,7 +21,6 @@ export type AuthContextValue = {
   account_id?: string;
   wallet_id?: string;
   roles: string[];
-  kyc_status?: KycStatusValue;
   signOut: () => Promise<void>;
   refetchSession: () => Promise<void>;
 };
@@ -100,7 +98,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       account_id: session?.account_id,
       wallet_id: session?.wallet_id,
       roles: session?.roles ?? [],
-      kyc_status: session?.kyc_status,
       signOut,
       refetchSession,
     };

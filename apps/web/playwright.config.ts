@@ -65,6 +65,10 @@ export default defineConfig({
       REFI_IDENTITY_CCID_BASE_URL: "http://127.0.0.1:8765",
       REFI_INVESTOR_API_CREDENTIAL_MODE: "simulator-fixture",
       REFI_INVESTOR_API_ASSERTION_MODE: "simulator-fixture",
+      // Frontend-owned identity verification: the deterministic MOCK adapter
+      // with its server-side test control (never on a production tier).
+      REFI_KYC_PROVIDER: "mock",
+      REFI_KYC_MOCK_CONTROLS: "1",
       NEXT_PUBLIC_API_BASE_URL: "http://localhost:3000",
       NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "test",
       NEXT_PUBLIC_POSTHOG_KEY: "test",

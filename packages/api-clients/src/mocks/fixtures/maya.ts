@@ -6,7 +6,6 @@ import type {
   BrokerAccount,
   BrokerConnection,
   BrokerInfo,
-  KycStatus,
   Order,
   Position,
   Recommendation,
@@ -18,12 +17,6 @@ export const mayaSession: AuthSession = {
   wallet_id: "wallet_0xMAYA",
   roles: ["client"],
   kyc_status: "approved",
-};
-
-export const mayaKyc: KycStatus = {
-  status: "approved",
-  provider: "ComplyCube",
-  last_updated: "2026-05-10T14:32:00Z",
 };
 
 export const supportedBrokers: BrokerInfo[] = [

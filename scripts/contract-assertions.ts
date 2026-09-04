@@ -17,7 +17,7 @@
  * and exit non-zero.
  */
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -5082,6 +5082,262 @@ await section(
       assert.ok(
         !msw.includes("/v1/documents/acknowledge"),
         "legacy MSW handler removed",
+      );
+    },
+  );
+}
+
+// ─── KYC provider boundary (public U.S. onboarding decision, 2026-09-04) ────
+{
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const kyc = await import("../apps/web/src/lib/kyc/index.ts");
+  const { MockKycProvider, MOCK_ADVANCE_TRANSITIONS } =
+    await import("../apps/web/src/lib/kyc/mock-provider.ts");
+  const {
+    KYC_LIFECYCLE_STATES,
+    toAttestationKycStatus,
+    normalizeUnknownLifecycle,
+    toNormalizedKycResult,
+    NotALifecycleStateError,
+  } = kyc;
+  const VENDOR_NAMES =
+    /\b(persona|plaid|alloy|socure|sumsub|trulioo|complycube|jumio|onfido|veriff|idnow|mitek)\b|stripe\s*identity/i;
+  const kycFiles = [
+    "apps/web/src/lib/kyc/provider.ts",
+    "apps/web/src/lib/kyc/mock-provider.ts",
+    "apps/web/src/lib/kyc/index.ts",
+    "apps/web/app/api/v1/investor/kyc/verification/route.ts",
+    "apps/web/app/api/v1/investor/kyc/verification/start/route.ts",
+    "apps/web/app/api/v1/investor/kyc/verification/mock/route.ts",
+    "apps/web/app/_hooks/useKycVerification.ts",
+    "apps/web/app/us/onboarding/kyc/page.tsx",
+    "apps/web/app/us/app/account/page.tsx",
+    "apps/web/app/us/_content/app-copy.ts",
+  ];
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+
+  await section(
+    "kyc: the frontend boundary is provider-neutral — no vendor name anywhere",
+    async () => {
+      for (const f of kycFiles) {
+        assert.ok(
+          !VENDOR_NAMES.test(read(f)),
+          `${f} must not name a KYC vendor`,
+        );
+      }
+    },
+  );
+
+  await section(
+    "kyc: lifecycle → attestation vocabulary (passed/failed/pending) and NOT_REQUIRED is never a provider state",
+    async () => {
+      assert.equal(toAttestationKycStatus("passed"), "passed");
+      assert.equal(toAttestationKycStatus("failed"), "failed");
+      for (const s of [
+        "not_started",
+        "in_progress",
+        "additional_info_required",
+        "under_review",
+      ] as const) {
+        assert.equal(
+          toAttestationKycStatus(s),
+          "pending",
+          `${s} normalizes to pending`,
+        );
+      }
+      // The backend policy projection's value is not a lifecycle state.
+      assert.throws(
+        () => normalizeUnknownLifecycle("NOT_REQUIRED"),
+        NotALifecycleStateError,
+      );
+      assert.throws(
+        () => normalizeUnknownLifecycle("approved"),
+        NotALifecycleStateError,
+      );
+      assert.throws(
+        () => normalizeUnknownLifecycle("verified"),
+        NotALifecycleStateError,
+      );
+      assert.deepEqual(
+        [...KYC_LIFECYCLE_STATES],
+        [
+          "not_started",
+          "in_progress",
+          "additional_info_required",
+          "under_review",
+          "passed",
+          "failed",
+        ],
+      );
+      // Only the generated attestation enum members are ever produced.
+      const produced = new Set(
+        KYC_LIFECYCLE_STATES.map(toAttestationKycStatus),
+      );
+      assert.deepEqual([...produced].sort(), ["failed", "passed", "pending"]);
+    },
+  );
+
+  await section(
+    "kyc: the mock is deterministic — explicit transitions only, no self-approval, labelled as mock",
+    async () => {
+      const mock = new MockKycProvider();
+      const subject = { authId: "auth-kyc-ca-1" };
+      await mock.reset(subject);
+      const s0 = await mock.getSession(subject);
+      assert.equal(s0.state, "not_started");
+      // Reads never advance state.
+      assert.equal((await mock.getSession(subject)).state, "not_started");
+      // Cannot jump not_started → passed.
+      const jump = await mock.advance(subject, "passed");
+      assert.equal(jump.ok, false);
+      const started = await mock.start(subject, "corr");
+      assert.equal(started.accepted, true);
+      assert.equal((await mock.getSession(subject)).state, "in_progress");
+      // Idempotent resume.
+      const again = await mock.start(subject, "corr");
+      assert.equal(again.accepted, true);
+      assert.equal((await mock.getSession(subject)).state, "in_progress");
+      assert.deepEqual(MOCK_ADVANCE_TRANSITIONS.in_progress, [
+        "additional_info_required",
+        "under_review",
+        "passed",
+        "failed",
+      ]);
+      assert.equal((await mock.advance(subject, "under_review")).ok, true);
+      assert.equal((await mock.advance(subject, "passed")).ok, true);
+      const done = await mock.getSession(subject);
+      assert.equal(done.state, "passed");
+      assert.deepEqual(
+        done.history.map((h) => h.state),
+        ["not_started", "in_progress", "under_review", "passed"],
+      );
+      const normalized = toNormalizedKycResult(done, mock.kind);
+      assert.equal(normalized.status, "passed");
+      assert.equal(normalized.provider, "mock-kyc-adapter");
+      assert.ok(!VENDOR_NAMES.test(JSON.stringify(normalized)));
+      assert.ok(
+        done.referenceId.startsWith("mock-kyc-"),
+        "reference ids are opaque and mock-labelled",
+      );
+      // Failed journeys can be retried; passed ones cannot be restarted.
+      const other = { authId: "auth-kyc-ca-2" };
+      await mock.reset(other);
+      await mock.start(other, "corr");
+      await mock.advance(other, "failed");
+      assert.equal((await mock.start(other, "corr")).accepted, true);
+      assert.equal((await mock.start(subject, "corr")).accepted, false);
+    },
+  );
+
+  await section(
+    "kyc: provider resolution — unconfigured fails closed; mock controls exist only when explicitly enabled",
+    async () => {
+      const saved = {
+        p: process.env["REFI_KYC_PROVIDER"],
+        c: process.env["REFI_KYC_MOCK_CONTROLS"],
+        e: process.env["REFI_ENV"],
+      };
+      try {
+        delete process.env["REFI_KYC_PROVIDER"];
+        delete process.env["REFI_KYC_MOCK_CONTROLS"];
+        process.env["REFI_ENV"] = "prod";
+        resetServerEnvCacheForTests();
+        assert.throws(
+          () => kyc.getKycProvider(),
+          kyc.KycProviderUnavailableError,
+          "default is unconfigured → unavailable",
+        );
+        assert.equal(
+          kyc.getMockKycControls(),
+          null,
+          "no controls when unconfigured",
+        );
+        process.env["REFI_KYC_PROVIDER"] = "mock";
+        resetServerEnvCacheForTests();
+        assert.equal(kyc.getKycProvider().kind, "mock");
+        assert.equal(
+          kyc.getMockKycControls(),
+          null,
+          "mock adapter without the flag exposes no controls (production mode)",
+        );
+        process.env["REFI_KYC_MOCK_CONTROLS"] = "1";
+        resetServerEnvCacheForTests();
+        assert.ok(
+          kyc.getMockKycControls() !== null,
+          "explicit opt-in enables controls",
+        );
+      } finally {
+        for (const [k, v] of [
+          ["REFI_KYC_PROVIDER", saved.p],
+          ["REFI_KYC_MOCK_CONTROLS", saved.c],
+          ["REFI_ENV", saved.e],
+        ] as const) {
+          if (v === undefined) delete process.env[k];
+          else process.env[k] = v;
+        }
+        resetServerEnvCacheForTests();
+      }
+    },
+  );
+
+  await section(
+    "kyc: the mock control route is gated on getMockKycControls() and answers 404 when it is null",
+    async () => {
+      const src = read(
+        "apps/web/app/api/v1/investor/kyc/verification/mock/route.ts",
+      );
+      assert.ok(
+        /getMockKycControls\(\)/.test(src),
+        "route must resolve controls through the gated resolver",
+      );
+      assert.ok(
+        /controls === null/.test(src) && /status: 404/.test(src),
+        "null controls must answer 404",
+      );
+      assert.ok(
+        !/REFI_KYC_MOCK_CONTROLS/.test(
+          read("apps/web/app/us/onboarding/kyc/page.tsx"),
+        ),
+        "browser never sees the gate flag",
+      );
+    },
+  );
+
+  await section(
+    "kyc: no attestation submission, no Investor API/identity call, and no legacy browser-direct KYC path remain",
+    async () => {
+      for (const f of kycFiles.slice(0, 7)) {
+        const src = read(f);
+        assert.ok(
+          !/call\(\s*["']createComplianceProfileAttestation["']/.test(src),
+          `${f} must not submit an attestation`,
+        );
+        assert.ok(
+          !/investorApiClientFor|call\(\s*["']getKycStatus["']|call\(\s*["']exchangeIdentity["']/.test(
+            src,
+          ),
+          `${f} must not call the Investor API or identity-ccid`,
+        );
+      }
+      const legacy =
+        /\/ccid\/status|\/ccid\/start|\/ccid\/webhook\/provider|\/compliance\/invalidate-cache/;
+      for (const f of [
+        "apps/web/app/us/onboarding/kyc/page.tsx",
+        "apps/web/app/us/app/account/page.tsx",
+        "apps/web/app/_hooks/useKycVerification.ts",
+        "apps/web/app/_providers/auth/AuthProvider.tsx",
+        "packages/api-clients/src/index.ts",
+        "packages/api-clients/src/mocks/handlers.ts",
+      ]) {
+        assert.ok(
+          !legacy.test(read(f)),
+          `${f} must not carry a legacy browser-direct KYC path`,
+        );
+      }
+      assert.ok(
+        !existsSync(join(REPO_ROOT, "packages/api-clients/src/hooks/kyc.ts")),
+        "legacy hooks/kyc.ts removed",
       );
     },
   );

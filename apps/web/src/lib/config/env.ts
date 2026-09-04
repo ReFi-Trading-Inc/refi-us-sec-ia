@@ -181,6 +181,18 @@ const serverSchema = clientSchema.extend({
   REFI_INVESTOR_API_ASSERTION_MODE: z
     .enum(["mint", "simulator-fixture"])
     .default("mint"),
+  /**
+   * Frontend-owned KYC provider adapter (public U.S. onboarding, decision
+   * 2026-09-04). "unconfigured" (default): no provider selected — verification
+   * is reported unavailable and nothing starts. "mock": the deterministic mock
+   * adapter for local/E2E only; never identity verification.
+   */
+  REFI_KYC_PROVIDER: z.enum(["unconfigured", "mock"]).default("unconfigured"),
+  /**
+   * Enables the mock adapter's server-side test control route. Must never be
+   * set on a deployed production tier; the route answers 404 otherwise.
+   */
+  REFI_KYC_MOCK_CONTROLS: z.enum(["0", "1"]).default("0"),
 });
 
 function formatError(error: z.ZodError): string {
@@ -300,6 +312,8 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
       process.env["REFI_INVESTOR_API_CREDENTIAL_MODE"] || undefined,
     REFI_INVESTOR_API_ASSERTION_MODE:
       process.env["REFI_INVESTOR_API_ASSERTION_MODE"] || undefined,
+    REFI_KYC_PROVIDER: process.env["REFI_KYC_PROVIDER"] || undefined,
+    REFI_KYC_MOCK_CONTROLS: process.env["REFI_KYC_MOCK_CONTROLS"] || undefined,
     // No withFallback: a signing key must never have a committed default.
     BFF_ASSERTION_PRIVATE_KEY_JWK:
       process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"] || undefined,

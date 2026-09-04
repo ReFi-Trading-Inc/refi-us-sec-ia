@@ -214,6 +214,42 @@ Parked (D, named for completeness, **not** to be implemented):
 
 Remaining after slice 1: **A 10 · B 4 · C 7 · D 4** (E/F 0). C1b-2 is not closed.
 
+| Rows 6, 7, 8, 9 — `/ccid/status`, `/ccid/start`, `/ccid/webhook/provider`, `/compliance/invalidate-cache` | C1b-2 slice 2 (`c1b2/kyc-provider-boundary`) | **implemented, in review** — provider-neutral frontend KYC boundary (`apps/web/src/lib/kyc`, MOCK adapter) behind same-origin BFF routes `/api/v1/investor/kyc/verification[/start|/mock]`; all four legacy browser-direct paths and their MSW handlers removed; legacy `KycStatusValue`/`isKycTerminal`/`KycStatus` shims removed. **Row 6 reclassified (see below).** |
+
+**Row 6 correction (evidence-based, 2026-09-04).** The Phase 1 matrix mapped
+legacy `GET /ccid/status` to Daniel's `getKycStatus` as a Class A migration.
+Measurement showed that is not a semantic replacement: the legacy endpoint
+carried the **frontend provider lifecycle** (pending / incomplete / under_review
+/ approved / denied — a verification journey), while `getKycStatus` in
+v1.1.0-alpha.2 is a **backend KYC policy projection** whose closed schema is a
+constant (`status: NOT_REQUIRED`, `level: CLOSED_US_INVITE_ALPHA`,
+`public_launch_eligible: false`, `policy_version`). Row 6 therefore splits:
+
+- **6a — provider lifecycle: B (BFF_LOCAL), implemented in slice 2** by the
+  provider-neutral mock boundary above.
+- **6b — backend policy projection: A, outstanding** — expose `getKycStatus`
+  through the BFF as a separately labelled "backend KYC policy" read (e.g. on
+  the account page). Not started; it must never drive the provider lifecycle.
+
+Corrected primary counts: **A 10 · B 5 · C 7 · D 4** (26 legacy operations;
+row 6 counted once, under B, with 6b tracked as an additional A item →
+27 tracked items). Implemented so far: rows 21 (A), 6a (B), 7 (B), 8 (C),
+9 (C). Remaining: **A 10 (incl. 6b) · B 3 · C 5 · D 4**.
+
+**Product decision — public U.S. KYC architecture (Zeshan, 2026-09-04).** The
+U.S. product is public-facing. The frontend/BFF owns the KYC provider
+lifecycle; no provider has been selected; the current implementation is a
+provider-neutral **mock** adapter (deterministic, server-controlled, labelled
+`mock-kyc-adapter`, never identity verification, no PII); a future real
+provider replaces the adapter without changing the product or the backend
+contract boundary. The provider result is normalized into the generated
+attestation `kyc` vocabulary (`passed` / `failed` / `pending` from the
+lifecycle) for a LATER `createComplianceProfileAttestation` slice — nothing is
+submitted yet, per the existing sequencing (after Investor Profile slice 3).
+Daniel's `getKycStatus` is a separate backend policy projection; the closed-
+invite `NOT_REQUIRED` value is not the public provider lifecycle and is never
+mapped to `passed`/`approved`/`verified`.
+
 **Owner decision — Daniel, 2026-09-04 (consent/disclosure semantics).** For
 Alpha, the unified disclosure has a 1:1 consent/disclosure relationship. The
 frontend obtains `disclosure_key` from `listEffectiveDisclosures` and copies

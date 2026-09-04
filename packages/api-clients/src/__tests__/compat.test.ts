@@ -3,12 +3,10 @@
 // accidental shim deletion) surfaces here before it breaks UI builds.
 
 import { describe, expect, expectTypeOf, test } from "vitest";
-import { isKycTerminal } from "../hooks/kyc";
 import type {
   AccountActivationStatus,
   AdvisoryProfile,
   AuthSession,
-  KycStatusValue,
   OrderPreviewResult,
 } from "../compat";
 
@@ -29,33 +27,6 @@ describe("AuthSession shape", () => {
     // @ts-expect-error — "pending" is not a valid AuthSession.status
     const bad: AuthSession["status"] = "pending";
     void bad;
-  });
-});
-
-describe("KycStatusValue", () => {
-  const all: KycStatusValue[] = [
-    "not_started",
-    "pending",
-    "incomplete",
-    "under_review",
-    "approved",
-    "denied",
-  ];
-
-  test("includes the frontend-only not_started sentinel", () => {
-    expect(all).toContain("not_started");
-  });
-
-  test("isKycTerminal recognizes approved, denied, under_review as terminal", () => {
-    expect(isKycTerminal("approved")).toBe(true);
-    expect(isKycTerminal("denied")).toBe(true);
-    expect(isKycTerminal("under_review")).toBe(true);
-  });
-
-  test("isKycTerminal returns false for non-terminal and for not_started", () => {
-    expect(isKycTerminal("not_started")).toBe(false);
-    expect(isKycTerminal("pending")).toBe(false);
-    expect(isKycTerminal("incomplete")).toBe(false);
   });
 });
 

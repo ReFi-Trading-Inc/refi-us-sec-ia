@@ -45,6 +45,15 @@ export const InvestorActions = [
   // state, not an immutable snapshot — promotion to a snapshot is
   // refreshProfile. No backend admin verb; drafts never leave the BFF.
   "saveProfileDraft",
+  // BFF-only (KYC decision 2026-09-04): the frontend owns the identity-
+  // verification provider lifecycle. Starting/resuming it is a receipted
+  // investor action that never reaches the trading backend; the normalized
+  // result is submitted later via createComplianceProfileAttestation
+  // (refreshProfile-era sequencing), not by this action.
+  "startKycVerification",
+  // BFF-only TEST CONTROL for the mock adapter. Enabled solely by
+  // REFI_KYC_MOCK_CONTROLS=1; answers 404 everywhere else.
+  "advanceMockKycVerification",
 ] as const;
 
 export type InvestorActionName = (typeof InvestorActions)[number];

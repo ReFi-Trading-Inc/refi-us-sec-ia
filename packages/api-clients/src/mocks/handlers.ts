@@ -7,7 +7,6 @@ import {
   mayaActivity,
   mayaBrokerAccount,
   mayaBrokerConnection,
-  mayaKyc,
   mayaOrders,
   mayaPositions,
   mayaRecommendations,
@@ -56,20 +55,6 @@ export const handlers = [
       { ok: true },
       { headers: { "Set-Cookie": CLEAR_SESSION_COOKIE } },
     ),
-  ),
-
-  http.get(url("/ccid/status"), () => HttpResponse.json(mayaKyc)),
-  http.post(url("/ccid/start"), () =>
-    HttpResponse.json({
-      provider_url: "https://complycube.example/start/mock",
-      provider_reference: "ccid_ref_mock_001",
-    }),
-  ),
-  http.post(url("/ccid/webhook/provider"), () =>
-    HttpResponse.json({ ok: true }),
-  ),
-  http.post(url("/compliance/invalidate-cache"), () =>
-    HttpResponse.json({ ok: true }),
   ),
 
   http.get(url("/v1/brokers/supported"), () =>

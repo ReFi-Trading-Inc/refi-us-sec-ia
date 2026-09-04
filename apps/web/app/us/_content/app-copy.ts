@@ -158,40 +158,48 @@ export const siweCopy = {
 export const kycCopy = {
   heading: "Identity verification",
   subheading:
-    "Verify your identity to complete onboarding. We use a regulated KYC provider; ReFi never stores government ID details.",
+    "Verify your identity to complete onboarding. ReFi never stores government ID details.",
   startCta: "Start verification",
-  resumeCta: "Resume verification",
+  resumeCta: "Continue verification",
   pollingNote: "Checking status…",
+  readError: "We couldn't load your verification status. Please try again.",
+  startError: "We couldn't start verification. Please try again.",
+  unavailable: {
+    label: "Verification not available yet",
+    body: "Identity verification isn't available in this environment yet. Nothing has been recorded.",
+  },
+  // Provider-neutral lifecycle copy (decision 2026-09-04). No vendor is named
+  // and no vendor state is shown.
   statuses: {
     not_started: {
-      label: "Not started",
+      label: "Verification not started",
       tone: "neutral" as const,
-      body: "Begin identity verification with our KYC provider. You'll be redirected to complete a short flow.",
+      body: "Begin identity verification to continue onboarding.",
     },
-    pending: {
-      label: "Pending",
+    in_progress: {
+      label: "Verification in progress",
       tone: "info" as const,
-      body: "Your verification is in progress. We'll update this page automatically when it completes.",
+      body: "Your verification is in progress. This page updates automatically.",
     },
-    incomplete: {
-      label: "Incomplete",
+    additional_info_required: {
+      label: "Additional information required",
       tone: "warning" as const,
-      body: "Your verification was started but not finished. Resume to complete it.",
+      body: "More information is needed to complete your verification. Continue to provide it.",
     },
     under_review: {
-      label: "Under review",
+      label: "Review in progress",
       tone: "warning" as const,
-      body: "Your submission is under manual review. This typically takes one to two business days. No action is needed.",
+      body: "Your verification is being reviewed. No action is needed right now.",
     },
-    approved: {
-      label: "Approved",
+    passed: {
+      label: "Verification completed",
       tone: "success" as const,
-      body: "Identity verified. You can continue with onboarding.",
+      body: "Identity verification is complete. Continuing with onboarding.",
     },
-    denied: {
-      label: "Denied",
+    failed: {
+      label: "Verification unsuccessful",
       tone: "error" as const,
-      body: "We could not verify your identity at this time. Please contact support if you believe this is an error.",
+      body: "We could not complete your identity verification. You can try again or contact support.",
     },
   },
   continueCta: "Continue",

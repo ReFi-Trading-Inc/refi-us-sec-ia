@@ -4,7 +4,6 @@ import type {
   ActivityEvent,
   AuthSession,
   BrokerConnection,
-  KycStatus,
   Order,
   Position,
   Recommendation,
@@ -16,11 +15,6 @@ export const davidSession: AuthSession = {
   wallet_id: "wallet_0xDAVID",
   roles: ["client"],
   kyc_status: "incomplete",
-};
-
-export const davidKyc: KycStatus = {
-  status: "incomplete",
-  provider: "ComplyCube",
 };
 
 export const davidBrokerConnection: BrokerConnection | null = null;

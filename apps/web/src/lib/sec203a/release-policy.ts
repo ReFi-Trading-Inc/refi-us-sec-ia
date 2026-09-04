@@ -56,6 +56,10 @@ export const SIGNAL_ALLOWED_ACTIONS = [
   // no execution reach — Signal-allowed (review of PR #65 authorized the
   // dedicated draft path through CM-04 + bffMutate).
   "saveProfileDraft",
+  // Identity-verification lifecycle (frontend-owned mock adapter): onboarding
+  // state with no execution reach. Signal-allowed.
+  "startKycVerification",
+  "advanceMockKycVerification",
 ] as const;
 
 /** Actions that exist only once Managed paper is enabled. */

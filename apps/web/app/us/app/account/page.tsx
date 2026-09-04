@@ -15,9 +15,12 @@ import {
   useBrokerAccount,
   useBrokerConnection,
   useBrokerDisconnect,
-  useKycStatus,
   useAdvisoryProfile,
 } from "@refi/api-clients";
+import {
+  useKycVerification,
+  type KycLifecycleState,
+} from "../../../_hooks/useKycVerification";
 import { useAuth } from "../../../_providers/auth/AuthProvider";
 import { appCopy } from "../../_content/app-copy";
 
@@ -38,7 +41,9 @@ function formatCurrency(n: number): string {
 
 export default function AccountPage() {
   const auth = useAuth();
-  const { data: kyc } = useKycStatus();
+  // Frontend-owned identity-verification lifecycle (provider-neutral). This
+  // is NOT backend KYC policy/authorization; it claims nothing about either.
+  const { data: kycVerification } = useKycVerification();
   const { data: connection } = useBrokerConnection();
   const { data: brokerAccount } = useBrokerAccount();
   const { data: profile } = useAdvisoryProfile();
@@ -57,23 +62,27 @@ export default function AccountPage() {
     }
   }
 
-  const kycStatus = kyc?.status ?? "not_started";
+  const kycState: KycLifecycleState =
+    kycVerification?.session?.state ?? "not_started";
+  const kycAvailable = kycVerification?.available === true;
   const kycBadgeVariant =
-    kycStatus === "approved"
+    kycState === "passed"
       ? ("approved" as const)
-      : kycStatus === "denied"
+      : kycState === "failed"
         ? ("rejected" as const)
-        : kycStatus === "under_review" || kycStatus === "pending"
+        : kycState === "under_review" ||
+            kycState === "in_progress" ||
+            kycState === "additional_info_required"
           ? ("warning" as const)
           : ("neutral" as const);
 
-  const kycLabel: Record<typeof kycStatus, string> = {
+  const kycLabel: Record<KycLifecycleState, string> = {
     not_started: "Not started",
-    pending: "Pending",
-    incomplete: "Incomplete",
-    under_review: "Under review",
-    approved: "Approved",
-    denied: "Denied",
+    in_progress: "In progress",
+    additional_info_required: "Additional information required",
+    under_review: "Review in progress",
+    passed: "Completed",
+    failed: "Unsuccessful",
   };
 
   const isConnected = connection?.status === "connected";
@@ -117,30 +126,25 @@ export default function AccountPage() {
         </CardContent>
       </Card>
 
-      {/* Identity Verification */}
-      <Card>
+      {/* Identity verification — frontend-owned provider lifecycle only */}
+      <Card data-testid="identity-verification-card">
         <CardHeader>
-          <CardTitle>Identity Verification</CardTitle>
+          <CardTitle>Identity verification</CardTitle>
         </CardHeader>
         <CardContent className="pb-5 flex flex-col gap-3">
           <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-charcoal-300">KYC status</p>
-              {kyc?.provider && (
-                <p className="text-xs text-charcoal-600 mt-0.5">
-                  Provider: {kyc.provider}
-                </p>
-              )}
-            </div>
-            <Badge variant={kycBadgeVariant}>{kycLabel[kycStatus]}</Badge>
+            <p className="text-sm text-charcoal-300">Verification status</p>
+            <Badge variant={kycAvailable ? kycBadgeVariant : "neutral"}>
+              {kycAvailable ? kycLabel[kycState] : "Not available yet"}
+            </Badge>
           </div>
-          {kycStatus !== "approved" && (
+          {kycAvailable && kycState !== "passed" && (
             <div className="pt-1">
               <Link href="/us/onboarding/kyc">
                 <Button size="sm">
-                  {kycStatus === "not_started"
+                  {kycState === "not_started"
                     ? "Start verification"
-                    : "Resume verification"}
+                    : "Continue verification"}
                 </Button>
               </Link>
             </div>

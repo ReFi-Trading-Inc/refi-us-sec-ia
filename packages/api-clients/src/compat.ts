@@ -84,25 +84,6 @@ export type AccountActivationResponse = {
   account_id?: string;
 };
 
-// TODO(openapi): model AdvisoryProfile (Reg-Adv questionnaire) in refi-api.yaml.
-// Field names match the frontend forms in apps/web/app/us/onboarding/profile/.
-// Values are form-controlled strings; the BFF will translate to the eventual
-// backend enum payload.
-export type AdvisoryProfile = {
-  goal: string;
-  timeHorizon: string;
-  incomeBand: string;
-  liquidNetWorth: string;
-  riskTolerance: string;
-  investmentExperience: string;
-  accountPurpose: string;
-};
-
-export type AdvisoryProfileResponse = AdvisoryProfile & {
-  version?: number;
-  updated_at?: string;
-};
-
 // TODO(openapi): model strategy catalog in refi-api.yaml.
 export type StrategyDescriptor = {
   id: string;

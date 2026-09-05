@@ -91,9 +91,12 @@ test.describe("Exception Review — remediation queue (seeded exceptions user)",
       "exception-card-exc-profile-stale-route-update_profile",
     );
     await expect(route).toBeVisible({ timeout: 30_000 });
-    await expect(route).toHaveAttribute("href", "/us/onboarding/profile");
+    await expect(route).toHaveAttribute(
+      "href",
+      "/us/onboarding/investor-profile",
+    );
     await route.click();
-    await expect(page).toHaveURL(/\/us\/onboarding\/profile$/);
+    await expect(page).toHaveURL(/\/us\/onboarding\/investor-profile$/);
   });
 
   test("acknowledge_disclosure exception routes to the REAL Documents surface", async ({

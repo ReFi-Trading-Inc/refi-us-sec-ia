@@ -797,3 +797,50 @@ test.describe("Investor Profile v2 API boundary", () => {
     expect(draft.status()).toBe(401);
   });
 });
+
+test.describe("Account page — Investment Profile reads canonical v2", () => {
+  test.beforeEach(async ({ context }) => {
+    await context.addCookies(
+      await e2eAuthCookies(E2E_USERS.signal.eligibilityCookie),
+    );
+  });
+
+  test("shows the v2 assessment through the BFF, links to v2, never v1, never risk tolerance", async ({
+    page,
+  }) => {
+    await page.goto("/us/app/home", { waitUntil: "domcontentloaded" });
+    const submit = await postSameOrigin(page, "/api/v1/investor/profile/v2", {
+      data: apiAnswers({}),
+    });
+    expect(submit.status()).toBe(201);
+
+    const browserRequests: string[] = [];
+    page.on("request", (req) => {
+      browserRequests.push(req.url());
+    });
+    const readPromise = page.waitForResponse(
+      (r) =>
+        r.url().endsWith("/api/v1/investor/profile/v2") &&
+        r.request().method() === "GET",
+    );
+    await page.goto("/us/app/account", { waitUntil: "domcontentloaded" });
+    expect((await readPromise).status()).toBe(200);
+
+    const card = page.getByTestId("investment-profile-card");
+    await expect(card).toBeVisible({ timeout: 30_000 });
+    await expect(card).toContainText("Permitted risk band");
+    await expect(card).toContainText("Product fit");
+    await expect(card).not.toContainText(/risk tolerance/i);
+    await expect(
+      card.locator('a[href="/us/onboarding/investor-profile"]'),
+    ).toHaveCount(1);
+    await expect(card.locator('a[href="/us/onboarding/profile"]')).toHaveCount(
+      0,
+    );
+    for (const url of browserRequests) {
+      expect(new URL(url).pathname, "no legacy /v1/profile call").not.toBe(
+        "/v1/profile",
+      );
+    }
+  });
+});

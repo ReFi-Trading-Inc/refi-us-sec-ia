@@ -50,7 +50,7 @@ export const ABSENT_MANAGED_PAGES: ReadonlyArray<string> = [
 
 /** The genuine Signal remediation surfaces — must serve (200). */
 export const SIGNAL_REMEDIATION_PAGES: ReadonlyArray<string> = [
-  "/us/onboarding/profile",
+  "/us/onboarding/investor-profile",
   "/us/app/documents",
 ];
 

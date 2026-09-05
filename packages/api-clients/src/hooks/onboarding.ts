@@ -9,40 +9,11 @@ import { apiFetch } from "../client";
 import type {
   AccountActivationResponse,
   AccountActivationStatus,
-  AdvisoryProfile,
-  AdvisoryProfileResponse,
   BrokerApiKeyConnectRequest,
   BrokerConnectKeyResponse,
   BrokerConnectStartResponse,
   StrategyDescriptor,
 } from "../compat";
-
-export function useAdvisoryProfile(): UseQueryResult<AdvisoryProfileResponse | null> {
-  return useQuery({
-    queryKey: ["profile"],
-    queryFn: () => apiFetch<AdvisoryProfileResponse | null>("/v1/profile"),
-    staleTime: 60_000,
-  });
-}
-
-export function useSaveAdvisoryProfile(): UseMutationResult<
-  AdvisoryProfileResponse,
-  Error,
-  AdvisoryProfile
-> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (body) =>
-      apiFetch<AdvisoryProfileResponse>("/v1/profile", {
-        method: "POST",
-        body,
-      }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["profile"] });
-      void qc.invalidateQueries({ queryKey: ["account", "activation"] });
-    },
-  });
-}
 
 export function useStrategy(): UseQueryResult<StrategyDescriptor> {
   return useQuery({

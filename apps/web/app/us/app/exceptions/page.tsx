@@ -76,14 +76,14 @@ const KIND_COPY: Record<ExceptionKind, KindCopy> = {
     title: "A profile preference changed",
     why: "Your profile changed in a way that affects this item. Review and update your advisory profile so your recommendations reflect it.",
     resolutions: ["update_profile"],
-    primaryRoute: "/us/onboarding/profile",
+    primaryRoute: "/us/onboarding/investor-profile",
     severity: "warning",
   },
   stale_profile: {
     title: "Profile needs review",
     why: "Your advisory profile has not been confirmed recently. Review and update it so your recommendations stay grounded in current information.",
     resolutions: ["update_profile"],
-    primaryRoute: "/us/onboarding/profile",
+    primaryRoute: "/us/onboarding/investor-profile",
     severity: "warning",
   },
   out_of_policy_intent: {

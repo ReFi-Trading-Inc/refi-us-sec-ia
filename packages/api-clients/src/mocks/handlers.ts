@@ -109,30 +109,6 @@ export const handlers = [
   }),
 
   // Onboarding: advisory profile, strategy, activation (MIG-P2-04)
-  http.get(url("/v1/profile"), () =>
-    HttpResponse.json({
-      account_id: "acct_maya_001",
-      goal: "Long-term growth",
-      timeHorizon: "5–10 years",
-      incomeBand: "$100,000–$250,000",
-      liquidNetWorth: "$200,000–$500,000",
-      riskTolerance: "Moderate",
-      investmentExperience: "Some",
-      accountPurpose: "Personal",
-      updated_at: "2026-05-12T10:00:00Z",
-    }),
-  ),
-  http.post(url("/v1/profile"), async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as Record<
-      string,
-      unknown
-    >;
-    return HttpResponse.json({
-      account_id: "acct_maya_001",
-      ...body,
-      updated_at: new Date().toISOString(),
-    });
-  }),
   http.get(url("/v1/strategies/current"), () =>
     HttpResponse.json({
       strategyName: "ReFi Signal — Balanced Growth",

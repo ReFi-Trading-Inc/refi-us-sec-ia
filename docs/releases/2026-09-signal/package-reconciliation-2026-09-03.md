@@ -1,5 +1,7 @@
 # Contract package reconciliation — v1.1.0-alpha.2 (received 2026-09-03)
 
+> **2026-09-04 (rev 3 pointer):** D-LAUNCH-06 is CLOSED — YES by Zeshan. §3, §6 and §7's "remains OPEN / blocked until" statements are superseded by [dlaunch06-execution-rebaseline-2026-09-04.md](dlaunch06-execution-rebaseline-2026-09-04.md). Body unchanged.
+
 **Addendum to** [SHIP_CONTRACT.md](SHIP_CONTRACT.md) and
 [backend-observation-2026-08-30.md](backend-observation-2026-08-30.md).
 Fires trigger 1 of the 2026-08-26 hold state (package arrival). It does **not**

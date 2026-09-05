@@ -1,5 +1,7 @@
 # September 12 Launch Audit — 2026-08-24
 
+> **2026-09-04:** Finding 1 is resolved — reading (2) is the decided state (D-LAUNCH-06 CLOSED — YES). Reconciliation: [dlaunch06-execution-rebaseline-2026-09-04.md](dlaunch06-execution-rebaseline-2026-09-04.md). Historical text unchanged.
+
 **Scope:** readiness audit for the September 12 freeze / September 13 milestone, run against
 `c2a-structural-signal-surface @ 19c598b` (5 commits ahead of `origin/main @ 6803f09`),
 the six updated backend checklists Daniel supplied 2026-08-24 (in `september-12-launch/`),

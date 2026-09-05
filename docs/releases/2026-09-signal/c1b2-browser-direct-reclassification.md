@@ -167,7 +167,7 @@ Every slice: browser → BFF route → frozen #70 client (`@refi/api-clients/inv
 8. **SIWE removal (C: #4, #5)** — only after the identity exchange (upstream IdP + identity-ccid bindings) replaces the interim local-dev session mint. Tracked, not started.
 9. **Attestation write (#23)** — with Investor Profile slice 3, not before; retire the v1 questionnaire page then.
 
-**Parked until D-LAUNCH-06 is answered in writing (D: #10, #13, #14, #26):** broker registry/credential collection, disconnect, and activation/subscription. Nothing in this workstream may implement them.
+**Formerly parked on D-LAUNCH-06 (D: #10, #13, #14, #26) — RECLASSIFIED 2026-09-04** after the closure (YES): #10 → C (no broker registry; `broker` is `const "alpaca"`), #13 → A (`createBrokerageConnection`), #14 → A (`disconnectBrokerageConnection`), #26 → C (no `activate` verb; canonical subscription tracked as **26b** `createAllocationPreview` → `createAccountAction`). All are gated on human Alpha admission + `getAccountAuthorization`; none is implemented in the governance PR. See [dlaunch06-execution-rebaseline-2026-09-04.md](dlaunch06-execution-rebaseline-2026-09-04.md) §4.
 
 ## 5. Deletion candidates
 
@@ -182,14 +182,14 @@ Every slice: browser → BFF route → frozen #70 client (`@refi/api-clients/inv
 
 ## 6. Blocked items and their exact dependencies
 
-| Item                                                                                      | Blocked on                                                                                                                                                                                                                                    |
-| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Any A row **connecting** to a real service                                                | Daniel's connection addendum: operational `investor_api_base_url`, `identity_ccid_base_url`/JWKS, fixture ids; ReFi-side Google credential path (native Cloud Run invocation vs WIF — clarification Q2). Until then: loopback simulator only. |
-| #4/#5 SIWE removal                                                                        | Upstream IdP decision + identity-ccid `exchangeIdentity` bindings (`frontend_upstream_identity_*`).                                                                                                                                           |
-| #7 `useKycStart`                                                                          | KYC provider choice (frontend-owned; `reusable_kyc_provider` explicitly deferred by the package).                                                                                                                                             |
-| #23 attestation write                                                                     | Investor Profile slice 3 (result → versioned attestation).                                                                                                                                                                                    |
-| #10, #13, #14, #26                                                                        | **D-LAUNCH-06**, one sentence from Daniel.                                                                                                                                                                                                    |
-| #20 rendering of `account_intent`/`risk_decision`/`execution_plan`/`order`/`fill` records | **D-LAUNCH-06**.                                                                                                                                                                                                                              |
+| Item                                                                                      | Blocked on                                                                                                                                                                                                                                                               |
+| ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Any A row **connecting** to a real service                                                | Daniel's connection addendum: operational `investor_api_base_url`, `identity_ccid_base_url`/JWKS, fixture ids; ReFi-side Google credential path (native Cloud Run invocation vs WIF — clarification Q2). Until then: loopback simulator only.                            |
+| #4/#5 SIWE removal                                                                        | Upstream IdP decision + identity-ccid `exchangeIdentity` bindings (`frontend_upstream_identity_*`).                                                                                                                                                                      |
+| #7 `useKycStart`                                                                          | KYC provider choice (frontend-owned; `reusable_kyc_provider` explicitly deferred by the package).                                                                                                                                                                        |
+| #23 attestation write                                                                     | Investor Profile slice 3 (result → versioned attestation).                                                                                                                                                                                                               |
+| #13, #14, #26b (canonical brokerage connection / disconnect / subscription)               | **D-LAUNCH-06 CLOSED — YES (2026-09-04).** Now blocked only on: human Alpha admission read, `getAccountAuthorization = AUTHORIZED`, BFF security implementation (one-shot credential forwarding), and D-LAUNCH-07 for the `paper\|live` value. #10 and #26 are removals. |
+| #20 rendering of `account_intent`/`risk_decision`/`execution_plan`/`order`/`fill` records | **D-LAUNCH-06 CLOSED — YES.** Disposition: RENDER read-only (all five) in a follow-up execution-reads slice; the PR #76 filter's rationale is superseded (rebaseline §7).                                                                                                |
 
 ## 7. Package operation IDs used as replacements (A rows)
 
@@ -202,9 +202,9 @@ Every slice: browser → BFF route → frozen #70 client (`@refi/api-clients/inv
 `createComplianceProfileAttestation` · `listTemplates` · `getTemplate` ·
 `getOnboardingStatus` · `getAccountAuthorization`.
 
-Parked (D, named for completeness, **not** to be implemented):
+Now in scope after gates (2026-09-04, D-LAUNCH-06 = YES; sequenced after the rebaseline merges):
 `createBrokerageConnection` · `disconnectBrokerageConnection` ·
-`createAllocationPreview` · `createAccountAction`.
+`createAllocationPreview` · `createAccountAction` (26b).
 
 ## 7a. Implementation progress
 
@@ -328,6 +328,25 @@ activity scope; it is sequenced by the normal C1b-2 plan. Its
 `CLOSED_US_INVITE_ALPHA` level is NOT a product mismatch — see the product
 decision below: the application surface is public while the Alpha cohort is
 closed and human-approved.)
+
+**D-LAUNCH-06 closure — D-row reclassification (2026-09-04).** With the
+release decision CLOSED — YES (orders may be submitted to Alpaca on the
+investor's behalf through the backend lifecycle, after human Alpha admission),
+the four D rows were re-audited semantically, not mechanically:
+
+| Row                         | Old | New                                                                    | Reason                                                                                                            |
+| --------------------------- | --- | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 10 `useBrokerSupported`     | D   | **C**                                                                  | contract fixes `broker: const "alpaca"`; no registry op; remove                                                   |
+| 13 `useBrokerConnectApiKey` | D   | **A** `createBrokerageConnection`                                      | in scope after admission + authorization; BFF one-shot credential forwarding; `paper\|live` value per D-LAUNCH-07 |
+| 14 `useBrokerDisconnect`    | D   | **A** `disconnectBrokerageConnection`                                  | acknowledged disconnect (`continuation_ref` + `consent_receipt_id`)                                               |
+| 26 `useActivateAccount`     | D   | **C**                                                                  | no `activate` verb exists; legacy `POST /v1/account/activate` is not preserved                                    |
+| 26b (new backend item)      | —   | **A** `createAllocationPreview` → `createAccountAction(join_template)` | the canonical subscription; the `/us/onboarding/activation` page becomes this step (rebaseline §6)                |
+
+Counts after the reclassification: **A 8 legacy + 4 backend items (6b, 22b,
+23b, 26b) · B 3 · C 6 · D 0** (17 legacy rows remain; the D class is empty).
+The 2026-09-04 product model is unchanged: human admission is mandatory and
+none of these mutations may run before it. Full reconciliation:
+[dlaunch06-execution-rebaseline-2026-09-04.md](dlaunch06-execution-rebaseline-2026-09-04.md).
 
 **Product decision — public U.S. KYC architecture (Zeshan, 2026-09-04).** The
 U.S. application surface is public (the Alpha itself stays closed and

@@ -223,8 +223,8 @@ What changed:
 
 - `MaybeWalletProvider` mounts wagmi/RainbowKit/WalletConnect **only** when
   `NEXT_PUBLIC_REFI_ENV !== "prod"` and the data adapter is `mock`. Demo
-  (`NEXT_PUBLIC_REFI_DATA_ADAPTER=live`) and production never load the wallet
-  bundle or call the WalletConnect relay; the placeholder
+  (`NEXT_PUBLIC_REFI_DATA_ADAPTER=live`) and production never mount the wallet
+  stack or call the WalletConnect relay; the placeholder
   `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` on the demo project is now unused.
 - `/us/auth/connect` is a pass-through: a signed-in visitor is sent to
   `/us/onboarding`; a signed-out visitor sees "Sign-in is not connected in
@@ -242,3 +242,8 @@ traffic, no `/auth/*` calls, DELETE session same-origin + cookie cleared) and
 pass-through, sign-out). Contract assertion: "no wallet as login".
 
 PR #81 (`fix/connect-page-linking-honesty`) is superseded by this change.
+
+Build note: the root `Providers` now always mounts the `QueryClientProvider`.
+Until this change the `/us` tree borrowed the wallet provider's QueryClient
+during the pre-MSW render, which only surfaced when CI built with
+`NEXT_PUBLIC_REFI_ENV=staging` (the Playwright lanes build as `prod`/`demo`).

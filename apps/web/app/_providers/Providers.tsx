@@ -17,33 +17,18 @@ export function Providers({ children }: { children: React.ReactNode }) {
         },
       }),
   );
-  const [mswReady, setMswReady] = useState(
-    process.env["NEXT_PUBLIC_REFI_ENV"] === "prod",
-  );
-
   useEffect(() => {
+    // Mock mode only: start the MSW browser worker. Production builds never do.
     if (process.env["NEXT_PUBLIC_REFI_ENV"] === "prod") return;
-    let cancelled = false;
-    void initMsw().finally(() => {
-      if (!cancelled) setMswReady(true);
-    });
-    return () => {
-      cancelled = true;
-    };
+    void initMsw();
   }, []);
 
-  if (!mswReady) {
-    return (
-      <PostHogProvider>
-        <ToastProvider>
-          <MockModeBanner />
-          <DemoTierIndicator />
-          {children}
-        </ToastProvider>
-      </PostHogProvider>
-    );
-  }
-
+  // The QueryClientProvider is ALWAYS mounted. Until 2026-09-05 the /us tree
+  // borrowed the wallet provider's own QueryClient during the pre-MSW render;
+  // with the wallet stack gated to mock mode that crutch is gone, and a
+  // non-prod production build (CI builds with NEXT_PUBLIC_REFI_ENV=staging)
+  // must still prerender pages that use react-query. MSW start-up is a
+  // side effect only; it never removes the provider.
   return (
     <PostHogProvider>
       <QueryClientProvider client={queryClient}>

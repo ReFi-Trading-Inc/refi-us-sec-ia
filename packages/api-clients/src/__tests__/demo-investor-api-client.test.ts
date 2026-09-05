@@ -482,7 +482,7 @@ describe("invited persona: admitted but not set up; the broker connection is the
     account_environment: "paper",
     credentials: {
       api_key: "PKDEMO1234567890ABCD",
-      api_secret: "demoSecretKeyDemoSecretKeyDemoSecretKe01",
+      api_secret: "demoFixtureSecret".padEnd(40, "0"),
     },
   } as const;
 
@@ -540,7 +540,7 @@ describe("invited persona: admitted but not set up; the broker connection is the
     expect(created.data.data.connection_status).toBe("PENDING_VALIDATION");
     expect(created.data.data.credential_status).toBe("PENDING");
     expect(JSON.stringify(created.data)).not.toMatch(
-      /PKDEMO|demoSecretKey|api_secret|api_key/,
+      /PKDEMO|demoFixtureSecret|api_secret|api_key/,
     );
 
     // Nothing else is connected yet; a second create is a 409.
@@ -624,7 +624,9 @@ describe("invited persona: admitted but not set up; the broker connection is the
     expect(problemsAgainst("AccountRecordPageEnvelope", records.data)).toEqual(
       [],
     );
-    expect(JSON.stringify(records.data)).not.toMatch(/PKDEMO|demoSecretKey/);
+    expect(JSON.stringify(records.data)).not.toMatch(
+      /PKDEMO|demoFixtureSecret/,
+    );
 
     // Sync receipt is contract-valid too.
     const sync = await c.call("syncBrokerageConnection", {

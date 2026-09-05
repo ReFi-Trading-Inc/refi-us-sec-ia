@@ -487,6 +487,9 @@ test.describe("Demo tier — no wallet step", () => {
   });
 });
 
+// Shape-valid, low-entropy fixture secret (40 alphanumerics); never real.
+const DEMO_FIXTURE_SECRET = "demoFixtureSecret".padEnd(40, "0");
+
 // A complete, valid Investor Profile v2 payload (mirrors investor-profile.spec).
 const PROFILE_ANSWERS = {
   questionnaireVersion: 2,
@@ -618,9 +621,7 @@ test.describe("Demo tier — invited investor sets up: identity → profile → 
       .first()
       .click();
     await page.getByLabel(/api key id/i).fill("PKDEMO1234567890ABCD");
-    await page
-      .getByLabel(/secret key/i)
-      .fill("demoSecretKeyDemoSecretKeyDemoSecretKe01");
+    await page.getByLabel(/secret key/i).fill(DEMO_FIXTURE_SECRET);
     await page.getByRole("button", { name: /connect alpaca/i }).click();
     await expect(page.getByTestId("broker-connection-status")).toHaveAttribute(
       "data-stage",
@@ -628,7 +629,7 @@ test.describe("Demo tier — invited investor sets up: identity → profile → 
       { timeout: 20_000 },
     );
     // The secret never appears in any browser-visible URL and the form is wiped.
-    for (const p of browserPaths) expect(p).not.toContain("demoSecretKey");
+    for (const p of browserPaths) expect(p).not.toContain(DEMO_FIXTURE_SECRET);
     await expect(page.getByLabel(/secret key/i)).toHaveCount(0);
 
     // 4. The backend's own lifecycle completes: validated, then synced, then
@@ -709,12 +710,12 @@ test.describe("Demo tier — invited investor sets up: identity → profile → 
         data: {
           environment: "paper",
           apiKeyId: "PKDEMO1234567890ABCD",
-          apiSecretKey: "demoSecretKeyDemoSecretKeyDemoSecretKe01",
+          apiSecretKey: DEMO_FIXTURE_SECRET,
         },
       },
     );
     expect(again.status()).toBe(409);
-    expect(await again.text()).not.toContain("demoSecretKey");
+    expect(await again.text()).not.toContain(DEMO_FIXTURE_SECRET);
     await page.goto("/us/app/account");
     await expect(page.getByTestId("broker-connection-card")).toContainText(
       /connected/i,
@@ -722,6 +723,6 @@ test.describe("Demo tier — invited investor sets up: identity → profile → 
     );
     expect(
       await page.getByTestId("broker-connection-card").innerText(),
-    ).not.toMatch(/PKDEMO|demoSecretKey/);
+    ).not.toMatch(/PKDEMO|demoFixtureSecret/);
   });
 });

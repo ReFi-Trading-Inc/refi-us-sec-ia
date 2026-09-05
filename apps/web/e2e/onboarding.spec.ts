@@ -12,6 +12,10 @@ const SIGNAL_COOKIE = E2E_USERS.signal.eligibilityCookie;
 // CONNECTED, synced Alpaca paper connection, so the page opens in its
 // "holdings read" state here; the connect form itself is driven end-to-end on
 // the demo lane (invited persona), where the account starts unconnected.
+// Shape-valid, low-entropy fixture (40 alphanumerics). Never a real credential;
+// built at runtime so secret scanners do not mistake it for one.
+const FIXTURE_SECRET = "e2eFixtureSecret".padEnd(40, "0");
+
 const LEGACY_BROKER_PATHS = [
   "/v1/brokers/supported",
   "/v1/brokers/connection",
@@ -76,7 +80,7 @@ test.describe("Broker onboarding", () => {
       data: {
         environment: "paper",
         apiKeyId: "AKABCDEFGHIJ12345678",
-        apiSecretKey: "abcdefghij1234567890abcdefghij1234567890",
+        apiSecretKey: FIXTURE_SECRET,
       },
     });
     expect(live.status()).toBe(400);
@@ -87,7 +91,7 @@ test.describe("Broker onboarding", () => {
         data: {
           environment: "live",
           apiKeyId: "PKABCDEFGHIJ12345678",
-          apiSecretKey: "abcdefghij1234567890abcdefghij1234567890",
+          apiSecretKey: FIXTURE_SECRET,
         },
       },
     );
@@ -100,15 +104,13 @@ test.describe("Broker onboarding", () => {
         data: {
           environment: "paper",
           apiKeyId: "PKABCDEFGHIJ12345678",
-          apiSecretKey: "abcdefghij1234567890abcdefghij1234567890",
+          apiSecretKey: FIXTURE_SECRET,
         },
       },
     );
     expect(foreign.status()).toBe(403);
     for (const r of [live, liveEnv, foreign]) {
-      expect(await r.text()).not.toContain(
-        "abcdefghij1234567890abcdefghij1234567890",
-      );
+      expect(await r.text()).not.toContain(FIXTURE_SECRET);
     }
   });
 

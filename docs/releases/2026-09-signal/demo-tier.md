@@ -47,10 +47,11 @@ never read by any auth path (assertion).
 
 ## 3. Personas
 
-| Persona       | Subject             | Cookies at sign-in                                       | Story                                                                                                                                                                               |
-| ------------- | ------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **applicant** | `demo-applicant-01` | session only (eligibility cookie cleared)                | public applicant → eligibility → onboarding → WAITLISTED / pending internal review. No Alpha trading authority.                                                                     |
-| **admitted**  | `demo-admitted-01`  | session + eligibility decision (`rule_id: demo-persona`) | a person whose human admission has already occurred **in the backend of record**; used later for Alpaca connection, authorization, subscription, recommendations, execution records |
+| Persona       | Subject             | Cookies at sign-in                                       | Story                                                                                                                                                                                                                               |
+| ------------- | ------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **applicant** | `demo-applicant-01` | session only (eligibility cookie cleared)                | public applicant → eligibility → onboarding → WAITLISTED / pending internal review. No Alpha trading authority.                                                                                                                     |
+| **invited**   | `demo-invited-01`   | session + eligibility decision (`rule_id: demo-persona`) | admitted in the backend of record but not set up: identity → Investor Profile v2 → Alpaca paper keys → holdings ingested → first advice (see §12). Account link `acct_demo_invited_01` is server-derived from the verified subject. |
+| **admitted**  | `demo-admitted-01`  | session + eligibility decision (`rule_id: demo-persona`) | a person whose human admission has already occurred **in the backend of record**; used later for Alpaca connection, authorization, subscription, recommendations, execution records                                                 |
 
 The admitted persona's admission state is **not** a frontend flag: it must come
 from the demo backend/simulator projection (`getOnboardingStatus`,
@@ -247,3 +248,69 @@ Build note: the root `Providers` now always mounts the `QueryClientProvider`.
 Until this change the `/us` tree borrowed the wallet provider's QueryClient
 during the pre-MSW render, which only surfaced when CI built with
 `NEXT_PUBLIC_REFI_ENV=staging` (the Playwright lanes build as `prod`/`demo`).
+
+## 12. The setup journey — mock Alpaca keys → holdings → risk profile (2026-09-05)
+
+**Direction (Zeshan):** "what is more important is mocking the addition of your
+alpaca api keys, ingesting your portfolio, survey for risk profile — that is much
+more compelling as a demo than getting stuck on a web3 wallet connect."
+
+New persona **invited** (`demo-invited-01` → `acct_demo_invited_01`): human
+Alpha admission already recorded in the backend (`AUTHORIZED`), onboarding
+`INVITED`, no brokerage connection, no holdings, no advice. The walkthrough:
+
+1. **Identity** — the provider-neutral mock adapter; the presenter advances it
+   with the on-page controls (`REFI_KYC_MOCK_CONTROLS=1` on the demo tier).
+2. **Investor Profile v2** — the real questionnaire; the permitted risk band,
+   capacity, willingness and product fit are derived server-side. The result
+   screen now continues to the broker step.
+3. **Alpaca paper keys** — the form posts ONCE to
+   `POST /api/v1/investor/broker/connection` (Signal-allowed `connectBroker`,
+   same-origin, session, server-derived account scope). The BFF validates the
+   shape (`environment` is the literal `paper`; `PK…` key ids only; live `AK…`
+   keys never parse), forwards ONCE to the contract's
+   `createBrokerageConnection`, and returns the status projection. Nothing
+   logs, stores, hashes or echoes the credentials; the BFF never calls Alpaca.
+4. **The backend's lifecycle** — the demo world answers 202
+   `PENDING_VALIDATION`, validates after ~4 s (`CONNECTED` / `VALID`), syncs
+   after ~9 s and ingests **nine holdings** (a concentrated self-directed book
+   plus cash) as `AccountPosition`s, appends `brokerage_connection`,
+   `brokerage_sync` and `valuation` records with their events, and computes the
+   **first recommendation** (`CURRENT`, `execution_eligible: false`,
+   `MANAGEMENT_NOT_ENABLED`) as template-weight targets against the observed
+   holdings. `POST /api/demo/advance` forces validation + sync for the presenter;
+   `{ reset: true }` rebuilds the signed-in persona's world from its seed so the
+   walkthrough can be run again for the next audience (picker: "Reset walkthrough").
+5. **Strategy review** — permitted band, template (`listTemplates`), the
+   holdings and guardrails side by side (`GET /api/v1/investor/onboarding` +
+   `/portfolio`). No join, no activation.
+6. **Setup checklist** — identity / profile / broker read from the record;
+   admission and management shown as the backend's words; **no activate verb**
+   (the contract has none; C1b-2 row 26 → C). "Go to your dashboard" opens the
+   home with the ingested holdings on the ticker and the live strip.
+
+**Account link.** Demo sessions had no `AuthSessionLink`, so the linked-account
+BFF-local features (Investor Profile v2) returned `412 account_not_linked`.
+`getAuthContext` now derives `accountId` on the demo tier from a server-only
+registry keyed by the VERIFIED session subject (`DEMO_PERSONA_ACCOUNT_LINK`);
+the browser still chooses only a persona label, and every account-scoped read
+re-authorizes against `listAccounts`.
+
+**Retired with this slice (C1b-2):** rows 10 (`useBrokerSupported`, C), 11
+(`useBrokerConnection` → BFF `listBrokerageConnections`), 12
+(`useBrokerConnectStart`, C), 13 (`useBrokerConnectApiKey` →
+`createBrokerageConnection`, A implemented), 15/16 (`useBrokerAccount`,
+`useBrokerPositions` → portfolio), 24 (`useStrategy` → `listTemplates` +
+profile + portfolio), 25 (`useActivationStatus` → onboarding summary), 26
+(`useActivateAccount`, C — no verb). Row 14 (`useBrokerDisconnect`) is removed
+from the browser; the acknowledged `disconnectBrokerageConnection` handoff is a
+follow-up. The MSW `/v1/brokers/*`, `/v1/strategies/current`,
+`/v1/account/activation|activate` handlers and the Maya/David broker fixtures
+are deleted.
+
+Proofs: `apps/web/e2e/demo-tier.spec.ts` "invited investor sets up" (the full
+journey, credential never in a URL or response, 409 on a second connection),
+`apps/web/e2e/onboarding.spec.ts` (main lane against the simulator: BFF-only,
+live key / live environment / cross-origin refused by the BFF, no credential
+field in the read), package tests "invited persona" (contract validity of every
+step), contract assertion "broker connection".

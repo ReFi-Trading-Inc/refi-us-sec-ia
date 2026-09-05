@@ -472,3 +472,198 @@ describe("live clock: mark-to-market, scheduled fills, validated event log", () 
     expect((await foreign.next()).done).toBe(true);
   });
 });
+
+describe("invited persona: admitted but not set up; the broker connection is the only credential-bearing call", () => {
+  const INVITED = "acct_demo_invited_01";
+  const invited = () =>
+    createDemoInvestorApiClient({ authId: "demo-invited-01" });
+  const paperBody = {
+    broker: "alpaca",
+    account_environment: "paper",
+    credentials: {
+      api_key: "PKDEMO1234567890ABCD",
+      api_secret: "demoSecretKeyDemoSecretKeyDemoSecretKe01",
+    },
+  } as const;
+
+  test("starts AUTHORIZED + INVITED with no connection, no positions, no valuation snapshot, no memberships, no advice", async () => {
+    const c = invited();
+    const { problemsAgainst } = await import("../investor-api");
+    const accounts = await c.call("listAccounts");
+    expect(accounts.data.data.items.map((a) => a.account_id)).toEqual([
+      INVITED,
+    ]);
+    const acct = accounts.data.data.items[0];
+    expect(acct?.authorization.status).toBe("AUTHORIZED");
+    expect(acct?.managed_enabled).toBe(false);
+    const status = await c.call("getOnboardingStatus");
+    expect(status.data.data.state).toBe("INVITED");
+    expect(status.data.data.required_steps).toEqual(["BROKERAGE_CONNECTION"]);
+    expect(problemsAgainst("OnboardingStatusEnvelope", status.data)).toEqual(
+      [],
+    );
+    const conns = await c.call("listBrokerageConnections", {
+      path: { account_id: INVITED },
+    });
+    expect(conns.data.data.items).toEqual([]);
+    const pos = await c.call("listAccountPositions", {
+      path: { account_id: INVITED },
+    });
+    expect(pos.data.data.items).toEqual([]);
+    const memberships = await c.call("listAccountMemberships", {
+      path: { account_id: INVITED },
+    });
+    expect(memberships.data.data.items).toEqual([]);
+    const recs = await c.call("listAccountRecommendations", {
+      path: { account_id: INVITED },
+    });
+    expect(recs.data.data.items).toEqual([]);
+    await expect(
+      c.call("getAccountValuation", { path: { account_id: INVITED } }),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("createBrokerageConnection: contract-valid 202 PENDING_VALIDATION; the clock validates, syncs, ingests 9 holdings and computes the first (non-executable) recommendation; credentials are never retained", async () => {
+    const c = invited();
+    const { problemsAgainst } = await import("../investor-api");
+    const { advanceDemoWorld } =
+      await import("../../../../apps/web/src/lib/investor-api/demo-client");
+    const created = await c.call("createBrokerageConnection", {
+      path: { account_id: INVITED },
+      body: paperBody,
+      idempotencyKey: "k".repeat(16),
+    });
+    expect(created.status).toBe(202);
+    expect(
+      problemsAgainst("BrokerageConnectionEnvelope", created.data),
+    ).toEqual([]);
+    expect(created.data.data.connection_status).toBe("PENDING_VALIDATION");
+    expect(created.data.data.credential_status).toBe("PENDING");
+    expect(JSON.stringify(created.data)).not.toMatch(
+      /PKDEMO|demoSecretKey|api_secret|api_key/,
+    );
+
+    // Nothing else is connected yet; a second create is a 409.
+    await expect(
+      c.call("createBrokerageConnection", {
+        path: { account_id: INVITED },
+        body: paperBody,
+        idempotencyKey: "j".repeat(16),
+      }),
+    ).rejects.toMatchObject({ status: 409 });
+
+    // Presenter control: force validation + sync now.
+    advanceDemoWorld("demo-invited-01");
+    const conn = await c.call("getBrokerageConnection", {
+      path: {
+        account_id: INVITED,
+        connection_id: created.data.data.connection_id,
+      },
+    });
+    expect(conn.data.data.connection_status).toBe("CONNECTED");
+    expect(conn.data.data.credential_status).toBe("VALID");
+    expect(conn.data.data.last_synced_at).not.toBeNull();
+    expect(problemsAgainst("BrokerageConnectionEnvelope", conn.data)).toEqual(
+      [],
+    );
+
+    const pos = await c.call("listAccountPositions", {
+      path: { account_id: INVITED },
+    });
+    expect(pos.data.data.items).toHaveLength(9);
+    expect(problemsAgainst("AccountPositionPageEnvelope", pos.data)).toEqual(
+      [],
+    );
+    const val = await c.call("getAccountValuation", {
+      path: { account_id: INVITED },
+    });
+    expect(problemsAgainst("AccountValuationEnvelope", val.data)).toEqual([]);
+    expect(val.data.data.position_count).toBe(9);
+    expect(Number(val.data.data.equity)).toBeGreaterThan(
+      Number(val.data.data.cash),
+    );
+
+    const status = await c.call("getOnboardingStatus");
+    expect(status.data.data.state).toBe("READY");
+
+    const recs = await c.call("listAccountRecommendations", {
+      path: { account_id: INVITED },
+    });
+    expect(recs.data.data.items).toHaveLength(1);
+    const rec = recs.data.data.items[0];
+    expect(rec?.status).toBe("CURRENT");
+    expect(rec?.execution_eligible).toBe(false);
+    expect(problemsAgainst("RecommendationPageEnvelope", recs.data)).toEqual(
+      [],
+    );
+    const legs = await c.call("listAccountRecommendationLegs", {
+      path: {
+        account_id: INVITED,
+        recommendation_id: rec?.recommendation_id ?? "",
+      },
+      query: { page_size: 100 },
+    });
+    expect(problemsAgainst("RecommendationLegPageEnvelope", legs.data)).toEqual(
+      [],
+    );
+    expect(legs.data.data.items.every((l) => !l.executable)).toBe(true);
+
+    const records = await c.call("listAccountRecords", {
+      path: { account_id: INVITED },
+      query: { page_size: 100 },
+    });
+    const types = records.data.data.items.map((r) => r.record_type);
+    for (const t of [
+      "brokerage_connection",
+      "brokerage_sync",
+      "valuation",
+      "recommendation",
+    ]) {
+      expect(types).toContain(t);
+    }
+    expect(problemsAgainst("AccountRecordPageEnvelope", records.data)).toEqual(
+      [],
+    );
+    expect(JSON.stringify(records.data)).not.toMatch(/PKDEMO|demoSecretKey/);
+
+    // Sync receipt is contract-valid too.
+    const sync = await c.call("syncBrokerageConnection", {
+      path: {
+        account_id: INVITED,
+        connection_id: created.data.data.connection_id,
+      },
+      idempotencyKey: "s".repeat(16),
+    });
+    expect(problemsAgainst("BrokerageSyncReceiptEnvelope", sync.data)).toEqual(
+      [],
+    );
+  });
+
+  test("a live environment or a malformed credential is refused by the contract shape; the admitted persona cannot create a connection", async () => {
+    const c = invited();
+    await expect(
+      c.call("createBrokerageConnection", {
+        path: { account_id: INVITED },
+        body: { ...paperBody, account_environment: "live" },
+        idempotencyKey: "l".repeat(16),
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+    await expect(
+      c.call("createBrokerageConnection", {
+        path: { account_id: INVITED },
+        body: {
+          ...paperBody,
+          credentials: { api_key: "short", api_secret: "x" },
+        },
+        idempotencyKey: "m".repeat(16),
+      }),
+    ).rejects.toThrow();
+    await expect(
+      admitted().call("createBrokerageConnection", {
+        path: { account_id: ACCT },
+        body: paperBody,
+        idempotencyKey: "n".repeat(16),
+      }),
+    ).rejects.toBeInstanceOf(DemoUnsupportedOperationError);
+  });
+});

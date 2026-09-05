@@ -1,164 +1,141 @@
-import { test, expect, type Page } from "@playwright/test";
+import { test, expect } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 import { e2eAuthCookies } from "./session";
 
 const SIGNAL_COOKIE = E2E_USERS.signal.eligibilityCookie;
 
-// The investor BFF does not currently expose `/v1/brokers/*` routes; the
-// broker registry + connection + key-submission paths are upstream-owned
-// (per docs/phase2-5-gap-register-v2-against-gitlab.md GAP-EX-003). For E2E,
-// mock the wire shapes the page already consumes via `useBrokerSupported`,
-// `useBrokerConnection`, and `useBrokerConnectApiKey`.
-async function mockBrokerRoutes(page: Page) {
-  await page.route("**/v1/brokers/supported", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify([
-        {
-          id: "alpaca",
-          name: "Alpaca",
-          supported: true,
-          regions: ["US"],
-        },
-      ]),
-    }),
-  );
-  await page.route("**/v1/brokers/connection", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify(null),
-    }),
-  );
-  await page.route("**/v1/brokers/connect/keys", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        ok: true,
-        broker_id: "alpaca",
-        connection_id: "conn-e2e",
-        status: "connected",
-      }),
-    }),
-  );
-}
+// Broker connection goes through the same-origin BFF only
+// (`/api/v1/investor/broker/connection` → the contract's
+// listBrokerageConnections / createBrokerageConnection against the simulator).
+// The legacy browser-direct `/v1/brokers/*` calls and their MSW/route mocks are
+// gone (C1b-2 rows 10–16). The simulator's fixture account already has a
+// CONNECTED, synced Alpaca paper connection, so the page opens in its
+// "holdings read" state here; the connect form itself is driven end-to-end on
+// the demo lane (invited persona), where the account starts unconnected.
+const LEGACY_BROKER_PATHS = [
+  "/v1/brokers/supported",
+  "/v1/brokers/connection",
+  "/v1/brokers/connect/keys",
+  "/v1/brokers/connect/start",
+  "/v1/brokers/account",
+  "/v1/brokers/positions",
+  "/v1/brokers/orders",
+  "/v1/brokers/disconnect",
+  "/v1/strategies/current",
+  "/v1/account/activation",
+  "/v1/account/activate",
+];
 
 test.describe("Broker onboarding", () => {
   test.beforeEach(async ({ page }) => {
     await page.context().addCookies(await e2eAuthCookies(SIGNAL_COOKIE));
-    await mockBrokerRoutes(page);
   });
 
-  test("renders Alpaca broker card", async ({ page }) => {
-    await page.goto("/us/onboarding/broker");
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.getByText("Alpaca", { exact: true })).toBeVisible();
-  });
-
-  test("connect button reveals API key form", async ({ page }) => {
-    await page.goto("/us/onboarding/broker");
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await page
-      .getByRole("button", { name: /connect/i })
-      .first()
-      .click();
-    await expect(page.getByLabel(/api key id/i)).toBeVisible();
-    await expect(page.getByLabel(/api secret key|secret key/i)).toBeVisible();
-  });
-
-  test("invalid key format shows validation error", async ({ page }) => {
-    await page.goto("/us/onboarding/broker");
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await page
-      .getByRole("button", { name: /connect/i })
-      .first()
-      .click();
-    await page.getByLabel(/api key id/i).fill("INVALID_KEY");
-    await page.getByRole("button", { name: /connect alpaca/i }).click();
-    // Zod rejects with the apiKeyIdFormat message and the Input surfaces it
-    // inline. The copy no longer mentions AK — live keys are not an accepted
-    // format to describe, only one to refuse by name elsewhere.
-    await expect(page.getByText(/start with PK/i)).toBeVisible();
-  });
-
-  test("valid paper key submits successfully", async ({ page }) => {
-    await page.goto("/us/onboarding/broker");
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await page
-      .getByRole("button", { name: /connect/i })
-      .first()
-      .click();
-    await page
-      .getByLabel(/api key id/i)
-      .fill("PKABCDEFGHIJ1234567890".slice(0, 20));
-    await page
-      .getByLabel(/api secret key|secret key/i)
-      .fill("abcdefghij1234567890abcdefghij1234567890");
-    await page.getByRole("button", { name: /connect alpaca/i }).click();
-    // Success state renders a StatusBanner whose `title` prop is "Alpaca
-    // connected". StatusBanner does not promote `title` to a heading, so
-    // anchor on the exact title text.
-    await expect(
-      page.getByText("Alpaca connected", { exact: true }),
-    ).toBeVisible({ timeout: 10_000 });
-  });
-
-  test("a live Alpaca key is refused and never submitted", async ({ page }) => {
-    // Signal must never hold a credential capable of placing, cancelling, or
-    // modifying an order. A raw live key carries whatever authority Alpaca
-    // granted it, regardless of what this frontend does with it, so the
-    // September artifact refuses live credentials outright rather than
-    // defaulting to paper and leaving the path reachable.
-    //
-    // Asserted at the network layer, not just the UI: a validation message
-    // that still let the request through would be worthless.
-    let submitted = 0;
-    await page.route("**/v1/brokers/connect/keys", (route) => {
-      submitted += 1;
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ ok: true }),
-      });
+  test("shows the backend's connection state and the holdings it read; no browser-direct broker calls", async ({
+    page,
+  }) => {
+    const browserPaths: string[] = [];
+    page.on("request", (req) => {
+      browserPaths.push(new URL(req.url()).pathname);
     });
-
     await page.goto("/us/onboarding/broker");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await page
-      .getByRole("button", { name: /connect/i })
-      .first()
-      .click();
-    // AK-prefixed key: a live Alpaca credential.
-    await page.getByLabel(/api key id/i).fill("AKABCDEFGHIJ12345678");
-    await page
-      .getByLabel(/api secret key|secret key/i)
-      .fill("abcdefghij1234567890abcdefghij1234567890");
-    await page.getByRole("button", { name: /connect alpaca/i }).click();
+    await expect(page.getByTestId("broker-connection-status")).toHaveAttribute(
+      "data-stage",
+      "synced",
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId("broker-holdings-preview")).toBeVisible();
+    // The simulator fixture carries no positions page, so the count may be 0;
+    // what matters is that it is the backend's number, rendered.
+    expect(
+      Number(await page.getByTestId("broker-holdings-count").innerText()),
+    ).toBeGreaterThanOrEqual(0);
+    await expect(page.getByTestId("broker-continue")).toHaveAttribute(
+      "href",
+      "/us/onboarding/strategy",
+    );
+    expect(browserPaths).toContain("/api/v1/investor/broker/connection");
+    for (const p of browserPaths) {
+      for (const legacy of LEGACY_BROKER_PATHS) {
+        expect(p, `browser must not call ${legacy}`).not.toBe(legacy);
+      }
+    }
+  });
 
-    await expect(page.getByText(/live Alpaca key/i)).toBeVisible();
-    expect(submitted, "live credentials reached the network").toBe(0);
-    await expect(
-      page.getByText("Alpaca connected", { exact: true }),
-    ).toHaveCount(0);
+  test("the BFF refuses a live Alpaca key and a non-paper environment by shape; nothing reaches the contract", async ({
+    page,
+  }) => {
+    await page.goto("/us/onboarding/broker");
+    const H = {
+      "content-type": "application/json",
+      origin: "http://localhost:3000",
+    };
+    const live = await page.request.post("/api/v1/investor/broker/connection", {
+      headers: H,
+      data: {
+        environment: "paper",
+        apiKeyId: "AKABCDEFGHIJ12345678",
+        apiSecretKey: "abcdefghij1234567890abcdefghij1234567890",
+      },
+    });
+    expect(live.status()).toBe(400);
+    const liveEnv = await page.request.post(
+      "/api/v1/investor/broker/connection",
+      {
+        headers: H,
+        data: {
+          environment: "live",
+          apiKeyId: "PKABCDEFGHIJ12345678",
+          apiSecretKey: "abcdefghij1234567890abcdefghij1234567890",
+        },
+      },
+    );
+    expect(liveEnv.status()).toBe(400);
+    // Cross-origin submissions never reach the handler.
+    const foreign = await page.request.post(
+      "/api/v1/investor/broker/connection",
+      {
+        headers: { ...H, origin: "http://evil.example" },
+        data: {
+          environment: "paper",
+          apiKeyId: "PKABCDEFGHIJ12345678",
+          apiSecretKey: "abcdefghij1234567890abcdefghij1234567890",
+        },
+      },
+    );
+    expect(foreign.status()).toBe(403);
+    for (const r of [live, liveEnv, foreign]) {
+      expect(await r.text()).not.toContain(
+        "abcdefghij1234567890abcdefghij1234567890",
+      );
+    }
+  });
+
+  test("the connection read never carries a credential field", async ({
+    page,
+  }) => {
+    await page.goto("/us/onboarding/broker");
+    const res = await page.request.get("/api/v1/investor/broker/connection");
+    expect(res.status()).toBe(200);
+    const text = await res.text();
+    // `credentialStatus` is the contract's status enum, not a credential.
+    expect(text).not.toMatch(
+      /api_key|api_secret|apiKeyId|apiSecretKey|"credentials"/,
+    );
+    const body = (await res.json()) as {
+      data: { connection: { connectionStatus: string; broker: string } | null };
+    };
+    expect(body.data.connection?.broker).toBe("alpaca");
   });
 
   test("the broker surface teaches paper-only and never live trading", async ({
     page,
   }) => {
-    // The form refusing a live key is not enough on its own: copy that still
-    // explains how to enable trading permissions, or links the live dashboard,
-    // teaches the investor to do the exact thing the boundary forbids — and
-    // this is the surface that used to say ReFi would "submit eligible orders
-    // on your behalf once you activate managed execution".
     await page.goto("/us/onboarding/broker");
-    await page
-      .getByRole("button", { name: /connect/i })
-      .first()
-      .click();
-    await expect(page.getByText(/paper trading only/i)).toBeVisible();
-
+    await expect(page.getByTestId("broker-connection-status")).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByRole("radio", { name: /live/i })).toHaveCount(0);
     await expect(
       page.getByRole("link", { name: /live dashboard/i }),
@@ -168,10 +145,35 @@ test.describe("Broker onboarding", () => {
       0,
     );
     await expect(page.getByText(/managed execution/i)).toHaveCount(0);
-    // NOT asserted: the absence of the words "live trading". The paper-only
-    // notice has to say it does not accept live trading credentials — refusal
-    // language is the opposite of instruction, and banning the phrase outright
-    // would delete the sentence doing the work.
+  });
+
+  test("strategy review and setup checklist read the BFF summary; there is no activate control", async ({
+    page,
+  }) => {
+    const browserPaths: string[] = [];
+    page.on("request", (req) => {
+      browserPaths.push(new URL(req.url()).pathname);
+    });
+    await page.goto("/us/onboarding/strategy");
+    await expect(page.getByTestId("strategy-review")).toBeVisible();
+    await expect(page.getByTestId("strategy-template")).toContainText(/SPX/, {
+      timeout: 30_000,
+    });
+    await page.goto("/us/onboarding/activation");
+    await expect(page.getByTestId("setup-checklist")).toBeVisible();
+    await expect(page.getByTestId("setup-authorization")).toHaveText(
+      /authorized/i,
+      { timeout: 30_000 },
+    );
+    await expect(
+      page.getByRole("button", { name: /activate|enable|start managing/i }),
+    ).toHaveCount(0);
+    expect(browserPaths).toContain("/api/v1/investor/onboarding");
+    for (const p of browserPaths) {
+      for (const legacy of LEGACY_BROKER_PATHS) {
+        expect(p, `browser must not call ${legacy}`).not.toBe(legacy);
+      }
+    }
   });
 });
 

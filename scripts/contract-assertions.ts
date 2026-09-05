@@ -5382,7 +5382,6 @@ await section(
       // No live browser-direct /v1/profile transport remains.
       for (const f of [
         ...walk("apps/web/app"),
-        "packages/api-clients/src/hooks/onboarding.ts",
         "packages/api-clients/src/index.ts",
         "packages/api-clients/src/mocks/handlers.ts",
         "packages/api-clients/src/compat.ts",
@@ -6059,7 +6058,7 @@ await section(
       await withTier("demo", async () => {
         assert.deepEqual(
           [...personas.DEMO_PERSONAS],
-          ["applicant", "admitted"],
+          ["applicant", "invited", "admitted"],
         );
         // Impersonation shapes are rejected.
         for (const bad of [
@@ -6598,6 +6597,171 @@ await section(
           sess.methods.includes("DELETE") &&
           sess.auth["DELETE"] === "session-clear",
         "manifest must list DELETE session as session-clear",
+      );
+    },
+  );
+
+  await section(
+    "broker connection: paper-only by shape, credentials forwarded once and never retained; onboarding pages read the BFF; no activate verb; legacy /v1 hooks gone",
+    async () => {
+      const route = stripComments(
+        read("apps/web/app/api/v1/investor/broker/connection/route.ts"),
+      );
+      assert.ok(
+        /environment:\s*z\.literal\("paper"\)/.test(route),
+        "environment must be the literal paper",
+      );
+      assert.ok(
+        /\^PK\[A-Z0-9\]\{18\}\$/.test(route),
+        "only PK (paper) key ids parse",
+      );
+      assert.ok(
+        /action:\s*"connectBroker"/.test(route),
+        "Signal-allowed action connectBroker",
+      );
+      assert.ok(
+        /client\.call\("createBrokerageConnection"/.test(route),
+        "forwards to the contract's createBrokerageConnection",
+      );
+      assert.ok(
+        /resolveAccountScope\(client, ctx\.auth\)/.test(route),
+        "account scope is server-derived",
+      );
+      assert.ok(
+        !/console\.|apiSecretKey\)\s*\.digest|localStorage|cookies\.set|put[A-Z]\w*\(/.test(
+          route,
+        ),
+        "the route never logs, hashes into a key, or stores the credentials",
+      );
+      assert.ok(
+        !/apiSecretKey/.test(
+          route.split("idempotencyKey = createHash")[1]?.split("digest")[0] ??
+            "",
+        ),
+        "the idempotency key never includes the secret",
+      );
+      assert.ok(
+        /projectBrokerageConnection\(res\.data\.data\)/.test(route),
+        "the response is the status projection, never the request",
+      );
+      assert.ok(
+        !/alpaca\.markets|paper-api/.test(route),
+        "the BFF never calls Alpaca",
+      );
+      const proj = stripComments(
+        read("apps/web/src/lib/investor-api/brokerage-connection.ts"),
+      );
+      assert.ok(
+        !/api_key|api_secret|credentials/.test(proj),
+        "the projection carries no credential field",
+      );
+      // Demo world: validates the request against the contract and keeps nothing from the credentials.
+      const demo = stripComments(
+        read("apps/web/src/lib/investor-api/demo-client.ts"),
+      );
+      assert.ok(
+        /assertMatches\("BrokerageConnectionRequest", body, "request"\)/.test(
+          demo,
+        ),
+        "demo validates the connection request",
+      );
+      assert.ok(
+        !/credentials\.api_key|credentials\.api_secret|req\.credentials/.test(
+          demo,
+        ),
+        "demo never reads the credential values",
+      );
+      // Browser: BFF hooks only; the legacy hook family is gone from the package.
+      for (const f of [
+        "apps/web/app/us/onboarding/broker/page.tsx",
+        "apps/web/app/us/onboarding/strategy/page.tsx",
+        "apps/web/app/us/onboarding/activation/page.tsx",
+        "apps/web/app/us/app/account/page.tsx",
+      ]) {
+        const src = stripComments(read(f));
+        assert.ok(
+          !/from\s+"@refi\/api-clients"/.test(src) ||
+            !/useBroker|useStrategy|useActivat/.test(src),
+          `${f}: no legacy browser-direct broker/onboarding hooks`,
+        );
+        assert.ok(
+          !/\/v1\/brokers|\/v1\/strategies|\/v1\/account\/activat/.test(src),
+          `${f}: no legacy paths`,
+        );
+      }
+      for (const f of [
+        "packages/api-clients/src/hooks/broker.ts",
+        "packages/api-clients/src/hooks/onboarding.ts",
+        "packages/api-clients/src/mocks/fixtures/maya.ts",
+        "packages/api-clients/src/mocks/fixtures/david.ts",
+      ]) {
+        assert.ok(!existsSync(join(REPO_ROOT, f)), `${f} must be deleted`);
+      }
+      const handlers = stripComments(
+        read("packages/api-clients/src/mocks/handlers.ts"),
+      );
+      assert.ok(
+        !/\/v1\/brokers|\/v1\/strategies|\/v1\/account\//.test(handlers),
+        "MSW no longer mocks broker/strategy/activation",
+      );
+      const setup = stripComments(
+        read("apps/web/app/us/onboarding/activation/page.tsx"),
+      );
+      assert.ok(
+        !/useMutation|fetch\(|onClick/.test(setup),
+        "the setup checklist has no mutation and no control",
+      );
+      assert.ok(
+        !/\bactivate\b/i.test(
+          setup.replace(/\/us\/onboarding\/activation/g, ""),
+        ),
+        "no activate verb on the setup checklist",
+      );
+      const broker = stripComments(
+        read("apps/web/app/us/onboarding/broker/page.tsx"),
+      );
+      assert.ok(
+        /environment:\s*"paper"/.test(broker) && !/"live"/.test(broker),
+        "the form can only express paper",
+      );
+      assert.ok(
+        !/localStorage|sessionStorage|document\.cookie/.test(broker),
+        "the form never persists key material",
+      );
+      const manifest = JSON.parse(
+        read("compliance/API_ROUTE_MANIFEST.json"),
+      ) as {
+        routes: Array<{
+          route: string;
+          methods: string[];
+          auth: Record<string, string>;
+        }>;
+      };
+      const bc = manifest.routes.find(
+        (r) => r.route === "/api/v1/investor/broker/connection",
+      );
+      assert.ok(
+        bc && bc.auth["POST"] === "bff-mutate" && bc.auth["GET"] === "bff-read",
+        "manifest: broker connection GET bff-read, POST bff-mutate",
+      );
+      assert.ok(
+        manifest.routes.some(
+          (r) =>
+            r.route === "/api/v1/investor/onboarding" &&
+            r.methods.join() === "GET",
+        ),
+        "manifest: onboarding summary is GET-only",
+      );
+      // Demo-tier account link: server-only registry keyed by the verified subject; never a browser value.
+      const auth = stripComments(read("apps/web/src/lib/bff/auth.ts"));
+      assert.ok(
+        /REFI_ENV === "demo"/.test(auth) &&
+          /DEMO_PERSONA_ACCOUNT_LINK\[sub\]/.test(auth),
+        "demo account link is derived from the verified subject on the demo tier only",
+      );
+      assert.ok(
+        !/searchParams|req\.headers\.get\("x-account/.test(auth),
+        "no browser-supplied account id",
       );
     },
   );

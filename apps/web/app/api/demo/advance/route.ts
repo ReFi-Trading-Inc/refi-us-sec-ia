@@ -12,10 +12,17 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServerEnv } from "../../../../src/lib/config/env";
 import { getAuthContext } from "../../../../src/lib/bff/auth";
-import { advanceDemoWorld } from "../../../../src/lib/investor-api/demo-client";
+import {
+  advanceDemoWorld,
+  resetDemoWorld,
+} from "../../../../src/lib/investor-api/demo-client";
 
 const bodySchema = z
-  .object({ fills: z.number().int().min(1).max(6).optional() })
+  .object({
+    fills: z.number().int().min(1).max(6).optional(),
+    /** Rebuild the caller's demo world from its seed (re-run a walkthrough). */
+    reset: z.literal(true).optional(),
+  })
   .strict();
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
@@ -33,12 +40,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const parsed = bodySchema.safeParse(json ?? {});
   if (!parsed.success)
     return NextResponse.json(
-      { error: "Body must be { fills?: 1..6 }" },
+      { error: "Body must be { fills?: 1..6, reset?: true }" },
       { status: 400 },
     );
-  const result = advanceDemoWorld(auth.authId, {
-    fills: parsed.data.fills ?? 1,
-  });
+  const result = parsed.data.reset
+    ? { ...resetDemoWorld(auth.authId), filled: 0, events: 0 }
+    : advanceDemoWorld(auth.authId, { fills: parsed.data.fills ?? 1 });
   return NextResponse.json(
     { data: result },
     { headers: { "cache-control": "private, no-store" } },

@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import {
   Badge,
@@ -9,13 +8,9 @@ import {
   CardContent,
   CardHeader,
   CardTitle,
-  StatusBanner,
 } from "@ui/components";
-import {
-  useBrokerAccount,
-  useBrokerConnection,
-  useBrokerDisconnect,
-} from "@refi/api-clients";
+import { useBrokerConnection } from "../../../_hooks/useBrokerConnection";
+import { useInvestorPortfolio } from "../../../_hooks/useInvestorPortfolio";
 import { useInvestorProfileV2 } from "../../../_hooks/useInvestorProfileV2";
 import {
   RISK_BAND_LABELS,
@@ -60,26 +55,14 @@ export default function AccountPage() {
   // Frontend-owned identity-verification lifecycle (provider-neutral). This
   // is NOT backend KYC policy/authorization; it claims nothing about either.
   const { data: kycVerification } = useKycVerification();
-  const { data: connection } = useBrokerConnection();
-  const { data: brokerAccount } = useBrokerAccount();
+  const { data: brokerRead } = useBrokerConnection();
+  const connection = brokerRead?.connection ?? null;
+  const isConnected = connection?.connectionStatus === "CONNECTED";
+  const { data: portfolio } = useInvestorPortfolio({ enabled: isConnected });
   // Canonical Investor Profile v2 via the same-origin BFF: assessment-derived
   // state only (no user-entered risk tolerance, no raw questionnaire answers).
   const { data: profileV2 } = useInvestorProfileV2();
   const assessment = profileV2?.assessment?.assessment ?? null;
-  const disconnect = useBrokerDisconnect();
-
-  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
-  const [disconnectError, setDisconnectError] = useState<string | null>(null);
-
-  async function handleDisconnect() {
-    setDisconnectError(null);
-    try {
-      await disconnect.mutateAsync();
-      setConfirmDisconnect(false);
-    } catch {
-      setDisconnectError("Disconnect failed. Please try again.");
-    }
-  }
 
   const kycState: KycLifecycleState =
     kycVerification?.session?.state ?? "not_started";
@@ -103,8 +86,6 @@ export default function AccountPage() {
     passed: "Completed",
     failed: "Unsuccessful",
   };
-
-  const isConnected = connection?.status === "connected";
 
   return (
     <div className="flex flex-col gap-6 max-w-2xl">
@@ -158,72 +139,53 @@ export default function AccountPage() {
         </CardContent>
       </Card>
 
-      {/* Broker Connection */}
-      <Card>
+      {/* Broker Connection — status projection of the contract's connection; no credentials, no disconnect verb yet (C1b-2 row 14 pending) */}
+      <Card data-testid="broker-connection-card">
         <CardHeader>
           <CardTitle>{account.broker}</CardTitle>
         </CardHeader>
         <CardContent className="pb-5 flex flex-col gap-3">
-          {isConnected ? (
+          {connection ? (
             <>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-charcoal-200">
-                    {connection.broker_name}
+                    Alpaca · {connection.environment}
                   </p>
-                  {brokerAccount && (
+                  {portfolio?.portfolio && (
                     <p className="text-xs text-charcoal-500 mt-0.5">
-                      Equity: {formatCurrency(brokerAccount.equity)} · Buying
-                      power: {formatCurrency(brokerAccount.buying_power)}
+                      Equity:{" "}
+                      {formatCurrency(
+                        Number(portfolio.portfolio.valuation.equity),
+                      )}{" "}
+                      · Cash:{" "}
+                      {formatCurrency(
+                        Number(portfolio.portfolio.valuation.cash),
+                      )}
+                    </p>
+                  )}
+                  {connection.lastSyncedAt && (
+                    <p className="text-xs text-charcoal-500 mt-0.5">
+                      Last read{" "}
+                      {new Date(connection.lastSyncedAt).toLocaleString(
+                        "en-US",
+                      )}
                     </p>
                   )}
                 </div>
-                <Badge variant="active">Connected</Badge>
-              </div>
-
-              {disconnectError && (
-                <StatusBanner variant="error">{disconnectError}</StatusBanner>
-              )}
-
-              {confirmDisconnect ? (
-                <div className="flex flex-col gap-2 p-3 rounded-md border border-status-rejected/40 bg-status-rejected/10">
-                  <p className="text-xs text-charcoal-300">
-                    Disconnecting stops ReFi from reading this account, so your
-                    recommendations will pause. You can reconnect at any time.
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="danger"
-                      disabled={disconnect.isPending}
-                      onClick={() => void handleDisconnect()}
-                    >
-                      {disconnect.isPending
-                        ? "Disconnecting…"
-                        : "Confirm disconnect"}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => {
-                        setConfirmDisconnect(false);
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => {
-                    setConfirmDisconnect(true);
-                  }}
+                <Badge
+                  variant={
+                    isConnected
+                      ? "active"
+                      : connection.connectionStatus === "PENDING_VALIDATION"
+                        ? "warning"
+                        : "neutral"
+                  }
                 >
-                  Disconnect broker
-                </Button>
-              )}
+                  {connection.connectionStatus.replace(/_/g, " ").toLowerCase()}
+                </Badge>
+              </div>
+              <p className="text-xs text-charcoal-500">{account.brokerNote}</p>
             </>
           ) : (
             <>

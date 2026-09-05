@@ -189,6 +189,8 @@ export const appCopy = {
     heading: "Account",
     profile: "Advisory profile",
     broker: "Broker connection",
+    brokerNote:
+      "ReFi reads balances, holdings and order status from your paper account. It holds no withdrawal or transfer permission. To revoke access, delete the key pair in Alpaca.",
     preferences: "Preferences",
     security: "Security",
     session: "Session",

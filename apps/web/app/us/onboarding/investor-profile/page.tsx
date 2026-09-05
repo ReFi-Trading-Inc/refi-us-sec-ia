@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 /**
  * Investor Profile questionnaire — questionnaireVersion 2.
  *
@@ -874,6 +876,15 @@ export default function InvestorProfilePage() {
               them directly.
             </p>
           )}
+        </div>
+        <div className="mt-8">
+          <Link
+            href="/us/onboarding/broker"
+            className="inline-flex items-center justify-center rounded-md bg-mint-400 px-4 py-2 text-sm font-medium text-charcoal-950 hover:bg-mint-300 transition-colors"
+            data-testid="ip-continue"
+          >
+            Continue to broker connection
+          </Link>
         </div>
       </main>
     );

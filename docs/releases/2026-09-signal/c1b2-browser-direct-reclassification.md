@@ -340,8 +340,21 @@ same-origin `DELETE /api/v1/investor/session`, which clears `us_session_v1`,
 cookie is the only session. The wallet stack (wagmi/RainbowKit/WalletConnect)
 now mounts only in local mock mode (`MaybeWalletProvider`); rows 4 and 5
 (`/siwe/*`) remain mock-only and are unreachable on demo and production.
-Remaining: **A 8 legacy + 3 backend items (11) · B 0 · C 5 · D 4**. C1b-2 is
-not closed.
+**Rows 10, 11, 12, 13, 15, 16, 24, 25, 26 — 2026-09-05 (`demo-onboarding-journey`):**
+the browser-direct broker/onboarding family is retired. 13 (A) is implemented
+as `POST /api/v1/investor/broker/connection` → `createBrokerageConnection`
+(paper-only by shape, one-shot forwarding, nothing retained, BFF never calls
+Alpaca; precondition `getAccountAuthorization = AUTHORIZED` holds for the demo
+`invited` persona and the simulator fixture). 11/15/16 read through the BFF
+(`listBrokerageConnections`, portfolio). 24 → `listTemplates` + profile +
+portfolio on the strategy review; 25 → `GET /api/v1/investor/onboarding`
+(`getOnboardingStatus` + `getAccountAuthorization` + BFF-local identity/profile
+state). 10, 12, 26 (C) are deleted with no replacement — there is no activate
+verb; the setup checklist has no control. Row 14 (`useBrokerDisconnect`) is
+deleted from the browser; the acknowledged `disconnectBrokerageConnection`
+handoff remains A, outstanding.
+Remaining: **A 3 legacy (14, 6b-adjacent 17, 22-family) + 3 backend items · B 0 · C 2 · D 4**
+(see the register rows for exact status). C1b-2 is not closed.
 
 | Rows 18, 19, 20 — `GET /v1/recommendations`, `GET /v1/recommendations/{id}`, `GET /v1/activity` | C1b-2 slice 5 (`c1b2/recommendations-activity`) | **implemented, in review** — Signal READ-ONLY. Row 18 `useRecommendations` (dead, no consumer) deleted (C). Row 19: `GET /api/v1/investor/recommendations` → `listAccountRecommendations`; `GET /api/v1/investor/recommendations/[id]` → `getAccountRecommendation` + first page of `listAccountRecommendationLegs`; new `GET /api/v1/investor/recommendations/[id]/legs?cursor=` pages further legs by the contract's opaque cursor (bounded, malformed cursor fails closed). Row 20: `GET /api/v1/investor/activity[/id]` → `listAccountRecords` / `getAccountRecord`. All through the frozen #70 client with server-derived account scope (`listAccounts` re-authorization; the browser supplies no account id). Legacy `useRecommendation`, `useActivity`, `useInvestorRecommendations` (package shim), `Recommendation`/`ActivityEvent`/`RecommendationProjection` compat types, `/v1/recommendations*` and `/v1/activity` MSW handlers/fixtures, the prototype `recommendation-projection` entity and its E2E seed are removed; no browser-direct call or `page.route` mock of those paths remains. The BFF projection is the narrowest view of the generated data (status, freshness, turnover, leg count, legs with decimal strings preserved); the retired flat fields (symbol / buy-sell action / confidence / rationale / expiry) are NOT reconstructed — the contract does not carry them. `execution_eligible` / `executable` are rendered as informational text only; no control. **Execution-chain filter (historical rationale, superseded 2026-09-04):** the frozen client validates the full 16-variant `AccountRecord` union; the Signal projection currently excludes `account_intent`, `risk_decision`, `execution_plan`, `order`, `fill` (regression-tested; pinned exhaustive over Daniel's schema). With D-LAUNCH-06 CLOSED — YES the disposition is RENDER read-only in a follow-up slice (rebaseline §7); the filter stays in code until that slice lands. Simulator-backed evidence only — no connected refinity-dev claim. |
 

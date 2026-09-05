@@ -106,11 +106,12 @@
     {
       "source": "apps/web/app/api/v1/investor/broker/connection/route.ts",
       "route": "/api/v1/investor/broker/connection",
-      "methods": ["GET"],
-      "purpose": "Broker connection observation (status/metadata) for the authenticated investor; read-only, no credentials.",
+      "methods": ["GET", "POST"],
+      "purpose": "Brokerage connection: GET is the status/metadata projection of the contract's listBrokerageConnections (no credentials). POST is the ONLY credential-bearing request in the app: a paper Alpaca key pair, validated by shape (environment is the literal 'paper'; live keys never parse), forwarded ONCE to createBrokerageConnection with a deterministic Idempotency-Key and then forgotten — never logged, stored, hashed, echoed or reused; the BFF never calls Alpaca. Signal-allowed action connectBroker; C1b-2 row 13 (D-LAUNCH-06 = YES); paper|live value per D-LAUNCH-07 (OPEN).",
       "owner": "investor-bff",
       "auth": {
-        "GET": "bff-read"
+        "GET": "bff-read",
+        "POST": "bff-mutate"
       }
     },
     {
@@ -231,6 +232,16 @@
       "owner": "investor-bff",
       "auth": {
         "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/onboarding/route.ts",
+      "route": "/api/v1/investor/onboarding",
+      "methods": ["GET"],
+      "purpose": "Setup summary for the onboarding pages: backend projections (getOnboardingStatus, getAccountAuthorization, listTemplates, listBrokerageConnections) plus BFF-local lifecycle state (identity-verification lifecycle, Investor Profile v2 assessment). Read-only; echoes the backend's admission/authorization words and asserts none of them.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
       }
     },
     {

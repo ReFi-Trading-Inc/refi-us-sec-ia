@@ -59,6 +59,7 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getServerEnv } from "../config/env";
 import { getAuthSessionLink } from "../prototype-store/entities/auth-link";
+import { DEMO_PERSONA_ACCOUNT_LINK } from "../demo/account-link";
 
 const SESSION_COOKIE = "us_session_v1";
 
@@ -176,6 +177,14 @@ export async function getAuthContext(
       const link = await getAuthSessionLink(sub);
       const ctx: AuthContext = { authId: sub, source: "prototype-bff" };
       if (link?.accountId) ctx.accountId = link.accountId;
+      // Demo tier only: the persona registry supplies the session → account
+      // link the identity exchange would otherwise have written. Keyed by the
+      // VERIFIED subject; the browser chose a persona label, never an account.
+      // Account-scoped reads still re-authorize against `listAccounts`.
+      else if (getServerEnv().REFI_ENV === "demo") {
+        const demoAccount = DEMO_PERSONA_ACCOUNT_LINK[sub];
+        if (demoAccount) ctx.accountId = demoAccount;
+      }
       // Session-identity claims for the investor-api user assertion (D-017).
       //
       // READ, NEVER SYNTHESISED, and never re-stamped. `auth_time` must come

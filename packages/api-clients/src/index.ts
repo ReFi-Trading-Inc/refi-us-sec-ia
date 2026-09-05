@@ -15,20 +15,14 @@ export {
   useSiweVerify,
 } from "./hooks/auth";
 export type { SiweMessageInput } from "./hooks/auth";
-export {
-  useBrokerSupported,
-  useBrokerConnection,
-  useBrokerAccount,
-  useBrokerPositions,
-  useBrokerOrders,
-  useBrokerDisconnect,
-} from "./hooks/broker";
 // The order hook family is fully retired: useSubmitOrder/useCancelOrder
 // removed 2026-07-30 (live paths waiting to be wired), useOrderPreview
 // 2026-08-22 (browser-direct execution-era preview, unmounted consumer),
 // useOrders 2026-08-23 with the BFF /orders routes (execution-domain read
-// model, zero consumers — C2a). Broker OBSERVATION (/v1/brokers/orders) is
-// untouched and belongs to C1b-2.
+// model, zero consumers — C2a). Broker observation and onboarding hooks
+// (/v1/brokers/*, /v1/strategies/current, /v1/account/activation|activate)
+// retired 2026-09-05 with C1b-2 rows 10–16, 24–26: the browser reads the
+// same-origin BFF (/api/v1/investor/broker/connection, /onboarding).
 export {
   useInvestorStatus,
   useDisclosureRegistry,
@@ -62,10 +56,3 @@ export type {
   ExceptionKind,
   ExceptionStatus,
 } from "./hooks/exceptions";
-export {
-  useStrategy,
-  useBrokerConnectStart,
-  useBrokerConnectApiKey,
-  useActivationStatus,
-  useActivateAccount,
-} from "./hooks/onboarding";

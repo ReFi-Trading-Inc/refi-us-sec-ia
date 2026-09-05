@@ -1,89 +1,60 @@
 "use client";
 
+/**
+ * Public U.S. identity verification — the frontend-owned provider lifecycle.
+ *
+ * Reads and drives the journey ONLY through same-origin ReFi BFF routes
+ * (`useKycVerification`). No vendor is named, no vendor state is shown, and
+ * nothing here calls the Investor API or identity-ccid. Progression to the
+ * profile step happens when the lifecycle reaches `passed` — never from the
+ * backend policy projection (`getKycStatus` is a different domain).
+ */
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import {
-  isKycTerminal,
-  useComplianceInvalidateCache,
-  useKycStart,
-  useKycStatus,
-  useKycSimulateWebhook,
-  type KycStatusValue,
-} from "@refi/api-clients";
 import { Button, Card, CardContent, StatusBanner } from "@ui/components";
 import { kycCopy } from "../../_content/app-copy";
-import { useAuth } from "../../../_providers/auth/AuthProvider";
+import {
+  KYC_LIFECYCLE_STATES,
+  isTerminalKycState,
+  useAdvanceMockKycVerification,
+  useKycVerification,
+  useStartKycVerification,
+  type KycLifecycleState,
+} from "../../../_hooks/useKycVerification";
 
-const isDev =
+// Development-only mock controls. Hidden in production builds; the BFF route
+// they call additionally answers 404 unless explicitly enabled server-side.
+const showMockControls =
   typeof process !== "undefined" &&
   process.env["NEXT_PUBLIC_REFI_ENV"] !== "prod";
 
-function statusFromAuthOrApi(
-  authStatus: KycStatusValue | undefined,
-  apiStatus: KycStatusValue | undefined,
-): KycStatusValue {
-  // Prefer the latest API value; fall back to session-embedded status.
-  return apiStatus ?? authStatus ?? "not_started";
-}
-
 export default function OnboardingKycPage() {
   const router = useRouter();
-  const auth = useAuth();
-  const statusQuery = useKycStatus({ poll: true });
-  const start = useKycStart();
-  const simulate = useKycSimulateWebhook();
-  const invalidateCache = useComplianceInvalidateCache();
+  const verification = useKycVerification({ poll: true });
+  const start = useStartKycVerification();
+  const advance = useAdvanceMockKycVerification();
 
-  const current = statusFromAuthOrApi(
-    auth.kyc_status,
-    statusQuery.data?.status,
-  );
-  const meta = useMemo(() => kycCopy.statuses[current], [current]);
+  const view = verification.data;
+  const state: KycLifecycleState = view?.session?.state ?? "not_started";
+  const meta = useMemo(() => kycCopy.statuses[state], [state]);
 
-  // Once approved, ask the compliance adapter to drop its cached decision so
-  // subsequent /orders/preview calls see the new KYC state, then refresh the
-  // session so AuthContext reflects the new kyc_status, then forward.
+  // Onboarding sequence: identity verification → the canonical Investor
+  // Profile questionnaire v2 (docs/releases/2026-09-signal/investor-profile-spec.md).
+  // Never the legacy v1 advisory questionnaire (/us/onboarding/profile), where
+  // riskTolerance is user-entered; v2 derives capacity, willingness, permitted
+  // band and product fit server-side. Progression is on the provider lifecycle
+  // reaching exactly `passed` — never on the backend policy projection.
   useEffect(() => {
-    if (current !== "approved") return;
-    // Use a getter so TS's control-flow analysis cannot narrow the cancelled
-    // state to a constant across await boundaries. Cleanup mutates the
-    // backing object; isCancelled() always re-reads.
-    const ctrl: { cancelled: boolean } = { cancelled: false };
-    const isCancelled = (): boolean => ctrl.cancelled;
-    void (async () => {
-      if (auth.account_id) {
-        try {
-          await invalidateCache.mutateAsync({ account_id: auth.account_id });
-        } catch {
-          // Cache invalidation failure is non-fatal; backend will recompute on
-          // next preview anyway.
-        }
-      }
-      if (isCancelled()) return;
-      await auth.refetchSession();
-      if (isCancelled()) return;
-      router.replace("/us/onboarding/profile");
-    })();
-    return () => {
-      ctrl.cancelled = true;
-    };
-    // We intentionally don't include auth.refetchSession / invalidateCache in
-    // deps — they're stable across renders and changing references would loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [current, auth.account_id]);
+    if (state !== "passed") return;
+    router.replace("/us/onboarding/investor-profile");
+  }, [state, router]);
 
-  const showStartCta = current === "not_started";
-  const showResumeCta = current === "incomplete";
-
-  function handleStart() {
-    start.mutate(undefined, {
-      onSuccess: (resp) => {
-        if (typeof window !== "undefined" && resp.provider_url) {
-          window.location.href = resp.provider_url;
-        }
-      },
-    });
-  }
+  const unavailable = view !== undefined && !view.available;
+  const canStart =
+    view?.available === true &&
+    (state === "not_started" ||
+      state === "additional_info_required" ||
+      state === "failed");
 
   return (
     <div className="flex flex-col gap-6">
@@ -96,22 +67,46 @@ export default function OnboardingKycPage() {
 
       <Card>
         <CardContent className="pt-5 flex flex-col gap-4">
-          <StatusBanner
-            variant={meta.tone === "neutral" ? "info" : meta.tone}
-            title={meta.label}
-          >
-            {meta.body}
-          </StatusBanner>
-
-          {(showStartCta || showResumeCta) && (
-            <Button onClick={handleStart} disabled={start.isPending}>
-              {showResumeCta ? kycCopy.resumeCta : kycCopy.startCta}
-            </Button>
+          {verification.isPending && (
+            <p className="text-xs text-charcoal-500">{kycCopy.pollingNote}</p>
+          )}
+          {verification.isError && (
+            <StatusBanner variant="error">{kycCopy.readError}</StatusBanner>
+          )}
+          {unavailable && (
+            <StatusBanner variant="warning" title={kycCopy.unavailable.label}>
+              {kycCopy.unavailable.body}
+            </StatusBanner>
+          )}
+          {view?.available === true && (
+            <StatusBanner
+              variant={meta.tone === "neutral" ? "info" : meta.tone}
+              title={meta.label}
+              data-testid={`kyc-state-${state}`}
+            >
+              {meta.body}
+            </StatusBanner>
           )}
 
-          {!isKycTerminal(current) &&
-            current !== "not_started" &&
-            current !== "incomplete" && (
+          {canStart && (
+            <Button
+              data-testid="kyc-start"
+              onClick={() => {
+                start.mutate();
+              }}
+              disabled={start.isPending}
+            >
+              {state === "not_started" ? kycCopy.startCta : kycCopy.resumeCta}
+            </Button>
+          )}
+          {start.isError && (
+            <StatusBanner variant="error">{kycCopy.startError}</StatusBanner>
+          )}
+
+          {view?.available === true &&
+            !isTerminalKycState(state) &&
+            state !== "not_started" &&
+            state !== "additional_info_required" && (
               <p
                 className="text-xs text-charcoal-500"
                 aria-live="polite"
@@ -121,7 +116,7 @@ export default function OnboardingKycPage() {
               </p>
             )}
 
-          {current === "denied" && (
+          {state === "failed" && (
             <a
               href="/us/app/support"
               className="text-xs text-mint-400 hover:underline"
@@ -132,28 +127,24 @@ export default function OnboardingKycPage() {
         </CardContent>
       </Card>
 
-      {isDev && (
-        <div className="rounded-lg border border-charcoal-700 bg-charcoal-900 p-3 flex flex-wrap gap-2">
+      {showMockControls && view?.adapter === "mock" && (
+        <div
+          data-testid="kyc-mock-controls"
+          className="rounded-lg border border-charcoal-700 bg-charcoal-900 p-3 flex flex-wrap gap-2"
+        >
           <p className="w-full text-xs text-charcoal-500 mb-1">
-            Dev only — simulate provider webhook
+            Development only — MOCK identity-verification adapter. This is not a
+            KYC check; these buttons move a test state machine.
           </p>
-          {(
-            [
-              "pending",
-              "under_review",
-              "approved",
-              "denied",
-              "incomplete",
-            ] as const
-          ).map((s) => (
+          {KYC_LIFECYCLE_STATES.filter((s) => s !== "not_started").map((s) => (
             <Button
               key={s}
               size="sm"
               variant="secondary"
               onClick={() => {
-                simulate.mutate({ status: s });
+                advance.mutate(s);
               }}
-              disabled={simulate.isPending}
+              disabled={advance.isPending}
             >
               {s}
             </Button>

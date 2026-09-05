@@ -17,7 +17,6 @@ type Schemas = components["schemas"];
 // ---------- Flat aliases for OpenAPI-defined schemas ----------
 
 export type OkResult = Schemas["OkResult"];
-export type KycStatus = Schemas["KycStatus"];
 export type BrokerInfo = Schemas["BrokerInfo"];
 export type BrokerConnection = Schemas["BrokerConnection"];
 export type BrokerAccount = Schemas["BrokerAccount"];
@@ -67,23 +66,6 @@ export type SiweNonceResponse = {
 export type SiweVerifyRequest = {
   message: string;
   signature: string;
-};
-
-// TODO(openapi): align with Daniel's identity-ccid contract; "not_started" is
-// a frontend-only sentinel for pre-attempt UI state and should remain
-// frontend-side regardless.
-export type KycStatusValue =
-  | "not_started"
-  | "pending"
-  | "incomplete"
-  | "under_review"
-  | "approved"
-  | "denied";
-
-// TODO(openapi): model KYC start response in refi-api.yaml.
-export type KycStartResponse = {
-  provider_url?: string;
-  provider_reference?: string;
 };
 
 // TODO(openapi): model account activation gates in refi-api.yaml. Backend-

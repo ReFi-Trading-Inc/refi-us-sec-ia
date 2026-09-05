@@ -1,5 +1,5 @@
 {
-  "description": "Deny-by-default API route allowlist (control CM-04). Every App Router route-handler candidate (any route.* under apps/web/app/api/**) must have exactly one entry here, with exact HTTP-method parity. CI fails on any unlisted route, ghost entry, or method drift (scripts/route-manifest-gate.ts); a route.* candidate with an unsupported extension fails closed as UNSUPPORTED ROUTE FILE, and the introduction of a Pages Router API surface (pages/api) fails closed as an UNMANIFESTED API ROUTING MECHANISM until CM-04 is explicitly redesigned to cover it. This manifest proves INVENTORY COMPLETENESS and REVIEWED ROUTE/METHOD EXPANSION only — it does not prove any route's authorization behaviour is correct; the auth field records the measured mechanism, and the auth-specific controls in CONTROL_MATRIX.md (AC-*, CS-*, IB-*) remain responsible for proving that behaviour.",
+  "description": "Deny-by-default API route allowlist (control CM-04). Every App Router route-handler candidate (any route.* under apps/web/app/api/**) must have exactly one entry here, with exact HTTP-method parity. CI fails on any unlisted route, ghost entry, or method drift (scripts/route-manifest-gate.ts); a route.* candidate with an unsupported extension fails closed as UNSUPPORTED ROUTE FILE, and the introduction of a Pages Router API surface (pages/api) fails closed as an UNMANIFESTED API ROUTING MECHANISM until CM-04 is explicitly redesigned to cover it. This manifest proves INVENTORY COMPLETENESS and REVIEWED ROUTE/METHOD EXPANSION only \u2014 it does not prove any route's authorization behaviour is correct; the auth field records the measured mechanism, and the auth-specific controls in CONTROL_MATRIX.md (AC-*, CS-*, IB-*) remain responsible for proving that behaviour.",
   "auth_vocabulary": {
     "public": "No authentication; intentionally unauthenticated (liveness only).",
     "public-rate-limited": "Unauthenticated by design; per-IP rate limiter; issues or consumes signed evidence rather than a session.",
@@ -162,6 +162,36 @@
       "route": "/api/v1/investor/exceptions/[id]/resolve",
       "methods": ["POST"],
       "purpose": "Resolves an open exception; schema accepts only Signal remediation categories (Managed categories are unrepresentable, 400).",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/kyc/verification/route.ts",
+      "route": "/api/v1/investor/kyc/verification",
+      "methods": ["GET"],
+      "purpose": "Frontend-owned identity-verification lifecycle (provider-neutral; adapter currently a clearly-labelled MOCK, no vendor selected). Returns the caller's journey state and the normalized attestation kyc block a later slice would submit. Not Daniel's getKycStatus policy projection; reads nothing from the Investor API.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/kyc/verification/mock/route.ts",
+      "route": "/api/v1/investor/kyc/verification/mock",
+      "methods": ["POST"],
+      "purpose": "TEST CONTROL for the MOCK identity-verification adapter: one allowed lifecycle transition or reset. Enabled only when REFI_KYC_PROVIDER=mock and REFI_KYC_MOCK_CONTROLS=1; answers 404 otherwise and must never be enabled on a production tier. A user cannot self-approve verification through the product.",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/kyc/verification/start/route.ts",
+      "route": "/api/v1/investor/kyc/verification/start",
+      "methods": ["POST"],
+      "purpose": "Start or resume the caller's identity-verification journey with the configured provider adapter (startKycVerification, BFF-only, Signal-allowed). Idempotent from in-progress; 503 when no provider is configured. Submits nothing to the trading backend.",
       "owner": "investor-bff",
       "auth": {
         "POST": "bff-mutate"

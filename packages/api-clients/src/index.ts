@@ -19,13 +19,6 @@ export {
 } from "./hooks/auth";
 export type { SiweMessageInput } from "./hooks/auth";
 export {
-  useKycStatus,
-  useKycStart,
-  useKycSimulateWebhook,
-  useComplianceInvalidateCache,
-  isKycTerminal,
-} from "./hooks/kyc";
-export {
   useBrokerSupported,
   useBrokerConnection,
   useBrokerAccount,

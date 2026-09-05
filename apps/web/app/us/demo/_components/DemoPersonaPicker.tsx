@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { Button, Card, CardContent, StatusBanner } from "@ui/components";
 
 interface PersonaOption {
@@ -11,7 +10,6 @@ interface PersonaOption {
 }
 
 export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
-  const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,7 +25,9 @@ export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
       });
       if (!res.ok) throw new Error(String(res.status));
       const body = (await res.json()) as { data: { entryPath: string } };
-      router.push(body.data.entryPath as never);
+      // Full navigation on purpose: the new cookies must be applied to the
+      // first render of the destination, and typed routes need no cast.
+      window.location.assign(body.data.entryPath);
     } catch {
       setError("The demo sign-in is not available on this deployment.");
       setBusy(null);

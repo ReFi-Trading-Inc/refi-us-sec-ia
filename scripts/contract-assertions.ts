@@ -6473,6 +6473,25 @@ await section(
           ),
         "wallet stack is gated to non-prod mock mode",
       );
+      // The wagmi/WalletConnect config is built lazily on first mount: importing the
+      // module must not initialise AppKit (which phones home) on prod/demo builds.
+      const wcfg = stripComments(
+        read("apps/web/app/_providers/wallet/config.ts"),
+      );
+      assert.ok(
+        /export function getWagmiConfig\(\)/.test(wcfg) &&
+          !/^export const \w+\s*(?::\s*Config)?\s*=\s*getDefaultConfig/m.test(
+            wcfg,
+          ),
+        "wagmi config must be created lazily, never at module evaluation",
+      );
+      const wprov = stripComments(
+        read("apps/web/app/_providers/wallet/WalletProvider.tsx"),
+      );
+      assert.ok(
+        /useState\(\(\) => getWagmiConfig\(\)\)/.test(wprov),
+        "WalletProvider builds the config on mount",
+      );
       const auth = stripComments(
         read("apps/web/app/_providers/auth/AuthProvider.tsx"),
       );

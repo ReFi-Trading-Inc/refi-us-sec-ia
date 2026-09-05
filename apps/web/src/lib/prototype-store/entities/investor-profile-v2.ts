@@ -24,6 +24,7 @@ import type {
   InvestorProfileAnswers,
   InvestorProfileAssessment,
 } from "../../sec203a/investor-profile";
+import { stableSerialize } from "../../sec203a/canonical-json";
 
 export interface InvestorProfileAnswersVersion {
   accountId: string;
@@ -59,25 +60,6 @@ const consentStore = kvStore<AdvisoryConsentRecordEntry>(
 
 function versionKey(accountId: string, version: number): string {
   return `${accountId}__v${String(version).padStart(6, "0")}`;
-}
-
-/** Recursively key-sorted serialization so nested objects hash stably. */
-function stableSerialize(v: unknown): string {
-  if (Array.isArray(v)) {
-    return "[" + v.map(stableSerialize).join(",") + "]";
-  }
-  if (v !== null && typeof v === "object") {
-    return (
-      "{" +
-      Object.entries(v as Record<string, unknown>)
-        .filter(([, val]) => val !== undefined)
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([k, val]) => JSON.stringify(k) + ":" + stableSerialize(val))
-        .join(",") +
-      "}"
-    );
-  }
-  return v === undefined ? "null" : JSON.stringify(v);
 }
 
 /** FNV-1a 64-bit hex over the canonically-ordered answers JSON. */

@@ -323,12 +323,15 @@ not closed.
 simulator/BFF boundary. Implemented so far: rows 21 (A), 6a (B), 7 (B), 8 (C),
 9 (C), 22 (C), 23 (C), 18 (C), 19 (A), 20 (A). Remaining: **A 6 legacy + 3
 backend items (9) · B 3 · C 4 · D 4**. C1b-2 is not closed. (6b `getKycStatus`
-remains outstanding by decision: the alpha.2 projection is `NOT_REQUIRED` /
-`CLOSED_US_INVITE_ALPHA` / `public_launch_eligible=false` and must not be
-surfaced in the public UI as current public-product KYC policy.)
+remains outstanding simply because it is not part of the recommendations /
+activity scope; it is sequenced by the normal C1b-2 plan. Its
+`CLOSED_US_INVITE_ALPHA` level is NOT a product mismatch — see the product
+decision below: the application surface is public while the Alpha cohort is
+closed and human-approved.)
 
 **Product decision — public U.S. KYC architecture (Zeshan, 2026-09-04).** The
-U.S. product is public-facing. The frontend/BFF owns the KYC provider
+U.S. application surface is public (the Alpha itself stays closed and
+human-approved — see the next decision). The frontend/BFF owns the KYC provider
 lifecycle; no provider has been selected; the current implementation is a
 provider-neutral **mock** adapter (deterministic, server-controlled, labelled
 `mock-kyc-adapter`, never identity verification, no PII); a future real
@@ -340,6 +343,60 @@ submitted yet, per the existing sequencing (after Investor Profile slice 3).
 Daniel's `getKycStatus` is a separate backend policy projection; the closed-
 invite `NOT_REQUIRED` value is not the public provider lifecycle and is never
 mapped to `passed`/`approved`/`verified`.
+
+**Product decision — Public U.S. Application / Closed Alpha Admission (Zeshan, 2026-09-04).**
+The U.S. application surface is publicly accessible. Applicants complete
+automated eligibility/suitability screening and, where applicable,
+identity/KYC verification. Completion or automated passage does not confer
+Alpha membership. Every applicant remains pending/waitlisted until explicitly
+approved by an authorized ReFi operator. Alpha admission is a separate
+internal authorization decision and must not be inferred from KYC, Investor
+Profile product fit, or public-flow completion. The model is **PUBLIC
+APPLICATION → AUTOMATED SCREENING → INTERNAL HUMAN REVIEW → CLOSED ALPHA
+ADMISSION**: the application is not invite-only, and the Alpha is not public.
+Distinct concepts, never collapsed: public application · automated screening
+(eligible for consideration, not admitted) · KYC/identity verification ·
+internal Alpha review (WAITLISTED / PENDING INTERNAL REVIEW) · Alpha
+admission/authorization · account authorization · trading eligibility ·
+Managed/execution authorization.
+
+_Withdrawn statements (this doc and its PR text, 2026-09-04):_ "the U.S.
+product is public-facing" as a claim about open Alpha enrollment; "6b must
+stay parked because `CLOSED_US_INVITE_ALPHA` / `public_launch_eligible=false`
+conflicts with a public-facing product". Correct statement: the public may
+apply, while Alpha participation remains closed and subject to ReFi approval;
+`CLOSED_US_INVITE_ALPHA` is consistent with that. `getKycStatus` remains a
+backend KYC-policy projection — not application status, not human approval,
+not Alpha membership, not the Investor Profile assessment.
+
+_Human admission gate — contract audit (v1.1.0-alpha.2, read-only, 2026-09-04)._
+Candidate backend representations of internal review/admission, none yet
+confirmed as the human-review write contract:
+
+| Concept                                                                                                                                                    | Where                                                                                                                                         | Reading                                                                                                                                                |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `OnboardingStatus.state` ∈ `WAITLISTED, INVITED, IDENTITY_VERIFIED, PROFILE_REQUIRED, DISCLOSURE_REQUIRED, CONSENT_REQUIRED, READY, INELIGIBLE, SUSPENDED` | `getOnboardingStatus` (read); `joinWaitlist` (applicant write, `WaitlistRequest{acquisition_source, campaign_id?, game_handoff_receipt_id?}`) | `WAITLISTED → INVITED` is the closest match to "pending internal review → admitted"; the applicant can only JOIN the waitlist, never move to `INVITED` |
+| `AccountAuthorization.status` ∈ `PENDING, AUTHORIZED, DENIED, SUSPENDED` (+ `reason_codes`, `policy_version`, `state_version`)                             | `getAccountAuthorization`, `Account.authorization`, `listAccounts` (reads)                                                                    | backend-computed account-level authorization; may reflect admission plus other facts; read-only for the frontend                                       |
+| `KycStatus` (`NOT_REQUIRED` / `CLOSED_US_INVITE_ALPHA` / `public_launch_eligible=false`)                                                                   | `getKycStatus` (read)                                                                                                                         | KYC policy projection only; not an admission signal                                                                                                    |
+
+**No authoritative human-approval WRITE exists in the 41 public routes.** The
+only admission-adjacent mutation is the applicant's own `joinWaitlist`; the
+package README states there is no Admin route in this boundary, and the
+frontend app hard-404s `/admin/*`. The operator approval path (the transition
+to `INVITED` / `AUTHORIZED`) is therefore backend/operator-owned and outside
+this package — recorded as a gap, not invented. Until it is pinned: no
+frontend-only approval flag, no applicant-facing self-approval endpoint, no
+internal review mutation. The public browser may READ the resulting state
+(`getOnboardingStatus`, `getAccountAuthorization`) in a later slice.
+
+_Runtime check (2026-09-04)._ The frontend writes no admission state anywhere:
+the eligibility screen sets only a state-screening cookie
+(`eligible | waitlist | ineligible`), the session cookie gates `/us/app/*`, and
+the on-domain `AlphaApplication` entity is an intake/game-handoff record with
+no approval field. No path auto-admits an applicant into the backend Alpha;
+backend authority stays with `AccountAuthorization`. Gap: the frontend does
+not yet REPRESENT the pending-review state to the applicant — to be sourced
+from the backend reads above, never asserted locally.
 
 **Owner decision — Daniel, 2026-09-04 (consent/disclosure semantics).** For
 Alpha, the unified disclosure has a 1:1 consent/disclosure relationship. The

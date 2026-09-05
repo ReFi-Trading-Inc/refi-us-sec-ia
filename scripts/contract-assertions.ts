@@ -5509,6 +5509,89 @@ await section(
       }
     },
   );
+  await section(
+    "attestation mapping: pure, server-only, never submits, never emits trading eligible",
+    async () => {
+      const f = "apps/web/src/lib/compliance/attestation-mapping.ts";
+      const src = read(f);
+      assert.ok(existsSync(join(REPO_ROOT, f)), `${f} must exist`);
+      // No transport: the module may not import the client, the gateway, or fetch.
+      assert.ok(
+        !/@refi\/api-clients\/investor-api|\/investor-api\/gateway|\bfetch\(/.test(
+          src,
+        ),
+        "mapping module must not import a transport",
+      );
+      assert.ok(
+        !/createComplianceProfileAttestation/.test(
+          src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""),
+        ),
+        "mapping module must not reference the submit operation in code",
+      );
+      // The type excludes `eligible`; the string never appears as a trading value.
+      assert.ok(
+        /Exclude<\s*TradingEligibility,\s*"eligible"\s*>/.test(src),
+        "trading_eligibility `eligible` must be unrepresentable",
+      );
+      assert.ok(
+        /expires_at: null/.test(src),
+        "expiry is undecided (§20 #6) — the builder must send null, not invent a duration",
+      );
+      assert.ok(
+        /KYC_EVIDENCE_NOT_PRODUCTION/.test(src) && /mock/.test(src),
+        "mock KYC evidence must be a named fail-closed block",
+      );
+      // No client component and no browser hook may import it.
+      const walk = (dir: string): string[] =>
+        readdirSync(join(REPO_ROOT, dir), { withFileTypes: true }).flatMap(
+          (d) =>
+            d.isDirectory()
+              ? walk(`${dir}/${d.name}`)
+              : /\.(tsx?|ts)$/.test(d.name)
+                ? [`${dir}/${d.name}`]
+                : [],
+        );
+      for (const file of [...walk("apps/web/app"), ...walk("apps/web/src")]) {
+        const s = read(file);
+        if (/compliance\/attestation-mapping/.test(s)) {
+          assert.ok(
+            !/^\s*["']use client["']/m.test(s),
+            `${file}: a client module must not import the attestation mapping`,
+          );
+        }
+      }
+      // Still nothing in apps/web submits an attestation.
+      for (const file of [...walk("apps/web/app"), ...walk("apps/web/src")]) {
+        assert.ok(
+          !/call\(\s*["']createComplianceProfileAttestation["']/.test(
+            read(file),
+          ),
+          `${file} must not submit an attestation`,
+        );
+      }
+    },
+  );
+
+  await section(
+    "attestation mapping: canonical JSON is shared by the snapshot hash and the evidence digest",
+    async () => {
+      const entity = read(
+        "apps/web/src/lib/prototype-store/entities/investor-profile-v2.ts",
+      );
+      assert.ok(
+        /from "\.\.\/\.\.\/sec203a\/canonical-json"/.test(entity) &&
+          !/function stableSerialize/.test(entity),
+        "the v2 entity must use the shared stableSerialize, not a private copy",
+      );
+      const mapping = read(
+        "apps/web/src/lib/compliance/attestation-mapping.ts",
+      );
+      assert.ok(
+        /from "\.\.\/sec203a\/canonical-json"/.test(mapping),
+        "the mapping must hash the shared canonical form",
+      );
+    },
+  );
 }
 
 // ─── Done ───────────────────────────────────────────────────────────────────

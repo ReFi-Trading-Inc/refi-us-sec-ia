@@ -92,6 +92,18 @@ export function proxy(request: NextRequest) {
     return new NextResponse(null, { status: 404 });
   }
 
+  // Demo-tier entry page: structurally dark on every tier except REFI_ENV=demo
+  // (server-only runtime tier, read here directly because the edge proxy has
+  // no access to the validated server env). The page itself also calls
+  // notFound(); this edge 404 is the hard guarantee that production never
+  // serves a persona picker, regardless of how the page renders.
+  if (
+    (pathname === "/us/demo" || pathname.startsWith("/us/demo/")) &&
+    process.env["REFI_ENV"] !== "demo"
+  ) {
+    return new NextResponse(null, { status: 404 });
+  }
+
   const response = NextResponse.next({ request: { headers: requestHeaders } });
 
   response.headers.set("x-correlation-id", correlationId);

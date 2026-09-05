@@ -34,8 +34,10 @@ const DESTINATIONS = new Set([
 const CONTINUE_ROUTE = "/us/eligibility";
 // Expired/invalid tokens are re-mintable in the game; the on-domain waitlist
 // page (F-track, FLAG_ALPHA_APPLICATION_ROUTE) does not exist yet, so the
-// failure path must not point there.
-const GAME_URL = "https://play.refi.trading";
+// failure path must not point there. The game is deployed at
+// game.refi.trading (the former play.refi.trading host no longer resolves);
+// scripts/contract-assertions.ts pins this so it cannot regress.
+const GAME_URL = "https://game.refi.trading";
 
 function capture(name: string, props?: Record<string, unknown>): void {
   const ph = posthog as unknown as {

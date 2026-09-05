@@ -16,7 +16,8 @@
     "test": "pnpm contract-test && pnpm tripwire && pnpm --filter @refi/api-clients test",
     "e2e": "pnpm --filter @refi/web exec playwright test",
     "prepare": "husky",
-    "e2e:signal": "pnpm --filter @refi/web e2e:signal"
+    "e2e:signal": "pnpm --filter @refi/web e2e:signal",
+    "e2e:demo": "pnpm --filter @refi/web e2e:demo"
   },
   "devDependencies": {
     "@commitlint/cli": "^19.8.1",

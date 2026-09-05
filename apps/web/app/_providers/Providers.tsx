@@ -5,6 +5,7 @@ import { ToastProvider } from "@refi/ui/components";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { initMsw } from "../_msw/init";
 import { MockModeBanner } from "../_components/MockModeBanner";
+import { DemoTierIndicator } from "../_components/DemoTierIndicator";
 import { PostHogProvider } from "./analytics/PostHogProvider";
 
 export function Providers({ children }: { children: React.ReactNode }) {
@@ -36,6 +37,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <PostHogProvider>
         <ToastProvider>
           <MockModeBanner />
+          <DemoTierIndicator />
           {children}
         </ToastProvider>
       </PostHogProvider>
@@ -47,6 +49,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <QueryClientProvider client={queryClient}>
         <ToastProvider>
           <MockModeBanner />
+          <DemoTierIndicator />
           {children}
         </ToastProvider>
       </QueryClientProvider>

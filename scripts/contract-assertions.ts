@@ -5915,6 +5915,75 @@ await section(
   );
 }
 
+// ─── Release governance: C1b-2 classification is single-truth after D-LAUNCH-06 ──
+
+await section(
+  "governance: C1b-2 mapping table carries no D (PARK_D_LAUNCH_06) row after the D-LAUNCH-06 closure",
+  async () => {
+    // Structural check on the canonical table, not prose matching: every legacy
+    // row's class cell (the first bold letter in the class column) is read and
+    // the D class must be empty; rows 13/14 must be A and 10/26 must be C.
+    const doc = readFileSync(
+      join(
+        REPO_ROOT,
+        "docs/releases/2026-09-signal/c1b2-browser-direct-reclassification.md",
+      ),
+      "utf8",
+    );
+    const classes = new Map<number, string>();
+    for (const line of doc.split("\n")) {
+      const cells = line.split("|");
+      if (cells.length <= 19) continue;
+      const n = Number(cells[1]?.trim());
+      if (!Number.isInteger(n) || n < 1 || n > 26) continue;
+      const m = /\*\*([ABCD])\b/.exec(cells[18] ?? "");
+      if (m?.[1]) classes.set(n, m[1]);
+    }
+    assert.equal(
+      classes.size,
+      26,
+      `expected 26 classified legacy rows, got ${String(classes.size)}`,
+    );
+    const d = [...classes.entries()]
+      .filter(([, c]) => c === "D")
+      .map(([n]) => n);
+    assert.deepEqual(
+      d,
+      [],
+      `D class must be empty after D-LAUNCH-06; found rows ${d.join(", ")}`,
+    );
+    assert.equal(
+      classes.get(13),
+      "A",
+      "row 13 (createBrokerageConnection) must be A",
+    );
+    assert.equal(
+      classes.get(14),
+      "A",
+      "row 14 (disconnectBrokerageConnection) must be A",
+    );
+    assert.equal(classes.get(10), "C", "row 10 (broker registry) must be C");
+    assert.equal(classes.get(26), "C", "row 26 (legacy activate) must be C");
+    // The §1 disposition table must state D = 0 and the register must show the closure.
+    assert.ok(
+      /D — PARK_D_LAUNCH_06[^\n]*\|\s*\*\*0\*\*/.test(doc),
+      "§1 disposition table must show D = 0",
+    );
+    const register = readFileSync(
+      join(REPO_ROOT, "docs/releases/2026-09-signal/open-items.md"),
+      "utf8",
+    );
+    assert.ok(
+      /\*\*D-LAUNCH-06\*\*[^\n]*CLOSED[^\n]*YES/.test(register),
+      "open-items must record D-LAUNCH-06 CLOSED — YES",
+    );
+    assert.ok(
+      /\*\*D-LAUNCH-07\*\*[^\n]*\*\*OPEN\*\*/.test(register),
+      "open-items must record D-LAUNCH-07 OPEN",
+    );
+  },
+);
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

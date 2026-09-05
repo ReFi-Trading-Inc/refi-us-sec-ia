@@ -8,8 +8,11 @@
 > **superseded or narrowed** exactly as recorded in
 > [dlaunch06-execution-rebaseline-2026-09-04.md](dlaunch06-execution-rebaseline-2026-09-04.md) §1–§3 (statement-by-statement reconciliation, A/B/C
 > classification of every invariant, rebased authority split). Retained
-> unchanged: browser/BFF never construct or submit orders, never hold
-> broker-write credentials, cross-account isolation, binary risk verdicts,
+> unchanged: browser/BFF never construct or submit orders; frontend/BFF have
+> no durable custody of broker credentials and no broker-write authority
+> (credential material may transit browser → BFF → backend once during the
+> explicit connection operation and must not be persisted, logged, cached,
+> reused, or returned); cross-account isolation, binary risk verdicts,
 > idempotency, backend-authoritative reconciliation, no per-trade approval,
 > mandatory human Alpha admission. The Alpaca environment for acceptance is a
 > separate open decision (**D-LAUNCH-07**). The body of this document is kept

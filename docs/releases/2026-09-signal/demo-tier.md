@@ -109,24 +109,23 @@ identity does the BFF call `joinWaitlist` with the stored receipt id under that
 identity. Claiming a token alone never calls `joinWaitlist`, and no game
 possession confers admission.
 
-## 8. Vercel configuration to create the tier (not executed here)
+## 8. Vercel configuration — APPLIED 2026-09-05 (separate project)
 
-External configuration, to be applied once this slice merges:
+Applied through the Vercel API instead of branch-scoped preview variables: a
+**separate project** keeps the demo environment isolated from production
+secrets and lets Deployment Protection stay on for real previews while the
+demo is public.
 
-1. Create branch `demo` from main (kept in step with main by fast-forward).
-2. Vercel → Environment Variables → target **Preview**, branch **demo**:
-   `NEXT_PUBLIC_REFI_ENV=demo`, `REFI_ENV=demo`, `NEXT_PUBLIC_REFI_DATA_ADAPTER=live`,
-   `REFI_DATA_ADAPTER=mock`, `REFI_RELEASE_STAGE=signal`, `REFI_KYC_PROVIDER=mock`,
-   `REFI_KYC_MOCK_CONTROLS=1`, fresh 32+ char `SESSION_JWT_SECRET`,
-   `SESSION_SECRET`, `IP_HASH_SECRET`, `ELIGIBILITY_JWT_SECRET`, a real
-   `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, `NEXT_PUBLIC_API_BASE_URL` = the
-   demo origin, PostHog/Sentry values, and `FLAG_ALPHA_CLAIM_ROUTE=on` with a
-   **demo-only** `ALPHA_HANDOFF_PUBLIC_KEY_JWK` (pair generated out of band).
-   Investor API variables are added with the follow-up demo data adapter.
-3. Assign the branch domain (proposed `demo.refi.trading`) and disable
-   Deployment Protection for that branch only.
-4. Verify `/us/demo` renders and `/api/demo/session` answers 200; verify the
-   production alias still answers 404 on both.
+| Item                                                | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project                                             | `refi-us-sec-ia-demo` (`prj_uE7IxdTmaIAWfihWIAt5VGhpJMkI`), same repo, root `apps/web`, Node 24.x, Deployment Protection **off**                                                                                                                                                                                                                                                                                                                                                |
+| Production branch                                   | `demo/data-adapter` (temporary, so the demo works before PRs #79/#80 merge) → switch to `demo` after the merges                                                                                                                                                                                                                                                                                                                                                                 |
+| Public URL                                          | `https://refi-us-sec-ia-demo.vercel.app`; custom domain `demo.refi.trading` added and awaiting DNS                                                                                                                                                                                                                                                                                                                                                                              |
+| DNS (registrar-side, nameservers `dns-parking.com`) | CNAME `demo` → `a6e07c0a9073a4d8.vercel-dns-017.com` (or `cname.vercel-dns.com`)                                                                                                                                                                                                                                                                                                                                                                                                |
+| Env (Production target)                             | `NEXT_PUBLIC_REFI_ENV=demo`, `REFI_ENV=demo`, `REFI_INVESTOR_API_MODE=demo`, `REFI_DATA_ADAPTER=mock`, `NEXT_PUBLIC_REFI_DATA_ADAPTER=live`, `REFI_RELEASE_STAGE=signal`, `REFI_KYC_PROVIDER=mock`, `REFI_KYC_MOCK_CONTROLS=1`, `FLAG_ALPHA_CLAIM_ROUTE=off`, `NEXT_PUBLIC_API_BASE_URL=https://demo.refi.trading`, placeholder PostHog/Sentry/WalletConnect values, four generated 32-byte secrets (sensitive, never in git), placeholder `ALPHA_HANDOFF_*` (claim route dark) |
+| Deploy hook                                         | `demo-branch` → `demo/data-adapter`                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+
+Still on Zeshan's side: the DNS CNAME above; a real `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` if the optional wallet modal should load cleanly; switching the production branch to `demo` after the merges.
 
 ## 9. Demo data adapter (slice 2) — the demo world
 

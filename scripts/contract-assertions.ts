@@ -5305,6 +5305,28 @@ await section(
   );
 
   await section(
+    "kyc: a passed verification hands off to Investor Profile v2, never the legacy v1 questionnaire",
+    async () => {
+      const src = read("apps/web/app/us/onboarding/kyc/page.tsx");
+      assert.ok(
+        /router\.replace\(\s*"\/us\/onboarding\/investor-profile"\s*\)/.test(
+          src,
+        ),
+        "post-pass destination must be /us/onboarding/investor-profile",
+      );
+      assert.ok(
+        !/["']\/us\/onboarding\/profile["']/.test(src),
+        "the legacy v1 advisory questionnaire must not be a KYC destination",
+      );
+      // Progression is gated on the provider lifecycle being exactly `passed`.
+      assert.ok(
+        /if \(state !== "passed"\) return;/.test(src),
+        "progression must require lifecycle state === passed",
+      );
+    },
+  );
+
+  await section(
     "kyc: no attestation submission, no Investor API/identity call, and no legacy browser-direct KYC path remain",
     async () => {
       for (const f of kycFiles.slice(0, 7)) {

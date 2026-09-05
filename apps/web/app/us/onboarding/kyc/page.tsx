@@ -38,10 +38,15 @@ export default function OnboardingKycPage() {
   const state: KycLifecycleState = view?.session?.state ?? "not_started";
   const meta = useMemo(() => kycCopy.statuses[state], [state]);
 
-  // Existing onboarding sequence: identity verification → profile.
+  // Onboarding sequence: identity verification → the canonical Investor
+  // Profile questionnaire v2 (docs/releases/2026-09-signal/investor-profile-spec.md).
+  // Never the legacy v1 advisory questionnaire (/us/onboarding/profile), where
+  // riskTolerance is user-entered; v2 derives capacity, willingness, permitted
+  // band and product fit server-side. Progression is on the provider lifecycle
+  // reaching exactly `passed` — never on the backend policy projection.
   useEffect(() => {
     if (state !== "passed") return;
-    router.replace("/us/onboarding/profile");
+    router.replace("/us/onboarding/investor-profile");
   }, [state, router]);
 
   const unavailable = view !== undefined && !view.available;

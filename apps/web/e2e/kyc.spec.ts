@@ -60,7 +60,7 @@ test.describe("Identity verification lifecycle via the BFF (mock adapter)", () =
     );
   });
 
-  test("start → in progress → under review → passed, through same-origin routes only; passed forwards to profile", async ({
+  test("start → in progress → under review → passed, through same-origin routes only; passed enters Investor Profile v2, never the legacy v1 questionnaire", async ({
     page,
   }) => {
     await resetMock(page);
@@ -101,7 +101,21 @@ test.describe("Identity verification lifecycle via the BFF (mock adapter)", () =
     // Vendor-neutrality is asserted on the KYC page itself, before the redirect.
     expect(await page.content()).not.toMatch(VENDOR_NAMES);
     expect((await advance(page, "passed")).status()).toBe(200);
-    await page.waitForURL("**/us/onboarding/profile", { timeout: 30_000 });
+    // A passed public-U.S. KYC journey must enter Investor Profile questionnaire
+    // v2 and must never route to the legacy v1 advisory questionnaire.
+    await page.waitForURL("**/us/onboarding/investor-profile", {
+      timeout: 30_000,
+    });
+    expect(new URL(page.url()).pathname).toBe(
+      "/us/onboarding/investor-profile",
+    );
+    expect(new URL(page.url()).pathname).not.toBe("/us/onboarding/profile");
+    for (const url of browserRequests) {
+      expect(
+        new URL(url).pathname,
+        "KYC success must never navigate to the legacy v1 profile page",
+      ).not.toBe("/us/onboarding/profile");
+    }
 
     for (const url of browserRequests) {
       for (const forbidden of FORBIDDEN_BROWSER_TARGETS) {

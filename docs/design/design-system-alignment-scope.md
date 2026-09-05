@@ -1,8 +1,10 @@
 # Design-system alignment — scope (measure-only)
 
-**Status:** SCOPING. Nothing in the product or the design system has been
-changed by this document. Every "decision" below is a question for Zeshan;
-none is pre-decided.
+**Status:** slice 1 (tokens) IMPLEMENTED on this branch under the decisions
+recorded in §5; the design system itself is unchanged. Zeshan's direction
+(2026-09-05): apply best-in-class UI/UX practice rather than block on D1–D7.
+Each call below is therefore evidence-based and reversible; say the word and
+any of them flips.
 
 **Sources measured (2026-09-05):**
 
@@ -108,3 +110,29 @@ test ids. No `buy`/`sell` semantics enter the Signal product.
 - The system's `SKILL.md` and `ui_kits/trading-app/README.md` still say
   "≤6px radius" while `colors_and_type.css` and the README say ≤4px; the
   tokens file is treated as authoritative here.
+
+## 5. Decisions taken for slice 1 (best-practice defaults, 2026-09-05)
+
+Standard applied: WCAG 2.2 AA as a hard gate (`scripts/design-token-parity.ts`,
+run in CI), design system as the single source of brand truth, tokens changed
+by value not by class name (so 29 pages re-skin without edits), no invented
+hues, every deviation from the system pinned to a measured reason.
+
+| #   | Decision                                                                                                                                                                                                                                                                                                                                                                              | Evidence                                                                                                                                                                                                      |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | **DM Sans** for verbal text via `next/font/google` (build-time self-hosting, subsetting, no layout shift, no runtime Google request); **JetBrains Mono** for numerics, as the token `--font-mono` states. The README prose saying "DM Mono" is treated as the stale line; DM Mono stays in the fallback stack                                                                         | wordmark glyphs match DM Sans; token file is the machine-readable authority; JetBrains Mono is shared with the game property                                                                                  |
+| D2  | **Adopt the green-tinted terminal ladder and neutral ramp** by value under the existing `charcoal-*` names (+ new `charcoal-850` for hover/zebra)                                                                                                                                                                                                                                     | measured: the repo's `charcoal-400` subheading text was **2.39:1** and `charcoal-500` **1.4:1** on cards — both fail AA today; the system's ramp gives 15.8 / 10.5 / 7.0:1 for primary / secondary / tertiary |
+| D3  | Adopt success `#10B981` / warning `#D6A647` / error `#D94C4C`. Text on dark uses a lighter error tint **`#E56868`** (`status.rejected-text`) because `#D94C4C` is **4.04:1** on cards. `expired` → gray-400 (`#5C8474` gray-500 is 3.98:1). Info (`system`) → neutral gray-300: the system defines no info hue and forbids purple/indigo/violet; inventing a blue would be off-system | contrast table in `scripts/design-token-parity.ts`                                                                                                                                                            |
+| D3b | Danger button label → `charcoal-950` on the error fill (4.87:1); white failed at 4.13:1                                                                                                                                                                                                                                                                                               | measured                                                                                                                                                                                                      |
+| D4  | Radius scale capped at **2 / 3 / 4 px** by token (`rounded-md/lg/xl/2xl` all resolve ≤4px); `rounded-full` kept for genuinely circular elements. Pills in Badge are re-evaluated in slice 2 against the system's badge specimen                                                                                                                                                       | design system "nothing exceeds 4px"                                                                                                                                                                           |
+| D5  | **Keep the repo's compliance badge vocabulary**; never import `buy`/`sell` into the Signal app                                                                                                                                                                                                                                                                                        | tripwire + E2E forbid per-trade semantics                                                                                                                                                                     |
+| D6  | Deferred to slice 3 (brand assets): replace `public/refi-logo.png` with `assets/mark-green.svg` at its baked `#43D4A0` (`mint.logo` token already added)                                                                                                                                                                                                                              | system README: never recolor the mark                                                                                                                                                                         |
+| D7  | Direction (a) system → repo for tokens now; (b) repo → system per component after slices 1–2                                                                                                                                                                                                                                                                                          | components must speak the system's tokens before being pushed                                                                                                                                                 |
+| —   | Global `:focus-visible` 2px mint ring and a `prefers-reduced-motion` rule added to `globals.css`                                                                                                                                                                                                                                                                                      | WCAG 2.4.7 / 2.3.3; design-system motion rules                                                                                                                                                                |
+| —   | Token snapshot vendored at `packages/config/design-system/colors_and_type.css` with `MANIFEST.json` sha256; the gate fails on drift                                                                                                                                                                                                                                                   | same "vendored + hashed" pattern as Daniel's contract package                                                                                                                                                 |
+
+**Known deviation, deliberate:** body text is `charcoal-50 = #EFFAF5` (system
+gray-50) rather than the system's `--color-white #D8EEE5`; both exceed 15:1 and
+the ramp stays monotonic. **Not done in slice 1:** component-level radius/pill
+changes, Gauge threshold parity, logo swap, page-level `rounded-*` cleanup,
+reverse sync — slices 2–5.

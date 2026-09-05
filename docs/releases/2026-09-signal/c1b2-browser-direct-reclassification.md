@@ -216,6 +216,46 @@ Remaining after slice 1: **A 10 · B 4 · C 7 · D 4** (E/F 0). C1b-2 is not clo
 
 | Rows 6, 7, 8, 9 — `/ccid/status`, `/ccid/start`, `/ccid/webhook/provider`, `/compliance/invalidate-cache` | C1b-2 slice 2 (`c1b2/kyc-provider-boundary`) | **implemented, in review** — provider-neutral frontend KYC boundary (`apps/web/src/lib/kyc`, MOCK adapter) behind same-origin BFF routes `/api/v1/investor/kyc/verification[/start|/mock]`; all four legacy browser-direct paths and their MSW handlers removed; legacy `KycStatusValue`/`isKycTerminal`/`KycStatus` shims removed. **Row 6 reclassified (see below).** |
 
+| Rows 22, 23 — `GET /v1/profile`, `POST /v1/profile` | C1b-2 slice 3 (`c1b2/investor-profile-v2`) | **legacy transport retired, in review** — Investor Profile v2 (`/us/onboarding/investor-profile`) is the ONE canonical public questionnaire; `/us/onboarding/profile` is a compatibility redirect to it (renders no form, no `riskTolerance`); the account "Investment Profile" card reads `GET /api/v1/investor/profile/v2` and shows assessment-derived fields; `useAdvisoryProfile`/`useSaveAdvisoryProfile`, the v1 `AdvisoryProfile` types, the `/v1/profile` MSW handlers and the v1 copy are removed; exception remediation and onboarding steps route to v2. KYC `passed` (PR #73) feeds v2. **Rows 22/23 reclassified (see below).** No attestation submitted. |
+
+**Rows 22 and 23 correction (evidence-based, 2026-09-04).** The Phase 1 matrix
+mapped legacy `GET /v1/profile` → `getCurrentAdvisoryProfile` and legacy
+`POST /v1/profile` → `createComplianceProfileAttestation` as Class A. Neither
+is a semantic replacement:
+
+- The public frontend profile is now **Investor Profile v2** — a frontend-
+  owned, server-assessed questionnaire whose canonical read is the BFF route
+  `/api/v1/investor/profile/v2`. Daniel's `getCurrentAdvisoryProfile` is a
+  **backend compatibility projection of a previously accepted compliance
+  attestation** (`advisory_profile_id` → `attestation_id`, `profile_version` →
+  `decision_sequence`). Until an attestation exists there is nothing for it to
+  project, and it must not be used as the source of the v2 questionnaire
+  state. **Row 22 → REMOVE_FROM_PUBLIC_FLOW (C), done**; `getCurrentAdvisoryProfile`
+  is tracked separately as **22b — backend advisory-policy projection (A,
+  outstanding, after attestation exists)**.
+- The v1 seven-field form is no longer the source of any compliance decision.
+  **Row 23 → REMOVE_FROM_PUBLIC_FLOW (C), done**; `createComplianceProfileAttestation`
+  is tracked separately as **23b — the future handoff (A, outstanding)** from
+  (i) the canonical v2 assessment and (ii) **production-eligible KYC evidence**
+  (the current KYC adapter is a mock and its `passed` must never become
+  backend compliance evidence).
+
+**Unresolved attestation field mappings (23b) — decisions required before any
+attestation is written; none is inferred here:**
+
+| Attestation field (`ComplianceProfileAttestationRequest`)                       | Candidate source                                                                                       | Status                                                                                                                                                               |
+| ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `kyc.status` (`passed\|failed\|pending\|not_required\|expired\|withdrawn`)      | frontend KYC lifecycle normalization (PR #73)                                                          | mapping defined for a REAL provider only; mock results excluded                                                                                                      |
+| `kyc.provider`, `kyc.level`, `kyc.evidence_ref`                                 | selected KYC vendor                                                                                    | **vendor not selected**                                                                                                                                              |
+| `investor_profile.status` (`eligible\|ineligible\|pending\|expired\|withdrawn`) | v2 `productFitStatus` (`fit\|fit_with_constraint\|needs_clarification\|not_fit`) + `profileConfidence` | **no recorded mapping** — do not infer                                                                                                                               |
+| `investor_profile.risk_band` (free string)                                      | v2 `permittedRiskBand` 1–5 / `RISK_BAND_LABELS`                                                        | **no recorded mapping** (Daniel's `AdvisoryProfile.risk_calibration` vocabulary is CONSERVATIVE/MODERATE/GROWTH/AGGRESSIVE/UNAVAILABLE — 5 bands vs 4 + UNAVAILABLE) |
+| `investor_profile.profile_version`, `questionnaire_version`                     | v2 `profileVersion`, `questionnaireVersion: 2`                                                         | plausible, **not decided**                                                                                                                                           |
+| `trading_eligibility` (`eligible\|ineligible\|pending`)                         | ?                                                                                                      | **no source** — `productFitStatus` is NOT trading eligibility; `alphaReadiness` is not either                                                                        |
+| `decision_version`, `decision_sequence`                                         | v2 `assessmentPolicyVersion`, `profileVersion`?                                                        | **not decided**                                                                                                                                                      |
+| `effective_at`, `expires_at`                                                    | `assessedAt`; expiry policy                                                                            | **no expiry policy** (counsel/privacy register item)                                                                                                                 |
+| `evidence_sha256`                                                               | `answerSnapshotHash` is FNV-1a 64-bit, not SHA-256                                                     | **incompatible as-is**                                                                                                                                               |
+| `attestation_id`, `schema_version`                                              | new id; `"1.0"`                                                                                        | **not decided**                                                                                                                                                      |
+
 **Row 6 correction (evidence-based, 2026-09-04).** The Phase 1 matrix mapped
 legacy `GET /ccid/status` to Daniel's `getKycStatus` as a Class A migration.
 Measurement showed that is not a semantic replacement: the legacy endpoint
@@ -231,10 +271,15 @@ constant (`status: NOT_REQUIRED`, `level: CLOSED_US_INVITE_ALPHA`,
   through the BFF as a separately labelled "backend KYC policy" read (e.g. on
   the account page). Not started; it must never drive the provider lifecycle.
 
-Corrected primary counts: **A 10 · B 5 · C 7 · D 4** (26 legacy operations;
-row 6 counted once, under B, with 6b tracked as an additional A item →
-27 tracked items). Implemented so far: rows 21 (A), 6a (B), 7 (B), 8 (C),
-9 (C). Remaining: **A 10 (incl. 6b) · B 3 · C 5 · D 4**.
+Corrected primary counts after slices 1–3: **A 8 · B 5 · C 9 · D 4** over the
+26 legacy operations (rows 22 and 23 moved A → C), plus three tracked
+backend items that are NOT legacy replacements: **6b** `getKycStatus` policy
+projection (A), **22b** `getCurrentAdvisoryProfile` projection (A, after
+attestation), **23b** `createComplianceProfileAttestation` handoff (A, after a
+real KYC provider and the mapping decisions above) → 29 tracked items.
+Implemented so far: rows 21 (A), 6a (B), 7 (B), 8 (C), 9 (C), 22 (C), 23 (C).
+Remaining: **A 8 legacy + 3 backend items (11) · B 3 · C 5 · D 4**. C1b-2 is
+not closed.
 
 **Product decision — public U.S. KYC architecture (Zeshan, 2026-09-04).** The
 U.S. product is public-facing. The frontend/BFF owns the KYC provider

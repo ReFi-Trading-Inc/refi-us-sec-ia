@@ -5,7 +5,6 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import type {
   AccountActivationStatus,
-  AdvisoryProfile,
   AuthSession,
   OrderPreviewResult,
 } from "../compat";
@@ -77,32 +76,5 @@ describe("OrderPreviewResult", () => {
       "ALLOW" | "DENY"
     >();
     expect([allow, deny]).toEqual(["ALLOW", "DENY"]);
-  });
-});
-
-describe("AdvisoryProfile shape", () => {
-  test("has exactly the seven camelCase string fields the onboarding form binds to", () => {
-    const p: AdvisoryProfile = {
-      goal: "growth",
-      timeHorizon: "5-10y",
-      incomeBand: "100-250k",
-      liquidNetWorth: "250-500k",
-      riskTolerance: "moderate",
-      investmentExperience: "some",
-      accountPurpose: "retirement",
-    };
-    const keys = Object.keys(p).sort();
-    expect(keys).toEqual(
-      [
-        "accountPurpose",
-        "goal",
-        "incomeBand",
-        "investmentExperience",
-        "liquidNetWorth",
-        "riskTolerance",
-        "timeHorizon",
-      ].sort(),
-    );
-    expectTypeOf(p.goal).toEqualTypeOf<string>();
   });
 });

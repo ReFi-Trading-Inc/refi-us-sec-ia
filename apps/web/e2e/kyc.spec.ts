@@ -95,6 +95,8 @@ test.describe("Identity verification lifecycle via the BFF (mock adapter)", () =
 
     // Deterministic transitions via the server-side test control (not the UI).
     expect((await advance(page, "under_review")).status()).toBe(200);
+    // The page also polls; a reload makes the proof deterministic under load.
+    await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("kyc-state-under_review")).toBeVisible({
       timeout: 30_000,
     });
@@ -177,6 +179,7 @@ test.describe("Identity verification lifecycle via the BFF (mock adapter)", () =
       timeout: 30_000,
     });
     expect((await advance(page, "failed")).status()).toBe(200);
+    await page.reload({ waitUntil: "domcontentloaded" });
     await expect(page.getByTestId("kyc-state-failed")).toBeVisible({
       timeout: 30_000,
     });

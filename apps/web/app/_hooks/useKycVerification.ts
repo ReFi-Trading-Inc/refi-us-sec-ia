@@ -76,6 +76,9 @@ export function useKycVerification(options?: {
     queryKey: QUERY_KEY,
     queryFn: readVerification,
     staleTime: 0,
+    // Keep polling even when the tab is not focused: a user often completes
+    // verification in another window and returns here.
+    refetchIntervalInBackground: true,
     refetchInterval: (query) => {
       if (!poll) return false;
       const state = query.state.data?.session?.state;

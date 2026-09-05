@@ -1,6 +1,10 @@
 export const onboardingSteps = [
   { key: "kyc", label: "Identity", path: "/us/onboarding/kyc" },
-  { key: "profile", label: "Profile", path: "/us/onboarding/profile" },
+  {
+    key: "profile",
+    label: "Profile",
+    path: "/us/onboarding/investor-profile",
+  },
   { key: "broker", label: "Broker", path: "/us/onboarding/broker" },
   {
     key: "strategy",
@@ -13,65 +17,6 @@ export const onboardingSteps = [
 export type OnboardingStepKey = (typeof onboardingSteps)[number]["key"];
 
 export const onboardingCopy = {
-  profile: {
-    heading: "Your investment profile",
-    subheading:
-      "This information shapes your personalized investment recommendations.",
-    fields: {
-      goal: {
-        label: "Investment goal",
-        options: [
-          "Long-term growth",
-          "Income",
-          "Capital preservation",
-          "Balanced",
-        ],
-      },
-      timeHorizon: {
-        label: "Time horizon",
-        options: [
-          "Less than 1 year",
-          "1–3 years",
-          "3–5 years",
-          "5–10 years",
-          "Over 10 years",
-        ],
-      },
-      incomeBand: {
-        label: "Annual income",
-        options: [
-          "Under $50,000",
-          "$50,000–$100,000",
-          "$100,000–$250,000",
-          "Over $250,000",
-        ],
-      },
-      liquidNetWorth: {
-        label: "Liquid net worth",
-        options: [
-          "Under $50,000",
-          "$50,000–$200,000",
-          "$200,000–$500,000",
-          "Over $500,000",
-        ],
-      },
-      riskTolerance: {
-        label: "Risk tolerance",
-        options: ["Conservative", "Moderate", "Growth-oriented", "Aggressive"],
-      },
-      investmentExperience: {
-        label: "Investment experience",
-        options: ["None", "Limited", "Some", "Extensive"],
-      },
-      accountPurpose: {
-        label: "Account purpose",
-        options: ["Personal", "Family", "Household"],
-      },
-    },
-    cta: "Save and continue",
-    disclaimer:
-      "This profile is used to generate software-based investment recommendations. It does not constitute a formal suitability determination.",
-  },
   broker: {
     heading: "Connect your broker",
     subheading: "Your assets stay at your broker. ReFi never holds funds.",

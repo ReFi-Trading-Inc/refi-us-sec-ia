@@ -15,8 +15,13 @@ import {
   useBrokerAccount,
   useBrokerConnection,
   useBrokerDisconnect,
-  useAdvisoryProfile,
 } from "@refi/api-clients";
+import { useInvestorProfileV2 } from "../../../_hooks/useInvestorProfileV2";
+import {
+  RISK_BAND_LABELS,
+  type ProductFitStatus,
+  type ProfileConfidence,
+} from "@lib/sec203a/investor-profile";
 import {
   useKycVerification,
   type KycLifecycleState,
@@ -30,6 +35,21 @@ function truncateAddress(addr: string): string {
   if (addr.length <= 12) return addr;
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
 }
+
+// Assessment vocabulary → investor-facing labels. Descriptive only: none of
+// these is a portfolio recommendation, and none exposes a raw answer.
+const PRODUCT_FIT_LABELS: Record<ProductFitStatus, string> = {
+  fit: "Fit",
+  fit_with_constraint: "Fit with constraints",
+  needs_clarification: "Needs clarification",
+  not_fit: "Not a fit",
+};
+
+const PROFILE_CONFIDENCE_LABELS: Record<ProfileConfidence, string> = {
+  complete: "Complete",
+  limited: "Limited",
+  unresolved: "Unresolved",
+};
 
 function formatCurrency(n: number): string {
   return n.toLocaleString("en-US", {
@@ -46,7 +66,10 @@ export default function AccountPage() {
   const { data: kycVerification } = useKycVerification();
   const { data: connection } = useBrokerConnection();
   const { data: brokerAccount } = useBrokerAccount();
-  const { data: profile } = useAdvisoryProfile();
+  // Canonical Investor Profile v2 via the same-origin BFF: assessment-derived
+  // state only (no user-entered risk tolerance, no raw questionnaire answers).
+  const { data: profileV2 } = useInvestorProfileV2();
+  const assessment = profileV2?.assessment?.assessment ?? null;
   const disconnect = useBrokerDisconnect();
 
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
@@ -230,22 +253,45 @@ export default function AccountPage() {
         </CardContent>
       </Card>
 
-      {/* Investment Profile */}
-      <Card>
+      {/* Investment Profile — canonical Investor Profile v2 assessment */}
+      <Card data-testid="investment-profile-card">
         <CardHeader>
           <CardTitle>{account.profile}</CardTitle>
         </CardHeader>
         <CardContent className="pb-5 flex flex-col gap-3">
-          {profile ? (
+          {profileV2 ? (
             <>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2">
                 {[
-                  { label: "Goal", value: profile.goal },
-                  { label: "Time horizon", value: profile.timeHorizon },
-                  { label: "Risk tolerance", value: profile.riskTolerance },
-                  { label: "Experience", value: profile.investmentExperience },
-                  { label: "Income", value: profile.incomeBand },
-                  { label: "Net worth", value: profile.liquidNetWorth },
+                  {
+                    label: "Permitted risk band",
+                    value:
+                      assessment?.permittedRiskBand != null
+                        ? RISK_BAND_LABELS[assessment.permittedRiskBand]
+                        : "Not determined",
+                  },
+                  {
+                    label: "Product fit",
+                    value: assessment
+                      ? PRODUCT_FIT_LABELS[assessment.productFitStatus]
+                      : "Assessment pending policy update",
+                  },
+                  {
+                    label: "Profile confidence",
+                    value: assessment
+                      ? PROFILE_CONFIDENCE_LABELS[assessment.profileConfidence]
+                      : "—",
+                  },
+                  {
+                    label: "Assessed",
+                    value: assessment
+                      ? assessment.assessedAt.slice(0, 10)
+                      : "—",
+                  },
+                  {
+                    label: "Profile version",
+                    value: String(profileV2.answers.profileVersion),
+                  },
                 ].map(({ label, value }) => (
                   <div key={label}>
                     <dt className="text-xs text-charcoal-500">{label}</dt>
@@ -253,7 +299,7 @@ export default function AccountPage() {
                   </div>
                 ))}
               </dl>
-              <Link href="/us/onboarding/profile">
+              <Link href="/us/onboarding/investor-profile">
                 <Button size="sm" variant="secondary">
                   Update profile
                 </Button>
@@ -262,9 +308,10 @@ export default function AccountPage() {
           ) : (
             <>
               <p className="text-sm text-charcoal-500">
-                Profile available after onboarding.
+                Complete the investor profile questionnaire to see your
+                assessment.
               </p>
-              <Link href="/us/onboarding/profile">
+              <Link href="/us/onboarding/investor-profile">
                 <Button size="sm">Complete profile</Button>
               </Link>
             </>

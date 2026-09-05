@@ -17,7 +17,13 @@
  * and exit non-zero.
  */
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -5361,6 +5367,146 @@ await section(
         !existsSync(join(REPO_ROOT, "packages/api-clients/src/hooks/kyc.ts")),
         "legacy hooks/kyc.ts removed",
       );
+    },
+  );
+}
+
+// ─── Investor Profile v2 is the ONE canonical public questionnaire ──────────
+{
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  await section(
+    "profile: the public U.S. application has one canonical Investor Profile questionnaire (v2); legacy v1 riskTolerance collection must not reappear",
+    async () => {
+      const legacy = read("apps/web/app/us/onboarding/profile/page.tsx");
+      assert.ok(
+        /permanentRedirect\(\s*"\/us\/onboarding\/investor-profile"\s*\)/.test(
+          legacy,
+        ),
+        "the legacy route must be a compatibility redirect to v2",
+      );
+      for (const forbidden of [
+        "useAdvisoryProfile",
+        "useSaveAdvisoryProfile",
+        "riskTolerance",
+        "<form",
+        "/v1/profile",
+        "useState",
+        "apiFetch",
+      ]) {
+        assert.ok(
+          !legacy.includes(forbidden),
+          `legacy route must not contain ${forbidden}`,
+        );
+      }
+      // No public UI asks for a user-entered risk tolerance.
+      const walk = (dir: string): string[] =>
+        readdirSync(join(REPO_ROOT, dir), { withFileTypes: true }).flatMap(
+          (d) =>
+            d.isDirectory()
+              ? walk(`${dir}/${d.name}`)
+              : /\.(tsx?|ts)$/.test(d.name)
+                ? [`${dir}/${d.name}`]
+                : [],
+        );
+      // UI surfaces only: the server-side v1 BFF route (/api/v1/investor/profile)
+      // is preserved per spec §19 and is not a questionnaire.
+      for (const f of walk("apps/web/app").filter(
+        (p) => !p.startsWith("apps/web/app/api/"),
+      )) {
+        assert.ok(
+          !/riskTolerance/.test(read(f)),
+          `${f} must not reference a user-entered riskTolerance`,
+        );
+      }
+      // No live browser-direct /v1/profile transport remains.
+      for (const f of [
+        ...walk("apps/web/app"),
+        "packages/api-clients/src/hooks/onboarding.ts",
+        "packages/api-clients/src/index.ts",
+        "packages/api-clients/src/mocks/handlers.ts",
+        "packages/api-clients/src/compat.ts",
+      ]) {
+        assert.ok(
+          !/["'`]\/v1\/profile["'`]/.test(read(f)),
+          `${f} must not carry the legacy /v1/profile transport`,
+        );
+      }
+    },
+  );
+
+  await section(
+    "profile: the account page reads canonical v2 through the same-origin BFF and links only to v2",
+    async () => {
+      const account = read("apps/web/app/us/app/account/page.tsx");
+      const hook = read("apps/web/app/_hooks/useInvestorProfileV2.ts");
+      assert.ok(
+        /useInvestorProfileV2/.test(account),
+        "account page must use the v2 hook",
+      );
+      assert.ok(
+        /fetch\("\/api\/v1\/investor\/profile\/v2"/.test(hook),
+        "v2 hook must read the same-origin BFF route",
+      );
+      assert.ok(
+        !/prototype-store|investor-api\/gateway|@refi\/api-clients\/investor-api/.test(
+          hook + account,
+        ),
+        "browser code must not read prototype storage or the Investor API directly",
+      );
+      assert.ok(
+        !/\/us\/onboarding\/profile["']/.test(account),
+        "account page must not link to the legacy v1 route",
+      );
+      assert.ok(
+        (account.match(/\/us\/onboarding\/investor-profile/g) ?? []).length >=
+          2,
+        "both profile actions must link to v2",
+      );
+      assert.ok(
+        /RISK_BAND_LABELS/.test(account) && /productFitStatus/.test(account),
+        "card must display assessment-derived fields",
+      );
+      for (const f of [
+        "apps/web/app/us/app/exceptions/page.tsx",
+        "apps/web/app/us/_content/onboarding.ts",
+      ]) {
+        assert.ok(
+          !/\/us\/onboarding\/profile["']/.test(read(f)),
+          `${f} must route profile remediation/steps to v2`,
+        );
+      }
+    },
+  );
+
+  await section(
+    "profile: no compliance attestation is submitted and the v2 engine stays server-side",
+    async () => {
+      const walk = (dir: string): string[] =>
+        readdirSync(join(REPO_ROOT, dir), { withFileTypes: true }).flatMap(
+          (d) =>
+            d.isDirectory()
+              ? walk(`${dir}/${d.name}`)
+              : /\.(tsx?|ts)$/.test(d.name)
+                ? [`${dir}/${d.name}`]
+                : [],
+        );
+      for (const f of walk("apps/web/app")) {
+        assert.ok(
+          !/call\(\s*["']createComplianceProfileAttestation["']/.test(read(f)),
+          `${f} must not submit an attestation`,
+        );
+      }
+      // The engine is imported only server-side (routes) and by the package's
+      // invariant tests — never by a client component.
+      for (const f of walk("apps/web/app")) {
+        const src = read(f);
+        if (/assessInvestorProfile/.test(src)) {
+          assert.ok(
+            f.includes("/api/"),
+            `${f}: assessInvestorProfile may only run in a BFF route`,
+          );
+        }
+      }
     },
   );
 }

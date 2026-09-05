@@ -175,20 +175,35 @@ test.describe("Broker onboarding", () => {
   });
 });
 
-test.describe("Advisory profile", () => {
-  // Replaces the prior "Risk assessment" describe, which targeted a
-  // non-existent `/us/onboarding/risk` route. Risk tolerance is one field
-  // inside the advisory profile (the surface mounted at
-  // `/us/onboarding/profile`).
+test.describe("Legacy v1 advisory profile route is retired", () => {
+  // The public U.S. application has ONE canonical questionnaire: Investor
+  // Profile v2. The old seven-field form (with a user-entered risk tolerance)
+  // must not render here; the route survives only as a redirect.
   test.beforeEach(async ({ page }) => {
     await page.context().addCookies(await e2eAuthCookies(SIGNAL_COOKIE));
   });
 
-  test("renders advisory profile with risk tolerance field", async ({
+  test("/us/onboarding/profile redirects to Investor Profile v2 and asks for no risk tolerance", async ({
     page,
   }) => {
-    await page.goto("/us/onboarding/profile");
-    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-    await expect(page.getByLabel(/risk tolerance/i)).toBeVisible();
+    // The legacy route answers with an HTTP redirect to v2 (no page, no form).
+    const raw = await page.request.fetch("/us/onboarding/profile", {
+      maxRedirects: 0,
+    });
+    expect([307, 308]).toContain(raw.status());
+    expect(raw.headers()["location"] ?? "").toContain(
+      "/us/onboarding/investor-profile",
+    );
+    await page.goto("/us/onboarding/profile", {
+      waitUntil: "domcontentloaded",
+    });
+    expect(new URL(page.url()).pathname).toBe(
+      "/us/onboarding/investor-profile",
+    );
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByLabel(/risk tolerance/i)).toHaveCount(0);
+    await expect(page.getByText(/risk tolerance/i)).toHaveCount(0);
   });
 });

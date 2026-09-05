@@ -69,8 +69,6 @@ export type {
 } from "./hooks/exceptions";
 export { useActivity } from "./hooks/activity";
 export {
-  useAdvisoryProfile,
-  useSaveAdvisoryProfile,
   useStrategy,
   useBrokerConnectStart,
   useBrokerConnectApiKey,

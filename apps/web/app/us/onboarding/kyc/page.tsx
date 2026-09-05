@@ -41,7 +41,7 @@ export default function OnboardingKycPage() {
   // Onboarding sequence: identity verification → the canonical Investor
   // Profile questionnaire v2 (docs/releases/2026-09-signal/investor-profile-spec.md).
   // Never the legacy v1 advisory questionnaire (/us/onboarding/profile), where
-  // riskTolerance is user-entered; v2 derives capacity, willingness, permitted
+  // risk tolerance was user-entered; v2 derives capacity, willingness, permitted
   // band and product fit server-side. Progression is on the provider lifecycle
   // reaching exactly `passed` — never on the backend policy projection.
   useEffect(() => {

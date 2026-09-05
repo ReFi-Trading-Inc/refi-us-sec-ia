@@ -7,6 +7,10 @@
  *   apps/web/src/lib/investor-api/demo-client.ts
  */
 import { beforeEach, describe, expect, test } from "vitest";
+
+// The generator's element type lives in the web app's tsconfig; pin the two
+// fields the tests read so typed lint sees no `any`.
+type DemoEvent = { event_id: string; event_type: string };
 import { InvestorApiError, CONTRACT_OPERATION_IDS } from "../investor-api";
 import {
   createDemoInvestorApiClient,
@@ -352,5 +356,119 @@ describe("the demo never fabricates a write it does not own", () => {
   test("streamAccountEvents is not part of the read client at all", () => {
     expect(CONTRACT_OPERATION_IDS).toContain("streamAccountEvents");
     expect(Object.keys(admitted())).not.toContain("stream");
+  });
+});
+
+describe("live clock: mark-to-market, scheduled fills, validated event log", () => {
+  test("positions reference prices move between ticks while held quantities stay fixed", async () => {
+    const c = admitted();
+    const a = await c.call("listAccountPositions", {
+      path: { account_id: ACCT },
+      query: { page_size: 100 },
+    });
+    const nowSpy = Date.now;
+    Date.now = () => nowSpy() + 60_000;
+    try {
+      const b = await c.call("listAccountPositions", {
+        path: { account_id: ACCT },
+        query: { page_size: 100 },
+      });
+      expect(b.data.data.items.map((p) => p.held_qty)).toEqual(
+        a.data.data.items.map((p) => p.held_qty),
+      );
+      expect(
+        b.data.data.items.some(
+          (p, i) => p.reference_price !== a.data.data.items[i]?.reference_price,
+        ),
+      ).toBe(true);
+    } finally {
+      Date.now = nowSpy;
+    }
+  });
+
+  test("subscribe replays history, then emits schema-valid events; advance fills a WORKING order and records a fill", async () => {
+    const { subscribeDemoEvents, advanceDemoWorld } =
+      await import("../../../../apps/web/src/lib/investor-api/demo-client");
+    const { problemsAgainst } = await import("../investor-api");
+    const ac = new AbortController();
+    const seen: Array<{ event_id: string; event_type: string }> = [];
+    const gen = subscribeDemoEvents(
+      "demo-admitted-01",
+      ACCT,
+      undefined,
+      ac.signal,
+    );
+    // Replay (last 25) arrives first.
+    for (let i = 0; i < 25; i++) {
+      const value = (await gen.next()).value as DemoEvent | undefined;
+      if (!value) break;
+      expect(problemsAgainst("AccountEvent", value)).toEqual([]);
+      seen.push({ event_id: value.event_id, event_type: value.event_type });
+    }
+    expect(seen.length).toBe(25);
+    const ids = seen.map((e) => e.event_id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const result = advanceDemoWorld("demo-admitted-01", { fills: 1 });
+    expect(result.filled).toBe(1);
+    // Drain until the fill shows up.
+    const types: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      const value = (await gen.next()).value as DemoEvent | undefined;
+      if (!value) break;
+      expect(problemsAgainst("AccountEvent", value)).toEqual([]);
+      types.push(value.event_type);
+      if (value.event_type === "fill.recorded") break;
+    }
+    expect(types).toContain("order.updated");
+    expect(types).toContain("fill.recorded");
+    ac.abort();
+    await gen.return(undefined);
+    const records = await admitted().call("listAccountRecords", {
+      path: { account_id: ACCT },
+      query: { page_size: 100 },
+    });
+    expect(
+      records.data.data.items.some(
+        (r) =>
+          r.record_type === "fill" &&
+          r.details.entity_id.startsWith("fill_demo_live_"),
+      ),
+    ).toBe(true);
+  });
+
+  test("Last-Event-ID resumes after the given event and a foreign account yields nothing", async () => {
+    const { subscribeDemoEvents } =
+      await import("../../../../apps/web/src/lib/investor-api/demo-client");
+    const ac = new AbortController();
+    const first = subscribeDemoEvents(
+      "demo-admitted-01",
+      ACCT,
+      undefined,
+      ac.signal,
+    );
+    const a = (await first.next()).value as DemoEvent | undefined;
+    const b = (await first.next()).value as DemoEvent | undefined;
+    ac.abort();
+    await first.return(undefined);
+    if (!a || !b) throw new Error("expected two replayed events");
+    const ac2 = new AbortController();
+    const resumed = subscribeDemoEvents(
+      "demo-admitted-01",
+      ACCT,
+      a.event_id,
+      ac2.signal,
+    );
+    const r = (await resumed.next()).value as DemoEvent | undefined;
+    ac2.abort();
+    await resumed.return(undefined);
+    expect(r?.event_id).toBe(b.event_id);
+    const ac3 = new AbortController();
+    const foreign = subscribeDemoEvents(
+      "demo-admitted-01",
+      "acct_alpha_other_02",
+      undefined,
+      ac3.signal,
+    );
+    expect((await foreign.next()).done).toBe(true);
   });
 });

@@ -12,6 +12,7 @@ interface PersonaOption {
 export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [advanced, setAdvanced] = useState<string | null>(null);
 
   async function choose(p: PersonaOption) {
     setBusy(p.key);
@@ -32,6 +33,24 @@ export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
       setError("The demo sign-in is not available on this deployment.");
       setBusy(null);
     }
+  }
+
+  async function advance() {
+    setAdvanced(null);
+    const res = await fetch("/api/demo/advance", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ fills: 1 }),
+    });
+    const body = (await res.json()) as {
+      data?: { filled: number; events: number };
+    };
+    setAdvanced(
+      res.ok && body.data
+        ? `Advanced: ${String(body.data.filled)} fill(s), ${String(body.data.events)} event(s) emitted.`
+        : "Sign in as the admitted profile first.",
+    );
   }
 
   return (
@@ -55,6 +74,32 @@ export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
           </CardContent>
         </Card>
       ))}
+      <Card data-testid="demo-advance-card">
+        <CardContent className="pt-5 flex items-center justify-between gap-4">
+          <p className="text-sm text-charcoal-200">
+            Presenter control: advance the market so the next scheduled order
+            fills now and the event stream shows it.
+          </p>
+          <Button
+            size="sm"
+            variant="tertiary"
+            data-testid="demo-advance"
+            onClick={() => {
+              void advance();
+            }}
+          >
+            Advance market
+          </Button>
+        </CardContent>
+      </Card>
+      {advanced && (
+        <p
+          className="text-xs font-mono text-charcoal-400"
+          data-testid="demo-advance-result"
+        >
+          {advanced}
+        </p>
+      )}
     </div>
   );
 }

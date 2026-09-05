@@ -8,7 +8,6 @@ import {
   mayaBrokerConnection,
   mayaOrders,
   mayaPositions,
-  mayaSession,
   supportedBrokers,
 } from "./fixtures/maya";
 
@@ -25,11 +24,8 @@ function url(path: string): string {
 
 const SESSION_COOKIE =
   "us_session_v1=mock-session-token; Path=/us; HttpOnly; SameSite=Lax";
-const CLEAR_SESSION_COOKIE =
-  "us_session_v1=; Path=/us; Max-Age=0; HttpOnly; SameSite=Lax";
 
 export const handlers = [
-  http.get(url("/auth/session"), () => HttpResponse.json(mayaSession)),
   http.get(url("/siwe/nonce"), () =>
     HttpResponse.json({ nonce: "mock-nonce-1234567890" }),
   ),
@@ -40,18 +36,6 @@ export const handlers = [
     HttpResponse.json(
       { ok: true },
       { headers: { "Set-Cookie": SESSION_COOKIE } },
-    ),
-  ),
-  http.post(url("/auth/refresh"), () =>
-    HttpResponse.json(
-      { ok: true },
-      { headers: { "Set-Cookie": SESSION_COOKIE } },
-    ),
-  ),
-  http.post(url("/auth/revoke-all"), () =>
-    HttpResponse.json(
-      { ok: true },
-      { headers: { "Set-Cookie": CLEAR_SESSION_COOKIE } },
     ),
   ),
 

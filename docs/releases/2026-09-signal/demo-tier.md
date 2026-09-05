@@ -180,3 +180,70 @@ recommendation.
 
 **Demo lane env:** `REFI_INVESTOR_API_MODE=demo` (Vercel demo branch env adds
 the same). The main and Signal lanes keep Daniel's simulator.
+
+## 10. Live stream (slice 2b) — the contract's own excitement
+
+The static "log" feel came from snapshot reads. The contract already carries the
+live layer: `streamAccountEvents` (SSE, 16 `AccountEvent` types). This slice
+wires it end to end without fabricating anything:
+
+- **Demo world clock.** Reference prices drift deterministically per 4-second
+  bucket (seeded, identical on every instance); positions and the current
+  valuation are marked to market on each read; the CURRENT recommendation's two
+  WORKING orders fill on a schedule (order.updated → fill.recorded →
+  reconciliation.updated once the chain completes); a `valuation.updated`
+  heartbeat is emitted per bucket. Every event is validated against
+  `AccountEvent` before it enters the append-only log; `Last-Event-ID` replays
+  exactly like the backend.
+- **BFF SSE route** `GET /api/v1/investor/events` — session-verified,
+  account scope re-authorized, forwards frames from the demo world or the
+  frozen client's `stream()` (same code path), keepalives, `no-store`.
+- **UI** — a live status strip in the app shell (connection state, last event),
+  toasts for fills/orders/recommendation changes/risk denials, and a ticker
+  tape on Home and Portfolio showing the backend `reference_price` and the
+  change since the previous backend refresh. Events are refresh signals: the
+  hook invalidates the named projection and the page refetches backend truth;
+  it never writes state from an event body. Motion ≤ 300 ms, marquee 60 s,
+  `prefers-reduced-motion` honoured.
+- **Presenter control** `POST /api/demo/advance` (demo tier only, same-origin,
+  session): forces the next scheduled fill now, so the chain progresses on cue.
+
+Nothing here is a fake buy/sell tape or a client-side price walk; every moving
+element traces to a contract event type.
+
+## 11. No wallet step on the demo (2026-09-05)
+
+**Decision (Zeshan):** wallet linking is removed from the demo path — it kept
+failing for the audience ("Something went wrong" after a MetaMask connect) and
+it is not what the product is about. Root cause was structural, not a bug:
+outside local mock mode there is no service that can verify a linking
+signature, so the SIWE step could only dead-end.
+
+What changed:
+
+- `MaybeWalletProvider` mounts wagmi/RainbowKit/WalletConnect **only** when
+  `NEXT_PUBLIC_REFI_ENV !== "prod"` and the data adapter is `mock`. Demo
+  (`NEXT_PUBLIC_REFI_DATA_ADAPTER=live`) and production never mount the wallet
+  stack or call the WalletConnect relay; the placeholder
+  `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` on the demo project is now unused.
+- `/us/auth/connect` is a pass-through: a signed-in visitor is sent to
+  `/us/onboarding`; a signed-out visitor sees "Sign-in is not connected in
+  this environment" and, on the demo tier, a link to the walkthrough profiles.
+  The wagmi card is lazy-loaded and rendered only in mock mode.
+- Session is BFF-owned end to end (C1b-2 rows 1–3): `AuthProvider` reads
+  `GET /api/v1/investor/session`; the account page's wallet card became a
+  **Sign out** card that calls `DELETE /api/v1/investor/session`.
+- Wallet is never the login; a wallet address never appears in the session
+  projection. Identity remains email-first via identity-ccid (GAP-IDENTITY-018).
+
+Proofs: `apps/web/e2e/auth.spec.ts` (main lane: no wallet button, no relay
+traffic, no `/auth/*` calls, DELETE session same-origin + cookie cleared) and
+`apps/web/e2e/demo-tier.spec.ts` "Demo tier — no wallet step" (persona link,
+pass-through, sign-out). Contract assertion: "no wallet as login".
+
+PR #81 (`fix/connect-page-linking-honesty`) is superseded by this change.
+
+Build note: the root `Providers` now always mounts the `QueryClientProvider`.
+Until this change the `/us` tree borrowed the wallet provider's QueryClient
+during the pre-MSW render, which only surfaced when CI built with
+`NEXT_PUBLIC_REFI_ENV=staging` (the Playwright lanes build as `prod`/`demo`).

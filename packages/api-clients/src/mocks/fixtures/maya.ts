@@ -1,21 +1,12 @@
 // Maya Thompson — California resident, eligible, Alpaca connected,
 // three positions, one pending recommendation, recent activity.
 import type {
-  AuthSession,
   BrokerAccount,
   BrokerConnection,
   BrokerInfo,
   Order,
   Position,
 } from "../../compat";
-
-export const mayaSession: AuthSession = {
-  status: "authenticated",
-  account_id: "acct_maya_001",
-  wallet_id: "wallet_0xMAYA",
-  roles: ["client"],
-  kyc_status: "approved",
-};
 
 export const supportedBrokers: BrokerInfo[] = [
   { id: "alpaca", name: "Alpaca", supported: true, regions: ["US"] },

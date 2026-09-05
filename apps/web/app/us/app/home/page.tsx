@@ -11,6 +11,7 @@ import { appCopy } from "../../_content/app-copy";
 import { useInvestorPortfolio } from "../../../_hooks/useInvestorPortfolio";
 import { useInvestorActivity } from "../../../_hooks/useInvestorActivity";
 import { EquityChart, formatCurrency } from "../_components/EquityChart";
+import { TickerTape } from "../_components/TickerTape";
 
 const { home, activity: activityCopy } = appCopy;
 
@@ -65,6 +66,7 @@ export default function HomePage() {
         <p className="text-sm text-charcoal-500">Loading…</p>
       ) : p ? (
         <>
+          <TickerTape positions={p.positions} />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <Kpi
               label={home.portfolioValue}

@@ -20,6 +20,7 @@ import {
 import { appCopy } from "../../_content/app-copy";
 import { useInvestorPortfolio } from "../../../_hooks/useInvestorPortfolio";
 import { EquityChart, formatCurrency } from "../_components/EquityChart";
+import { TickerTape } from "../_components/TickerTape";
 
 const { portfolio } = appCopy;
 
@@ -51,6 +52,7 @@ export default function PortfolioPage() {
 
       {p && (
         <>
+          <TickerTape positions={p.positions} />
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               [portfolio.totalValue, formatCurrency(p.valuation.equity)],

@@ -167,6 +167,12 @@ interface World {
   recs: RecSpec[];
   records: S["AccountRecord"][];
   receipts: Map<string, S["ActionReceipt"]>;
+  /** Append-only account event log (the SSE source); ids are sequential. */
+  events: S["AccountEvent"][];
+  /** WORKING orders scheduled to fill (wall-clock, process-local). */
+  pendingFills: Array<{ orderRecordId: string; fillAt: number }>;
+  createdAt: number;
+  lastValuationEventBucket: number;
 }
 
 const worlds = new Map<DemoPersona, World>();
@@ -230,6 +236,10 @@ function buildWorld(persona: DemoPersona): World {
     recs: [],
     records: [],
     receipts: new Map(),
+    events: [],
+    pendingFills: [],
+    createdAt: now,
+    lastValuationEventBucket: -1,
   };
   if (persona !== "admitted") return world;
 
@@ -266,7 +276,211 @@ function buildWorld(persona: DemoPersona): World {
     },
   ];
   world.records = seedRecords(world);
+  scheduleWorkingFills(world, now);
+  // Seed the event log with one event per existing record so a fresh stream
+  // has history to replay from (`Last-Event-ID`) exactly like the backend.
+  for (const r of [...world.records].sort((a, b) =>
+    a.created_at.localeCompare(b.created_at),
+  )) {
+    appendEvent(world, r, Date.parse(r.created_at));
+  }
   return world;
+}
+
+// ─── Live clock: mark-to-market, scheduled fills, event log ─────────────────
+
+const TICK_MS = 4_000;
+
+/** Deterministic drift of a reference price around its anchor, per 4-second bucket. */
+function priceAt(s: Security, t: number): number {
+  const bucket = Math.floor(t / TICK_MS);
+  const rng = mulberry32(
+    bucket * 7919 + s.symbol.length * 131 + s.symbol.charCodeAt(0),
+  );
+  // Single-letter tickers (F, T, V) have no second char: NaN would poison the price.
+  const phase = s.symbol.length > 1 ? s.symbol.charCodeAt(1) : 0;
+  const wave = Math.sin(bucket / 9 + phase) * 0.004;
+  return s.price * (1 + wave + (rng() - 0.5) * 0.0025);
+}
+
+function scheduleWorkingFills(w: World, now: number): void {
+  const working = w.records.filter(
+    (r) => r.record_type === "order" && r.details.status === "WORKING",
+  );
+  working.forEach((r, i) => {
+    w.pendingFills.push({
+      orderRecordId: r.record_id,
+      fillAt: now + 45_000 + i * 60_000,
+    });
+  });
+}
+
+const EVENT_TYPE_FOR_RECORD: Readonly<
+  Record<S["AccountRecord"]["record_type"], S["AccountEvent"]["event_type"]>
+> = {
+  compliance_profile_attestation: "compliance_profile_attestation.updated",
+  consent_receipt: "consent.updated",
+  brokerage_connection: "brokerage_connection.updated",
+  brokerage_sync: "brokerage_sync.updated",
+  allocation: "allocation.updated",
+  preference: "preference.updated",
+  action_receipt: "action_receipt.updated",
+  recommendation: "recommendation.updated",
+  account_intent: "account_intent.updated",
+  risk_decision: "risk_decision.updated",
+  execution_plan: "execution_plan.updated",
+  order: "order.updated",
+  fill: "fill.recorded",
+  reconciliation: "reconciliation.updated",
+  valuation: "valuation.updated",
+  trading_control: "trading_control.updated",
+};
+
+function appendEvent(
+  w: World,
+  r: S["AccountRecord"],
+  at: number,
+  stateVersion = 1,
+): S["AccountEvent"] {
+  const n = w.events.length + 1;
+  const ev = {
+    event_id: `event_demo_${String(n).padStart(8, "0")}`,
+    event_type: EVENT_TYPE_FOR_RECORD[r.record_type],
+    account_id: r.account_id,
+    occurred_at: iso(at),
+    correlation_id: r.correlation_id,
+    data: {
+      entity_id: r.details.entity_id,
+      status: r.details.status,
+      reason_codes: r.details.reason_codes.filter((c) =>
+        /^[A-Z][A-Z0-9_]{1,127}$/.test(c),
+      ),
+      record_id: r.record_id,
+      state_version: stateVersion,
+    },
+  } as S["AccountEvent"];
+  assertMatches("AccountEvent", ev, "response");
+  w.events.push(ev);
+  return ev;
+}
+
+/**
+ * Advance the world to `now`: fill due WORKING orders (order.updated → fill.recorded,
+ * then reconciliation.updated once the chain is complete) and emit a
+ * valuation.updated heartbeat once per TICK_MS bucket while orders are open or
+ * prices moved. Idempotent for the same `now`.
+ */
+function tick(w: World, now: number, force = false): void {
+  if (w.persona !== "admitted") return;
+  const due = w.pendingFills.filter((f) => force || f.fillAt <= now);
+  for (const f of due) {
+    const order = w.records.find((r) => r.record_id === f.orderRecordId);
+    if (!order || order.details.status !== "WORKING") continue;
+    order.details.status = "FILLED";
+    order.details.completed_at = iso(now);
+    appendEvent(w, order, now, 2);
+    const n = w.records.length + 1;
+    const fill = record(w, n, "fill", now, {
+      entity_id: `fill_demo_live_${String(n)}`,
+      status: "SETTLED",
+      quantity: order.details.quantity ?? null,
+      notional: order.details.notional ?? null,
+      currency: "USD",
+      completed_at: iso(now),
+      related_record_id: order.record_id,
+    });
+    w.records.push(fill);
+    appendEvent(w, fill, now);
+    w.pendingFills = w.pendingFills.filter((x) => x !== f);
+    if (w.pendingFills.length === 0) {
+      const rec = record(w, w.records.length + 1, "reconciliation", now + 1, {
+        entity_id: `reconciliation_demo_live_${String(w.records.length + 1)}`,
+        status: "CLEAR",
+        completed_at: iso(now + 1),
+      });
+      w.records.push(rec);
+      appendEvent(w, rec, now + 1);
+    }
+  }
+  const bucket = Math.floor(now / TICK_MS);
+  if (bucket !== w.lastValuationEventBucket) {
+    w.lastValuationEventBucket = bucket;
+    const v = record(w, w.records.length + 1, "valuation", now, {
+      entity_id: `snapshot_demo_live_${String(bucket)}`,
+      status: "READY",
+      notional: dec(liveEquity(w, now)),
+      currency: "USD",
+    });
+    // Valuation heartbeats are events, not durable records: keep the record list
+    // to the reconciled snapshots the backend would persist.
+    appendEvent(w, v, now);
+  }
+}
+
+function liveEquity(w: World, now: number): number {
+  const invested = w.securities.reduce(
+    (acc, s) => acc + heldQty(w, s) * priceAt(s, now),
+    0,
+  );
+  return invested + equityAt(w, w.now) * 0.4;
+}
+
+function heldQty(w: World, s: Security): number {
+  const equity = equityAt(w, w.now);
+  return (equity * 0.6 * (s.weight / totalWeight(w))) / s.price;
+}
+
+/** Presenter control (demo tier only): force the next scheduled fills now. */
+export function advanceDemoWorld(
+  authId: string,
+  opts: { fills?: number } = {},
+): { filled: number; events: number } {
+  const w = worldFor(authId);
+  const before = w.events.length;
+  const count = Math.max(0, Math.min(opts.fills ?? 1, w.pendingFills.length));
+  const now = Date.now();
+  const forced = w.pendingFills
+    .slice(0, count)
+    .map((f) => ({ ...f, fillAt: now }));
+  w.pendingFills = [...forced, ...w.pendingFills.slice(count)];
+  tick(w, now, false);
+  return { filled: count, events: w.events.length - before };
+}
+
+/**
+ * Subscribe to the world's account events as the SSE source: replays events
+ * after `lastEventId`, then polls the clock every second until aborted.
+ */
+export async function* subscribeDemoEvents(
+  authId: string,
+  accountId: string,
+  lastEventId: string | undefined,
+  signal: AbortSignal,
+): AsyncGenerator<S["AccountEvent"]> {
+  const w = worldFor(authId);
+  if (w.accountId !== accountId) return;
+  let cursor = lastEventId
+    ? w.events.findIndex((e) => e.event_id === lastEventId) + 1
+    : Math.max(0, w.events.length - 25);
+  while (!signal.aborted) {
+    tick(w, Date.now());
+    while (cursor < w.events.length) {
+      const ev = w.events[cursor];
+      cursor += 1;
+      if (ev) yield ev;
+    }
+    await new Promise<void>((resolve) => {
+      const t = setTimeout(resolve, 1000);
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(t);
+          resolve();
+        },
+        { once: true },
+      );
+    });
+  }
 }
 
 function worldFor(authId: string): World {
@@ -294,12 +508,10 @@ function equityAt(w: World, t: number): number {
   return base * (1 - days * 0.00045) * (1 + (rng() - 0.5) * 0.012);
 }
 
-function positions(w: World): S["AccountPosition"][] {
-  const equity = equityAt(w, w.now);
-  const invested = equity * 0.6; // allocation 0.60 of equity
+function positions(w: World, at = Date.now()): S["AccountPosition"][] {
   return w.securities.map((s) => {
-    const targetNotional = invested * (s.weight / totalWeight(w));
-    const qty = targetNotional / s.price;
+    const qty = heldQty(w, s);
+    const live = priceAt(s, at);
     const avg = s.price * 0.93;
     return {
       account_id: accountOf(w),
@@ -316,11 +528,11 @@ function positions(w: World): S["AccountPosition"][] {
       pending_sell_qty: "0",
       available_to_sell_qty: dec(qty, 4),
       average_price: dec(avg),
-      reference_price: dec(s.price),
-      market_value: dec(qty * s.price),
+      reference_price: dec(live),
+      market_value: dec(qty * live),
       currency: "USD",
-      source_observed_at: iso(w.now - 4 * 60_000),
-      fresh_until: iso(w.now + 10 * 60_000),
+      source_observed_at: iso(at - 2_000),
+      fresh_until: iso(at + 10 * 60_000),
       freshness_status: "FRESH",
     };
   });
@@ -329,8 +541,8 @@ const totalWeight = (w: World) =>
   w.securities.reduce((a, s) => a + s.weight, 0);
 
 function valuation(w: World, t: number, idx: number): S["AccountValuation"] {
-  const equity = equityAt(w, t);
-  const cash = equity * 0.4;
+  const equity = idx === 90 ? liveEquity(w, Date.now()) : equityAt(w, t);
+  const cash = equityAt(w, w.now) * 0.4;
   return {
     account_snapshot_id: `snapshot_demo_${String(idx).padStart(4, "0")}`,
     account_id: accountOf(w),
@@ -348,7 +560,7 @@ function valuation(w: World, t: number, idx: number): S["AccountValuation"] {
     buying_power: dec(cash * 2),
     pending_buy_notional: "0",
     pending_sell_notional: "0",
-    open_order_count: idx === 90 ? 2 : 0,
+    open_order_count: idx === 90 ? w.pendingFills.length : 0,
     unknown_order_count: 0,
     position_count: w.securities.length,
     management_scope_status: "ACTIVE",
@@ -807,7 +1019,13 @@ export class DemoInvestorApiClient implements InvestorApiReadClient {
         return { data: this.connection(w) };
       case "getAccountValuation":
         this.requireAccount(w, o);
-        return { data: valuation(w, w.now, 90) };
+        tick(w, Date.now());
+        return {
+          data: {
+            ...valuation(w, Date.now(), 90),
+            as_of_time: iso(Date.now()),
+          },
+        };
       case "listAccountValuations": {
         this.requireAccount(w, o);
         const series = Array.from({ length: 91 }, (_, i) =>
@@ -817,6 +1035,7 @@ export class DemoInvestorApiClient implements InvestorApiReadClient {
       }
       case "listAccountPositions":
         this.requireAccount(w, o);
+        tick(w, Date.now());
         return { data: page(positions(w), q) };
       case "listAccountMemberships":
         this.requireAccount(w, o);

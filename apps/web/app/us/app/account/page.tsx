@@ -32,11 +32,6 @@ import { appCopy } from "../../_content/app-copy";
 
 const { account } = appCopy;
 
-function truncateAddress(addr: string): string {
-  if (addr.length <= 12) return addr;
-  return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
-}
-
 // Assessment vocabulary → investor-facing labels. Descriptive only: none of
 // these is a portfolio recommendation, and none exposes a raw answer.
 const PRODUCT_FIT_LABELS: Record<ProductFitStatus, string> = {
@@ -117,36 +112,23 @@ export default function AccountPage() {
         {account.heading}
       </h1>
 
-      {/* Wallet */}
-      <Card>
+      {/* Session */}
+      <Card data-testid="session-card">
         <CardHeader>
-          <CardTitle>{account.wallet}</CardTitle>
+          <CardTitle>{account.session}</CardTitle>
         </CardHeader>
         <CardContent className="pb-5 flex flex-col gap-3">
-          {auth.wallet_id ? (
-            <>
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-mono text-charcoal-200">
-                  {truncateAddress(auth.wallet_id)}
-                </p>
-                <Badge variant="active">Connected</Badge>
-              </div>
-              <p className="text-xs text-charcoal-500">
-                Ethereum mainnet · SIWE session
-              </p>
-              <div className="flex gap-2 pt-1">
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => void auth.signOut()}
-                >
-                  {account.disconnect}
-                </Button>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-charcoal-500">No wallet connected.</p>
-          )}
+          <p className="text-xs text-charcoal-500">{account.sessionNote}</p>
+          <div className="flex gap-2 pt-1">
+            <Button
+              size="sm"
+              variant="secondary"
+              data-testid="sign-out"
+              onClick={() => void auth.signOut()}
+            >
+              {account.signOut}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

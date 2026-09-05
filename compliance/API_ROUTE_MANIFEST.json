@@ -7,7 +7,9 @@
     "bff-read": "Session-authenticated investor read via the shared bffRead wrapper (401 when unauthenticated). Route-specific ownership/account authorization is outside CM-04 and remains proved by the relevant access-control tests.",
     "bff-read-access-logged": "bff-read plus an append-only RecordAccessLog entry per read (books-and-records surface) via bffReadWithAccessLog.",
     "bff-mutate": "Session-authenticated investor mutation via the shared bffMutate wrapper: fail-closed same-origin check before auth, release-stage capability policy, append-only InvestorActionReceipt.",
-    "demo-tier-gated": "Answers 404 on every tier except REFI_ENV=demo (server-only runtime tier, never a build constant); same-origin browser POST/DELETE only; closed persona enum; mints the standard HS256 session cookie for a fixed persona subject; no account id, admission, or authority is asserted."
+    "demo-tier-gated": "Answers 404 on every tier except REFI_ENV=demo (server-only runtime tier, never a build constant); same-origin browser POST/DELETE only; closed persona enum; mints the standard HS256 session cookie for a fixed persona subject; no account id, admission, or authority is asserted.",
+    "bff-stream": "Session-authenticated read-only Server-Sent Events: getAuthContext (401 when unauthenticated), server-derived account scope, Last-Event-ID forwarded exactly; a custom streaming handler because bffRead returns JSON envelopes. Events are refresh signals, not state.",
+    "session-clear": "Same-origin browser request (Origin must equal the request origin) that clears this browser's session/eligibility/demo cookies; no session required so an expired cookie can always be cleared; writes nothing upstream."
   },
   "owner_vocabulary": {
     "platform": "Deployment/runtime plumbing owned by the web app itself.",
@@ -19,6 +21,16 @@
     "demo-tier": "Demonstration-tier-only surfaces (isolated founder/investor walkthrough deployment). Structurally present in every build but dark (404) outside REFI_ENV=demo."
   },
   "routes": [
+    {
+      "source": "apps/web/app/api/demo/advance/route.ts",
+      "route": "/api/demo/advance",
+      "methods": ["POST"],
+      "purpose": "Demo-tier presenter control: forces the in-process demo world's next scheduled order fills so the execution chain progresses on cue. 404 outside REFI_ENV=demo; same-origin; session required; affects only the demo world.",
+      "owner": "demo-tier",
+      "auth": {
+        "POST": "demo-tier-gated"
+      }
+    },
     {
       "source": "apps/web/app/api/demo/session/route.ts",
       "route": "/api/demo/session",
@@ -129,6 +141,16 @@
       "owner": "investor-bff",
       "auth": {
         "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/events/route.ts",
+      "route": "/api/v1/investor/events",
+      "methods": ["GET"],
+      "purpose": "Same-origin SSE forwarding the backend account event stream (streamAccountEvents, v1.1.0-alpha.2) as validated AccountEvent frames with Last-Event-ID resume and keepalives; the browser never opens the upstream stream or supplies an account id. Read-only.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-stream"
       }
     },
     {
@@ -317,11 +339,12 @@
     {
       "source": "apps/web/app/api/v1/investor/session/route.ts",
       "route": "/api/v1/investor/session",
-      "methods": ["GET"],
-      "purpose": "Session/identity context for the signed-in investor; 401 with no dev fallback outside REFI_ENV=dev.",
+      "methods": ["DELETE", "GET"],
+      "purpose": "Session/identity context for the signed-in investor; 401 with no dev fallback outside REFI_ENV=dev. DELETE clears the BFF session (sign-out) — C1b-2 rows 1–3: the legacy browser-direct /auth/* calls are retired.",
       "owner": "identity",
       "auth": {
-        "GET": "bff-read"
+        "GET": "bff-read",
+        "DELETE": "session-clear"
       }
     },
     {

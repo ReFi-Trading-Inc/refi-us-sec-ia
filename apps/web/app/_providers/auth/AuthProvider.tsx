@@ -1,113 +1,92 @@
 "use client";
 
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-} from "react";
+/**
+ * Session context for the /us surface, read from the BFF's own session
+ * projection (`GET /api/v1/investor/session`, 401 when there is no verified
+ * `us_session_v1` cookie). C1b-2 rows 1–3: the legacy browser-direct
+ * `/auth/session`, `/auth/refresh`, `/auth/revoke-all` calls (mock-only) are
+ * retired. The BFF cookie is the only session; there is no client refresh —
+ * expiry means sign in again. Sign-out clears the cookie through the BFF.
+ *
+ * Identity itself is email-first via identity-ccid once the connection
+ * package lands (GAP-IDENTITY-018); wallets are optional linked identifiers,
+ * never the login, and never appear here.
+ */
+import { createContext, useCallback, useContext, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import {
-  useSession,
-  useSessionRefresh,
-  useSignOut,
-  type AuthSession,
-} from "@refi/api-clients";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+export interface SessionView {
+  authId: string;
+  accountId?: string;
+  issuedAt: string;
+  expiresAt: string;
+}
 
 export type AuthContextValue = {
   status: "loading" | "authenticated" | "unauthenticated";
-  account_id?: string;
-  wallet_id?: string;
-  roles: string[];
+  /** The BFF session subject (opaque). Never a wallet or email. */
+  authId?: string;
+  /** Claimed account id from the session link; every account-scoped read re-authorizes it server-side. */
+  accountId?: string;
   signOut: () => Promise<void>;
   refetchSession: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+export const SESSION_QUERY_KEY = ["investor", "session"] as const;
 
-const REFRESH_THRESHOLD_SECONDS = 5 * 60;
+async function readSession(): Promise<SessionView | null> {
+  const res = await fetch("/api/v1/investor/session", {
+    credentials: "include",
+  });
+  if (res.status === 401) return null;
+  if (!res.ok) throw new Error(`session read failed: ${String(res.status)}`);
+  const body = (await res.json()) as { data: SessionView | null };
+  return body.data;
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
-  const sessionQuery = useSession();
-  const refresh = useSessionRefresh();
-  const signOutMutation = useSignOut();
-  const refreshScheduledFor = useRef<number | null>(null);
-
-  const session: AuthSession | undefined = sessionQuery.data;
-
-  // Schedule an auto-refresh when the session is close to expiring.
-  useEffect(() => {
-    if (!session || session.status !== "authenticated") return;
-    const expiresIn = session.expires_in_seconds;
-    if (typeof expiresIn !== "number") return;
-
-    const refreshInMs = Math.max(
-      0,
-      (expiresIn - REFRESH_THRESHOLD_SECONDS) * 1000,
-    );
-    const scheduledAt = Date.now() + refreshInMs;
-    if (refreshScheduledFor.current === scheduledAt) return;
-    refreshScheduledFor.current = scheduledAt;
-
-    const t = setTimeout(() => {
-      refresh.mutate();
-    }, refreshInMs);
-    return () => {
-      clearTimeout(t);
-      refreshScheduledFor.current = null;
-    };
-  }, [session, refresh]);
-
-  // React to a global 401 dispatched by the API client.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handler = () => {
-      void sessionQuery.refetch();
-    };
-    window.addEventListener("auth:unauthorized", handler);
-    return () => {
-      window.removeEventListener("auth:unauthorized", handler);
-    };
-  }, [sessionQuery]);
+  const qc = useQueryClient();
+  const sessionQuery = useQuery({
+    queryKey: SESSION_QUERY_KEY,
+    queryFn: readSession,
+    staleTime: 30_000,
+    retry: false,
+  });
 
   const signOut = useCallback(async () => {
     try {
-      await signOutMutation.mutateAsync();
+      await fetch("/api/v1/investor/session", {
+        method: "DELETE",
+        credentials: "include",
+      });
     } finally {
+      qc.clear();
       router.replace("/us");
-      await sessionQuery.refetch();
     }
-  }, [signOutMutation, router, sessionQuery]);
+  }, [qc, router]);
 
   const refetchSession = useCallback(async () => {
     await sessionQuery.refetch();
   }, [sessionQuery]);
 
   const value = useMemo<AuthContextValue>(() => {
-    const isLoading = sessionQuery.isLoading || sessionQuery.isPending;
-    const status: AuthContextValue["status"] = isLoading
+    const session = sessionQuery.data ?? null;
+    const status: AuthContextValue["status"] = sessionQuery.isPending
       ? "loading"
-      : session?.status === "authenticated"
+      : session
         ? "authenticated"
         : "unauthenticated";
     return {
       status,
-      account_id: session?.account_id,
-      wallet_id: session?.wallet_id,
-      roles: session?.roles ?? [],
+      ...(session ? { authId: session.authId } : {}),
+      ...(session?.accountId ? { accountId: session.accountId } : {}),
       signOut,
       refetchSession,
     };
-  }, [
-    session,
-    sessionQuery.isLoading,
-    sessionQuery.isPending,
-    signOut,
-    refetchSession,
-  ]);
+  }, [sessionQuery.data, sessionQuery.isPending, signOut, refetchSession]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

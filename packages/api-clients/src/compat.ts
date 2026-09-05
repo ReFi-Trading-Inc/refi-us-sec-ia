@@ -33,12 +33,6 @@ export type OrderPreviewResult = Schemas["OrderPreviewResult"] & {
   latency_ms?: number;
 };
 
-// TODO(openapi): add `expires_in_seconds` to AuthSession in refi-api.yaml.
-// Consumed by AuthProvider's auto-refresh scheduler; emitted by /auth/session.
-export type AuthSession = Schemas["AuthSession"] & {
-  expires_in_seconds?: number;
-};
-
 // ---------- Compatibility shims (pending OpenAPI alignment) ----------
 
 // TODO(openapi): model SIWE error codes in refi-api.yaml.

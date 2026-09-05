@@ -337,3 +337,152 @@ test.describe("Demo tier — persona sign-in", () => {
     expect(stale.status()).toBe(409);
   });
 });
+
+test.describe("Demo tier — live stream", () => {
+  test("the event stream is same-origin SSE with validated frames; the strip goes live; advance produces a fill on the stream and in activity", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await page.request.post("/api/demo/session", {
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+      },
+      data: { persona: "admitted" },
+    });
+    // Raw SSE probe: first frames arrive quickly.
+    const frames = await page.evaluate(async () => {
+      const res = await fetch("/api/v1/investor/events", {
+        credentials: "include",
+      });
+      const reader = res.body?.getReader();
+      if (!reader)
+        return {
+          status: res.status,
+          type: res.headers.get("content-type"),
+          text: "",
+        };
+      const dec = new TextDecoder();
+      let text = "";
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline && !text.includes("event: ")) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        text += dec.decode(value);
+      }
+      await reader.cancel();
+      return {
+        status: res.status,
+        type: res.headers.get("content-type"),
+        text,
+      };
+    });
+    expect(frames.status).toBe(200);
+    expect(frames.type).toContain("text/event-stream");
+    expect(frames.text).toMatch(/^id: event_demo_\d{8}$/m);
+    expect(frames.text).toMatch(/^event: [a-z_]+\.(updated|recorded)$/m);
+
+    await page.goto("/us/app/home");
+    await expect(page.getByTestId("live-status-strip")).toHaveAttribute(
+      "data-connection",
+      "live",
+      { timeout: 20_000 },
+    );
+    await expect(page.getByTestId("ticker-tape")).toBeVisible();
+    expect(await page.getByTestId("ticker-item").count()).toBe(24);
+
+    const adv = await page.request.post("/api/demo/advance", {
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+      },
+      data: { fills: 1 },
+    });
+    expect(adv.status()).toBe(200);
+    await expect(page.getByTestId("live-last-event")).toContainText(
+      /fill\.recorded|reconciliation\.updated|order\.updated/,
+      { timeout: 20_000 },
+    );
+    await page.goto("/us/app/activity");
+    await expect(
+      page
+        .locator('[data-record-type="fill"]')
+        .filter({ hasText: "fill_demo_live_" })
+        .first(),
+    ).toBeVisible({ timeout: 20_000 });
+  });
+
+  test("events are refused without a session; the applicant has no stream (no account)", async ({
+    page,
+    request,
+  }) => {
+    expect((await request.get("/api/v1/investor/events")).status()).toBe(401);
+    await page.goto("/us/demo");
+    await page.request.post("/api/demo/session", {
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+      },
+      data: { persona: "applicant" },
+    });
+    const res = await page.request.get("/api/v1/investor/events");
+    expect(res.status()).toBe(503);
+    expect(
+      ((await res.json()) as { data: { upstream: { state: string } } }).data
+        .upstream.state,
+    ).toBe("account_scope");
+  });
+});
+
+test.describe("Demo tier — no wallet step", () => {
+  test("the connect step never mounts the wallet stack; signed-out visitors are pointed to the walkthrough profiles", async ({
+    page,
+  }) => {
+    const requests: string[] = [];
+    page.on("request", (req) => {
+      requests.push(req.url());
+    });
+    // The connect step sits behind the eligibility gate: take the admitted
+    // persona's eligibility decision, then drop the session so the visitor is
+    // eligible but signed out.
+    await page.goto("/us/demo");
+    await signIn(page, "admitted");
+    await page.context().clearCookies({ name: "us_session_v1" });
+    await page.goto("/us/auth/connect");
+    await expect(page.getByTestId("connect-signin-unavailable")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("connect-demo-persona-link")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(
+      page.getByRole("button", { name: /connect wallet|link wallet/i }),
+    ).toHaveCount(0);
+    for (const url of requests) {
+      expect(url).not.toMatch(/walletconnect|reown|relay\./i);
+    }
+  });
+
+  test("a signed-in persona passes straight through the connect step into onboarding", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await signIn(page, "admitted");
+    await page.goto("/us/auth/connect");
+    await page.waitForURL(/\/us\/onboarding/, { timeout: 20_000 });
+  });
+
+  test("sign out clears the session through the BFF and returns to the public entry", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await page.getByTestId("demo-signin-admitted").click();
+    await page.waitForURL("**/us/app/home");
+    await page.goto("/us/app/account");
+    await page.getByTestId("sign-out").click();
+    await page.waitForURL(/\/us\/?$/, { timeout: 20_000 });
+    expect((await page.request.get("/api/v1/investor/session")).status()).toBe(
+      401,
+    );
+  });
+});

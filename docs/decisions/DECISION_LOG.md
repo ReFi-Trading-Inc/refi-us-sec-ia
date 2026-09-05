@@ -254,6 +254,19 @@ Deferred (decided-as-deferred, not open questions): investor `liquidate_all` and
 
 ---
 
+### D-022 — D-LAUNCH-06: does the September artifact submit orders on the investor's behalf?
+
+- **Added:** 2026-08-24 (as D-LAUNCH-06 in the release register) — **Status:** DECIDED — **Owner:** Zeshan — **Decided:** 2026-09-04
+- **Resolution (2026-09-04):** **YES.** The September artifact may submit orders to Alpaca on the investor's behalf through the authoritative backend lifecycle, for investors admitted to the closed Alpha by a ReFi human. Supersedes the "Signal Dev Release 1 — no paper or live order effect" framing. Does not grant frontend order authority; does not allow applicant self-admission; does not decide the Alpaca environment (D-023).
+- **Impact:** Ship Contract Amendment 1; invariant reclassification (A/B/C) and rebased authority split; C1b-2 D rows reclassified (10 → C, 13 → A, 14 → A, 26 → C, 26b new); execution-chain records to be rendered read-only; revised Gate A checklist. See `docs/releases/2026-09-signal/dlaunch06-execution-rebaseline-2026-09-04.md`.
+- **Source:** Zeshan, authoritative release decision 2026-09-04.
+
+### D-023 — D-LAUNCH-07: Alpaca environment for September acceptance (paper, live, or both)
+
+- **Added:** 2026-09-04 — **Status:** OPEN — **Owner:** Zeshan (counsel for `live`)
+- **Question:** D-022 establishes order submission but not the environment. Which Alpaca environment does September acceptance use?
+- **Until decided:** the package's `paper|live` enum stays intact; the frontend forwards only the enum; PR #49's removal of raw live-key acceptance stands; no live-capital acceptance is claimed; Gate B remains the precondition for real clients with live capital.
+
 ## Historical appendix — xlsx snapshot as of 2026-05-29
 
 Everything below this line transcribes the xlsx verbatim and reflects the tracker's state on 2026-05-29, **before** Daniel's answers (2026-05-30) and written direction (2026-07-28). Statuses like "Awaiting Dan" / "Blocked" in these tables are stale; the entries above are current. Notable supersessions: Operating rule 2's REVIEW-vs-DENY partition no longer exists (risk is binary, D-001); GATE-003..006 are satisfied by the phase2-6/2-7 resolutions; several Surface Blocker Map rows are unblocked or reframed (Surface 4 → Account Controls Center, D-004/D-008).

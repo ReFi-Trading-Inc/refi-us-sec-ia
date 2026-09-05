@@ -18,6 +18,8 @@
 
 # September 13 Release Candidate Contract — PROVISIONAL
 
+> **2026-09-04:** D-LAUNCH-06 is CLOSED — YES. §2, §5, §6 and §7 below are reconciled statement by statement in [dlaunch06-execution-rebaseline-2026-09-04.md](dlaunch06-execution-rebaseline-2026-09-04.md); this file is kept as the historical record.
+
 > **STATUS: PROVISIONAL — NOT YET IMPLEMENTATION AUTHORITY.** Drafted 2026-08-22
 > against two of Daniel's governing documents (`arch_migration_overview.md`,
 > `exec_overview_v2.md`). The remaining governing checklists and numbered

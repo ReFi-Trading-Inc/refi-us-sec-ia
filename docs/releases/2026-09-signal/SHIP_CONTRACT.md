@@ -1,5 +1,23 @@
 # SHIP CONTRACT — September 13, 2026 · Signal Dev Release 1 Candidate
 
+> **AMENDMENT 1 — 2026-09-04 (Zeshan): D-LAUNCH-06 CLOSED — YES.** The September
+> artifact may submit orders to Alpaca on the investor's behalf through the
+> authoritative backend lifecycle, for investors admitted to the closed Alpha by
+> a ReFi human. The milestone framing below ("Signal Dev Release 1 … no paper or
+> live order effect") and the safety properties that depended on it are
+> **superseded or narrowed** exactly as recorded in
+> [dlaunch06-execution-rebaseline-2026-09-04.md](dlaunch06-execution-rebaseline-2026-09-04.md) §1–§3 (statement-by-statement reconciliation, A/B/C
+> classification of every invariant, rebased authority split). Retained
+> unchanged: browser/BFF never construct or submit orders; frontend/BFF have
+> no durable custody of broker credentials and no broker-write authority
+> (credential material may transit browser → BFF → backend once during the
+> explicit connection operation and must not be persisted, logged, cached,
+> reused, or returned); cross-account isolation, binary risk verdicts,
+> idempotency, backend-authoritative reconciliation, no per-trade approval,
+> mandatory human Alpha admission. The Alpaca environment for acceptance is a
+> separate open decision (**D-LAUNCH-07**). The body of this document is kept
+> verbatim as the historical record; Daniel's source documents are not rewritten.
+
 **Canonical.** Supersedes the milestone framing in
 [launch-contract.md](launch-contract.md) (see its supersession notice).
 

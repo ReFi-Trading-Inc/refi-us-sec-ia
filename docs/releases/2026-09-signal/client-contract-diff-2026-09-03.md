@@ -1,5 +1,7 @@
 # Package → client diff — v1.1.0-alpha.2 against `packages/api-clients` (2026-09-03)
 
+> **2026-09-04:** §7's "building UI on brokerage-connection, allocation-preview, or `createAccountAction` … stay blocked" is superseded — in scope after admission/authorization gates per [dlaunch06-execution-rebaseline-2026-09-04.md](dlaunch06-execution-rebaseline-2026-09-04.md) §4.
+
 **Purpose.** The measured difference between Daniel's frozen frontend contract
 (`v1.1.0-alpha.2`, 41 operations) and what this repository currently models,
 produced **before** any client code changes, per Zeshan's 2026-09-03 work

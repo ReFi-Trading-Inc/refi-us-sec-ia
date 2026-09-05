@@ -1,5 +1,7 @@
 # Backend observation — 2026-08-30 snapshot
 
+> **2026-09-04:** §4's "D-LAUNCH-06 stays open" is superseded — CLOSED, YES by Zeshan ([dlaunch06-execution-rebaseline-2026-09-04.md](dlaunch06-execution-rebaseline-2026-09-04.md)).
+
 **Addendum to** [launch-audit-2026-08-24.md](launch-audit-2026-08-24.md). Answers
 that audit's §8 item 7 (the September 1 checkpoint) six days early, from direct
 observation rather than estimate.

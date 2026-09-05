@@ -1,5 +1,5 @@
 {
-  "description": "Deny-by-default API route allowlist (control CM-04). Every App Router route-handler candidate (any route.* under apps/web/app/api/**) must have exactly one entry here, with exact HTTP-method parity. CI fails on any unlisted route, ghost entry, or method drift (scripts/route-manifest-gate.ts); a route.* candidate with an unsupported extension fails closed as UNSUPPORTED ROUTE FILE, and the introduction of a Pages Router API surface (pages/api) fails closed as an UNMANIFESTED API ROUTING MECHANISM until CM-04 is explicitly redesigned to cover it. This manifest proves INVENTORY COMPLETENESS and REVIEWED ROUTE/METHOD EXPANSION only \u2014 it does not prove any route's authorization behaviour is correct; the auth field records the measured mechanism, and the auth-specific controls in CONTROL_MATRIX.md (AC-*, CS-*, IB-*) remain responsible for proving that behaviour.",
+  "description": "Deny-by-default API route allowlist (control CM-04). Every App Router route-handler candidate (any route.* under apps/web/app/api/**) must have exactly one entry here, with exact HTTP-method parity. CI fails on any unlisted route, ghost entry, or method drift (scripts/route-manifest-gate.ts); a route.* candidate with an unsupported extension fails closed as UNSUPPORTED ROUTE FILE, and the introduction of a Pages Router API surface (pages/api) fails closed as an UNMANIFESTED API ROUTING MECHANISM until CM-04 is explicitly redesigned to cover it. This manifest proves INVENTORY COMPLETENESS and REVIEWED ROUTE/METHOD EXPANSION only — it does not prove any route's authorization behaviour is correct; the auth field records the measured mechanism, and the auth-specific controls in CONTROL_MATRIX.md (AC-*, CS-*, IB-*) remain responsible for proving that behaviour.",
   "auth_vocabulary": {
     "public": "No authentication; intentionally unauthenticated (liveness only).",
     "public-rate-limited": "Unauthenticated by design; per-IP rate limiter; issues or consumes signed evidence rather than a session.",
@@ -51,7 +51,7 @@
       "source": "apps/web/app/api/v1/investor/activity/route.ts",
       "route": "/api/v1/investor/activity",
       "methods": ["GET"],
-      "purpose": "Account activity/event list for the authenticated investor.",
+      "purpose": "Investor-visible account records through the frozen v1.1.0-alpha.2 Investor API client (listAccountRecords); server-derived account scope; the five execution-chain record variants (account_intent, risk_decision, execution_plan, order, fill) are validated but excluded from Signal rendering (D-LAUNCH-06). Read-only. C1b-2 row 20.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read"
@@ -61,7 +61,7 @@
       "source": "apps/web/app/api/v1/investor/activity/[id]/route.ts",
       "route": "/api/v1/investor/activity/[id]",
       "methods": ["GET"],
-      "purpose": "Single activity/event detail for the authenticated investor.",
+      "purpose": "Single investor-visible account record through the frozen v1.1.0-alpha.2 client (getAccountRecord); execution-chain variants answer as absent. Read-only. C1b-2 row 20.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read"
@@ -234,7 +234,7 @@
       "source": "apps/web/app/api/v1/investor/recommendations/route.ts",
       "route": "/api/v1/investor/recommendations",
       "methods": ["GET"],
-      "purpose": "Signal recommendation summaries for the authenticated investor.",
+      "purpose": "Signal recommendation summaries through the frozen v1.1.0-alpha.2 client (listAccountRecommendations); server-derived account scope; bounded pagination; execution_eligible is informational only. Read-only. C1b-2 row 19.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read"
@@ -244,7 +244,17 @@
       "source": "apps/web/app/api/v1/investor/recommendations/[id]/route.ts",
       "route": "/api/v1/investor/recommendations/[id]",
       "methods": ["GET"],
-      "purpose": "Single recommendation detail with constituent legs.",
+      "purpose": "Single recommendation with its first contract page of constituent legs through the frozen v1.1.0-alpha.2 client (getAccountRecommendation + listAccountRecommendationLegs). Read-only; no order/action surface. C1b-2 row 19.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/recommendations/[id]/legs/route.ts",
+      "route": "/api/v1/investor/recommendations/[id]/legs",
+      "methods": ["GET"],
+      "purpose": "One further contract page of constituent legs (listAccountRecommendationLegs) continuing from an opaque cursor; malformed cursors fail closed; never an unbounded fetch. Read-only. C1b-2 row 19.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read"

@@ -317,6 +317,16 @@ Implemented so far: rows 21 (A), 6a (B), 7 (B), 8 (C), 9 (C), 22 (C), 23 (C).
 Remaining: **A 8 legacy + 3 backend items (11) · B 3 · C 5 · D 4**. C1b-2 is
 not closed.
 
+| Rows 18, 19, 20 — `GET /v1/recommendations`, `GET /v1/recommendations/{id}`, `GET /v1/activity` | C1b-2 slice 5 (`c1b2/recommendations-activity`) | **implemented, in review** — Signal READ-ONLY. Row 18 `useRecommendations` (dead, no consumer) deleted (C). Row 19: `GET /api/v1/investor/recommendations` → `listAccountRecommendations`; `GET /api/v1/investor/recommendations/[id]` → `getAccountRecommendation` + first page of `listAccountRecommendationLegs`; new `GET /api/v1/investor/recommendations/[id]/legs?cursor=` pages further legs by the contract's opaque cursor (bounded, malformed cursor fails closed). Row 20: `GET /api/v1/investor/activity[/id]` → `listAccountRecords` / `getAccountRecord`. All through the frozen #70 client with server-derived account scope (`listAccounts` re-authorization; the browser supplies no account id). Legacy `useRecommendation`, `useActivity`, `useInvestorRecommendations` (package shim), `Recommendation`/`ActivityEvent`/`RecommendationProjection` compat types, `/v1/recommendations*` and `/v1/activity` MSW handlers/fixtures, the prototype `recommendation-projection` entity and its E2E seed are removed; no browser-direct call or `page.route` mock of those paths remains. The BFF projection is the narrowest view of the generated data (status, freshness, turnover, leg count, legs with decimal strings preserved); the retired flat fields (symbol / buy-sell action / confidence / rationale / expiry) are NOT reconstructed — the contract does not carry them. `execution_eligible` / `executable` are rendered as informational text only; no control. **D-LAUNCH-06 filter:** the frozen client validates the full 16-variant `AccountRecord` union; the Signal projection excludes `account_intent`, `risk_decision`, `execution_plan`, `order`, `fill` (regression-tested in the package suite and contract assertions; pinned exhaustive over Daniel's schema). Simulator-backed evidence only — no connected refinity-dev claim. |
+
+**Counts after slice 5.** Row 18 (C) and rows 19, 20 (A) completed against the
+simulator/BFF boundary. Implemented so far: rows 21 (A), 6a (B), 7 (B), 8 (C),
+9 (C), 22 (C), 23 (C), 18 (C), 19 (A), 20 (A). Remaining: **A 6 legacy + 3
+backend items (9) · B 3 · C 4 · D 4**. C1b-2 is not closed. (6b `getKycStatus`
+remains outstanding by decision: the alpha.2 projection is `NOT_REQUIRED` /
+`CLOSED_US_INVITE_ALPHA` / `public_launch_eligible=false` and must not be
+surfaced in the public UI as current public-product KYC policy.)
+
 **Product decision — public U.S. KYC architecture (Zeshan, 2026-09-04).** The
 U.S. product is public-facing. The frontend/BFF owns the KYC provider
 lifecycle; no provider has been selected; the current implementation is a

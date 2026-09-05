@@ -42,49 +42,90 @@ export const appCopy = {
   recommendations: {
     heading: "Recommendations",
     subheading:
-      "Software-generated investment recommendations based on your advisory profile.",
+      "Software-generated portfolio recommendations for your account. ReFi Signal is informational: it does not place orders.",
     statusLabel: "Status",
-    generatedLabel: "Generated",
+    freshnessLabel: "Freshness",
+    legCountLabel: "Constituents",
+    turnoverLabel: "Estimated turnover",
+    freshUntilLabel: "Fresh until",
+    executionEligibilityLabel: "Execution eligibility (informational)",
+    executionEligible:
+      "Eligible per backend policy — no action is taken by ReFi Signal",
+    executionNotEligible: "Not eligible per backend policy",
     emptyState:
-      "No recommendations yet. They appear here once your profile and broker are connected.",
+      "No recommendations yet. They appear here once your account has a current recommendation.",
+    readError: "Recommendations could not be loaded.",
+    upstreamStates: {
+      not_configured:
+        "The recommendation service is not connected in this environment.",
+      credential_unavailable:
+        "The recommendation service could not be authenticated.",
+      contract_mismatch:
+        "The recommendation service returned data in an unexpected format.",
+      unavailable: "The recommendation service is temporarily unavailable.",
+      account_scope: "Your account could not be resolved for this read.",
+      pagination: "The recommendation list could not be paged safely.",
+      error: "Recommendations could not be loaded.",
+    },
     detail: {
-      rationale: "Rationale",
-      riskFactors: "Risk factors",
-      executionPolicy: "Execution policy",
-      complianceStatus: "Compliance status",
-      reviewAction: "Review exception",
-      // Signal-only label. ReFi Signal never submits orders. The CTA points
+      unavailableHeading: "Recommendation",
+      idLabel: "Recommendation",
+      expiresLabel: "Expires",
+      lastEvaluatedLabel: "Last evaluated",
+      sourceAsOfLabel: "Source as of",
+      freshnessPolicyLabel: "Freshness policy",
+      freshnessReasonsLabel: "Freshness notes",
+      legsHeading: "Constituent legs",
+      // Signal-only label. ReFi Signal never submits orders. The panel points
       // the investor to act on this recommendation through their own broker
-      // outside of ReFi. Managed mode hides this block entirely.
+      // outside of ReFi.
       manualAction: "View manual action steps",
+    },
+    legs: {
+      symbol: "Symbol",
+      securityId: "Security",
+      current: "Current qty",
+      target: "Target qty",
+      delta: "Change",
+      notionalDelta: "Notional change",
+      referencePrice: "Reference price",
+      executable: "Executable (informational)",
+      executableYes: "Yes, per backend policy",
+      executableNo: "No",
+      reasonCodes: "Reason codes",
+      empty: "No constituent legs were returned for this recommendation.",
+      loadMore: "Show more constituents",
     },
     signalManual: {
       title: "Use this outside ReFi",
-      body: "ReFi Signal is advisory only. We do not place this order for you. To act on this recommendation, open your connected broker and submit the order yourself. ReFi records that the recommendation was delivered to you; it does not record execution.",
+      body: "ReFi Signal is advisory only. We do not place these orders for you. To act on this recommendation, open your connected broker and submit any orders yourself. ReFi records that the recommendation was delivered to you; it does not record execution.",
       steps: [
         "Open your broker app or web platform.",
-        "Search for the symbol shown above.",
-        "Place the order at the size and price you choose. ReFi does not adjust the size.",
+        "Search for each symbol listed above.",
+        "Place any order at the size and price you choose. ReFi does not adjust the size.",
         "Return here later to view further recommendations and your activity history.",
       ],
     },
     signal: {
       review: "Review details",
-      save: "Save",
-      dismiss: "Dismiss",
-      actManually: "Act manually",
     },
   },
   activity: {
     heading: "Activity",
     subheading:
-      "A complete record of every recommendation, decision, and execution.",
+      "Records of the actions and decisions on your account, as recorded by the backend.",
     type: "Type",
     timestamp: "Timestamp",
-    description: "Description",
     status: "Status",
-    decisionRecord: "Decision record",
+    reasonCodes: "Reason codes",
+    recordReference: "Record reference",
+    entityLabel: "Entity",
+    relatedLabel: "Related",
+    noReasonCodes: "none",
     emptyState: "No activity yet. Actions taken on your account appear here.",
+    readError: "Activity could not be loaded.",
+    upstreamUnavailable:
+      "The account record service is not available in this environment; nothing is shown rather than an approximation.",
   },
   documents: {
     heading: "Documents",

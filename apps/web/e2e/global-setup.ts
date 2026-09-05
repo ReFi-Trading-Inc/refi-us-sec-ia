@@ -359,58 +359,6 @@ async function seedUser(opts: {
     },
   );
 
-  // 3) Recommendation projections. Signal-shaped accounts get one open card;
-  //    Managed-shaped accounts get the informational + review-required pair.
-  const projections =
-    seededMode === "signal"
-      ? [
-          {
-            recommendationId: `rec-${opts.mode}-aapl`,
-            symbol: "AAPL",
-            action: "buy" as const,
-            rationale: "Signal-mode test recommendation.",
-            status: "open" as const,
-          },
-        ]
-      : [
-          {
-            recommendationId: "rec-managed-aapl",
-            symbol: "AAPL",
-            action: "buy" as const,
-            rationale: "Managed-mode informational recommendation.",
-            status: "delivered" as const,
-          },
-          {
-            recommendationId: "rec-managed-msft",
-            symbol: "MSFT",
-            action: "sell" as const,
-            rationale: "Managed-mode review-required recommendation.",
-            status: "blocked" as const,
-          },
-        ];
-
-  for (const p of projections) {
-    await writeJson(
-      join(
-        root,
-        "recommendation-projections",
-        `${safeKey(`${accountId}__${p.recommendationId}`)}.json`,
-      ),
-      {
-        accountId,
-        recommendationId: p.recommendationId,
-        symbol: p.symbol,
-        action: p.action,
-        rationale: p.rationale,
-        confidence: "0.75",
-        status: p.status,
-        generatedAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        meta: meta(correlationId),
-      },
-    );
-  }
-
   // 4) Managed-shaped users get a signed ExecutionPolicy v1 + a
   //    ManagedExecutionState seeded to a specific status. Surface 2 + the
   //    pause/resume + disclosure-reack specs drive different branches off
@@ -557,7 +505,6 @@ async function seedPrototypeStore() {
   for (const dir of [
     "auth-session-links",
     "subscription-modes",
-    "recommendation-projections",
     "execution-policies",
     "execution-policy-drafts",
     "managed-execution-states",

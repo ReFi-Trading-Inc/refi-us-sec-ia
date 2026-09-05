@@ -1,14 +1,12 @@
 // Maya Thompson — California resident, eligible, Alpaca connected,
 // three positions, one pending recommendation, recent activity.
 import type {
-  ActivityEvent,
   AuthSession,
   BrokerAccount,
   BrokerConnection,
   BrokerInfo,
   Order,
   Position,
-  Recommendation,
 } from "../../compat";
 
 export const mayaSession: AuthSession = {
@@ -93,46 +91,5 @@ export const mayaOrders: Order[] = [
     status: "accepted",
     limit_price: 545.0,
     created_at: "2026-05-17T13:11:00Z",
-  },
-];
-
-export const mayaRecommendations: Recommendation[] = [
-  {
-    id: "rec_001",
-    symbol: "QQQ",
-    action: "buy",
-    rationale:
-      "Reallocation toward growth-tilted index exposure consistent with your stated horizon and risk tolerance.",
-    confidence: 0.72,
-    created_at: "2026-05-17T12:00:00Z",
-    status: "pending",
-    expires_at: "2026-05-19T12:00:00Z",
-  },
-];
-
-export const mayaActivity: ActivityEvent[] = [
-  {
-    id: "evt_001",
-    type: "recommendation",
-    description: "New recommendation generated for QQQ.",
-    created_at: "2026-05-17T12:00:00Z",
-  },
-  {
-    id: "evt_002",
-    type: "order",
-    description: "Limit buy of 5 VOO @ $545.00 accepted.",
-    created_at: "2026-05-17T13:11:00Z",
-  },
-  {
-    id: "evt_003",
-    type: "compliance",
-    description: "Quarterly suitability review completed: no changes required.",
-    created_at: "2026-05-14T18:00:00Z",
-  },
-  {
-    id: "evt_004",
-    type: "order",
-    description: "Market buy of 10 AAPL filled at $214.80.",
-    created_at: "2026-05-15T15:32:00Z",
   },
 ];

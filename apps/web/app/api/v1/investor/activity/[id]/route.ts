@@ -1,31 +1,58 @@
 /**
  * GET /api/v1/investor/activity/[id]
+ *
+ * One investor-visible account record through the frozen v1.1.0-alpha.2
+ * client (`getAccountRecord`). C1b-2 row 20. Execution-chain record types are
+ * not visible in Signal (D-LAUNCH-06) and answer exactly like an absent record.
  */
 import { bffRead } from "@lib/bff/handler";
-import { listActionReceipts, listDecisionRecords } from "@lib/prototype-store";
+import { investorApiClientFor } from "@lib/investor-api/gateway";
+import { resolveAccountScope } from "@lib/investor-api/account-scope";
+import {
+  getSignalActivityRecord,
+  type ActivityRecordView,
+} from "@lib/investor-api/account-records";
+import {
+  classifyUpstream,
+  UPSTREAM_OK,
+  type UpstreamState,
+} from "@lib/investor-api/upstream-state";
+
+export interface ActivityRecordResponse {
+  item: ActivityRecordView | null;
+  upstream: UpstreamState;
+}
 
 function idFromUrl(url: string): string | null {
   const parts = new URL(url).pathname.split("/").filter(Boolean);
   const i = parts.indexOf("activity");
-  if (i < 0) return null;
-  return parts[i + 1] ?? null;
+  const id = parts[i + 1];
+  if (i < 0 || id === undefined || id.length === 0 || id.length > 128) {
+    return null;
+  }
+  return decodeURIComponent(id);
 }
 
 export const GET = bffRead({
-  source: "prototype-bff",
-  upstreamGap: "G-001",
-  fetch: async (ctx) => {
-    if (!ctx.auth) return { item: null };
-    const id = idFromUrl(ctx.req.url);
-    if (!id) return { item: null };
-    const receipts = await listActionReceipts({ authId: ctx.auth.authId });
-    const r = receipts.find((x) => x.receiptId === id);
-    if (r) return { item: { kind: "action" as const, ...r } };
-    if (ctx.auth.accountId) {
-      const advisory = await listDecisionRecords(ctx.auth.accountId);
-      const a = advisory.find((x) => x.recordId === id);
-      if (a) return { item: { kind: "advisory" as const, ...a } };
+  source: "backend",
+  fetch: async (ctx): Promise<ActivityRecordResponse> => {
+    if (!ctx.auth) {
+      return {
+        item: null,
+        upstream: { state: "error", reason: "unauthenticated" },
+      };
     }
-    return { item: null };
+    const id = idFromUrl(ctx.req.url);
+    if (id === null) {
+      return { item: null, upstream: { state: "error", reason: "invalid_id" } };
+    }
+    try {
+      const client = investorApiClientFor(ctx.auth);
+      const accountId = await resolveAccountScope(client, ctx.auth);
+      const item = await getSignalActivityRecord(client, accountId, id);
+      return { item, upstream: UPSTREAM_OK };
+    } catch (err) {
+      return { item: null, upstream: classifyUpstream(err) };
+    }
   },
 });

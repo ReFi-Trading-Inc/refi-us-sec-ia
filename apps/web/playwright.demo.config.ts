@@ -40,6 +40,15 @@ export default defineConfig({
       NEXT_PUBLIC_REFI_ENV: "prod",
       REFI_ENV: "demo",
       REFI_RELEASE_STAGE: "signal",
+      // Explicit, like the signal lane: the build constant is prod, so no
+      // PROTOTYPE_DEFAULTS apply and a local .env.local must not mask a gap.
+      ELIGIBILITY_JWT_SECRET: "playwright-test-jwt-secret-minimum-32-chars!",
+      IP_HASH_SECRET: "playwright-test-ip-hash-secret-minimum-32-chars",
+      NEXT_PUBLIC_API_BASE_URL: `http://localhost:${String(PORT)}`,
+      NEXT_PUBLIC_POSTHOG_KEY: "test",
+      NEXT_PUBLIC_SENTRY_DSN: "https://test@o0.ingest.sentry.io/0",
+      NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "test",
+      SESSION_SECRET: "playwright-test-session-secret-minimum-32-chars",
       SESSION_JWT_SECRET: E2E_SESSION_JWT_SECRET,
       REFI_DATA_ADAPTER: "mock",
       NEXT_PUBLIC_REFI_DATA_ADAPTER: "live",

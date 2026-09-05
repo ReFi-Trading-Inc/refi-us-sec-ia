@@ -5538,8 +5538,19 @@ await section(
         "expiry is undecided (§20 #6) — the builder must send null, not invent a duration",
       );
       assert.ok(
-        /KYC_EVIDENCE_NOT_PRODUCTION/.test(src) && /mock/.test(src),
-        "mock KYC evidence must be a named fail-closed block",
+        /KYC_EVIDENCE_MOCK/.test(src) && /KYC_PROVENANCE_UNTRUSTED/.test(src),
+        "mock and untrusted KYC provenance must be named fail-closed blocks",
+      );
+      // Trust is never inferred from a provider string.
+      assert.ok(
+        !/isProductionKycEvidence|\/mock\(|\.provider\?*\.(trim|includes|match)|test\(\s*provider/.test(
+          src,
+        ),
+        "the mapping must not derive production trust from a provider label",
+      );
+      assert.ok(
+        /isTrustedKycEvidence\(kyc\)/.test(src),
+        "the builder must gate on the provenance marker",
       );
       // No client component and no browser hook may import it.
       const walk = (dir: string): string[] =>
@@ -5569,6 +5580,53 @@ await section(
           `${file} must not submit an attestation`,
         );
       }
+    },
+  );
+
+  await section(
+    "kyc provenance: no runtime path establishes trusted production provenance; marker is unforgeable",
+    async () => {
+      const f = "apps/web/src/lib/kyc/provenance.ts";
+      const src = read(f);
+      assert.ok(
+        /const TRUSTED: unique symbol = Symbol\(/.test(src) &&
+          !/Symbol\.for\(/.test(src),
+        "the trust marker must be a module-private, non-registered symbol",
+      );
+      assert.ok(
+        !/^export const TRUSTED|export \{[^}]*\bTRUSTED\b/m.test(src),
+        "the trust marker must not be exported",
+      );
+      const walk = (dir: string): string[] =>
+        readdirSync(join(REPO_ROOT, dir), { withFileTypes: true }).flatMap(
+          (d) =>
+            d.isDirectory()
+              ? walk(`${dir}/${d.name}`)
+              : /\.(tsx?|ts)$/.test(d.name)
+                ? [`${dir}/${d.name}`]
+                : [],
+        );
+      const runtime = [...walk("apps/web/app"), ...walk("apps/web/src")].filter(
+        (x) => x !== f,
+      );
+      for (const file of runtime) {
+        const code = read(file).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+        assert.ok(
+          !/establishTrustedKycProvenance\s*\(/.test(code),
+          `${file}: no runtime module may establish trusted KYC provenance (no real provider exists)`,
+        );
+        if (/kyc\/provenance|compliance\/attestation-mapping/.test(code)) {
+          assert.ok(
+            !/^\s*["']use client["']/m.test(read(file)),
+            `${file}: a client module must not import the server-only provenance/mapping`,
+          );
+        }
+      }
+      // The mock boundary is classified as mock provenance, nothing else.
+      assert.ok(
+        /source: "mock"/.test(src) && /mockKycProvenance/.test(src),
+        "the mock boundary must yield source: mock",
+      );
     },
   );
 

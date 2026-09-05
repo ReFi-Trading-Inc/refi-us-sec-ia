@@ -47,3 +47,4 @@ export function getMockKycControls(): MockKycProvider | null {
 }
 
 export * from "./provider";
+export * from "./provenance";

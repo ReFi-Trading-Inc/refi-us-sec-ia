@@ -10,7 +10,7 @@
  * Nothing here submits anything: the module has no I/O.
  */
 import { afterAll, describe, expect, test } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -31,11 +31,17 @@ import {
   deriveInvestorProfileStatus,
   deriveRiskBandLabel,
   deriveTradingEligibility,
-  isProductionKycEvidence,
+  kycEvidenceBlock,
   RISK_BAND_NOT_PERSONALIZED,
   type AttestationEvidenceInput,
 } from "../../../../apps/web/src/lib/compliance/attestation-mapping";
 import type { AttestationKyc } from "../../../../apps/web/src/lib/kyc/provider";
+import {
+  establishTrustedKycProvenance,
+  isTrustedKycEvidence,
+  mockKycProvenance,
+  type KycEvidenceProvenance,
+} from "../../../../apps/web/src/lib/kyc/provenance";
 
 const STORE_DIR = mkdtempSync(join(tmpdir(), "refi-attestation-mapping-"));
 process.env["REFI_PROTOTYPE_STORE_DIR"] = STORE_DIR;
@@ -78,20 +84,48 @@ function baseline(): InvestorProfileAnswers {
   };
 }
 
-/** What a REAL provider adapter would normalize to (none exists yet). */
-const PRODUCTION_KYC: AttestationKyc = {
+const NORMALIZED_PASSED: AttestationKyc = {
   status: "passed",
-  provider: "example-real-kyc-adapter",
+  provider: "test-only-kyc-adapter",
   level: "frontend-lifecycle",
-  evidence_ref: "kyc-session:ref_0001",
+  evidence_ref: "kyc-session:test_0001",
 };
-/** Exactly what apps/web/src/lib/kyc emits today (PR #73). */
-const MOCK_KYC: AttestationKyc = {
-  status: "passed",
-  provider: "mock-kyc-adapter",
-  level: "frontend-lifecycle",
-  evidence_ref: "kyc-session:mock_0001",
-};
+
+/**
+ * TEST-ONLY trusted provenance. Proves MAPPING MECHANICS against Daniel's
+ * schema. It does not imply that a real provider exists in the product: no
+ * runtime module calls `establishTrustedKycProvenance` (contract assertion).
+ */
+const TEST_ONLY_PRODUCTION_PROVENANCE = establishTrustedKycProvenance({
+  adapterId: "test-only-kyc-adapter",
+  evidenceRef: "kyc-session:test_0001",
+  normalized: NORMALIZED_PASSED,
+});
+
+/** Exactly what the mock boundary (PR #73) yields today. */
+const MOCK_PROVENANCE: KycEvidenceProvenance = mockKycProvenance(
+  {
+    referenceId: "mock_0001",
+    state: "passed",
+    startedAt: "2026-09-04T11:00:00.000Z",
+    updatedAt: "2026-09-04T11:30:00.000Z",
+    history: [
+      { state: "in_progress", at: "2026-09-04T11:00:00.000Z" },
+      { state: "passed", at: "2026-09-04T11:30:00.000Z" },
+    ],
+  },
+  "mock",
+);
+
+/** Raw data that merely CLAIMS production provenance — never trusted. */
+function claimed(provider: string): KycEvidenceProvenance {
+  return {
+    source: "production_provider",
+    adapterId: provider,
+    evidenceRef: "kyc-session:claimed_0001",
+    normalized: { ...NORMALIZED_PASSED, provider },
+  };
+}
 
 function inputFor(
   answers: InvestorProfileAnswers,
@@ -105,7 +139,7 @@ function inputFor(
       answerSnapshotHash: answersSnapshotHash(answers),
     },
     assessment: assess(answers),
-    kyc: PRODUCTION_KYC,
+    kyc: TEST_ONLY_PRODUCTION_PROVENANCE,
     recomputeAnswerSnapshotHash: answersSnapshotHash,
     ...overrides,
   };
@@ -216,35 +250,141 @@ describe("ledger: trading_eligibility can never be `eligible` (D-LAUNCH-06 open,
   });
 });
 
-describe("ledger: KYC evidence gate (D — provider-blocked)", () => {
+describe("ledger: KYC evidence gate (D — provider-blocked) — trust is explicit provenance, never a string", () => {
   test.each([
-    ["null (no provider configured)", null, false],
-    ["mock adapter (PR #73 today)", MOCK_KYC, false],
-    ["mock spelled differently", { ...MOCK_KYC, provider: "Mock KYC" }, false],
-    ["mock as a path segment", { ...MOCK_KYC, provider: "kyc/mock/v1" }, false],
-    ["no provider label", { status: "passed" }, false],
-    ["blank provider label", { status: "passed", provider: "  " }, false],
-    ["a non-mock adapter label", PRODUCTION_KYC, true],
+    ["null (no provider configured)", null, "KYC_EVIDENCE_MISSING"],
     [
-      "a word merely containing mock",
-      { ...PRODUCTION_KYC, provider: "hammockid-kyc-adapter" },
-      true,
+      "the mock boundary's provenance (PR #73 today)",
+      MOCK_PROVENANCE,
+      "KYC_EVIDENCE_MOCK",
     ],
-  ] as const)("%s → production evidence: %s", (_l, kyc, want) => {
-    expect(isProductionKycEvidence(kyc)).toBe(want);
+    [
+      "claimed production, invented non-mock label",
+      claimed("example-real-kyc-adapter"),
+      "KYC_PROVENANCE_UNTRUSTED",
+    ],
+    [
+      "claimed production, vendor-looking label",
+      claimed("vendor-x-kyc-adapter"),
+      "KYC_PROVENANCE_UNTRUSTED",
+    ],
+    [
+      "claimed production, label 'trusted-provider'",
+      claimed("trusted-provider"),
+      "KYC_PROVENANCE_UNTRUSTED",
+    ],
+    [
+      "claimed production, label 'real'",
+      claimed("real"),
+      "KYC_PROVENANCE_UNTRUSTED",
+    ],
+    [
+      "claimed production, arbitrary caller string",
+      claimed("anything the caller types"),
+      "KYC_PROVENANCE_UNTRUSTED",
+    ],
+    [
+      "claimed production, empty label",
+      claimed(""),
+      "KYC_PROVENANCE_UNTRUSTED",
+    ],
+    [
+      "explicitly established test-only provenance",
+      TEST_ONLY_PRODUCTION_PROVENANCE,
+      null,
+    ],
+  ] as const)("%s → %s", (_l, kyc, block) => {
+    expect(kycEvidenceBlock(kyc)).toBe(block);
   });
 
-  test("the builder fails closed on today's mock evidence and on missing evidence", () => {
+  test("a raw AttestationKyc wire block can never independently establish production provenance", () => {
+    const raw = { ...NORMALIZED_PASSED, provider: "example-real-kyc-adapter" };
+    expect(isTrustedKycEvidence(raw)).toBe(false);
+    // Even wrapped with every provenance field spelled correctly:
+    expect(isTrustedKycEvidence(claimed("example-real-kyc-adapter"))).toBe(
+      false,
+    );
+    // Even with a look-alike symbol key: the marker is module-private.
+    const forged = {
+      ...claimed("example-real-kyc-adapter"),
+      [Symbol("refi.kyc.trusted-production-provenance")]: true,
+      [Symbol.for("refi.kyc.trusted-production-provenance")]: true,
+    };
+    expect(isTrustedKycEvidence(forged)).toBe(false);
+    expect(kycEvidenceBlock(forged)).toBe("KYC_PROVENANCE_UNTRUSTED");
+    // JSON round-trips (what a request body could ever carry) lose trust.
+    expect(
+      isTrustedKycEvidence(
+        JSON.parse(JSON.stringify(TEST_ONLY_PRODUCTION_PROVENANCE)),
+      ),
+    ).toBe(false);
+  });
+
+  test("trusted provenance is explicit: only establishTrustedKycProvenance yields it, and it is frozen", () => {
+    expect(isTrustedKycEvidence(TEST_ONLY_PRODUCTION_PROVENANCE)).toBe(true);
+    expect(TEST_ONLY_PRODUCTION_PROVENANCE.source).toBe("production_provider");
+    expect(Object.isFrozen(TEST_ONLY_PRODUCTION_PROVENANCE)).toBe(true);
+    expect(() =>
+      establishTrustedKycProvenance({
+        adapterId: "  ",
+        evidenceRef: null,
+        normalized: NORMALIZED_PASSED,
+      }),
+    ).toThrow();
+  });
+
+  test("the mock boundary yields source: mock with the PR #73 normalized block", () => {
+    expect(MOCK_PROVENANCE.source).toBe("mock");
+    expect(MOCK_PROVENANCE.normalized.provider).toBe("mock-kyc-adapter");
+    expect(MOCK_PROVENANCE.normalized.status).toBe("passed");
+    expect(isTrustedKycEvidence(MOCK_PROVENANCE)).toBe(false);
+  });
+
+  test("the builder fails closed on mock, claimed and missing evidence; only explicit provenance builds", () => {
     const mock = buildComplianceProfileAttestationRequest(
-      inputFor(baseline(), { kyc: MOCK_KYC }),
+      inputFor(baseline(), { kyc: MOCK_PROVENANCE }),
     );
     expect(mock.ok).toBe(false);
-    if (!mock.ok) expect(mock.blocked).toEqual(["KYC_EVIDENCE_NOT_PRODUCTION"]);
+    if (!mock.ok) expect(mock.blocked).toEqual(["KYC_EVIDENCE_MOCK"]);
+    const claimedBuild = buildComplianceProfileAttestationRequest(
+      inputFor(baseline(), { kyc: claimed("example-real-kyc-adapter") }),
+    );
+    expect(claimedBuild.ok).toBe(false);
+    if (!claimedBuild.ok)
+      expect(claimedBuild.blocked).toEqual(["KYC_PROVENANCE_UNTRUSTED"]);
     const none = buildComplianceProfileAttestationRequest(
       inputFor(baseline(), { kyc: null }),
     );
     expect(none.ok).toBe(false);
     if (!none.ok) expect(none.blocked).toEqual(["KYC_EVIDENCE_MISSING"]);
+    expect(
+      buildComplianceProfileAttestationRequest(inputFor(baseline())).ok,
+    ).toBe(true);
+  });
+
+  test("no runtime module in apps/web establishes trusted production provenance (no real provider exists)", () => {
+    const root = join(__dirname, "..", "..", "..", "..", "apps", "web");
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((d) =>
+        d.isDirectory()
+          ? d.name === "node_modules" || d.name === ".next"
+            ? []
+            : walk(join(dir, d.name))
+          : /\.(tsx?|ts)$/.test(d.name)
+            ? [join(dir, d.name)]
+            : [],
+      );
+    for (const f of [...walk(join(root, "app")), ...walk(join(root, "src"))]) {
+      if (f.endsWith(join("kyc", "provenance.ts"))) continue;
+      const code = readFileSync(f, "utf8").replace(
+        /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+        "",
+      );
+      expect(code, f).not.toMatch(/establishTrustedKycProvenance\s*\(/);
+      expect(code, f).not.toMatch(
+        /call\(\s*["']createComplianceProfileAttestation["']/,
+      );
+    }
   });
 });
 
@@ -271,7 +411,7 @@ describe("builder: fully resolved fields produce a contract-valid request", () =
       expect(r.request.trading_eligibility).toBe(trading);
       expect(r.request.effective_at).toBe(AT);
       expect(r.request.expires_at).toBeNull();
-      expect(r.request.kyc).toEqual(PRODUCTION_KYC);
+      expect(r.request.kyc).toEqual(NORMALIZED_PASSED);
       expect(r.request.attestation_id).toMatch(
         /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/,
       );

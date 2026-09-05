@@ -26,6 +26,8 @@
  *    decision — no expiry is asserted until it is made).
  *  - KYC decision (2026-09-04): the mock adapter is never identity
  *    verification; its `passed` must never become backend compliance evidence.
+ *    Production TRUST is a separate server-side provenance concern
+ *    (`../kyc/provenance`): a provider label is metadata, never proof.
  */
 import { createHash } from "node:crypto";
 import type { components } from "@refi/api-clients/generated/investor-api.gen";
@@ -38,6 +40,11 @@ import {
   type RiskBand,
 } from "../sec203a/investor-profile";
 import type { AttestationKyc } from "../kyc/provider";
+import {
+  isTrustedKycEvidence,
+  type KycEvidenceProvenance,
+  type TrustedKycEvidence,
+} from "../kyc/provenance";
 
 export type ComplianceProfileAttestationRequest =
   components["schemas"]["ComplianceProfileAttestationRequest"];
@@ -85,7 +92,8 @@ export type EmittableInvestorProfileStatus = Exclude<
 export const ATTESTATION_BLOCK_REASONS = [
   // D — provider-blocked (KYC decision 2026-09-04; no real provider selected)
   "KYC_EVIDENCE_MISSING",
-  "KYC_EVIDENCE_NOT_PRODUCTION",
+  "KYC_EVIDENCE_MOCK",
+  "KYC_PROVENANCE_UNTRUSTED",
   // Fail-closed integrity checks on the frontend's own records
   "ASSESSMENT_POLICY_VERSION_MISMATCH",
   "ANSWER_SNAPSHOT_HASH_MISMATCH",
@@ -108,10 +116,13 @@ export interface AttestationEvidenceInput {
   /** The persisted deterministic assessment for that version. */
   assessment: InvestorProfileAssessment;
   /**
-   * Normalized KYC evidence (PR #73 vocabulary). `null` when no provider is
-   * configured. The builder additionally refuses mock-adapter evidence.
+   * KYC evidence WITH provenance. `null` when no provider is configured. The
+   * normalized wire block inside it is data; trust is established only by a
+   * `TrustedKycEvidence` produced by the (future) production-provider
+   * boundary — see `../kyc/provenance`. Mock provenance and any structurally
+   * similar object are refused.
    */
-  kyc: AttestationKyc | null;
+  kyc: KycEvidenceProvenance | TrustedKycEvidence | null;
   /**
    * Recomputes the answers snapshot hash so a tampered or mismatched record
    * can never be attested. Injected (not imported) so this module stays free
@@ -145,16 +156,22 @@ export type BuildAttestationResult =
 // ─── Field derivations (each pinned to one authority) ───────────────────────
 
 /**
- * Mock-adapter evidence is never production evidence (KYC decision
- * 2026-09-04). The provider label is the ADAPTER kind (`<kind>-kyc-adapter`);
- * a missing label is treated as unknown provenance and refused too.
+ * Production trust is NOT inferred from any string. The only accepted proof is
+ * a `TrustedKycEvidence` carrying the module-private marker set by
+ * `establishTrustedKycProvenance` (KYC decision 2026-09-04: no real provider
+ * exists, the mock is never evidence). Returns the block reason, or null when
+ * the evidence may be attested.
  */
-export function isProductionKycEvidence(kyc: AttestationKyc | null): boolean {
-  if (kyc === null) return false;
-  const provider = kyc.provider?.trim() ?? "";
-  if (provider.length === 0) return false;
-  if (/(^|[^a-z0-9])mock([^a-z0-9]|$)/i.test(provider)) return false;
-  return true;
+export function kycEvidenceBlock(
+  kyc: KycEvidenceProvenance | TrustedKycEvidence | null,
+): Extract<
+  AttestationBlockReason,
+  "KYC_EVIDENCE_MISSING" | "KYC_EVIDENCE_MOCK" | "KYC_PROVENANCE_UNTRUSTED"
+> | null {
+  if (kyc === null) return "KYC_EVIDENCE_MISSING";
+  if (kyc.source === "mock") return "KYC_EVIDENCE_MOCK";
+  if (!isTrustedKycEvidence(kyc)) return "KYC_PROVENANCE_UNTRUSTED";
+  return null;
 }
 
 /**
@@ -261,11 +278,8 @@ export function buildComplianceProfileAttestationRequest(
   if (typeof accountId !== "string" || accountId.trim().length === 0) {
     blocked.push("ACCOUNT_ID_MISSING");
   }
-  if (kyc === null) {
-    blocked.push("KYC_EVIDENCE_MISSING");
-  } else if (!isProductionKycEvidence(kyc)) {
-    blocked.push("KYC_EVIDENCE_NOT_PRODUCTION");
-  }
+  const kycBlock = kycEvidenceBlock(kyc);
+  if (kycBlock !== null) blocked.push(kycBlock);
   if (assessment.assessmentPolicyVersion !== ASSESSMENT_POLICY_VERSION) {
     blocked.push("ASSESSMENT_POLICY_VERSION_MISMATCH");
   }
@@ -290,7 +304,7 @@ export function buildComplianceProfileAttestationRequest(
   if (!isRfc3339WithZone(assessment.assessedAt)) {
     blocked.push("EFFECTIVE_AT_INVALID");
   }
-  if (blocked.length > 0 || kyc === null) {
+  if (blocked.length > 0 || !isTrustedKycEvidence(kyc)) {
     return { ok: false, blocked };
   }
 
@@ -307,7 +321,7 @@ export function buildComplianceProfileAttestationRequest(
     answer_snapshot_hash: answersVersion.answerSnapshotHash,
     answers: answersVersion.answers,
     assessment,
-    kyc,
+    kyc: kyc.normalized,
   };
   const evidenceCanonical = stableSerialize(evidence);
 
@@ -320,7 +334,7 @@ export function buildComplianceProfileAttestationRequest(
     schema_version: ATTESTATION_SCHEMA_VERSION,
     decision_version: decisionVersion,
     decision_sequence: decisionSequence,
-    kyc,
+    kyc: kyc.normalized,
     investor_profile: {
       status: profileStatus,
       profile_version: String(decisionSequence),

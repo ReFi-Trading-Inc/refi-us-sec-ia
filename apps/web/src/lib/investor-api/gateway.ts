@@ -32,8 +32,10 @@ import { getServerEnv } from "../config/env";
 import { mintUserAssertion } from "./user-assertion";
 import {
   createDemoInvestorApiClient,
+  subscribeDemoEvents,
   type InvestorApiReadClient,
 } from "./demo-client";
+import { eventSourceFromClient, type InvestorApiEventSource } from "./events";
 
 export type { InvestorApiReadClient } from "./demo-client";
 
@@ -110,6 +112,22 @@ export function investorApiClientFor(auth: AuthContext): InvestorApiReadClient {
     return createDemoInvestorApiClient({ authId: auth.authId });
   }
   return createFrozenClient(auth, env);
+}
+
+/** Event source for `streamAccountEvents`: demo world on the demo tier, else the frozen client. */
+export function investorApiEventSourceFor(
+  auth: AuthContext,
+): InvestorApiEventSource {
+  const env = getServerEnv();
+  if (env.REFI_INVESTOR_API_MODE === "demo") {
+    if (env.REFI_ENV !== "demo")
+      throw new DemoUpstreamNotPermittedError(env.REFI_ENV);
+    return {
+      subscribe: (accountId, lastEventId, signal) =>
+        subscribeDemoEvents(auth.authId, accountId, lastEventId, signal),
+    };
+  }
+  return eventSourceFromClient(createFrozenClient(auth, env));
 }
 
 function createFrozenClient(

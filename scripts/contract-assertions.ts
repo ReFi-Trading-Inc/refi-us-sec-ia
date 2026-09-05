@@ -6375,6 +6375,274 @@ await section(
   );
 }
 
+// ─── Live events: read-only SSE behind the session; demo advance is demo-only ──
+
+{
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  const stripComments = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+
+  await section(
+    "events route: session-verified, server-derived account scope, forwards the contract stream, mutates nothing",
+    async () => {
+      const src = stripComments(
+        read("apps/web/app/api/v1/investor/events/route.ts"),
+      );
+      assert.ok(/getAuthContext\(req\)/.test(src), "must verify the session");
+      assert.ok(
+        /resolveAccountScope\(client, auth\)/.test(src),
+        "must re-authorize account scope",
+      );
+      assert.ok(
+        /investorApiEventSourceFor\(auth\)/.test(src) &&
+          /last-event-id/.test(src),
+        "must forward the contract stream with Last-Event-ID",
+      );
+      assert.ok(
+        /text\/event-stream/.test(src) && /private, no-store/.test(src),
+        "SSE with private no-store",
+      );
+      assert.ok(
+        !/searchParams\.get\(\s*["']account/.test(src) &&
+          !/client\.call\(\s*"(create|update|record|rotate|sync|disconnect|join)/.test(
+            src,
+          ),
+        "events route reads only",
+      );
+      const events = stripComments(
+        read("apps/web/src/lib/investor-api/events.ts"),
+      );
+      assert.ok(
+        /client\.stream\(/.test(events),
+        "frozen client path must use stream()",
+      );
+      // Browser: events are refresh signals; the hook never derives state from event bodies beyond labels.
+      const hook = stripComments(
+        read("apps/web/app/_hooks/useAccountEvents.ts"),
+      );
+      assert.ok(
+        /invalidateQueries/.test(hook),
+        "events must invalidate projections",
+      );
+      assert.ok(
+        !/setQueryData/.test(hook),
+        "events must never write projection state directly",
+      );
+      // Ticker: backend reference prices only; no client-side price generation.
+      const ticker = stripComments(
+        read("apps/web/app/us/app/_components/TickerTape.tsx"),
+      );
+      assert.ok(
+        !/Math\.random|setInterval/.test(ticker),
+        "ticker must not simulate prices",
+      );
+      assert.ok(
+        /referencePrice/.test(ticker),
+        "ticker must show the backend reference price",
+      );
+      for (const f of [
+        "apps/web/app/us/app/_components/TickerTape.tsx",
+        "apps/web/app/us/app/_components/LiveEventsProvider.tsx",
+      ]) {
+        assert.ok(
+          !/<Button|<button|onClick/.test(stripComments(read(f))),
+          `${f}: live surfaces render no controls`,
+        );
+      }
+    },
+  );
+
+  await section(
+    "no wallet as login: the wallet stack mounts only in local mock mode; session is BFF-owned; legacy /auth/* browser calls are gone",
+    async () => {
+      const layout = stripComments(read("apps/web/app/us/layout.tsx"));
+      assert.ok(
+        /<MaybeWalletProvider>/.test(layout) &&
+          !/<WalletProvider>/.test(layout),
+        "us layout must mount the wallet stack through MaybeWalletProvider only",
+      );
+      const maybe = stripComments(
+        read("apps/web/app/_providers/wallet/MaybeWalletProvider.tsx"),
+      );
+      assert.ok(
+        /NEXT_PUBLIC_REFI_ENV"\]\s*!==\s*"prod"/.test(maybe) &&
+          /NEXT_PUBLIC_REFI_DATA_ADAPTER"\]\s*\?\?\s*"mock"\)\s*===\s*"mock"/.test(
+            maybe,
+          ),
+        "wallet stack is gated to non-prod mock mode",
+      );
+      const auth = stripComments(
+        read("apps/web/app/_providers/auth/AuthProvider.tsx"),
+      );
+      assert.ok(
+        /fetch\("\/api\/v1\/investor\/session"/.test(auth),
+        "AuthProvider must read the BFF session",
+      );
+      assert.ok(
+        /method:\s*"DELETE"/.test(auth),
+        "sign-out must go through the BFF session route",
+      );
+      assert.ok(
+        !/\/auth\/(session|refresh|revoke-all)/.test(auth) &&
+          !/useSession\b|useSessionRefresh|useSignOut|wallet_id/.test(auth),
+        "no legacy browser-direct session calls or wallet identity",
+      );
+      const connect = stripComments(
+        read("apps/web/app/us/auth/connect/page.tsx"),
+      );
+      assert.ok(
+        /WALLET_LINKING_AVAILABLE\s*\?/.test(connect) && /lazy\(/.test(connect),
+        "connect page renders the wagmi card only in mock mode, lazily",
+      );
+      assert.ok(
+        /router\.replace\("\/us\/onboarding"\)/.test(connect),
+        "signed-in visitors continue to onboarding",
+      );
+      for (const f of [
+        "packages/api-clients/src/index.ts",
+        "packages/api-clients/src/mocks/handlers.ts",
+        "packages/api-clients/src/compat.ts",
+      ]) {
+        assert.ok(
+          !/\/auth\/(session|refresh|revoke-all)|useSessionRefresh|useSignOut|AuthSession\b/.test(
+            stripComments(read(f)),
+          ),
+          `${f}: legacy session surface retired`,
+        );
+      }
+      assert.ok(
+        !existsSync(
+          join(REPO_ROOT, "packages/api-clients/src/hooks/session.ts"),
+        ),
+        "hooks/session.ts must be deleted",
+      );
+      // The wallet stack (wagmi / RainbowKit) may be imported only by the mock-only wallet files.
+      {
+        const { execSync } = await import("node:child_process");
+        const files = execSync(
+          "git ls-files 'apps/web/app/**/*.ts' 'apps/web/app/**/*.tsx'",
+          { cwd: REPO_ROOT, encoding: "utf8" },
+        )
+          .split("\n")
+          .filter(Boolean);
+        const allowed = new Set([
+          "apps/web/app/_providers/wallet/WalletProvider.tsx",
+          "apps/web/app/_providers/wallet/config.ts",
+          "apps/web/app/_hooks/useSiweAuth.ts",
+          "apps/web/app/us/auth/connect/_components/WalletLinkCard.tsx",
+        ]);
+        for (const f of files) {
+          if (allowed.has(f)) continue;
+          if (!existsSync(join(REPO_ROOT, f))) continue;
+          assert.ok(
+            !/from\s+"(wagmi|@rainbow-me\/rainbowkit)/.test(
+              stripComments(read(f)),
+            ),
+            `${f}: wagmi/RainbowKit may only be imported by the mock-only wallet files`,
+          );
+        }
+        assert.ok(
+          !existsSync(
+            join(REPO_ROOT, "apps/web/app/us/app/_components/WalletButton.tsx"),
+          ),
+          "the app-shell wallet button is retired",
+        );
+      }
+      const sessionRoute = stripComments(
+        read("apps/web/app/api/v1/investor/session/route.ts"),
+      );
+      assert.ok(
+        /export function DELETE/.test(sessionRoute) &&
+          /origin !== req\.nextUrl\.origin/.test(sessionRoute),
+        "DELETE session is same-origin only",
+      );
+      assert.ok(
+        /us_session_v1/.test(sessionRoute) && /Max-Age=0/.test(sessionRoute),
+        "DELETE session clears the cookie",
+      );
+      const manifest = JSON.parse(
+        read("compliance/API_ROUTE_MANIFEST.json"),
+      ) as {
+        routes: Array<{
+          route: string;
+          methods: string[];
+          auth: Record<string, string>;
+        }>;
+      };
+      const sess = manifest.routes.find(
+        (r) => r.route === "/api/v1/investor/session",
+      );
+      assert.ok(
+        sess &&
+          sess.methods.includes("DELETE") &&
+          sess.auth["DELETE"] === "session-clear",
+        "manifest must list DELETE session as session-clear",
+      );
+    },
+  );
+
+  await section(
+    "demo advance: 404 on prod/staging/dev; on demo it needs same-origin + session and touches only the demo world",
+    async () => {
+      const { createRequire } = await import("node:module");
+      const requireWeb = createRequire(
+        join(process.cwd(), "apps/web/package.json"),
+      );
+      const { NextRequest } = (await import(
+        requireWeb.resolve("next/server")
+      )) as typeof import("next/server");
+      const adv = await import("../apps/web/app/api/demo/advance/route.ts");
+      const req = (origin: string | null) => {
+        const headers: Record<string, string> = {
+          "content-type": "application/json",
+        };
+        if (origin) headers["origin"] = origin;
+        return new NextRequest("http://localhost:3000/api/demo/advance", {
+          method: "POST",
+          headers,
+          body: "{}",
+        });
+      };
+      const saved = process.env["REFI_ENV"];
+      try {
+        for (const tier of ["prod", "staging", "dev"]) {
+          process.env["REFI_ENV"] = tier;
+          resetServerEnvCacheForTests();
+          assert.equal(
+            (await adv.POST(req("http://localhost:3000"))).status,
+            404,
+            tier,
+          );
+        }
+        process.env["REFI_ENV"] = "demo";
+        resetServerEnvCacheForTests();
+        assert.equal(
+          (await adv.POST(req(null))).status,
+          403,
+          "same-origin required",
+        );
+        assert.equal(
+          (await adv.POST(req("http://localhost:3000"))).status,
+          401,
+          "session required",
+        );
+      } finally {
+        if (saved === undefined) delete process.env["REFI_ENV"];
+        else process.env["REFI_ENV"] = saved;
+        resetServerEnvCacheForTests();
+      }
+      const src = stripComments(read("apps/web/app/api/demo/advance/route.ts"));
+      assert.ok(
+        /advanceDemoWorld\(/.test(src) &&
+          !/investor-api\/gateway|createInvestorApiClient/.test(src),
+        "advance touches only the demo world",
+      );
+    },
+  );
+}
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

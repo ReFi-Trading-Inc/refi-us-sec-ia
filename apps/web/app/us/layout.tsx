@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { usBrand } from "./_content/brand";
-import { WalletProvider } from "../_providers/wallet/WalletProvider";
+import { MaybeWalletProvider } from "../_providers/wallet/MaybeWalletProvider";
 import { AuthProvider } from "../_providers/auth/AuthProvider";
 
 export const metadata: Metadata = {
@@ -13,8 +13,8 @@ export const metadata: Metadata = {
 
 export default function UsLayout({ children }: { children: React.ReactNode }) {
   return (
-    <WalletProvider>
+    <MaybeWalletProvider>
       <AuthProvider>{children}</AuthProvider>
-    </WalletProvider>
+    </MaybeWalletProvider>
   );
 }

@@ -54,6 +54,19 @@ export const appCopy = {
     upstreamUnavailable:
       "Positions and valuation are not available from the backend in this environment.",
   },
+  live: {
+    label: "Live",
+    connection: {
+      connecting: "connecting",
+      live: "streaming account events",
+      reconnecting: "reconnecting",
+      closed: "offline",
+    },
+    toastFill: "Fill recorded",
+    toastOrder: "Order",
+    toastRecommendation: "Recommendation",
+    toastRiskDenied: "Risk decision denied",
+  },
   preferences: {
     title: "Portfolio preferences",
     body: "These four settings shape how your recommendations are built. Changing them produces new advice; earlier recommendations are kept as they were.",
@@ -178,8 +191,10 @@ export const appCopy = {
     broker: "Broker connection",
     preferences: "Preferences",
     security: "Security",
-    wallet: "Connected wallet",
-    disconnect: "Disconnect wallet",
+    session: "Session",
+    sessionNote:
+      "You are signed in to this browser. Signing out clears your session here; nothing about your account changes.",
+    signOut: "Sign out",
   },
   support: {
     heading: "Support",
@@ -216,6 +231,17 @@ export const siweCopy = {
   },
   signing: "Waiting for signature…",
   success: "Wallet linked. Redirecting…",
+  continueHeading: "Continue to onboarding",
+  continuing: "You are signed in. Continuing to onboarding…",
+  signInUnavailable:
+    "Sign-in is not connected in this environment. Your account is created and secured through your verified email address once the identity service is connected.",
+  linkingUnavailable: {
+    notice:
+      "Wallet linking is optional and is not available in this environment. A wallet is never how you sign in.",
+    connected:
+      "Wallet connected. Linking is not available in this environment.",
+    demoCta: "Continue with a demo walkthrough profile instead",
+  },
   siweErrors: {
     NONCE_INVALID: "Connection expired — please try again.",
     SIGNATURE_INVALID:

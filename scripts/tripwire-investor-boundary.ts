@@ -284,7 +284,7 @@ const EXECUTION_BENIGN_CONTROLS: ReadonlyArray<string> = [
   "apiFetch<Recommendation>(`/v1/recommendations/${id}`)",
   'apiFetch<AccountActivationResponse>("/v1/account/activate", { method: "POST" })',
   'apiFetch<BrokerConnectKeyResponse>("/v1/brokers/connect/keys", { method: "POST" })',
-  'apiFetch<AuthSession>("/auth/session")',
+  'apiFetch<BrokerConnection | null>("/v1/brokers/connection")',
   'apiFetch<ActivityEvent[]>("/v1/activity")',
 ];
 

@@ -14,17 +14,17 @@ boundary at runtime.
 
 ## The funnel, annotated
 
-| Step                                    | Real or mock?  | What actually runs                                                                                                                                        |
-| --------------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/us` marketing pages, disclosures      | **REAL**       | Static pages + shared tokens; no backend.                                                                                                                 |
-| Eligibility decision                    | **REAL**       | `POST /api/us/eligibility` — real rule engine, HS256-signed `us_eligibility_v1` cookie, rate limit (`apps/web/app/api/us/eligibility/route.ts`).          |
-| Alpha-claim (game handoff)              | **REAL**       | ES256 verify, pinned iss/aud, 10-min max-age, single-use jti (`apps/web/app/api/v1/investor/alpha-claim/route.ts`); Firestore-durable when flags flipped. |
-| Wallet connect (MetaMask etc.)          | **REAL**       | wagmi + RainbowKit against the real wallet; nothing mocked.                                                                                               |
-| **→ Identity verification (SIWE)**      | **MOCK**       | ← **THE BOUNDARY.** `/siwe/nonce`, `/siwe/verify`, `/auth/session` are MSW browser mocks; nothing server-side exists. Production dead-ends here (D8).     |
-| KYC                                     | **MOCK**       | `/ccid/*` ComplyCube mocks.                                                                                                                               |
-| Broker connect + account/positions      | **MOCK**       | `/v1/brokers/*` fixtures ("Maya" persona).                                                                                                                |
-| Onboarding/portfolio/recommendation UI  | **REAL shell** | Real components + BFF entity logic (`apps/web/src/lib/prototype-store/*`), but fed by mock data and a dev identity (below).                               |
-| Trading backend (signals, risk, orders) | **ABSENT**     | Nothing in this repo talks to `refinity-main` yet — that is Phase 2.6 Track 2 (proxy PR-E, then entity flips `msw→backend`).                              |
+| Step                                    | Real or mock?  | What actually runs                                                                                                                                                                     |
+| --------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/us` marketing pages, disclosures      | **REAL**       | Static pages + shared tokens; no backend.                                                                                                                                              |
+| Eligibility decision                    | **REAL**       | `POST /api/us/eligibility` — real rule engine, HS256-signed `us_eligibility_v1` cookie, rate limit (`apps/web/app/api/us/eligibility/route.ts`).                                       |
+| Alpha-claim (game handoff)              | **REAL**       | ES256 verify, pinned iss/aud, 10-min max-age, single-use jti (`apps/web/app/api/v1/investor/alpha-claim/route.ts`); Firestore-durable when flags flipped.                              |
+| Wallet connect (MetaMask etc.)          | **MOCK-ONLY**  | wagmi + RainbowKit mount only in local mock mode (`MaybeWalletProvider`); demo and production never load the wallet stack. A wallet is never the login.                                |
+| **→ Identity verification (SIWE)**      | **MOCK**       | ← **THE BOUNDARY.** `/siwe/nonce`, `/siwe/verify` are MSW browser mocks (mock mode only). Session is BFF-owned: `GET/DELETE /api/v1/investor/session`. Production has no sign-in (D8). |
+| KYC                                     | **MOCK**       | `/ccid/*` ComplyCube mocks.                                                                                                                                                            |
+| Broker connect + account/positions      | **MOCK**       | `/v1/brokers/*` fixtures ("Maya" persona).                                                                                                                                             |
+| Onboarding/portfolio/recommendation UI  | **REAL shell** | Real components + BFF entity logic (`apps/web/src/lib/prototype-store/*`), but fed by mock data and a dev identity (below).                                                            |
+| Trading backend (signals, risk, orders) | **ABSENT**     | Nothing in this repo talks to `refinity-main` yet — that is Phase 2.6 Track 2 (proxy PR-E, then entity flips `msw→backend`).                                                           |
 
 ## The three mock mechanisms (and their off switches)
 
@@ -53,7 +53,7 @@ boundary at runtime.
 
 - **Identity (D8)** — `apps/web/src/lib/bff/auth.ts` is deliberately the
   _single_ module that swaps to your `auth-siwe` / account-auth service; the
-  MSW `/siwe/*` + `/auth/session` handlers then get deleted. Direction per
+  MSW `/siwe/*` handlers then get deleted (`/auth/session|refresh|revoke-all` already retired 2026-09-05; the browser reads/clears the BFF session only). Direction per
   roadmap 1.5: email-native Signal-mode path, wallet deferred to
   ExecutionPolicy signing. **Blocked on your D8 decision.**
 - **API base (D4)** — production `NEXT_PUBLIC_API_BASE_URL` currently points

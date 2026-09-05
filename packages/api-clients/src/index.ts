@@ -8,14 +8,11 @@ export {
 } from "./client";
 export type { ApiRequestInit } from "./client";
 
-export { useSession } from "./hooks/session";
 export {
   buildSiweMessage,
   siweErrorCode,
   useSiweNonce,
   useSiweVerify,
-  useSessionRefresh,
-  useSignOut,
 } from "./hooks/auth";
 export type { SiweMessageInput } from "./hooks/auth";
 export {

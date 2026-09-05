@@ -3,31 +3,7 @@
 // accidental shim deletion) surfaces here before it breaks UI builds.
 
 import { describe, expect, expectTypeOf, test } from "vitest";
-import type {
-  AccountActivationStatus,
-  AuthSession,
-  OrderPreviewResult,
-} from "../compat";
-
-describe("AuthSession shape", () => {
-  test("includes the OpenAPI-defined required fields and the expires_in_seconds extension", () => {
-    const s: AuthSession = {
-      status: "authenticated",
-      expires_in_seconds: 3600,
-    };
-    expectTypeOf(s.status).toEqualTypeOf<"authenticated" | "unauthenticated">();
-    expectTypeOf(s.expires_in_seconds).toEqualTypeOf<number | undefined>();
-    expect(s.status).toBe("authenticated");
-  });
-
-  test("status must be one of the two backend enum values", () => {
-    const ok: AuthSession["status"] = "unauthenticated";
-    expect(ok).toBe("unauthenticated");
-    // @ts-expect-error — "pending" is not a valid AuthSession.status
-    const bad: AuthSession["status"] = "pending";
-    void bad;
-  });
-});
+import type { AccountActivationStatus, OrderPreviewResult } from "../compat";
 
 describe("AccountActivationStatus", () => {
   test("has exactly the six boolean gating flags", () => {

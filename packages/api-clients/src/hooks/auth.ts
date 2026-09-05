@@ -71,27 +71,6 @@ export function useSiweVerify(): UseMutationResult<
   });
 }
 
-export function useSessionRefresh(): UseMutationResult<OkResult, Error, void> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => apiFetch<OkResult>("/auth/refresh", { method: "POST" }),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["auth", "session"] });
-    },
-  });
-}
-
-export function useSignOut(): UseMutationResult<OkResult, Error, void> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () =>
-      apiFetch<OkResult>("/auth/revoke-all", { method: "POST" }),
-    onSuccess: () => {
-      qc.clear();
-    },
-  });
-}
-
 /**
  * Maps a backend error response to one of the six standardized SIWE error
  * codes. Falls back to UNKNOWN.

@@ -29,7 +29,7 @@ export function useInvestorPortfolio() {
       const body = (await res.json()) as { data: PortfolioResponse };
       return body.data;
     },
-    staleTime: 15_000,
+    staleTime: 3_000,
   });
 }
 

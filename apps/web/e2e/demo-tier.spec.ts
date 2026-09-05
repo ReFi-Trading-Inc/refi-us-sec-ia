@@ -337,3 +337,30 @@ test.describe("Demo tier — persona sign-in", () => {
     expect(stale.status()).toBe(409);
   });
 });
+
+test.describe("Demo tier — wallet linking is honest", () => {
+  test("the connect page offers no unverifiable signature step and points to the persona picker", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await page.request.post("/api/demo/session", {
+      headers: {
+        "content-type": "application/json",
+        origin: "http://localhost:3000",
+      },
+      data: { persona: "admitted" },
+    });
+    await page.goto("/us/auth/connect");
+    await expect(
+      page.getByRole("heading", { level: 1, name: /link a wallet/i }),
+    ).toBeVisible();
+    await expect(page.getByTestId("wallet-linking-notice")).toBeVisible();
+    await expect(page.getByTestId("connect-demo-persona-link")).toHaveAttribute(
+      "href",
+      "/us/demo",
+    );
+    await expect(
+      page.getByRole("button", { name: /^link wallet$/i }),
+    ).toHaveCount(0);
+  });
+});

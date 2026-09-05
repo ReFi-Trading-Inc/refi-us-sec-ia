@@ -6375,6 +6375,36 @@ await section(
   );
 }
 
+await section(
+  "connect page: the wallet-linking signature is offered only where a verifier exists (mock mode); never as login",
+  async () => {
+    const src = readFileSync(
+      join(REPO_ROOT, "apps/web/app/us/auth/connect/page.tsx"),
+      "utf8",
+    );
+    assert.ok(
+      /const LINKING_AVAILABLE =/.test(src),
+      "LINKING_AVAILABLE gate must exist",
+    );
+    assert.ok(
+      /\{LINKING_AVAILABLE \? \(/.test(src),
+      "the Link wallet button must be rendered only when LINKING_AVAILABLE",
+    );
+    assert.ok(
+      /wallet-linking-notice/.test(src),
+      "the page must state that linking is unavailable outside mock mode",
+    );
+    const copy = readFileSync(
+      join(REPO_ROOT, "apps/web/app/us/_content/app-copy.ts"),
+      "utf8",
+    );
+    assert.ok(
+      /A wallet is never how you sign in/.test(copy),
+      "copy must state the wallet is never the login",
+    );
+  },
+);
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

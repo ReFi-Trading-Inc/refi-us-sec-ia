@@ -216,6 +216,13 @@ export const siweCopy = {
   },
   signing: "Waiting for signature…",
   success: "Wallet linked. Redirecting…",
+  linkingUnavailable: {
+    notice:
+      "In this environment a wallet can be connected for display only. Linking it to an account requires the identity service, which is not connected here. A wallet is never how you sign in.",
+    connected:
+      "Wallet connected. Linking is not available in this environment, so no signature is requested and nothing is sent.",
+    demoCta: "Continue with a demo walkthrough profile instead",
+  },
   siweErrors: {
     NONCE_INVALID: "Connection expired — please try again.",
     SIGNATURE_INVALID:

@@ -12,7 +12,6 @@
  *   subscription_mode             → subscription-mode.ts
  *   execution_policy              → execution-policy.ts
  *   managed_execution_state       → managed-execution-state.ts
- *   recommendation_projection     → recommendation-projection.ts
  *   exception_review              → exception-review.ts
  *   decision_record               → decision-record.ts
  *   investor_action_receipt       → receipt.ts
@@ -30,7 +29,6 @@ export * from "./entities/subscription-mode";
 export * from "./entities/execution-policy";
 export * from "./entities/execution-policy-draft";
 export * from "./entities/managed-execution-state";
-export * from "./entities/recommendation-projection";
 export * from "./entities/exception-review";
 export * from "./entities/decision-record";
 export * from "./entities/receipt";

@@ -1,8 +1,9 @@
 /**
  * Provider-neutral frontend KYC boundary (public U.S. onboarding).
  *
- * PRODUCT DECISION (Zeshan, 2026-09-04): the U.S. product is public-facing;
- * the frontend system owns the KYC provider lifecycle; no provider has been
+ * PRODUCT DECISION (Zeshan, 2026-09-04): the U.S. APPLICATION surface is
+ * public while Alpha admission stays closed and human-approved — passing KYC
+ * never admits anyone; the frontend system owns the KYC provider lifecycle; no provider has been
  * selected; the current implementation is a MOCK behind this interface so a
  * real vendor can replace the adapter later without changing the product or
  * the backend contract boundary. Once the frontend holds a normalized result
@@ -16,8 +17,9 @@
  *   B. Daniel's `getKycStatus` (v1.1.0-alpha.2): a backend KYC POLICY /
  *      requirement projection (`status: NOT_REQUIRED`, `level:
  *      CLOSED_US_INVITE_ALPHA`, `public_launch_eligible: false`). It is not a
- *      lifecycle, it does not drive this boundary, and `NOT_REQUIRED` is never
- *      converted into a provider `passed`.
+ *      lifecycle, it does not drive this boundary, `NOT_REQUIRED` is never
+ *      converted into a provider `passed`, and its closed-Alpha level is
+ *      consistent with a public application surface (closed cohort).
  *
  * No vendor name, vendor field, or vendor status enum appears anywhere in
  * this boundary. `scripts/contract-assertions.ts` enforces that.

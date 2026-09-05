@@ -23,8 +23,6 @@ export type BrokerAccount = Schemas["BrokerAccount"];
 export type Position = Schemas["Position"];
 export type OrderRequest = Schemas["OrderRequest"];
 export type Order = Schemas["Order"];
-export type Recommendation = Schemas["Recommendation"];
-export type ActivityEvent = Schemas["ActivityEvent"];
 export type EligibilityDecision = Schemas["EligibilityDecision"];
 
 // ---------- Extended OpenAPI types ----------
@@ -147,30 +145,3 @@ export interface SubscriptionModeState {
 }
 
 // ---------- Investor recommendations (BFF projection) ----------
-
-// TODO(openapi): model recommendation projection in refi-api.yaml. Mirrors
-// apps/web/src/lib/prototype-store/entities/recommendation-projection.ts.
-// The "review-required" frontend state is derived (a recommendation gated by
-// a pending ExceptionReview), not stored as a projection status.
-export type RecommendationProjectionStatus =
-  "open" | "executing" | "delivered" | "dismissed" | "saved" | "blocked";
-
-export interface RecommendationProjection {
-  accountId: string;
-  recommendationId: string;
-  intentId?: string;
-  symbol: string;
-  action: "buy" | "sell" | "neutral" | "rebalance";
-  rationale: string;
-  confidence: string;
-  expectedAllocation?: string;
-  status: RecommendationProjectionStatus;
-  generatedAt: string;
-  expiresAt?: string;
-  decisionRecordId?: string;
-}
-
-export interface InvestorRecommendationsResponse {
-  items: RecommendationProjection[];
-  mode: SubscriptionMode | null;
-}

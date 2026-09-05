@@ -32,8 +32,6 @@ export {
 // useOrders 2026-08-23 with the BFF /orders routes (execution-domain read
 // model, zero consumers — C2a). Broker OBSERVATION (/v1/brokers/orders) is
 // untouched and belongs to C1b-2.
-export { useRecommendations, useRecommendation } from "./hooks/recommendations";
-export { useInvestorRecommendations } from "./hooks/subscription-mode";
 export {
   useInvestorStatus,
   useDisclosureRegistry,
@@ -67,7 +65,6 @@ export type {
   ExceptionKind,
   ExceptionStatus,
 } from "./hooks/exceptions";
-export { useActivity } from "./hooks/activity";
 export {
   useStrategy,
   useBrokerConnectStart,

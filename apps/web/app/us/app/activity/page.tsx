@@ -1,14 +1,22 @@
 "use client";
 
+/**
+ * Investor activity — structured account records from the BFF projection of
+ * Daniel's `AccountRecord`s. Columns are the authoritative record type,
+ * timestamp, status, reason codes and record references; nothing is
+ * narrated. Execution-chain records are excluded server-side (D-LAUNCH-06).
+ * No execution actions exist on this page.
+ */
 import {
+  StatusBanner,
   Table,
-  TableHeader,
   TableBody,
-  TableRow,
-  TableHead,
   TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@ui/components";
-import { useActivity } from "@refi/api-clients";
+import { useInvestorActivity } from "../../../_hooks/useInvestorActivity";
 import { appCopy } from "../../_content/app-copy";
 
 const { activity } = appCopy;
@@ -20,12 +28,18 @@ function formatTimestamp(iso: string): string {
   });
 }
 
+/** Neutral label from the authoritative record type: snake_case → words. */
+function recordTypeLabel(recordType: string): string {
+  return recordType.replace(/_/g, " ");
+}
+
 export default function ActivityPage() {
-  const { data, isLoading } = useActivity();
-  const events = data ?? [];
+  const { data, isLoading, isError } = useInvestorActivity();
+  const items = data?.items ?? [];
+  const upstream = data?.upstream;
 
   return (
-    <div className="flex flex-col gap-6 max-w-5xl">
+    <div className="flex flex-col gap-6 max-w-5xl" data-testid="activity-page">
       <div>
         <h1 className="text-xl font-semibold text-charcoal-50 mb-1">
           {activity.heading}
@@ -33,14 +47,23 @@ export default function ActivityPage() {
         <p className="text-sm text-charcoal-400">{activity.subheading}</p>
       </div>
 
-      <Table>
+      {isError && (
+        <StatusBanner variant="error">{activity.readError}</StatusBanner>
+      )}
+      {upstream && upstream.state !== "ok" && (
+        <StatusBanner variant="warning" data-testid="activity-upstream-state">
+          {activity.upstreamUnavailable}
+        </StatusBanner>
+      )}
+
+      <Table data-testid="activity-table">
         <TableHeader>
           <TableRow>
             <TableHead>{activity.type}</TableHead>
             <TableHead>{activity.timestamp}</TableHead>
-            <TableHead>{activity.description}</TableHead>
             <TableHead>{activity.status}</TableHead>
-            <TableHead>{activity.decisionRecord}</TableHead>
+            <TableHead>{activity.reasonCodes}</TableHead>
+            <TableHead>{activity.recordReference}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -53,25 +76,48 @@ export default function ActivityPage() {
                 Loading…
               </TableCell>
             </TableRow>
-          ) : events.length === 0 ? (
+          ) : items.length === 0 ? (
             <TableRow>
               <TableCell
                 colSpan={5}
                 className="text-center text-charcoal-500 py-12 text-sm"
+                data-testid="activity-empty"
               >
                 {activity.emptyState}
               </TableCell>
             </TableRow>
           ) : (
-            events.map((evt) => (
-              <TableRow key={evt.id}>
-                <TableCell className="capitalize">{evt.type}</TableCell>
-                <TableCell className="font-mono tabular-nums text-charcoal-400">
-                  {formatTimestamp(evt.created_at)}
+            items.map((r) => (
+              <TableRow
+                key={r.recordId}
+                data-testid="activity-record"
+                data-record-type={r.recordType}
+              >
+                <TableCell className="capitalize">
+                  {recordTypeLabel(r.recordType)}
                 </TableCell>
-                <TableCell>{evt.description}</TableCell>
-                <TableCell className="text-charcoal-400">—</TableCell>
-                <TableCell className="text-charcoal-400">—</TableCell>
+                <TableCell className="font-mono tabular-nums text-charcoal-400">
+                  {formatTimestamp(r.createdAt)}
+                </TableCell>
+                <TableCell>{r.status}</TableCell>
+                <TableCell className="font-mono text-xs text-charcoal-400">
+                  {r.reasonCodes.length > 0
+                    ? r.reasonCodes.join(", ")
+                    : activity.noReasonCodes}
+                </TableCell>
+                <TableCell className="font-mono text-xs text-charcoal-400">
+                  <div className="flex flex-col gap-0.5">
+                    <span>{r.recordId}</span>
+                    <span>
+                      {activity.entityLabel}: {r.entityId}
+                    </span>
+                    {r.relatedRecordId && (
+                      <span>
+                        {activity.relatedLabel}: {r.relatedRecordId}
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
               </TableRow>
             ))
           )}

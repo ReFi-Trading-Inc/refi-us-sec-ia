@@ -4,12 +4,10 @@
 import { http, HttpResponse } from "msw";
 import type { EligibilityDecision } from "../compat";
 import {
-  mayaActivity,
   mayaBrokerAccount,
   mayaBrokerConnection,
   mayaOrders,
   mayaPositions,
-  mayaRecommendations,
   mayaSession,
   supportedBrokers,
 } from "./fixtures/maya";
@@ -85,19 +83,6 @@ export const handlers = [
   // CompliancePreview: no hook called them, and a mock that answers "accepted"
   // to an order submission describes a capability the Signal product must not
   // have.
-
-  http.get(url("/v1/recommendations"), () =>
-    HttpResponse.json(mayaRecommendations),
-  ),
-  http.get(url("/v1/recommendations/:id"), ({ params }) => {
-    const id = String(params["id"]);
-    const found = mayaRecommendations.find((r) => r.id === id);
-    if (!found)
-      return HttpResponse.json({ message: "not found" }, { status: 404 });
-    return HttpResponse.json(found);
-  }),
-
-  http.get(url("/v1/activity"), () => HttpResponse.json(mayaActivity)),
 
   http.post(url("/v1/us/eligibility"), () => {
     const decision: EligibilityDecision = {

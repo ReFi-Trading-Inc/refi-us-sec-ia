@@ -196,9 +196,6 @@ const { setManagedExecutionState, getManagedExecutionState } =
 const { appendExecutionPolicy, getLatestExecutionPolicy } =
   await import("../apps/web/src/lib/prototype-store/entities/execution-policy.ts");
 
-const { upsertRecommendation, getRecommendation } =
-  await import("../apps/web/src/lib/prototype-store/entities/recommendation-projection.ts");
-
 // ─── Action taxonomy assertions ─────────────────────────────────────────────
 
 await section(
@@ -493,42 +490,6 @@ await section(
 );
 
 // ─── Contract V3 PR-C realignment assertions ───────────────────────────────
-
-await section(
-  'RecommendationProjection.action excludes "hold" (Contract V3 §4a + §7.5a)',
-  async () => {
-    const accountId = `rec-${Date.now()}`;
-    const allowed = ["buy", "sell", "neutral", "rebalance"] as const;
-    for (const action of allowed) {
-      const rec = await upsertRecommendation({
-        rec: {
-          accountId,
-          recommendationId: `r-${action}`,
-          symbol: "AAPL",
-          action,
-          rationale: "fixture",
-          confidence: "0.50",
-          status: "open",
-          generatedAt: new Date().toISOString(),
-        },
-        correlationId: `c-${action}`,
-      });
-      assert.equal(rec.action, action);
-    }
-    // Read-back type narrowing: every recorded action must be in the V3 set.
-    const read = await getRecommendation(accountId, "r-neutral");
-    assert.ok(read);
-    assert.notEqual(
-      read.action as string,
-      "hold",
-      'V3 forbids "hold" as a RecommendationProjection.action — signal: 0 is "neutral".',
-    );
-    assert.ok(
-      (allowed as readonly string[]).includes(read.action),
-      `read.action "${read.action}" not in V3 allowed set ${allowed.join("|")}`,
-    );
-  },
-);
 
 await section(
   "INVESTOR_ADMIN_VERBS matches Daniel's approved, client-emittable action set",
@@ -5648,6 +5609,308 @@ await section(
         /from "\.\.\/sec203a\/canonical-json"/.test(mapping),
         "the mapping must hash the shared canonical form",
       );
+    },
+  );
+}
+
+// ─── C1b-2 rows 18/19/20: Signal recommendations + activity reads ──────────
+
+{
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  const stripComments = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  const walk = (dir: string): string[] =>
+    existsSync(join(REPO_ROOT, dir))
+      ? readdirSync(join(REPO_ROOT, dir), { withFileTypes: true }).flatMap(
+          (d) =>
+            d.isDirectory()
+              ? walk(`${dir}/${d.name}`)
+              : /\.(tsx?|ts)$/.test(d.name)
+                ? [`${dir}/${d.name}`]
+                : [],
+        )
+      : [];
+  const browserAndPackage = [
+    ...walk("apps/web/app"),
+    ...walk("apps/web/src"),
+    ...walk("packages/api-clients/src/hooks"),
+    ...walk("packages/api-clients/src/mocks"),
+    "packages/api-clients/src/index.ts",
+    "packages/api-clients/src/compat.ts",
+  ];
+
+  await section(
+    "signal reads: no browser-direct /v1/recommendations, /v1/recommendations/{id} or /v1/activity remains",
+    async () => {
+      for (const f of browserAndPackage) {
+        const src = stripComments(read(f));
+        assert.ok(
+          !/["'`]\/v1\/recommendations(\/|["'`$])/.test(src),
+          `${f}: browser-direct /v1/recommendations must not remain`,
+        );
+        assert.ok(
+          !/["'`]\/v1\/activity["'`]/.test(src),
+          `${f}: browser-direct /v1/activity must not remain`,
+        );
+      }
+      for (const gone of [
+        "packages/api-clients/src/hooks/recommendations.ts",
+        "packages/api-clients/src/hooks/activity.ts",
+        "packages/api-clients/src/hooks/subscription-mode.ts",
+        "apps/web/src/lib/prototype-store/entities/recommendation-projection.ts",
+      ]) {
+        assert.ok(
+          !existsSync(join(REPO_ROOT, gone)),
+          `${gone} must be removed`,
+        );
+      }
+      const idx = read("packages/api-clients/src/index.ts");
+      for (const hook of [
+        "useRecommendations",
+        "useRecommendation",
+        "useActivity",
+      ]) {
+        assert.ok(
+          !new RegExp(`\\b${hook}\\b`).test(stripComments(idx)),
+          `legacy ${hook} must not be exported`,
+        );
+      }
+      const compat = stripComments(read("packages/api-clients/src/compat.ts"));
+      assert.ok(
+        !/export type (Recommendation|ActivityEvent) =|RecommendationProjection|InvestorRecommendationsResponse/.test(
+          compat,
+        ),
+        "legacy recommendation/activity compatibility types must be removed",
+      );
+    },
+  );
+
+  await section(
+    "signal reads: BFF routes use the frozen client operations and server-derived account scope",
+    async () => {
+      const list = read(
+        "apps/web/app/api/v1/investor/recommendations/route.ts",
+      );
+      const detail = read(
+        "apps/web/app/api/v1/investor/recommendations/[id]/route.ts",
+      );
+      const legs = read(
+        "apps/web/app/api/v1/investor/recommendations/[id]/legs/route.ts",
+      );
+      const activity = read("apps/web/app/api/v1/investor/activity/route.ts");
+      const recLib = read("apps/web/src/lib/investor-api/recommendations.ts");
+      const recLibCode = stripComments(recLib);
+      const recordsLib = stripComments(
+        read("apps/web/src/lib/investor-api/account-records.ts"),
+      );
+      assert.ok(
+        /client\.call\(\s*"listAccountRecommendations"/.test(recLibCode) &&
+          /listRecommendations\(/.test(list),
+        "list BFF must use listAccountRecommendations",
+      );
+      assert.ok(
+        /client\.call\(\s*"getAccountRecommendation"/.test(recLibCode) &&
+          /client\.call\(\s*"listAccountRecommendationLegs"/.test(recLibCode) &&
+          /getRecommendationDetail\(/.test(detail) &&
+          /listRecommendationLegsPage\(/.test(legs),
+        "detail BFF must use getAccountRecommendation + listAccountRecommendationLegs",
+      );
+      assert.ok(
+        /client\.call\(\s*"listAccountRecords"/.test(recordsLib) &&
+          /listSignalActivity\(/.test(activity),
+        "activity BFF must use listAccountRecords",
+      );
+      for (const [name, src] of [
+        ["list", list],
+        ["detail", detail],
+        ["legs", legs],
+        ["activity", activity],
+      ] as const) {
+        assert.ok(
+          /resolveAccountScope\(client, ctx\.auth\)/.test(src),
+          `${name} route must derive account scope server-side`,
+        );
+        assert.ok(
+          !/searchParams\.get\(\s*["']account/.test(src) &&
+            !/prototype-store/.test(src),
+          `${name} route must not read a browser account id or prototype storage`,
+        );
+        assert.ok(
+          !/upstreamGap/.test(src),
+          `${name} route: G-001 gap tag removed`,
+        );
+      }
+      // Old flat fields are not manufactured from unrelated data.
+      assert.ok(
+        !/\b(confidence|rationale)\b/.test(recLibCode) &&
+          !/action:\s*["'](buy|sell|neutral|rebalance)["']/.test(recLibCode),
+        "the projection must not fabricate legacy flat recommendation fields",
+      );
+      // Legs pagination is bounded and cursor-driven.
+      assert.ok(
+        /LEGS_PAGE_SIZE = CONTRACT_MAX_PAGE_SIZE/.test(recLib) &&
+          /validateCursor\(/.test(legs) &&
+          /RECOMMENDATION_LIST_MAX_PAGES = \d+/.test(recLib),
+        "legs/list pagination must be bounded with explicit cursor handling",
+      );
+    },
+  );
+
+  await section(
+    "signal reads: browser never imports the server-only Investor API client; no execution controls",
+    async () => {
+      for (const f of [...walk("apps/web/app"), ...walk("apps/web/src")]) {
+        const raw = read(f);
+        if (!/^\s*["']use client["']/m.test(raw)) continue;
+        const src = stripComments(raw);
+        assert.ok(
+          !/from\s+["']@refi\/api-clients\/investor-api["']/.test(src) &&
+            !/investor-api\/gateway|investor-api\/account-scope/.test(src),
+          `${f}: a client module must not import the server-only Investor API client`,
+        );
+        // Type-only imports of the projection modules are allowed; runtime are not.
+        const runtimeProjectionImport =
+          /^import\s+(?!type\b)[^;]*from\s+["']@lib\/investor-api\/(recommendations|account-records|upstream-state)["']/m;
+        assert.ok(
+          !runtimeProjectionImport.test(src),
+          `${f}: projection modules may be imported as types only from client code`,
+        );
+      }
+      const pages = [
+        "apps/web/app/us/app/recommendations/page.tsx",
+        "apps/web/app/us/app/recommendations/[id]/page.tsx",
+        "apps/web/app/us/app/activity/page.tsx",
+      ];
+      const copy = read("apps/web/app/us/_content/app-copy.ts");
+      for (const f of pages) {
+        const src = stripComments(read(f));
+        assert.ok(
+          !/\/api\/v1\/investor\/(orders|account-actions|allocations|accounts\/[^"']*\/(actions|orders))/.test(
+            src,
+          ) &&
+            !/createAccountAction|createAllocationPreview|submitOrder/.test(
+              src,
+            ),
+          `${f}: no recommendation/activity control may call an order/account-action endpoint`,
+        );
+        assert.ok(
+          !/(onClick|href)[^\n]*(execute|approve|accept|activate|trade)/i.test(
+            src,
+          ),
+          `${f}: no control wired to execute/approve/accept/activate/trade`,
+        );
+      }
+      // Copy: the informational eligibility label never becomes an imperative control.
+      assert.ok(
+        !/^\s*\w+:\s*["'](Execute|Accept trade|Place order|Approve|Buy|Sell|Activate|Trade now)["']/m.test(
+          copy,
+        ),
+        "recommendation/activity copy must not define execution-control labels",
+      );
+    },
+  );
+
+  await section(
+    "signal activity: the five execution-chain record variants are excluded; the map is exhaustive over the generated union",
+    async () => {
+      const {
+        ACCOUNT_RECORD_VISIBILITY,
+        EXECUTION_CHAIN_RECORD_TYPES,
+        projectSignalActivity,
+      } = await import("../apps/web/src/lib/investor-api/account-records.ts");
+      assert.deepEqual([...EXECUTION_CHAIN_RECORD_TYPES].sort(), [
+        "account_intent",
+        "execution_plan",
+        "fill",
+        "order",
+        "risk_decision",
+      ]);
+      // Exhaustive over Daniel's schema enum.
+      const schemas = JSON.parse(
+        read(
+          "packages/api-clients/contracts/investor-api/v1.1.0-alpha.2/schemas.json",
+        ),
+      ) as {
+        $defs: Record<
+          string,
+          {
+            oneOf?: Array<{
+              properties?: { record_type?: { const?: string } };
+            }>;
+          }
+        >;
+      };
+      const variants = (schemas.$defs["AccountRecord"]?.oneOf ?? [])
+        .map((v) => v.properties?.record_type?.const)
+        .filter((v): v is string => typeof v === "string")
+        .sort();
+      assert.equal(variants.length, 16, "AccountRecord must have 16 variants");
+      assert.deepEqual(Object.keys(ACCOUNT_RECORD_VISIBILITY).sort(), variants);
+      // Behavioural: even if the upstream returns all 16, Signal renders 11.
+      const base = {
+        account_id: "acct_x",
+        correlation_id: "corr_x",
+        created_at: "2026-09-04T00:00:00Z",
+        source_version: "v",
+        details: {
+          effective_at: "2026-09-04T00:00:00Z",
+          entity_id: "e",
+          reason_codes: [],
+          status: "S",
+        },
+      };
+      const all = variants.map((t, i) => ({
+        ...base,
+        record_id: `r${String(i)}`,
+        record_type: t,
+      }));
+      const { items, excludedCount } = projectSignalActivity(
+        all as Parameters<typeof projectSignalActivity>[0],
+      );
+      assert.equal(excludedCount, 5);
+      assert.equal(items.length, 11);
+      for (const it of items) {
+        assert.ok(
+          !EXECUTION_CHAIN_RECORD_TYPES.includes(it.recordType),
+          `${it.recordType} must not be rendered in Signal`,
+        );
+      }
+      // The activity page renders only what the BFF projected — no re-fetch, no re-include.
+      const page = stripComments(read("apps/web/app/us/app/activity/page.tsx"));
+      assert.ok(
+        !/account_intent|risk_decision|execution_plan|["']order["']|["']fill["']/.test(
+          page,
+        ),
+        "the activity page must not special-case execution-chain variants",
+      );
+    },
+  );
+
+  await section(
+    "signal reads: no attestation submission and no mutation appears as a side effect of this slice",
+    async () => {
+      for (const f of [...walk("apps/web/app"), ...walk("apps/web/src")]) {
+        const src = stripComments(read(f));
+        assert.ok(
+          !/call\(\s*["']createComplianceProfileAttestation["']/.test(src),
+          `${f} must not submit an attestation`,
+        );
+      }
+      for (const f of [
+        "apps/web/src/lib/investor-api/recommendations.ts",
+        "apps/web/src/lib/investor-api/account-records.ts",
+        "apps/web/src/lib/investor-api/account-scope.ts",
+      ]) {
+        const calls = [
+          ...stripComments(read(f)).matchAll(/client\.call\(\s*"(\w+)"/g),
+        ].map((m) => m[1]);
+        for (const op of calls) {
+          assert.ok(
+            /^(list|get)[A-Z]/.test(op ?? ""),
+            `${f}: ${op ?? "?"} is not a read operation`,
+          );
+        }
+      }
     },
   );
 }

@@ -2,11 +2,13 @@
  * GET /api/v1/investor/onboarding — the setup summary for the onboarding
  * pages (strategy review, setup checklist).
  *
- * Composition, all READ:
- *   - backend projections via the Investor API client: onboarding status,
- *     account authorization, the current template, the brokerage connection;
- *   - BFF-local lifecycle state: identity verification (provider-neutral KYC
- *     lifecycle) and the Investor Profile v2 assessment for the linked account.
+ * Composition, all READ, in this order:
+ *   1. unscoped backend projections: onboarding status, the current template;
+ *   2. BFF-local identity-verification lifecycle (keyed by authId);
+ *   3. authoritative account scope (`resolveAccountScope` → `listAccounts`);
+ *   4. only for the RESOLVED account: authorization, brokerage connection and
+ *      the BFF-local Investor Profile v2 assessment.
+ * A zero-account applicant is valid: nulls, never a fabricated account.
  *
  * Nothing here asserts admission, enables management, or activates anything:
  * `authorization` and `onboarding.state` are the backend's words, echoed.
@@ -44,30 +46,6 @@ export const GET = bffRead({
       }
     })();
 
-    const profile = await (async () => {
-      if (!auth.accountId) return null;
-      const version = await latestProfileVersion(auth.accountId);
-      if (version === 0) return null;
-      const record = await getProfileAssessment(
-        auth.accountId,
-        version,
-        ASSESSMENT_POLICY_VERSION,
-      );
-      if (!record) return { version, assessment: null };
-      const a = record.assessment;
-      return {
-        version,
-        assessment: {
-          permittedRiskBand: a.permittedRiskBand,
-          riskCapacityBand: a.riskCapacityBand,
-          riskWillingnessBand: a.riskWillingnessBand,
-          productFitStatus: a.productFitStatus,
-          bindingConstraint: a.bindingConstraint,
-          assessedAt: a.assessedAt,
-        },
-      };
-    })();
-
     const [status, templates] = await Promise.all([
       client.call("getOnboardingStatus"),
       client.call("listTemplates", { query: { page_size: 1 } }),
@@ -83,26 +61,67 @@ export const GET = bffRead({
         }
       : null;
 
+    // Account-scoped reads happen ONLY after authoritative ownership
+    // resolution against `listAccounts`. The BFF-local Investor Profile v2
+    // record is keyed by account id, so it is read for the RESOLVED id — never
+    // for a claim that failed re-authorization. A zero-account applicant
+    // (WAITLISTED) is a valid state: accountId/profile/authorization/connection
+    // are null and the onboarding state still renders.
     let accountId: string | null = null;
     let authorization: { status: string; policyVersion: string } | null = null;
     let connection = null;
+    let profile: {
+      version: number;
+      assessment: {
+        permittedRiskBand: number | null;
+        riskCapacityBand: number | null;
+        riskWillingnessBand: number | null;
+        productFitStatus: string;
+        bindingConstraint: string | null;
+        assessedAt: string;
+      } | null;
+    } | null = null;
     let upstream: { state: string } = { state: "ok" };
     try {
       accountId = await resolveAccountScope(client, auth);
-      const [authz, conn] = await Promise.all([
+    } catch (err) {
+      if (!(err instanceof AccountScopeError)) throw err;
+      upstream = classifyUpstream(err);
+    }
+    if (accountId !== null) {
+      const resolved = accountId;
+      const [authz, conn, version] = await Promise.all([
         client.call("getAccountAuthorization", {
-          path: { account_id: accountId },
+          path: { account_id: resolved },
         }),
-        getBrokerageConnection(client, accountId),
+        getBrokerageConnection(client, resolved),
+        latestProfileVersion(resolved),
       ]);
       authorization = {
         status: authz.data.data.status,
         policyVersion: authz.data.data.policy_version,
       };
       connection = conn;
-    } catch (err) {
-      if (!(err instanceof AccountScopeError)) throw err;
-      upstream = classifyUpstream(err);
+      if (version > 0) {
+        const record = await getProfileAssessment(
+          resolved,
+          version,
+          ASSESSMENT_POLICY_VERSION,
+        );
+        profile = record
+          ? {
+              version,
+              assessment: {
+                permittedRiskBand: record.assessment.permittedRiskBand,
+                riskCapacityBand: record.assessment.riskCapacityBand,
+                riskWillingnessBand: record.assessment.riskWillingnessBand,
+                productFitStatus: record.assessment.productFitStatus,
+                bindingConstraint: record.assessment.bindingConstraint,
+                assessedAt: record.assessment.assessedAt,
+              },
+            }
+          : { version, assessment: null };
+      }
     }
 
     return {

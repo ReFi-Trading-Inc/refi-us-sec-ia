@@ -66,3 +66,64 @@ export async function getBrokerageConnection(
     ) ?? items[0];
   return live ? projectBrokerageConnection(live) : null;
 }
+
+// ─── The canonical connection mutation, with its precondition ───────────────
+
+export interface ConnectBrokerageInput {
+  apiKeyId: string;
+  apiSecretKey: string;
+}
+
+export type ConnectBrokerageOutcome =
+  | { kind: "accepted"; connection: BrokerageConnectionView }
+  | {
+      /** Account authorization is not AUTHORIZED: nothing was forwarded upstream. */
+      kind: "not_authorized";
+      authorization: string;
+    };
+
+/**
+ * Connect Alpaca (paper) for the caller's account.
+ *
+ * Order is the point (D-LAUNCH-06 rebaseline: `AccountAuthorization.status`
+ * is READ AND ENFORCED before every canonical mutation):
+ *   1. `accountId` is the AUTHORITATIVE scope the caller already resolved via
+ *      `resolveAccountScope` (ownership re-authorized against `listAccounts`);
+ *   2. `getAccountAuthorization(account_id)` must be exactly `AUTHORIZED`;
+ *      PENDING / DENIED / SUSPENDED fail closed here — the credential payload
+ *      is never built, never forwarded, never logged;
+ *   3. only then `createBrokerageConnection`, once.
+ *
+ * The credentials pass through this function as arguments and into the one
+ * upstream call; nothing here retains, hashes, or echoes them.
+ */
+export async function connectBrokerage(
+  client: InvestorApiReadClient,
+  accountId: string,
+  input: ConnectBrokerageInput,
+  idempotencyKey: string,
+): Promise<ConnectBrokerageOutcome> {
+  const authz = await client.call("getAccountAuthorization", {
+    path: { account_id: accountId },
+  });
+  const status = authz.data.data.status;
+  if (status !== "AUTHORIZED") {
+    return { kind: "not_authorized", authorization: status };
+  }
+  const res = await client.call("createBrokerageConnection", {
+    path: { account_id: accountId },
+    body: {
+      broker: "alpaca",
+      account_environment: "paper",
+      credentials: {
+        api_key: input.apiKeyId,
+        api_secret: input.apiSecretKey,
+      },
+    },
+    idempotencyKey,
+  });
+  return {
+    kind: "accepted",
+    connection: projectBrokerageConnection(res.data.data),
+  };
+}

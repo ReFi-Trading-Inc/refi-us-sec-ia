@@ -255,9 +255,14 @@ during the pre-MSW render, which only surfaced when CI built with
 alpaca api keys, ingesting your portfolio, survey for risk profile — that is much
 more compelling as a demo than getting stuck on a web3 wallet connect."
 
-New persona **invited** (`demo-invited-01` → `acct_demo_invited_01`): human
-Alpha admission already recorded in the backend (`AUTHORIZED`), onboarding
-`INVITED`, no brokerage connection, no holdings, no advice. The walkthrough:
+New persona **invited** (`demo-invited-01` → `acct_demo_invited_01`). This
+deterministic demo persona is seeded as already human-admitted; the backend demo
+projections represent that scenario with `OnboardingStatus.state = INVITED` and
+`AccountAuthorization.status = AUTHORIZED`. Those are two distinct backend words
+— application/onboarding state and account authorization — and neither of them
+_is_ human Alpha admission: the operator write that records admission lives
+outside the 41 public routes. No brokerage connection, no holdings, no advice.
+The walkthrough:
 
 1. **Identity** — the provider-neutral mock adapter; the presenter advances it
    with the on-page controls (`REFI_KYC_MOCK_CONTROLS=1` on the demo tier).
@@ -271,6 +276,12 @@ Alpha admission already recorded in the backend (`AUTHORIZED`), onboarding
    keys never parse), forwards ONCE to the contract's
    `createBrokerageConnection`, and returns the status projection. Nothing
    logs, stores, hashes or echoes the credentials; the BFF never calls Alpaca.
+   **Precondition (D-LAUNCH-06 rebaseline):** before the credential payload is
+   built, the BFF reads `getAccountAuthorization` for the resolved account and
+   requires exactly `AUTHORIZED`; `PENDING`/`DENIED`/`SUSPENDED` fail closed as
+   `412 account_not_authorized` (the existing local-precondition refusal shape,
+   cf. `account_not_linked`) with the backend word and no credential in the
+   response. Proven for every status with a recording fake client.
 4. **The backend's lifecycle** — the demo world answers 202
    `PENDING_VALIDATION`, validates after ~4 s (`CONNECTED` / `VALID`), syncs
    after ~9 s and ingests **nine holdings** (a concentrated self-directed book
@@ -284,10 +295,22 @@ Alpha admission already recorded in the backend (`AUTHORIZED`), onboarding
 5. **Strategy review** — permitted band, template (`listTemplates`), the
    holdings and guardrails side by side (`GET /api/v1/investor/onboarding` +
    `/portfolio`). No join, no activation.
-6. **Setup checklist** — identity / profile / broker read from the record;
-   admission and management shown as the backend's words; **no activate verb**
-   (the contract has none; C1b-2 row 26 → C). "Go to your dashboard" opens the
-   home with the ingested holdings on the ticker and the live strip.
+6. **Setup checklist** — identity / profile / broker read from the record, then
+   two separate backend words: **Application / Alpha onboarding**
+   (`OnboardingStatus.state`) and **Account authorization**
+   (`AccountAuthorization.status`). **No activate verb** (the contract has none;
+   C1b-2 row 26 → C). The dashboard continuation is decided by the pure
+   `setupGate`: onboarding `READY` AND authorization `AUTHORIZED` AND all three
+   steps complete; anything else (`WAITLISTED`, `INELIGIBLE`, `SUSPENDED`,
+   `INVITED`; `PENDING`, `DENIED`, `SUSPENDED`) renders the exact backend state
+   with pending/refusal copy and no continuation. The invited walkthrough
+   reaches `READY` + `AUTHORIZED` after the broker sync.
+   **Onboarding aggregate ordering.** `GET /api/v1/investor/onboarding` reads
+   the unscoped onboarding status, the template and the identity lifecycle first,
+   then resolves authoritative account scope against `listAccounts`, and only for
+   the resolved account reads authorization, connection and the BFF-local Profile
+   v2 assessment. A zero-account `WAITLISTED` applicant gets nulls, never a
+   fabricated account and never a 500.
 
 **Account link.** Demo sessions had no `AuthSessionLink`, so the linked-account
 BFF-local features (Investor Profile v2) returned `412 account_not_linked`.

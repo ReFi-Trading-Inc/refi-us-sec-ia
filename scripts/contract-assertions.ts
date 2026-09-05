@@ -6620,8 +6620,13 @@ await section(
         "Signal-allowed action connectBroker",
       );
       assert.ok(
-        /client\.call\("createBrokerageConnection"/.test(route),
-        "forwards to the contract's createBrokerageConnection",
+        /connectBrokerage\(/.test(route) &&
+          /client\.call\("createBrokerageConnection"/.test(
+            stripComments(
+              read("apps/web/src/lib/investor-api/brokerage-connection.ts"),
+            ),
+          ),
+        "forwards to the contract's createBrokerageConnection through connectBrokerage",
       );
       assert.ok(
         /resolveAccountScope\(client, ctx\.auth\)/.test(route),
@@ -6641,20 +6646,128 @@ await section(
         "the idempotency key never includes the secret",
       );
       assert.ok(
-        /projectBrokerageConnection\(res\.data\.data\)/.test(route),
+        /outcome\.connection/.test(route) &&
+          /projectBrokerageConnection\(res\.data\.data\)/.test(
+            stripComments(
+              read("apps/web/src/lib/investor-api/brokerage-connection.ts"),
+            ),
+          ),
         "the response is the status projection, never the request",
       );
       assert.ok(
         !/alpaca\.markets|paper-api/.test(route),
         "the BFF never calls Alpaca",
       );
+      // D-LAUNCH-06 rebaseline: AccountAuthorization is READ and ENFORCED
+      // (exactly AUTHORIZED) before the canonical mutation; the credential
+      // payload is built only after the check.
+      {
+        const lib = stripComments(
+          read("apps/web/src/lib/investor-api/brokerage-connection.ts"),
+        );
+        const fn = lib.slice(
+          lib.indexOf("export async function connectBrokerage"),
+        );
+        const iAuthz = fn.indexOf('client.call("getAccountAuthorization"');
+        const iCheck = fn.indexOf('!== "AUTHORIZED"');
+        const iCreate = fn.indexOf('client.call("createBrokerageConnection"');
+        const iCred = fn.indexOf("credentials:");
+        assert.ok(
+          iAuthz >= 0 && iCheck > iAuthz && iCreate > iCheck && iCred > iCheck,
+          "connectBrokerage must read getAccountAuthorization, require AUTHORIZED, and only then build/forward the credential to createBrokerageConnection",
+        );
+        assert.ok(
+          /return \{ kind: "not_authorized", authorization: status \}/.test(fn),
+          "non-AUTHORIZED fails closed with the backend word, no credential",
+        );
+        assert.ok(
+          /connectBrokerage\(/.test(route) &&
+            !/client\.call\("createBrokerageConnection"/.test(route),
+          "the route mutates only through connectBrokerage",
+        );
+        assert.ok(
+          /reasonCode: "account_not_authorized"/.test(route) &&
+            /status: 412/.test(route),
+          "blocked path uses the existing 412 precondition refusal shape",
+        );
+      }
+      // Onboarding aggregate: account-local reads only after authoritative scope resolution.
+      {
+        const agg = stripComments(
+          read("apps/web/app/api/v1/investor/onboarding/route.ts"),
+        );
+        const iScope = agg.indexOf("resolveAccountScope(client, auth)");
+        const iProfile = agg.indexOf("latestProfileVersion(");
+        const iAuthz = agg.indexOf('client.call("getAccountAuthorization"');
+        assert.ok(
+          iScope >= 0 && iProfile > iScope && iAuthz > iScope,
+          "profile/authorization reads must follow resolveAccountScope",
+        );
+        assert.ok(
+          !/latestProfileVersion\(auth\.accountId/.test(agg) &&
+            !/auth\.accountId\b/.test(agg.replace(/if \(!ctx\.auth\)/g, "")),
+          "the aggregate never reads account-local state by the unverified claim",
+        );
+        assert.ok(
+          /instanceof AccountScopeError/.test(agg),
+          "a zero-account applicant is a valid state, not a 500",
+        );
+      }
+      // Setup surface: two distinct backend words, a pure gate, no admission label on authorization.
+      {
+        const page = stripComments(
+          read("apps/web/app/us/onboarding/activation/page.tsx"),
+        );
+        const copy = read("apps/web/app/us/_content/onboarding.ts");
+        assert.ok(
+          /setupGate\(/.test(page) && /gate\.dashboard \?/.test(page),
+          "dashboard continuation is decided by setupGate only",
+        );
+        assert.ok(
+          /setup-onboarding-state/.test(page) &&
+            /setup-authorization/.test(page),
+          "both OnboardingStatus.state and AccountAuthorization.status are rendered",
+        );
+        const setupCopy = copy.slice(
+          copy.indexOf("  setup: {"),
+          copy.indexOf("} as const;"),
+        );
+        assert.ok(
+          !/admission/i.test(
+            setupCopy.replace(
+              /Human Alpha admission is recorded by ReFi operators outside this app; this page only shows the resulting state\./,
+              "",
+            ),
+          ),
+          "no label presents a backend status as Alpha admission",
+        );
+        const gate = stripComments(
+          read("apps/web/app/us/onboarding/_lib/setup-gate.ts"),
+        );
+        assert.ok(
+          /authz !== AUTHORIZED_STATUS/.test(gate) &&
+            /input\.onboardingState !== READY_ONBOARDING_STATE/.test(gate),
+          "gate requires AUTHORIZED and READY",
+        );
+        assert.ok(
+          !/fetch\(|useMutation|onClick/.test(page),
+          "the setup surface has no control and no mutation",
+        );
+      }
       const proj = stripComments(
         read("apps/web/src/lib/investor-api/brokerage-connection.ts"),
       );
-      assert.ok(
-        !/api_key|api_secret|credentials/.test(proj),
-        "the projection carries no credential field",
-      );
+      {
+        // Scope to the projection: the interface + projectBrokerageConnection.
+        const projOnly = proj.slice(
+          proj.indexOf("export interface BrokerageConnectionView"),
+          proj.indexOf("export async function getBrokerageConnection"),
+        );
+        assert.ok(
+          !/api_key|api_secret|credentials/.test(projOnly),
+          "the projection carries no credential field",
+        );
+      }
       // Demo world: validates the request against the contract and keeps nothing from the credentials.
       const demo = stripComments(
         read("apps/web/src/lib/investor-api/demo-client.ts"),

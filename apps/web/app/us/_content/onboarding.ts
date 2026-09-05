@@ -161,17 +161,32 @@ export const onboardingCopy = {
         href: "/us/onboarding/broker",
       },
     ],
-    admissionLabel: "Alpha admission",
-    admissionNote:
-      "Admission is a human decision recorded in the backend of record. This page only shows it.",
+    onboardingLabel: "Application / Alpha onboarding",
+    onboardingNote:
+      "The backend's onboarding state for your application. Human Alpha admission is recorded by ReFi operators outside this app; this page only shows the resulting state.",
+    authorizationLabel: "Account authorization",
+    authorizationNote:
+      "The backend's authorization state for this account. It is distinct from onboarding and is never set from this page.",
     managementLabel: "Portfolio management",
     managementNote:
-      "Management is enabled by ReFi after setup review. Until then you see advice and your holdings; nothing is traded.",
+      "Portfolio management is enabled by ReFi after setup review. Until then you see advice and your holdings; nothing is traded.",
     statusDone: "Done",
     statusPending: "Pending",
     dashboardCta: "Go to your dashboard",
     dashboardNote: "Your holdings, advice and records are live now.",
     finishFirst: "Finish the pending items to open your dashboard.",
+    gate: {
+      onboarding_not_ready:
+        "Your application is not marked ready yet. The dashboard opens when the backend reports onboarding READY.",
+      authorization_pending:
+        "Account authorization is pending review. Nothing else is required from you right now.",
+      authorization_denied:
+        "This account is not authorized. Contact support for what this means for your application.",
+      authorization_suspended:
+        "This account's authorization is suspended. Contact support before continuing.",
+      authorization_unknown:
+        "Account authorization is not available yet for this application.",
+    },
     disclosuresNote:
       "Form CRS, ADV Part 2A and the Investment Advisory Agreement are acknowledged in the app under Documents.",
   },

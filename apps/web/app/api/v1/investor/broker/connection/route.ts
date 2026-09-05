@@ -6,6 +6,7 @@
  * POST — connect Alpaca (paper) with an API key pair: the ONLY credential-
  *        bearing request in the app. Same-origin only (bffMutate CSRF), session
  *        required, account scope re-derived server-side, shape validated,
+ *        `AccountAuthorization.status === AUTHORIZED` read and enforced, then
  *        forwarded ONCE to the contract's `createBrokerageConnection`, and then
  *        forgotten. Nothing here logs, stores, hashes, echoes or reuses the
  *        credentials, and nothing here calls Alpaca. Live keys are refused by
@@ -22,8 +23,8 @@ import {
 } from "@lib/investor-api/account-scope";
 import { classifyUpstream } from "@lib/investor-api/upstream-state";
 import {
+  connectBrokerage,
   getBrokerageConnection,
-  projectBrokerageConnection,
 } from "@lib/investor-api/brokerage-connection";
 
 // Alpaca API Key IDs are 20-char uppercase alphanumerics; PAPER keys start
@@ -83,24 +84,36 @@ export const POST = bffMutate<Body>({
       .digest("hex")
       .slice(0, 64);
     try {
-      const res = await client.call("createBrokerageConnection", {
-        path: { account_id: accountId },
-        body: {
-          broker: "alpaca",
-          account_environment: "paper",
-          credentials: {
-            api_key: ctx.input.apiKeyId,
-            api_secret: ctx.input.apiSecretKey,
-          },
+      // Precondition enforced INSIDE connectBrokerage: AccountAuthorization
+      // must be exactly AUTHORIZED before the credential payload is built or
+      // forwarded. PENDING / DENIED / SUSPENDED → 412 blocked
+      // (`account_not_authorized`, the repository's existing local-precondition
+      // refusal shape — cf. `account_not_linked` on profile v2); the response
+      // carries the backend status word and never the credentials.
+      const outcome = await connectBrokerage(
+        client,
+        accountId,
+        {
+          apiKeyId: ctx.input.apiKeyId,
+          apiSecretKey: ctx.input.apiSecretKey,
         },
         idempotencyKey,
-      });
+      );
+      if (outcome.kind === "not_authorized") {
+        return {
+          data: {
+            ok: false,
+            reason: "account_not_authorized",
+            authorization: outcome.authorization,
+          },
+          outcome: "blocked" as const,
+          reasonCode: "account_not_authorized",
+          status: 412,
+        };
+      }
       return {
-        data: {
-          ok: true,
-          connection: projectBrokerageConnection(res.data.data),
-        },
-        references: [`brokerage-connection:${res.data.data.connection_id}`],
+        data: { ok: true, connection: outcome.connection },
+        references: [`brokerage-connection:${outcome.connection.connectionId}`],
         status: 202,
       };
     } catch (err) {

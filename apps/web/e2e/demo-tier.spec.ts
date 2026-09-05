@@ -561,6 +561,33 @@ test.describe("Demo tier — invited investor sets up: identity → profile → 
     expect(onboarding.data.onboarding.state).toBe("INVITED");
     expect(onboarding.data.authorization?.status).toBe("AUTHORIZED");
     expect(onboarding.data.connection).toBeNull();
+    // Before setup, the setup surface shows both backend words separately and
+    // offers no dashboard continuation: onboarding is INVITED, not READY.
+    await page.goto("/us/onboarding/activation");
+    await expect(page.getByTestId("setup-onboarding-state")).toHaveText(
+      /invited/i,
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId("setup-authorization")).toHaveText(
+      /^authorized$/i,
+    );
+    await expect(page.getByTestId("setup-dashboard")).toHaveCount(0);
+    await expect(page.getByTestId("setup-gate")).toHaveAttribute(
+      "data-reason",
+      "onboarding_not_ready",
+    );
+    // The authorization row is labelled as account authorization; no label
+    // presents the backend status as Alpha admission.
+    await expect(
+      page
+        .getByTestId("setup-backend-state")
+        .getByText("Account authorization", {
+          exact: true,
+        }),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("setup-backend-state").getByText(/^Alpha admission$/),
+    ).toHaveCount(0);
     const recs = (await (
       await page.request.get("/api/v1/investor/recommendations")
     ).json()) as { data: { items: unknown[] } };
@@ -662,8 +689,14 @@ test.describe("Demo tier — invited investor sets up: identity → profile → 
         { timeout: 30_000 },
       );
     }
+    // After the sync the backend reports READY; with AUTHORIZED and all steps
+    // done the continuation appears. Both words are shown, neither as admission.
+    await expect(page.getByTestId("setup-onboarding-state")).toHaveText(
+      /ready/i,
+      { timeout: 30_000 },
+    );
     await expect(page.getByTestId("setup-authorization")).toHaveText(
-      /authorized/i,
+      /^authorized$/i,
     );
     await expect(
       page.getByRole("button", { name: PER_TRADE_CONTROL }),
@@ -724,5 +757,48 @@ test.describe("Demo tier — invited investor sets up: identity → profile → 
     expect(
       await page.getByTestId("broker-connection-card").innerText(),
     ).not.toMatch(/PKDEMO|demoFixtureSecret/);
+  });
+});
+
+test.describe("Demo tier — onboarding aggregate and broker mutation preconditions", () => {
+  test("zero-account WAITLISTED applicant: aggregate renders the onboarding state with null account fields, never a fabricated account or a 500", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await signIn(page, "applicant");
+    const res = await page.request.get("/api/v1/investor/onboarding");
+    expect(res.status()).toBe(200);
+    const body = (await res.json()) as {
+      data: {
+        onboarding: { state: string };
+        accountId: string | null;
+        profile: unknown;
+        authorization: unknown;
+        connection: unknown;
+        upstream: { state: string };
+        identity: { state: string | null };
+      };
+    };
+    expect(body.data.onboarding.state).toBe("WAITLISTED");
+    expect(body.data.accountId).toBeNull();
+    expect(body.data.profile).toBeNull();
+    expect(body.data.authorization).toBeNull();
+    expect(body.data.connection).toBeNull();
+    expect(body.data.upstream.state).toBe("account_scope");
+    expect(body.data.identity.state).not.toBeUndefined();
+    // No account → the broker mutation is refused at account-scope resolution,
+    // before any authorization read or credential forwarding.
+    const post = await page.request.post("/api/v1/investor/broker/connection", {
+      headers: H,
+      data: {
+        environment: "paper",
+        apiKeyId: "PKDEMO1234567890ABCD",
+        apiSecretKey: DEMO_FIXTURE_SECRET,
+      },
+    });
+    expect(post.status()).toBe(503);
+    const text = await post.text();
+    expect(text).toContain("account_scope");
+    expect(text).not.toContain(DEMO_FIXTURE_SECRET);
   });
 });

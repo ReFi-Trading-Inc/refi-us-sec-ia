@@ -1,21 +1,14 @@
 /**
  * Investor activity — browser → same-origin BFF → frozen client → Daniel's
- * deterministic simulator (`listAccountRecords`). Structured records only; the
- * five execution-chain variants never reach the Signal page (D-LAUNCH-06).
- * Simulator evidence only — never a connected refinity-dev claim.
+ * deterministic simulator (`listAccountRecords`). All record variants render
+ * read-only with their authoritative fields; execution-chain records carry a
+ * category label and never a control (D-LAUNCH-06 CLOSED — YES; no frontend
+ * order authority). Simulator evidence only — never a connected claim.
  */
 import { test, expect, type Request } from "@playwright/test";
 import { E2E_USERS } from "./global-setup";
 import { e2eAuthCookies } from "./session";
 import { SIMULATOR_ORIGIN } from "./investor-api-simulator";
-
-const EXECUTION_CHAIN = [
-  "account_intent",
-  "risk_decision",
-  "execution_plan",
-  "order",
-  "fill",
-];
 
 test.describe("Activity — Signal user", () => {
   test.beforeEach(async ({ page }) => {
@@ -24,7 +17,7 @@ test.describe("Activity — Signal user", () => {
       .addCookies(await e2eAuthCookies(E2E_USERS.signal.eligibilityCookie));
   });
 
-  test("renders the simulator's account records through the BFF with authoritative fields, no placeholders", async ({
+  test("renders the simulator's account records through the BFF with authoritative fields, no placeholders, no controls", async ({
     page,
   }) => {
     const browserRequests: string[] = [];
@@ -38,20 +31,15 @@ test.describe("Activity — Signal user", () => {
     await expect(row).toContainText("CURRENT");
     await expect(row).toContainText("record_alpha_00000001");
     await expect(row).toContainText("recommendation_alpha_0001");
+    await expect(row).toContainText("$6,250.06");
     await expect(row).not.toContainText("—");
     await expect(page.getByTestId("activity-upstream-state")).toHaveCount(0);
-
-    for (const row2 of await page.getByTestId("activity-record").all()) {
-      const t = await row2.getAttribute("data-record-type");
-      expect(
-        EXECUTION_CHAIN,
-        `execution-chain record ${t ?? ""} must not render`,
-      ).not.toContain(t);
-    }
-    // No execution controls anywhere on the page.
+    await expect(
+      page.getByTestId("activity-table").getByRole("button"),
+    ).toHaveCount(0);
     await expect(
       page.getByRole("button", {
-        name: /\b(accept|approve|execute|buy|sell|trade)\b/i,
+        name: /\b(accept|approve|execute|cancel|buy|sell|trade)\b/i,
       }),
     ).toHaveCount(0);
 
@@ -69,7 +57,7 @@ test.describe("Activity — Signal user", () => {
     }
   });
 
-  test("the BFF projection never contains execution-chain record types", async ({
+  test("the BFF projection carries every record with a category and withholds nothing", async ({
     page,
   }) => {
     await page.goto("/us/app/activity");
@@ -77,17 +65,17 @@ test.describe("Activity — Signal user", () => {
     expect(res.status()).toBe(200);
     const body = (await res.json()) as {
       data: {
-        items: Array<{ recordType: string }>;
+        items: Array<{ recordType: string; category: string }>;
         excludedCount: number;
         upstream: { state: string };
       };
     };
     expect(body.data.upstream.state).toBe("ok");
     expect(body.data.items.length).toBeGreaterThan(0);
+    expect(body.data.excludedCount).toBe(0);
     for (const item of body.data.items) {
-      expect(EXECUTION_CHAIN).not.toContain(item.recordType);
+      expect(["account", "execution_chain"]).toContain(item.category);
     }
-    expect(typeof body.data.excludedCount).toBe("number");
   });
 
   test("unauthenticated reads are refused", async ({ request }) => {

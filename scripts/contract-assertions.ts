@@ -5811,10 +5811,10 @@ await section(
   );
 
   await section(
-    "signal activity: the five execution-chain record variants are excluded; the map is exhaustive over the generated union",
+    "investor activity: all 16 record variants render read-only; the category map is exhaustive; no record carries a control",
     async () => {
       const {
-        ACCOUNT_RECORD_VISIBILITY,
+        ACCOUNT_RECORD_CATEGORY,
         EXECUTION_CHAIN_RECORD_TYPES,
         projectSignalActivity,
       } = await import("../apps/web/src/lib/investor-api/account-records.ts");
@@ -5825,7 +5825,6 @@ await section(
         "order",
         "risk_decision",
       ]);
-      // Exhaustive over Daniel's schema enum.
       const schemas = JSON.parse(
         read(
           "packages/api-clients/contracts/investor-api/v1.1.0-alpha.2/schemas.json",
@@ -5845,8 +5844,7 @@ await section(
         .filter((v): v is string => typeof v === "string")
         .sort();
       assert.equal(variants.length, 16, "AccountRecord must have 16 variants");
-      assert.deepEqual(Object.keys(ACCOUNT_RECORD_VISIBILITY).sort(), variants);
-      // Behavioural: even if the upstream returns all 16, Signal renders 11.
+      assert.deepEqual(Object.keys(ACCOUNT_RECORD_CATEGORY).sort(), variants);
       const base = {
         account_id: "acct_x",
         correlation_id: "corr_x",
@@ -5867,21 +5865,23 @@ await section(
       const { items, excludedCount } = projectSignalActivity(
         all as Parameters<typeof projectSignalActivity>[0],
       );
-      assert.equal(excludedCount, 5);
-      assert.equal(items.length, 11);
-      for (const it of items) {
-        assert.ok(
-          !EXECUTION_CHAIN_RECORD_TYPES.includes(it.recordType),
-          `${it.recordType} must not be rendered in Signal`,
-        );
-      }
-      // The activity page renders only what the BFF projected — no re-fetch, no re-include.
+      assert.equal(
+        excludedCount,
+        0,
+        "D-LAUNCH-06 CLOSED — YES: nothing is withheld",
+      );
+      assert.equal(items.length, 16);
+      // Read-only: the activity page renders no control for any record.
       const page = stripComments(read("apps/web/app/us/app/activity/page.tsx"));
       assert.ok(
-        !/account_intent|risk_decision|execution_plan|["']order["']|["']fill["']/.test(
+        !/(onClick|href)[^\n]*(cancel|execute|approve|accept|retry|resubmit)/i.test(
           page,
         ),
-        "the activity page must not special-case execution-chain variants",
+        "the activity page must not wire any per-record control",
+      );
+      assert.ok(
+        !/<Button|<button/.test(page),
+        "the activity page renders no buttons",
       );
     },
   );
@@ -6212,6 +6212,163 @@ await section(
             r.route,
           ),
           `unexpected execution-adjacent route ${r.route}`,
+        );
+      }
+    },
+  );
+}
+
+// ─── Demo upstream: only on the demo tier; portfolio/preferences routes stay contract-bound ──
+
+{
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  const stripComments = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const gateway = await import("../apps/web/src/lib/investor-api/gateway.ts");
+  const auth = { authId: "demo-admitted-01", source: "prototype-bff" as const };
+
+  await section(
+    "demo upstream: REFI_INVESTOR_API_MODE=demo is refused on prod, staging and dev; served only on REFI_ENV=demo",
+    async () => {
+      const saved = {
+        m: process.env["REFI_INVESTOR_API_MODE"],
+        e: process.env["REFI_ENV"],
+      };
+      try {
+        process.env["REFI_INVESTOR_API_MODE"] = "demo";
+        for (const tier of ["prod", "staging", "dev"]) {
+          process.env["REFI_ENV"] = tier;
+          resetServerEnvCacheForTests();
+          assert.throws(
+            () => gateway.investorApiClientFor(auth),
+            gateway.DemoUpstreamNotPermittedError,
+            `${tier} must never be served by the demo world`,
+          );
+        }
+        process.env["REFI_ENV"] = "demo";
+        resetServerEnvCacheForTests();
+        const client = gateway.investorApiClientFor(auth);
+        const accounts = await client.call("listAccounts", {});
+        assert.equal(
+          accounts.data.data.items[0]?.account_id,
+          "acct_demo_admitted_01",
+        );
+      } finally {
+        if (saved.m === undefined) delete process.env["REFI_INVESTOR_API_MODE"];
+        else process.env["REFI_INVESTOR_API_MODE"] = saved.m;
+        if (saved.e === undefined) delete process.env["REFI_ENV"];
+        else process.env["REFI_ENV"] = saved.e;
+        resetServerEnvCacheForTests();
+      }
+    },
+  );
+
+  await section(
+    "demo upstream: no client component imports the demo world or the server portfolio module at runtime",
+    async () => {
+      const walk = (dir: string): string[] =>
+        readdirSync(join(REPO_ROOT, dir), { withFileTypes: true }).flatMap(
+          (d) =>
+            d.isDirectory()
+              ? walk(`${dir}/${d.name}`)
+              : /\.(tsx?|ts)$/.test(d.name)
+                ? [`${dir}/${d.name}`]
+                : [],
+        );
+      for (const f of [...walk("apps/web/app"), ...walk("apps/web/src")]) {
+        const raw = read(f);
+        if (!/^\s*["']use client["']/m.test(raw)) continue;
+        const src = stripComments(raw);
+        assert.ok(
+          !/demo-client|investor-api\/gateway/.test(src),
+          `${f}: client code must not import the demo world or gateway`,
+        );
+        assert.ok(
+          !/^import\s+(?!type\b)[^;]*from\s+["']@lib\/investor-api\/(portfolio|recommendations|account-records|upstream-state)["']/m.test(
+            src,
+          ),
+          `${f}: projection modules may be imported as types only from client code`,
+        );
+      }
+    },
+  );
+
+  await section(
+    "portfolio + preferences routes: frozen-client operations, server-derived scope, four fields only, dedicated PATCH",
+    async () => {
+      const portfolioLib = stripComments(
+        read("apps/web/src/lib/investor-api/portfolio.ts"),
+      );
+      for (const op of [
+        "getAccountValuation",
+        "listAccountValuations",
+        "listAccountPositions",
+        "listAccountMemberships",
+        "getTemplate",
+        "getAccountPreferences",
+      ]) {
+        assert.ok(
+          new RegExp(`client\\.call\\(\\s*"${op}"`).test(portfolioLib),
+          `portfolio must use ${op}`,
+        );
+      }
+      const portfolioRoute = read(
+        "apps/web/app/api/v1/investor/portfolio/route.ts",
+      );
+      assert.ok(
+        /resolveAccountScope\(client, ctx\.auth\)/.test(portfolioRoute) &&
+          !/prototype-store/.test(portfolioRoute),
+      );
+      const prefs = stripComments(
+        read("apps/web/app/api/v1/investor/preferences/route.ts"),
+      );
+      assert.ok(
+        /client\.call\(\s*"updateAccountPreferences"/.test(prefs),
+        "preferences must use the dedicated PATCH operation",
+      );
+      assert.ok(
+        !/createAccountAction|"\/actions"/.test(prefs),
+        "preferences must never travel through /actions (D-018)",
+      );
+      assert.ok(
+        /ifMatch:/.test(prefs) && /idempotencyKey/.test(prefs),
+        "If-Match + Idempotency-Key are required on PATCH",
+      );
+      assert.ok(
+        /action:\s*"updateAccountPrefs"/.test(prefs),
+        "governed by the Signal-allowed action",
+      );
+      for (const forbidden of [
+        "allocation_percent",
+        "capital",
+        "risk_limit",
+        "leverage",
+        "reduce_only",
+        "autopilot",
+      ]) {
+        assert.ok(
+          !prefs.includes(forbidden),
+          `preferences must not expose ${forbidden} (IB-06)`,
+        );
+      }
+      for (const field of [
+        "drift_threshold",
+        "min_order",
+        "excluded_assets",
+        "fractional_enabled",
+      ]) {
+        assert.ok(prefs.includes(field), `preferences must map ${field}`);
+      }
+      // Pages read reconciled truth; the client-side simulation is gone.
+      for (const gone of [
+        "apps/web/app/_hooks/useSimulation.ts",
+        "apps/web/app/us/app/_components/SimulatedDataBadge.tsx",
+      ]) {
+        assert.ok(
+          !existsSync(join(REPO_ROOT, gone)),
+          `${gone} must be removed — no synthetic portfolio data`,
         );
       }
     },

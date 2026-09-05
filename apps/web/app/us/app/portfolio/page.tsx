@@ -1,170 +1,152 @@
 "use client";
 
+/**
+ * Portfolio — reconciled positions and valuation history from the backend
+ * through the BFF. Decimals are the backend's strings; nothing is computed
+ * from browser data or simulated.
+ */
 import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
+  Badge,
   Card,
   CardContent,
+  StatusBanner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@ui/components";
-import {
-  Area,
-  AreaChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
 import { appCopy } from "../../_content/app-copy";
-import { useSimulation } from "../../../_hooks/useSimulation";
+import { useInvestorPortfolio } from "../../../_hooks/useInvestorPortfolio";
+import { EquityChart, formatCurrency } from "../_components/EquityChart";
 
 const { portfolio } = appCopy;
 
-function formatCurrency(value: number): string {
-  return value.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 2,
-  });
-}
-
-function formatPct(value: number): string {
-  return `${(value * 100).toFixed(2)}%`;
-}
-
 export default function PortfolioPage() {
-  const { positions, portfolioMetrics, history } = useSimulation();
-  const { totalValue, dayPl, dayPlPct, totalPl, totalPlPct } = portfolioMetrics;
-
-  const cards = [
-    { label: "Total value", value: formatCurrency(totalValue) },
-    {
-      label: "Day P&L",
-      value: `${formatCurrency(dayPl)} (${formatPct(dayPlPct)})`,
-      tone: dayPl >= 0 ? "text-mint-400" : "text-status-rejected",
-    },
-    {
-      label: "Total P&L",
-      value: `${formatCurrency(totalPl)} (${formatPct(totalPlPct)})`,
-      tone: totalPl >= 0 ? "text-mint-400" : "text-status-rejected",
-    },
-    {
-      label: portfolio.allPositions,
-      value: positions.length.toString(),
-    },
-  ];
+  const { data, isLoading } = useInvestorPortfolio();
+  const p = data?.portfolio ?? null;
+  const upstream = data?.upstream;
 
   return (
-    <div className="flex flex-col gap-6 max-w-5xl">
+    <div className="flex flex-col gap-6 max-w-5xl" data-testid="portfolio-page">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold text-charcoal-50">
           {portfolio.heading}
         </h1>
+        {p && (
+          <Badge
+            variant={p.valuation.freshness === "FRESH" ? "active" : "warning"}
+          >
+            {p.valuation.environment} · {p.valuation.freshness.toLowerCase()}
+          </Badge>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {cards.map((c) => (
-          <Card key={c.label}>
+      {upstream && upstream.state !== "ok" && (
+        <StatusBanner variant="warning" data-testid="portfolio-upstream-state">
+          {portfolio.upstreamUnavailable}
+        </StatusBanner>
+      )}
+
+      {p && (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              [portfolio.totalValue, formatCurrency(p.valuation.equity)],
+              [portfolio.cash, formatCurrency(p.valuation.cash)],
+              [portfolio.buyingPower, formatCurrency(p.valuation.buyingPower)],
+              [portfolio.openOrders, String(p.valuation.openOrderCount)],
+            ].map(([label, value]) => (
+              <Card key={label}>
+                <CardContent className="pt-4">
+                  <p className="text-xs text-charcoal-500 mb-1">{label}</p>
+                  <p className="text-xl font-mono tabular-nums text-charcoal-100">
+                    {value}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+
+          <Card>
             <CardContent className="pt-4">
-              <p className="text-xs text-charcoal-500 mb-1">{c.label}</p>
-              <p
-                className={`text-xl font-mono tabular-nums ${
-                  c.tone ?? "text-charcoal-100"
-                }`}
-              >
-                {c.value}
+              <p className="text-xs text-charcoal-500 mb-3">
+                {portfolio.equityHistory}
               </p>
+              <EquityChart history={p.history} height={256} id="pfArea" />
             </CardContent>
           </Card>
-        ))}
-      </div>
+        </>
+      )}
 
-      <Card>
-        <CardContent className="pt-4">
-          <p className="text-xs text-charcoal-500 mb-3">Portfolio value</p>
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart
-                data={history}
-                margin={{ top: 4, right: 4, left: 0, bottom: 0 }}
-              >
-                <defs>
-                  <linearGradient id="pfArea" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#0CD4A0" stopOpacity={0.5} />
-                    <stop offset="100%" stopColor="#0CD4A0" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <XAxis dataKey="t" hide />
-                <YAxis domain={["auto", "auto"]} hide />
-                <Tooltip
-                  cursor={{ stroke: "#47566A" }}
-                  contentStyle={{
-                    background: "#0A0F14",
-                    border: "1px solid #2D3A47",
-                    fontSize: 12,
-                  }}
-                  formatter={(value) => formatCurrency(Number(value))}
-                  labelFormatter={() => ""}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#0CD4A0"
-                  fill="url(#pfArea)"
-                  strokeWidth={2}
-                  animationDuration={300}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Table>
+      <Table data-testid="positions-table">
         <TableHeader>
           <TableRow>
             <TableHead>{portfolio.symbol}</TableHead>
+            <TableHead>{portfolio.name}</TableHead>
             <TableHead>{portfolio.quantity}</TableHead>
             <TableHead>{portfolio.avgCost}</TableHead>
+            <TableHead>{portfolio.referencePrice}</TableHead>
             <TableHead>{portfolio.marketValue}</TableHead>
             <TableHead>{portfolio.unrealizedPnl}</TableHead>
-            <TableHead>{portfolio.pnlPct}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {positions.map((p) => (
-            <TableRow key={p.symbol}>
-              <TableCell className="font-medium">{p.symbol}</TableCell>
-              <TableCell className="font-mono tabular-nums">{p.qty}</TableCell>
-              <TableCell className="font-mono tabular-nums">
-                {formatCurrency(p.avg_entry_price)}
-              </TableCell>
-              <TableCell className="font-mono tabular-nums">
-                {formatCurrency(p.market_value)}
-              </TableCell>
+          {isLoading ? (
+            <TableRow>
               <TableCell
-                className={`font-mono tabular-nums ${
-                  p.unrealized_pl >= 0
-                    ? "text-mint-400"
-                    : "text-status-rejected"
-                }`}
+                colSpan={7}
+                className="text-center text-charcoal-500 py-12 text-sm"
               >
-                {formatCurrency(p.unrealized_pl)}
-              </TableCell>
-              <TableCell
-                className={`font-mono tabular-nums ${
-                  p.unrealized_plpc >= 0
-                    ? "text-mint-400"
-                    : "text-status-rejected"
-                }`}
-              >
-                {formatPct(p.unrealized_plpc)}
+                Loading…
               </TableCell>
             </TableRow>
-          ))}
+          ) : !p || p.positions.length === 0 ? (
+            <TableRow>
+              <TableCell
+                colSpan={7}
+                className="text-center text-charcoal-500 py-12 text-sm"
+                data-testid="positions-empty"
+              >
+                {portfolio.emptyState}
+              </TableCell>
+            </TableRow>
+          ) : (
+            p.positions.map((pos) => {
+              const pnl =
+                (Number(pos.referencePrice) - Number(pos.averagePrice)) *
+                Number(pos.heldQty);
+              return (
+                <TableRow key={pos.securityId} data-testid="position-row">
+                  <TableCell className="font-semibold text-charcoal-50">
+                    {pos.symbol}
+                  </TableCell>
+                  <TableCell className="text-charcoal-300">
+                    {pos.displayName}
+                  </TableCell>
+                  <TableCell className="font-mono tabular-nums">
+                    {pos.heldQty}
+                  </TableCell>
+                  <TableCell className="font-mono tabular-nums">
+                    {formatCurrency(pos.averagePrice)}
+                  </TableCell>
+                  <TableCell className="font-mono tabular-nums">
+                    {formatCurrency(pos.referencePrice)}
+                  </TableCell>
+                  <TableCell className="font-mono tabular-nums">
+                    {formatCurrency(pos.marketValue)}
+                  </TableCell>
+                  <TableCell
+                    className={`font-mono tabular-nums ${pnl >= 0 ? "text-mint-400" : "text-status-rejected-text"}`}
+                  >
+                    {pnl >= 0 ? "+" : ""}
+                    {formatCurrency(pnl)}
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          )}
         </TableBody>
       </Table>
     </div>

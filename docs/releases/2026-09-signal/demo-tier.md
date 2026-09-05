@@ -109,21 +109,74 @@ identity does the BFF call `joinWaitlist` with the stored receipt id under that
 identity. Claiming a token alone never calls `joinWaitlist`, and no game
 possession confers admission.
 
-## 8. Vercel configuration to create the tier (not executed here)
+## 8. Vercel configuration — APPLIED 2026-09-05 (separate project)
 
-External configuration, to be applied once this slice merges:
+Applied through the Vercel API instead of branch-scoped preview variables: a
+**separate project** keeps the demo environment isolated from production
+secrets and lets Deployment Protection stay on for real previews while the
+demo is public.
 
-1. Create branch `demo` from main (kept in step with main by fast-forward).
-2. Vercel → Environment Variables → target **Preview**, branch **demo**:
-   `NEXT_PUBLIC_REFI_ENV=demo`, `REFI_ENV=demo`, `NEXT_PUBLIC_REFI_DATA_ADAPTER=live`,
-   `REFI_DATA_ADAPTER=mock`, `REFI_RELEASE_STAGE=signal`, `REFI_KYC_PROVIDER=mock`,
-   `REFI_KYC_MOCK_CONTROLS=1`, fresh 32+ char `SESSION_JWT_SECRET`,
-   `SESSION_SECRET`, `IP_HASH_SECRET`, `ELIGIBILITY_JWT_SECRET`, a real
-   `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, `NEXT_PUBLIC_API_BASE_URL` = the
-   demo origin, PostHog/Sentry values, and `FLAG_ALPHA_CLAIM_ROUTE=on` with a
-   **demo-only** `ALPHA_HANDOFF_PUBLIC_KEY_JWK` (pair generated out of band).
-   Investor API variables are added with the follow-up demo data adapter.
-3. Assign the branch domain (proposed `demo.refi.trading`) and disable
-   Deployment Protection for that branch only.
-4. Verify `/us/demo` renders and `/api/demo/session` answers 200; verify the
-   production alias still answers 404 on both.
+| Item                                                | Value                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Project                                             | `refi-us-sec-ia-demo` (`prj_uE7IxdTmaIAWfihWIAt5VGhpJMkI`), same repo, root `apps/web`, Node 24.x, Deployment Protection **off**                                                                                                                                                                                                                                                                                                                                                |
+| Production branch                                   | `demo/data-adapter` (temporary, so the demo works before PRs #79/#80 merge) → switch to `demo` after the merges                                                                                                                                                                                                                                                                                                                                                                 |
+| Public URL                                          | `https://refi-us-sec-ia-demo.vercel.app`; custom domain `demo.refi.trading` added and awaiting DNS                                                                                                                                                                                                                                                                                                                                                                              |
+| DNS (registrar-side, nameservers `dns-parking.com`) | CNAME `demo` → `a6e07c0a9073a4d8.vercel-dns-017.com` (or `cname.vercel-dns.com`)                                                                                                                                                                                                                                                                                                                                                                                                |
+| Env (Production target)                             | `NEXT_PUBLIC_REFI_ENV=demo`, `REFI_ENV=demo`, `REFI_INVESTOR_API_MODE=demo`, `REFI_DATA_ADAPTER=mock`, `NEXT_PUBLIC_REFI_DATA_ADAPTER=live`, `REFI_RELEASE_STAGE=signal`, `REFI_KYC_PROVIDER=mock`, `REFI_KYC_MOCK_CONTROLS=1`, `FLAG_ALPHA_CLAIM_ROUTE=off`, `NEXT_PUBLIC_API_BASE_URL=https://demo.refi.trading`, placeholder PostHog/Sentry/WalletConnect values, four generated 32-byte secrets (sensitive, never in git), placeholder `ALPHA_HANDOFF_*` (claim route dark) |
+| Deploy hook                                         | `demo-branch` → `demo/data-adapter`                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+
+Still on Zeshan's side: the DNS CNAME above; a real `NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID` if the optional wallet modal should load cleanly; switching the production branch to `demo` after the merges.
+
+## 9. Demo data adapter (slice 2) — the demo world
+
+**What.** `apps/web/src/lib/investor-api/demo-client.ts` is an in-process,
+server-only stand-in for the Investor API. It implements the frozen client's
+`call(operationId, options)` for every read the product uses and validates
+each response against the v1.1.0-alpha.2 response schema before returning it
+(`assertMatches`), so demo data cannot drift from the contract. It is
+constructed only by `investorApiClientFor` when `REFI_ENV=demo` **and**
+`REFI_INVESTOR_API_MODE=demo`; on any other tier the gateway throws
+(`DemoUpstreamNotPermittedError`, contract-asserted), so production can never
+be pointed at it.
+
+**Authority model unchanged.** Account scope is still `resolveAccountScope`
+against `listAccounts`; admission is still `getOnboardingStatus` /
+`getAccountAuthorization`; the browser asserts nothing. Personas select a
+WORLD: the applicant has no accounts and is WAITLISTED (`INTERNAL_REVIEW`
+required); the admitted persona has one AUTHORIZED account.
+
+**The admitted world (deterministic, seeded):** connected paper Alpaca
+connection (`CONNECTED`/`VALID`); S&P 500 following template (503
+constituents) with an ACTIVE 60% membership; 24 positions with real tickers
+and prices; a 90-day reconciled equity history; preferences v1 (drift 3%, min
+order $25, tobacco exclusions, fractional on); three recommendations —
+`recommendation_demo_0003` CURRENT (24 legs, 4.1% turnover), `_0002`
+SUPERSEDED, `_0001` BLOCKED (`RECONCILIATION_HOLD`, `STALE_VALUATION`); ~50
+records across all 16 variants including a full execution chain per
+recommendation (intent → risk → plan → 6 orders → fills → reconciliation)
+with one risk decision DENIED. Legs reconcile mathematically (tested).
+
+**The one mutation:** `updateAccountPreferences` (If-Match on the preference
+version, deterministic Idempotency-Key). It bumps the version, marks the
+CURRENT recommendation SUPERSEDED, generates a new CURRENT recommendation
+honouring the new exclusions/min order, and appends a preference record plus a
+fresh execution chain — so "change a preference and watch advice change" is
+real and prior advice is preserved. Every other mutation (brokerage, allocation
+preview, account action, attestation, waitlist, identity) throws
+`DemoUnsupportedOperationError`: the demo never fabricates a write it does not
+own. State: deterministic base world per process; preference deltas live in
+process memory.
+
+**Product surfaces added/changed in slice 2:** `GET /api/v1/investor/portfolio`
+(valuation, bounded history, positions, memberships, preferences; C1b-2 rows
+15/16/24) and `PATCH /api/v1/investor/preferences` (the four IB-06 fields,
+dedicated PATCH per D-018, Signal-allowed `updateAccountPrefs`); Home and
+Portfolio pages now render reconciled backend truth (the client-side
+`useSimulation` and the "Simulated Data" badge are deleted); the account page
+gains the Preferences card; Activity renders all 16 record variants read-only
+with an execution-chain category badge and amounts (D-LAUNCH-06 CLOSED — YES;
+rebaseline §7 implemented). No control exists on any record, leg, or
+recommendation.
+
+**Demo lane env:** `REFI_INVESTOR_API_MODE=demo` (Vercel demo branch env adds
+the same). The main and Signal lanes keep Daniel's simulator.

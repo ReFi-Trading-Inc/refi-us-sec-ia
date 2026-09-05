@@ -12,10 +12,8 @@
  * are surfaced as status only and never drive a control — the Signal release
  * is informational/manual and execution authority is behind D-LAUNCH-06.
  */
-import type {
-  InvestorApiClient,
-  OperationResponse,
-} from "@refi/api-clients/investor-api";
+import type { OperationResponse } from "@refi/api-clients/investor-api";
+import type { InvestorApiReadClient } from "./demo-client";
 import {
   collectPages,
   CONTRACT_MAX_PAGE_SIZE,
@@ -129,7 +127,7 @@ function pageView(p: ContractPage): PageView {
 }
 
 export async function listRecommendations(
-  client: InvestorApiClient,
+  client: InvestorApiReadClient,
   accountId: string,
 ): Promise<{ items: RecommendationSummaryView[]; truncated: boolean }> {
   const collected = await collectPages(
@@ -149,7 +147,7 @@ export async function listRecommendations(
 }
 
 export async function listRecommendationLegsPage(
-  client: InvestorApiClient,
+  client: InvestorApiReadClient,
   accountId: string,
   recommendationId: string,
   cursor: string | undefined,
@@ -165,7 +163,7 @@ export async function listRecommendationLegsPage(
 }
 
 export async function getRecommendationDetail(
-  client: InvestorApiClient,
+  client: InvestorApiReadClient,
   accountId: string,
   recommendationId: string,
 ): Promise<RecommendationDetailView> {

@@ -27,6 +27,7 @@ import {
   type KycLifecycleState,
 } from "../../../_hooks/useKycVerification";
 import { useAuth } from "../../../_providers/auth/AuthProvider";
+import { PreferencesCard } from "../_components/PreferencesCard";
 import { appCopy } from "../../_content/app-copy";
 
 const { account } = appCopy;
@@ -318,6 +319,8 @@ export default function AccountPage() {
           )}
         </CardContent>
       </Card>
+
+      <PreferencesCard />
 
       {/* Security */}
       <Card>

@@ -183,9 +183,10 @@ Ship Contract: records and reconstructable lineage). All five carry only the
 | `order`          | **RENDER read-only** | decimals as strings; status vocabulary from the record     |
 | `fill`           | **RENDER read-only** |                                                            |
 
-Implementation is a follow-up read-only slice (lift the `execution_chain`
-exclusion in `account-records.ts`, keep the exhaustive map, update the E2E and
-package regression tests to prove _inclusion_ and _no controls_). Not done here.
+**Implemented 2026-09-05 (demo slice 2, `demo/data-adapter`):** the
+`execution_chain` exclusion in `account-records.ts` is lifted; the exhaustive
+map now drives a category label; the package regression test, contract
+assertion and E2E prove _inclusion of all 16_ and _no controls_.
 
 ## 8. Alpaca environment — D-LAUNCH-07 (OPEN)
 

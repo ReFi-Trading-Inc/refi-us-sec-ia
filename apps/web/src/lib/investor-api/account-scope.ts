@@ -13,8 +13,8 @@
  *
  * The browser never supplies an account id; nothing here reads the request.
  */
-import type { InvestorApiClient } from "@refi/api-clients/investor-api";
 import type { AuthContext } from "../bff/auth";
+import type { InvestorApiReadClient } from "./demo-client";
 import { collectPages, CONTRACT_MAX_PAGE_SIZE } from "./pagination";
 
 export class AccountScopeError extends Error {
@@ -27,7 +27,7 @@ export class AccountScopeError extends Error {
 const MAX_ACCOUNT_PAGES = 2;
 
 export async function resolveAccountScope(
-  client: InvestorApiClient,
+  client: InvestorApiReadClient,
   auth: Pick<AuthContext, "accountId">,
 ): Promise<string> {
   const { items } = await collectPages(

@@ -212,6 +212,26 @@
       }
     },
     {
+      "source": "apps/web/app/api/v1/investor/portfolio/route.ts",
+      "route": "/api/v1/investor/portfolio",
+      "methods": ["GET"],
+      "purpose": "Reconciled account truth through the frozen v1.1.0-alpha.2 client (getAccountValuation, listAccountValuations, listAccountPositions, listAccountMemberships, getTemplate, getAccountPreferences); server-derived account scope; bounded pagination; decimals preserved. Read-only. C1b-2 rows 15/16/24.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/preferences/route.ts",
+      "route": "/api/v1/investor/preferences",
+      "methods": ["PATCH"],
+      "purpose": "The investor's only preference write: exactly the four supported fields through the frozen client's dedicated updateAccountPreferences PATCH (never /actions), with If-Match from the version the client saw and a deterministic Idempotency-Key; Signal-allowed action updateAccountPrefs; advice-side only.",
+      "owner": "investor-bff",
+      "auth": {
+        "PATCH": "bff-mutate"
+      }
+    },
+    {
       "source": "apps/web/app/api/v1/investor/profile/route.ts",
       "route": "/api/v1/investor/profile",
       "methods": ["GET", "POST"],

@@ -9,6 +9,8 @@
 import { test, expect, type Page } from "@playwright/test";
 
 const ORIGIN = "http://localhost:3000";
+const PER_TRADE_CONTROL =
+  /\b(accept|approve|execute|place order|buy|sell|activate|trade now)\b/i;
 const H = { "content-type": "application/json", origin: ORIGIN };
 
 async function signIn(page: Page, persona: string) {
@@ -78,9 +80,8 @@ test.describe("Demo tier — persona sign-in", () => {
     ]) {
       expect(s.data).not.toHaveProperty(k);
     }
-    // Account scope is resolved by the BFF against the simulator (listAccounts),
-    // never supplied by the browser: the account-scoped read succeeds with the
-    // simulator's owned account and reports the upstream state explicitly.
+    // Account scope is resolved by the BFF against the demo world's
+    // listAccounts, never supplied by the browser.
     const recs = await page.request.get("/api/v1/investor/recommendations");
     expect(recs.status()).toBe(200);
     const r = (await recs.json()) as { data: { upstream: { state: string } } };
@@ -183,5 +184,156 @@ test.describe("Demo tier — persona sign-in", () => {
     expect((await page.request.get("/api/v1/investor/session")).status()).toBe(
       401,
     );
+  });
+
+  test("admitted persona sees a reconciled portfolio: equity, 24 positions, subscription", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await signIn(page, "admitted");
+    await page.goto("/us/app/home");
+    await expect(page.getByTestId("home-equity")).toContainText("$");
+    await expect(page.getByTestId("home-position-count")).toHaveText("24");
+    await expect(page.getByTestId("home-membership")).toContainText(
+      "SP500-Following",
+    );
+    await expect(page.getByTestId("equity-chart")).toBeVisible();
+    await page.goto("/us/app/portfolio");
+    await expect(page.getByTestId("position-row")).toHaveCount(24);
+    await expect(page.getByTestId("position-row").first()).toContainText(
+      /AAPL|MSFT|NVDA/,
+    );
+  });
+
+  test("applicant persona has no account truth: portfolio reports account scope, never fabricates", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await signIn(page, "applicant");
+    const res = await page.request.get("/api/v1/investor/portfolio");
+    const body = (await res.json()) as {
+      data: { portfolio: unknown; upstream: { state: string } };
+    };
+    expect(body.data.portfolio).toBeNull();
+    expect(body.data.upstream.state).toBe("account_scope");
+  });
+
+  test("activity renders the execution chain read-only: orders, fills, a DENIED risk decision, no controls", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await signIn(page, "admitted");
+    await page.goto("/us/app/activity");
+    const rows = page.getByTestId("activity-record");
+    await expect(rows.first()).toBeVisible({ timeout: 30_000 });
+    expect(await rows.count()).toBeGreaterThan(30);
+    await expect(
+      page.locator('[data-record-type="order"]').first(),
+    ).toBeVisible();
+    await expect(
+      page.locator('[data-record-type="fill"]').first(),
+    ).toBeVisible();
+    await expect(
+      page
+        .locator('[data-record-type="risk_decision"]')
+        .filter({ hasText: "DENIED" }),
+    ).toHaveCount(1);
+    expect(
+      await page.getByTestId("activity-execution-badge").count(),
+    ).toBeGreaterThan(10);
+    await expect(
+      page.getByTestId("activity-table").getByRole("button"),
+    ).toHaveCount(0);
+  });
+
+  test("recommendations show CURRENT, SUPERSEDED and BLOCKED with 24 legs and no per-trade control", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await signIn(page, "admitted");
+    await page.goto("/us/app/recommendations");
+    await expect(page.getByTestId("recommendation-card")).toHaveCount(3, {
+      timeout: 30_000,
+    });
+    for (const status of ["CURRENT", "SUPERSEDED", "BLOCKED"]) {
+      await expect(page.locator(`[data-rec-status="${status}"]`)).toHaveCount(
+        1,
+      );
+    }
+    await page.goto("/us/app/recommendations/recommendation_demo_0003");
+    await expect(page.getByTestId("recommendation-leg")).toHaveCount(24, {
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByRole("button", { name: PER_TRADE_CONTROL }),
+    ).toHaveCount(0);
+  });
+
+  test("changing a preference produces new advice and preserves the prior recommendation", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await signIn(page, "admitted");
+    const before = (await (
+      await page.request.get("/api/v1/investor/recommendations")
+    ).json()) as {
+      data: { items: Array<{ recommendationId: string; status: string }> };
+    };
+    const beforeCurrent = before.data.items.find((r) => r.status === "CURRENT");
+    if (!beforeCurrent) throw new Error("no CURRENT recommendation");
+    await page.goto("/us/app/account");
+    await expect(page.getByTestId("preferences-card")).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByTestId("pref-drift").selectOption("0.05");
+    await page
+      .getByTestId("pref-excluded")
+      .fill("security_us_mo, security_us_pm, security_us_tsla");
+    await page.getByTestId("pref-save").click();
+    await expect(page.getByTestId("pref-saved")).toBeVisible({
+      timeout: 15_000,
+    });
+    const after = (await (
+      await page.request.get("/api/v1/investor/recommendations")
+    ).json()) as {
+      data: { items: Array<{ recommendationId: string; status: string }> };
+    };
+    expect(after.data.items.length).toBe(before.data.items.length + 1);
+    expect(
+      after.data.items.find(
+        (r) => r.recommendationId === beforeCurrent.recommendationId,
+      )?.status,
+    ).toBe("SUPERSEDED");
+    expect(after.data.items.filter((r) => r.status === "CURRENT")).toHaveLength(
+      1,
+    );
+    const activity = (await (
+      await page.request.get("/api/v1/investor/activity")
+    ).json()) as {
+      data: { items: Array<{ recordType: string; entityId: string }> };
+    };
+    expect(
+      activity.data.items.some(
+        (r) =>
+          r.recordType === "preference" && r.entityId === "preferences_demo_v2",
+      ),
+    ).toBe(true);
+  });
+
+  test("preferences accept only the four supported fields and reject stale versions", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await signIn(page, "admitted");
+    const bad = await page.request.patch("/api/v1/investor/preferences", {
+      headers: H,
+      data: { expectedVersion: 1, allocation_percent: "0.9" },
+    });
+    expect(bad.status()).toBe(400);
+    const stale = await page.request.patch("/api/v1/investor/preferences", {
+      headers: H,
+      data: { expectedVersion: 99, minOrder: "40" },
+    });
+    expect(stale.status()).toBe(409);
   });
 });

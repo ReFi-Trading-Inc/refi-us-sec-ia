@@ -20,11 +20,11 @@ import {
   type ContractRecommendationLeg,
 } from "../../../../apps/web/src/lib/investor-api/recommendations";
 import {
-  ACCOUNT_RECORD_VISIBILITY,
+  ACCOUNT_RECORD_CATEGORY,
+  ACCOUNT_RECORD_TYPES,
   EXECUTION_CHAIN_RECORD_TYPES,
-  isSignalVisible,
+  isKnownRecordType,
   projectSignalActivity,
-  SIGNAL_VISIBLE_RECORD_TYPES,
   type ContractAccountRecord,
 } from "../../../../apps/web/src/lib/investor-api/account-records";
 import {
@@ -143,16 +143,17 @@ describe("recommendation projection (row 19)", () => {
   });
 });
 
-describe("account records → Signal activity (row 20, D-LAUNCH-06 filter)", () => {
+describe("account records → investor activity (row 20; all 16 variants read-only since D-LAUNCH-06 = YES)", () => {
   const variants = (schemas.$defs["AccountRecord"]?.oneOf ?? [])
     .map((v) => v.properties?.record_type?.const)
     .filter((v): v is string => typeof v === "string");
 
-  test("the visibility map is exhaustive over Daniel's 16-variant union", () => {
+  test("the category map is exhaustive over Daniel's 16-variant union and names the five execution-chain types", () => {
     expect(variants).toHaveLength(16);
-    expect(Object.keys(ACCOUNT_RECORD_VISIBILITY).sort()).toEqual(
+    expect(Object.keys(ACCOUNT_RECORD_CATEGORY).sort()).toEqual(
       [...variants].sort(),
     );
+    expect(ACCOUNT_RECORD_TYPES).toHaveLength(16);
     expect([...EXECUTION_CHAIN_RECORD_TYPES].sort()).toEqual([
       "account_intent",
       "execution_plan",
@@ -160,10 +161,9 @@ describe("account records → Signal activity (row 20, D-LAUNCH-06 filter)", () 
       "order",
       "risk_decision",
     ]);
-    expect(SIGNAL_VISIBLE_RECORD_TYPES).toHaveLength(11);
   });
 
-  test("Daniel's example record projects with authoritative fields preserved", () => {
+  test("Daniel's example record projects with authoritative fields preserved and a category", () => {
     expect(
       problemsAgainst("AccountRecordPageEnvelope", { data: RECORDS }),
     ).toEqual([]);
@@ -173,6 +173,7 @@ describe("account records → Signal activity (row 20, D-LAUNCH-06 filter)", () 
       {
         recordId: "record_alpha_00000001",
         recordType: "recommendation",
+        category: "account",
         createdAt: "2026-09-02T00:00:00Z",
         correlationId: "corr_alpha_00000001",
         sourceVersion: "recommendation-alpha-2",
@@ -189,23 +190,22 @@ describe("account records → Signal activity (row 20, D-LAUNCH-06 filter)", () 
     ]);
   });
 
-  test.each(variants)(
-    "variant %s is classified and filtered per D-LAUNCH-06",
-    (t) => {
-      const base = RECORDS.items[0];
-      if (!base) throw new Error("fixture record missing");
-      const record = { ...base, record_type: t } as ContractAccountRecord;
-      const executionChain = (
-        EXECUTION_CHAIN_RECORD_TYPES as string[]
-      ).includes(t);
-      expect(isSignalVisible(record)).toBe(!executionChain);
-      const { items, excludedCount } = projectSignalActivity([record]);
-      expect(items.length).toBe(executionChain ? 0 : 1);
-      expect(excludedCount).toBe(executionChain ? 1 : 0);
-    },
-  );
+  test.each(variants)("variant %s renders read-only with its category", (t) => {
+    const base = RECORDS.items[0];
+    if (!base) throw new Error("fixture record missing");
+    const record = { ...base, record_type: t } as ContractAccountRecord;
+    expect(isKnownRecordType(record)).toBe(true);
+    const { items, excludedCount } = projectSignalActivity([record]);
+    expect(items).toHaveLength(1);
+    expect(excludedCount).toBe(0);
+    expect(items[0]?.category).toBe(
+      (EXECUTION_CHAIN_RECORD_TYPES as string[]).includes(t)
+        ? "execution_chain"
+        : "account",
+    );
+  });
 
-  test("regression: an upstream page containing all sixteen variants yields exactly the eleven Signal-visible ones, newest first", () => {
+  test("regression: a page containing all sixteen variants renders all sixteen, newest first, none dropped", () => {
     const base = RECORDS.items[0];
     if (!base) throw new Error("fixture record missing");
     const all = variants.map((t, i) => ({
@@ -215,38 +215,23 @@ describe("account records → Signal activity (row 20, D-LAUNCH-06 filter)", () 
       created_at: `2026-09-${String(1 + i).padStart(2, "0")}T00:00:00Z`,
     })) as ContractAccountRecord[];
     const { items, excludedCount } = projectSignalActivity(all);
-    expect(excludedCount).toBe(5);
-    expect(items.map((i) => i.recordType)).not.toEqual(
-      expect.arrayContaining([
-        "account_intent",
-        "risk_decision",
-        "execution_plan",
-        "order",
-        "fill",
-      ]),
+    expect(excludedCount).toBe(0);
+    expect(items).toHaveLength(16);
+    expect(items.filter((i) => i.category === "execution_chain")).toHaveLength(
+      5,
     );
-    for (const t of [
-      "account_intent",
-      "risk_decision",
-      "execution_plan",
-      "order",
-      "fill",
-    ]) {
-      expect(items.some((i) => (i.recordType as string) === t)).toBe(false);
-    }
-    expect(items).toHaveLength(11);
     const times = items.map((i) => i.createdAt);
     expect([...times].sort().reverse()).toEqual(times);
   });
 
-  test("an unknown record type (impossible after client validation) is excluded, never rendered", () => {
+  test("an unknown record type (impossible after client validation) is never rendered", () => {
     const base = RECORDS.items[0];
     if (!base) throw new Error("fixture record missing");
     const bogus = {
       ...base,
       record_type: "something_new",
     } as unknown as ContractAccountRecord;
-    expect(isSignalVisible(bogus)).toBe(false);
+    expect(isKnownRecordType(bogus)).toBe(false);
     expect(projectSignalActivity([bogus]).items).toEqual([]);
   });
 });

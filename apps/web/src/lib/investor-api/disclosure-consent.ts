@@ -34,9 +34,9 @@
 import { createHash } from "node:crypto";
 import {
   InvestorApiError,
-  type InvestorApiClient,
   type OperationResponse,
 } from "@refi/api-clients/investor-api";
+import type { InvestorApiReadClient } from "./demo-client";
 
 export type EffectiveDisclosure =
   OperationResponse<"listEffectiveDisclosures">["data"]["items"][number];
@@ -88,7 +88,7 @@ export function consentIdempotencyKey(
 
 /** Effective disclosures as the backend lists them (first page; the contract's cursor is honoured). */
 export async function listEffectiveDisclosures(
-  client: InvestorApiClient,
+  client: InvestorApiReadClient,
 ): Promise<{ items: EffectiveDisclosure[]; hasMore: boolean }> {
   const res = await client.call("listEffectiveDisclosures");
   return { items: res.data.data.items, hasMore: res.data.data.page.has_more };
@@ -99,7 +99,7 @@ export async function listEffectiveDisclosures(
  * (key, version, hash) against the backend's current effective list first.
  */
 export async function acknowledgeDisclosure(
-  client: InvestorApiClient,
+  client: InvestorApiReadClient,
   args: { accountId: string; selection: DisclosureSelection },
 ): Promise<AcknowledgeOutcome> {
   const { selection, accountId } = args;

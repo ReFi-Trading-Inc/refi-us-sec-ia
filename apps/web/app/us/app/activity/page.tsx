@@ -2,12 +2,14 @@
 
 /**
  * Investor activity — structured account records from the BFF projection of
- * Daniel's `AccountRecord`s. Columns are the authoritative record type,
- * timestamp, status, reason codes and record references; nothing is
- * narrated. Execution-chain records are excluded server-side (D-LAUNCH-06).
- * No execution actions exist on this page.
+ * Daniel's `AccountRecord`s, all 16 variants read-only including the
+ * execution chain (intent → risk → plan → order → fill), labelled by
+ * category. Columns are the authoritative record type, timestamp, status,
+ * amounts, reason codes and record references; nothing is narrated. No
+ * execution actions exist on this page.
  */
 import {
+  Badge,
   StatusBanner,
   Table,
   TableBody,
@@ -62,6 +64,7 @@ export default function ActivityPage() {
             <TableHead>{activity.type}</TableHead>
             <TableHead>{activity.timestamp}</TableHead>
             <TableHead>{activity.status}</TableHead>
+            <TableHead>{activity.amount}</TableHead>
             <TableHead>{activity.reasonCodes}</TableHead>
             <TableHead>{activity.recordReference}</TableHead>
           </TableRow>
@@ -70,7 +73,7 @@ export default function ActivityPage() {
           {isLoading ? (
             <TableRow>
               <TableCell
-                colSpan={5}
+                colSpan={6}
                 className="text-center text-charcoal-500 py-12 text-sm"
               >
                 Loading…
@@ -79,7 +82,7 @@ export default function ActivityPage() {
           ) : items.length === 0 ? (
             <TableRow>
               <TableCell
-                colSpan={5}
+                colSpan={6}
                 className="text-center text-charcoal-500 py-12 text-sm"
                 data-testid="activity-empty"
               >
@@ -94,12 +97,32 @@ export default function ActivityPage() {
                 data-record-type={r.recordType}
               >
                 <TableCell className="capitalize">
-                  {recordTypeLabel(r.recordType)}
+                  <span className="flex items-center gap-2">
+                    {recordTypeLabel(r.recordType)}
+                    {r.category === "execution_chain" && (
+                      <Badge
+                        variant="neutral"
+                        data-testid="activity-execution-badge"
+                      >
+                        {activity.executionChain}
+                      </Badge>
+                    )}
+                  </span>
                 </TableCell>
                 <TableCell className="font-mono tabular-nums text-charcoal-400">
                   {formatTimestamp(r.createdAt)}
                 </TableCell>
                 <TableCell>{r.status}</TableCell>
+                <TableCell className="font-mono tabular-nums text-xs text-charcoal-200">
+                  {r.notional
+                    ? Number(r.notional).toLocaleString("en-US", {
+                        style: "currency",
+                        currency: r.currency ?? "USD",
+                      })
+                    : r.quantity
+                      ? `${r.quantity} ${activity.units}`
+                      : ""}
+                </TableCell>
                 <TableCell className="font-mono text-xs text-charcoal-400">
                   {r.reasonCodes.length > 0
                     ? r.reasonCodes.join(", ")

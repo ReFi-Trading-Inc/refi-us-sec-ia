@@ -195,6 +195,11 @@ const serverSchema = clientSchema.extend({
    * is reported unavailable and nothing starts. "mock": the deterministic mock
    * adapter for local/E2E only; never identity verification.
    */
+  // Investor API upstream mode. "client" = the frozen HTTP client against the
+  // configured base URLs (simulator or connected). "demo" = the in-process,
+  // contract-validated demo world — permitted ONLY when REFI_ENV=demo; the
+  // gateway throws otherwise, so production can never be pointed at it.
+  REFI_INVESTOR_API_MODE: z.enum(["client", "demo"]).default("client"),
   REFI_KYC_PROVIDER: z.enum(["unconfigured", "mock"]).default("unconfigured"),
   /**
    * Enables the mock adapter's server-side test control route. Must never be
@@ -320,6 +325,7 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
       process.env["REFI_INVESTOR_API_CREDENTIAL_MODE"] || undefined,
     REFI_INVESTOR_API_ASSERTION_MODE:
       process.env["REFI_INVESTOR_API_ASSERTION_MODE"] || undefined,
+    REFI_INVESTOR_API_MODE: process.env["REFI_INVESTOR_API_MODE"] || undefined,
     REFI_KYC_PROVIDER: process.env["REFI_KYC_PROVIDER"] || undefined,
     REFI_KYC_MOCK_CONTROLS: process.env["REFI_KYC_MOCK_CONTROLS"] || undefined,
     // No withFallback: a signing key must never have a committed default.

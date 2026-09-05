@@ -30,6 +30,22 @@ import {
 import type { AuthContext } from "../bff/auth";
 import { getServerEnv } from "../config/env";
 import { mintUserAssertion } from "./user-assertion";
+import {
+  createDemoInvestorApiClient,
+  type InvestorApiReadClient,
+} from "./demo-client";
+
+export type { InvestorApiReadClient } from "./demo-client";
+
+export class DemoUpstreamNotPermittedError extends Error {
+  constructor(tier: string) {
+    super(
+      `REFI_INVESTOR_API_MODE=demo is permitted only on the demo tier (REFI_ENV=demo); this deployment is "${tier}". ` +
+        "The demo world is never an upstream for production, staging, or dev.",
+    );
+    this.name = "DemoUpstreamNotPermittedError";
+  }
+}
 
 /** The simulator's fixed synthetic credentials (constants in Daniel's `tools/conformance.py`). */
 const SIMULATOR_FIXTURE_BEARER = "fixture-google-oidc";
@@ -86,8 +102,20 @@ function targetFor(
  * A client bound to the calling session. Constructed per request: the
  * assertion minter closes over THIS user's `sub`/`sid`/`auth_time`/`amr`.
  */
-export function investorApiClientFor(auth: AuthContext): InvestorApiClient {
+export function investorApiClientFor(auth: AuthContext): InvestorApiReadClient {
   const env = getServerEnv();
+  if (env.REFI_INVESTOR_API_MODE === "demo") {
+    if (env.REFI_ENV !== "demo")
+      throw new DemoUpstreamNotPermittedError(env.REFI_ENV);
+    return createDemoInvestorApiClient({ authId: auth.authId });
+  }
+  return createFrozenClient(auth, env);
+}
+
+function createFrozenClient(
+  auth: AuthContext,
+  env: ReturnType<typeof getServerEnv>,
+): InvestorApiClient {
   const allowRemote = env.REFI_INVESTOR_API_ALLOW_REMOTE === "1";
 
   const getBearer =

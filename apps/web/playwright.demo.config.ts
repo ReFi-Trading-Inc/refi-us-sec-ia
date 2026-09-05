@@ -55,6 +55,8 @@ export default defineConfig({
       REFI_PROTOTYPE_STORE_DIR: PROTOTYPE_STORE_DIR,
       // Investor API upstream: Daniel's loopback simulator started by
       // global-setup, with fixture credentials. Simulator evidence only.
+      // Demo world as the upstream (contract-validated in-process fixtures).
+      REFI_INVESTOR_API_MODE: "demo",
       REFI_INVESTOR_API_BASE_URL: "http://127.0.0.1:8765",
       REFI_IDENTITY_CCID_BASE_URL: "http://127.0.0.1:8765",
       REFI_INVESTOR_API_CREDENTIAL_MODE: "simulator-fixture",

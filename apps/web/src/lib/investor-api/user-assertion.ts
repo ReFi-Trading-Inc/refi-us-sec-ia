@@ -142,7 +142,7 @@ export class UnstableIssuerError extends Error {
  */
 export function assertPublishableIssuer(
   issuer: string,
-  tier: "dev" | "staging" | "prod",
+  tier: "dev" | "staging" | "demo" | "prod",
 ): void {
   let host: string;
   try {

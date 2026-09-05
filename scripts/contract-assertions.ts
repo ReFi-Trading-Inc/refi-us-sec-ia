@@ -5984,6 +5984,240 @@ await section(
   },
 );
 
+// ─── Demo tier: persona sign-in is dark outside REFI_ENV=demo; personas are a closed enum ──
+
+{
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  const stripComments = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const { createRequire: createRequireDemo } = await import("node:module");
+  const requireDemo = createRequireDemo(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const { NextRequest } = (await import(
+    requireDemo.resolve("next/server")
+  )) as typeof import("next/server");
+  const demo = await import("../apps/web/app/api/demo/session/route.ts");
+  const personas = await import("../apps/web/src/lib/demo/personas.ts");
+  const ORIGIN = "http://localhost:3000";
+  const req = (
+    method: string,
+    body?: unknown,
+    opts: { origin?: string | null; cookie?: string } = {},
+  ) => {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    const origin = opts.origin === undefined ? ORIGIN : opts.origin;
+    if (origin) headers["origin"] = origin;
+    if (opts.cookie) headers["cookie"] = opts.cookie;
+    return new NextRequest(`${ORIGIN}/api/demo/session`, {
+      method,
+      headers,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  };
+  const withTier = async (tier: string, fn: () => Promise<void>) => {
+    const saved = process.env["REFI_ENV"];
+    process.env["REFI_ENV"] = tier;
+    resetServerEnvCacheForTests();
+    try {
+      await fn();
+    } finally {
+      if (saved === undefined) delete process.env["REFI_ENV"];
+      else process.env["REFI_ENV"] = saved;
+      resetServerEnvCacheForTests();
+    }
+  };
+
+  await section(
+    "demo tier: /api/demo/session answers 404 on prod, staging and dev (production is never weakened)",
+    async () => {
+      for (const tier of ["prod", "staging", "dev"]) {
+        await withTier(tier, async () => {
+          assert.equal(demo.GET(req("GET")).status, 404, `${tier}: GET`);
+          assert.equal(
+            (await demo.POST(req("POST", { persona: "admitted" }))).status,
+            404,
+            `${tier}: POST`,
+          );
+          assert.equal(
+            demo.DELETE(req("DELETE")).status,
+            404,
+            `${tier}: DELETE`,
+          );
+        });
+      }
+    },
+  );
+
+  await section(
+    "demo tier: on REFI_ENV=demo the persona enum is closed, strict, same-origin, and asserts no authority",
+    async () => {
+      await withTier("demo", async () => {
+        assert.deepEqual(
+          [...personas.DEMO_PERSONAS],
+          ["applicant", "admitted"],
+        );
+        // Impersonation shapes are rejected.
+        for (const bad of [
+          { persona: "root" },
+          { persona: "admitted", authId: "usr_x" },
+          { persona: "admitted", accountId: "acct_alpha_owned_01" },
+          { persona: "admitted", email: "a@b.c" },
+          { authId: "demo-admitted-01" },
+          {},
+        ]) {
+          const r = await demo.POST(req("POST", bad));
+          assert.equal(r.status, 400, `must reject ${JSON.stringify(bad)}`);
+        }
+        assert.equal(
+          (
+            await demo.POST(
+              req("POST", { persona: "admitted" }, { origin: null }),
+            )
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await demo.POST(
+              req(
+                "POST",
+                { persona: "admitted" },
+                { origin: "http://evil.example" },
+              ),
+            )
+          ).status,
+          403,
+        );
+        // Query-string persona is ignored: only the body is read.
+        const ok = await demo.POST(req("POST", { persona: "applicant" }));
+        assert.equal(ok.status, 200);
+        const body = (await ok.json()) as { data: Record<string, unknown> };
+        assert.equal(body.data["persona"], "applicant");
+        assert.equal(body.data["authorityAsserted"], false);
+        for (const k of [
+          "accountId",
+          "account_id",
+          "admitted",
+          "approved",
+          "authorization",
+        ]) {
+          assert.ok(!(k in body.data), `response must not assert ${k}`);
+        }
+        const setCookie = ok.headers.getSetCookie().join("\n");
+        assert.ok(
+          /us_session_v1=[^;]+;.*HttpOnly/i.test(setCookie),
+          "session cookie must be HttpOnly",
+        );
+        assert.ok(
+          /us_eligibility_v1=;/.test(setCookie),
+          "applicant must NOT receive an eligibility decision",
+        );
+        const adm = await demo.POST(req("POST", { persona: "admitted" }));
+        const admCookies = adm.headers.getSetCookie().join("\n");
+        assert.ok(
+          /us_eligibility_v1=[^;]{20,}/.test(admCookies),
+          "admitted persona receives an eligibility decision cookie",
+        );
+        // The display cookie is never read for authority: GET reflects it, but
+        // the BFF auth path never imports it.
+        const authSrc = read("apps/web/src/lib/bff/auth.ts");
+        assert.ok(
+          !/us_demo_persona|DEMO_PERSONA_COOKIE|demo\/personas/.test(authSrc),
+          "bff/auth.ts must not read the demo persona cookie",
+        );
+      });
+    },
+  );
+
+  await section(
+    "demo tier: the session subject is a fixed persona id; the demo module mints no account id or admission",
+    async () => {
+      const src = stripComments(read("apps/web/app/api/demo/session/route.ts"));
+      assert.ok(
+        !/linkAuthToAccount|accountId|account_id|listAccounts|createAccountAction|approved|admission/.test(
+          src,
+        ),
+        "demo session route must not link accounts or assert admission",
+      );
+      assert.ok(
+        /setSubject\(profile\.authId\)/.test(src),
+        "session subject is the fixed persona authId",
+      );
+      for (const p of Object.values(personas.DEMO_PERSONA_PROFILES)) {
+        assert.ok(
+          /^demo-[a-z]+-\d{2}$/.test(p.authId),
+          `persona authId ${p.authId} must be a fixed demo id`,
+        );
+      }
+    },
+  );
+
+  await section(
+    "alpha-claim client: retry link points at game.refi.trading and the claim lands at eligibility",
+    async () => {
+      const src = read(
+        "apps/web/app/us/alpha-claim/_components/AlphaClaimClient.tsx",
+      );
+      assert.ok(
+        /const GAME_URL = "https:\/\/game\.refi\.trading"/.test(src),
+        "GAME_URL must be game.refi.trading",
+      );
+      assert.ok(
+        !/play\.refi\.trading/.test(stripComments(src)),
+        "the retired play.refi.trading host must not appear in the claim client",
+      );
+      assert.ok(
+        /const CONTINUE_ROUTE = "\/us\/eligibility"/.test(src),
+        "claim must continue to eligibility",
+      );
+    },
+  );
+
+  await section(
+    "game progress is not identity, admission, or suitability: profile engine/entities never import handoff data",
+    async () => {
+      for (const f of [
+        "apps/web/src/lib/sec203a/investor-profile-engine.ts",
+        "apps/web/src/lib/sec203a/investor-profile.ts",
+        "apps/web/src/lib/prototype-store/entities/investor-profile-v2.ts",
+        "apps/web/src/lib/compliance/attestation-mapping.ts",
+        "apps/web/src/lib/bff/auth.ts",
+        "apps/web/src/lib/investor-api/account-scope.ts",
+      ]) {
+        const src = stripComments(read(f));
+        assert.ok(
+          !/alpha-application|alpha-handoff|alphaPlayerId|scoreBreakdown|completedArenas/.test(
+            src,
+          ),
+          `${f} must not depend on game handoff data`,
+        );
+      }
+    },
+  );
+
+  await section(
+    "demo slice adds no brokerage-credential, allocation, account-action, or order route",
+    async () => {
+      const manifest = JSON.parse(
+        read("compliance/API_ROUTE_MANIFEST.json"),
+      ) as { routes: Array<{ route: string }> };
+      for (const r of manifest.routes) {
+        assert.ok(
+          !/brokerage-connections|credentials|allocation|\/actions|orders|execut|intent/.test(
+            r.route,
+          ),
+          `unexpected execution-adjacent route ${r.route}`,
+        );
+      }
+    },
+  );
+}
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

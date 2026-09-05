@@ -98,7 +98,12 @@ const clientSchema = z.object({
   NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: z.string().min(1),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().min(1),
   NEXT_PUBLIC_SENTRY_DSN: z.url(),
-  NEXT_PUBLIC_REFI_ENV: z.enum(["dev", "staging", "prod"]).default("dev"),
+  // "demo" is the isolated founder/investor demonstration tier: simulator/
+  // demo-backed, never production, never a connected-Dev claim. Client-visible
+  // so the environment indicator can label it; security gates use REFI_ENV.
+  NEXT_PUBLIC_REFI_ENV: z
+    .enum(["dev", "staging", "demo", "prod"])
+    .default("dev"),
 });
 
 const serverSchema = clientSchema.extend({
@@ -112,7 +117,10 @@ const serverSchema = clientSchema.extend({
   // public NEXT_PUBLIC_REFI_ENV build constant. No schema default: in prod
   // withFallback yields undefined so a missing value fails boot rather than
   // silently degrading to "dev"; non-prod fills "dev" via PROTOTYPE_DEFAULTS.
-  REFI_ENV: z.enum(["dev", "staging", "prod"]),
+  // "demo" enables exactly one extra surface — the deterministic persona
+  // sign-in (`/api/demo/session`) — and, like "staging"/"prod", DISABLES the
+  // eligibility-cookie dev fallback. Nothing in "demo" is weaker than "dev".
+  REFI_ENV: z.enum(["dev", "staging", "demo", "prod"]),
   REFI_DATA_ADAPTER: z.enum(["mock", "live"]).default("mock"),
   // AlphaHandoffToken verification (§2.2). Public key travels as a JWK JSON
   // string; iss/aud are pinned. Only the public half is ever read here.

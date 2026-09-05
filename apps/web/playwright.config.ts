@@ -18,7 +18,7 @@ export default defineConfig({
   // refusals that must fire at REFI_RELEASE_STAGE=signal and correctly do NOT
   // fire at managed_paper, which is what this lane runs. While the smoke lane
   // was stage-independent this separation was implicit; now it is enforced.
-  testIgnore: /signal-(smoke|authority)\.spec\.ts/,
+  testIgnore: /(signal-(smoke|authority)|demo-tier)\.spec\.ts/,
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: true,
   forbidOnly: !!process.env["CI"],

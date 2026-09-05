@@ -12,7 +12,7 @@ fills the funnel; Phase 2.6 builds what the funnel empties into.
 
 | Repo                               | Where                                    | Role                                                                                                         |
 | ---------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `refi-man-vs-machine` ("the game") | `ReFi/game/` · play.refi.trading         | Marketing property / acquisition top-of-funnel. Retro/ASCII register. Mints the AlphaHandoffToken.           |
+| `refi-man-vs-machine` ("the game") | `ReFi/game/` · game.refi.trading         | Marketing property / acquisition top-of-funnel. Retro/ASCII register. Mints the AlphaHandoffToken.           |
 | `refi-us-sec-ia` (this repo)       | Website/ · refi-us-sec-ia-web.vercel.app | The SEC IA shell: `/us` public pages, eligibility, onboarding, investor portal, BFF. Buttoned-down register. |
 | `refi-landing-latest`              | Website/ · refi.trading                  | Marketing site. Today: no game link, no eligibility link. Future: US-geo compliant funnel feeding both.      |
 | `refinity-main` (Daniel)           | GitLab                                   | The trading backend. `docs/authoritative/*` is the only doc source of truth (pinned `main @ 9f9dfc9`).       |
@@ -21,7 +21,7 @@ fills the funnel; Phase 2.6 builds what the funnel empties into.
 
 ```mermaid
 flowchart LR
-  G[Game at play.refi.trading] -->|mints ES256 AlphaHandoffToken<br/>iss=refi-alpha aud=refi-us-sec-ia<br/>10-min TTL, single-use jti| C["/us/alpha-claim (shell)"]
+  G[Game at game.refi.trading] -->|mints ES256 AlphaHandoffToken<br/>iss=refi-alpha aud=refi-us-sec-ia<br/>10-min TTL, single-use jti| C["/us/alpha-claim (shell)"]
   C -->|verify + bind progress<br/>to scored waitlist row| E["/us/eligibility"]
   E -->|durable signup<br/>Firestore-backed| W[(Alpha waitlist)]
 ```

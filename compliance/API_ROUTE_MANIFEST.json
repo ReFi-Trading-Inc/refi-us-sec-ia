@@ -6,7 +6,8 @@
     "token-flag-gated": "Dark unless its feature flag is exactly 'on' (404 otherwise); authenticates a signed single-use token with route-local same-origin check and per-IP rate limit; no session required.",
     "bff-read": "Session-authenticated investor read via the shared bffRead wrapper (401 when unauthenticated). Route-specific ownership/account authorization is outside CM-04 and remains proved by the relevant access-control tests.",
     "bff-read-access-logged": "bff-read plus an append-only RecordAccessLog entry per read (books-and-records surface) via bffReadWithAccessLog.",
-    "bff-mutate": "Session-authenticated investor mutation via the shared bffMutate wrapper: fail-closed same-origin check before auth, release-stage capability policy, append-only InvestorActionReceipt."
+    "bff-mutate": "Session-authenticated investor mutation via the shared bffMutate wrapper: fail-closed same-origin check before auth, release-stage capability policy, append-only InvestorActionReceipt.",
+    "demo-tier-gated": "Answers 404 on every tier except REFI_ENV=demo (server-only runtime tier, never a build constant); same-origin browser POST/DELETE only; closed persona enum; mints the standard HS256 session cookie for a fixed persona subject; no account id, admission, or authority is asserted."
   },
   "owner_vocabulary": {
     "platform": "Deployment/runtime plumbing owned by the web app itself.",
@@ -14,9 +15,22 @@
     "alpha-onboarding": "Alpha game handoff surface (flag-dark outside the alpha program).",
     "identity": "Session and identity context for the signed-in investor.",
     "investor-bff": "Authenticated Signal investor projections and governed account actions.",
-    "records-evidence": "Books-and-records reads whose access is itself evidence (access-logged records and adviser-evidence projections)."
+    "records-evidence": "Books-and-records reads whose access is itself evidence (access-logged records and adviser-evidence projections).",
+    "demo-tier": "Demonstration-tier-only surfaces (isolated founder/investor walkthrough deployment). Structurally present in every build but dark (404) outside REFI_ENV=demo."
   },
   "routes": [
+    {
+      "source": "apps/web/app/api/demo/session/route.ts",
+      "route": "/api/demo/session",
+      "methods": ["DELETE", "GET", "POST"],
+      "purpose": "Demo-tier persona sign-in (applicant | admitted): GET reports the tier and display persona for the environment indicator; POST mints the standard session cookie for a fixed persona subject (admitted also receives an eligibility decision cookie); DELETE clears them. 404 outside REFI_ENV=demo. Account scope and admission state are never asserted here — they come from BFF/backend projections.",
+      "owner": "demo-tier",
+      "auth": {
+        "DELETE": "demo-tier-gated",
+        "GET": "demo-tier-gated",
+        "POST": "demo-tier-gated"
+      }
+    },
     {
       "source": "apps/web/app/api/health/route.ts",
       "route": "/api/health",

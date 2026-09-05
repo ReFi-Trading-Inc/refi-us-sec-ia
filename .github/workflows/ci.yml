@@ -125,6 +125,8 @@ jobs:
       # the client's own fetches cross-origin.
       - name: Signal-stage smoke (September release stage)
         run: pnpm e2e:signal
+      - name: Demo-tier lane (REFI_ENV=demo on the same production build; persona sign-in exists only here)
+        run: pnpm e2e:demo
       - name: Upload report on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -9,6 +9,20 @@ interface PersonaOption {
   entryPath: string;
 }
 
+/** Persona labels are "Title — description"; split once for the card layout. */
+function splitLabel(label: string): { title: string; description: string } {
+  const i = label.indexOf(" — ");
+  return i === -1
+    ? { title: label, description: "" }
+    : { title: label.slice(0, i), description: label.slice(i + 3) };
+}
+
+const STEP_HINT: Record<string, string> = {
+  applicant: "Eligibility → identity → application",
+  invited: "Identity → risk profile → Alpaca paper keys → holdings → advice",
+  admitted: "Live portfolio, advice, records and event stream",
+};
+
 export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,49 +72,78 @@ export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
   }
 
   return (
-    <div className="flex flex-col gap-3" data-testid="demo-persona-picker">
+    <div className="flex flex-col gap-4" data-testid="demo-persona-picker">
       {error && <StatusBanner variant="error">{error}</StatusBanner>}
-      {personas.map((p) => (
-        <Card key={p.key} data-testid={`demo-persona-${p.key}`}>
-          <CardContent className="pt-5 flex items-center justify-between gap-4">
-            <p className="text-sm text-charcoal-200">{p.label}</p>
-            <Button
-              size="sm"
-              variant={p.key === "applicant" ? "primary" : "secondary"}
-              disabled={busy !== null}
-              onClick={() => {
-                void choose(p);
-              }}
-              data-testid={`demo-signin-${p.key}`}
-            >
-              Start as {p.key}
-            </Button>
-          </CardContent>
-        </Card>
-      ))}
+      {personas.map((p) => {
+        const { title, description } = splitLabel(p.label);
+        const featured = p.key === "invited";
+        return (
+          <Card
+            key={p.key}
+            data-testid={`demo-persona-${p.key}`}
+            className={featured ? "border-mint-400/40" : undefined}
+          >
+            <CardContent className="pt-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 flex flex-col gap-1">
+                <p className="text-base font-semibold text-charcoal-50">
+                  {title}
+                </p>
+                {description && (
+                  <p className="text-sm text-charcoal-400">{description}</p>
+                )}
+                {STEP_HINT[p.key] && (
+                  <p className="text-xs font-mono uppercase tracking-wider text-charcoal-500">
+                    {STEP_HINT[p.key]}
+                  </p>
+                )}
+              </div>
+              <Button
+                size="md"
+                variant={featured ? "primary" : "secondary"}
+                disabled={busy !== null}
+                loading={busy === p.key}
+                onClick={() => {
+                  void choose(p);
+                }}
+                data-testid={`demo-signin-${p.key}`}
+                className="w-full sm:w-auto sm:min-w-44"
+              >
+                Start walkthrough
+              </Button>
+            </CardContent>
+          </Card>
+        );
+      })}
       <Card data-testid="demo-advance-card">
-        <CardContent className="pt-5 flex items-center justify-between gap-4">
-          <p className="text-sm text-charcoal-200">
-            Presenter controls: advance the market so the next scheduled order
-            (or the invited profile&apos;s broker validation and sync) happens
-            now; or reset the signed-in profile&apos;s walkthrough for the next
-            audience.
-          </p>
-          <div className="flex shrink-0 gap-2">
+        <CardContent className="pt-5 flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-semibold text-charcoal-200">
+              Presenter controls
+            </p>
+            <p className="text-sm text-charcoal-400">
+              Advance moves the demo clock: the next scheduled order fills, or
+              the invited profile&apos;s broker validation and sync complete
+              now. Reset rebuilds the signed-in profile&apos;s walkthrough for
+              the next audience.
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
             <Button
-              size="sm"
-              variant="tertiary"
+              size="md"
+              variant="secondary"
               data-testid="demo-advance"
+              className="w-full sm:w-auto"
               onClick={() => {
                 void control({ fills: 1 });
               }}
             >
-              Advance
+              Advance clock
             </Button>
             <Button
-              size="sm"
-              variant="tertiary"
+              size="md"
+              variant="secondary"
               data-testid="demo-reset"
+              className="w-full sm:w-auto"
               onClick={() => {
                 void control({ reset: true });
               }}
@@ -108,16 +151,16 @@ export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
               Reset walkthrough
             </Button>
           </div>
+          {advanced && (
+            <p
+              className="text-xs font-mono text-charcoal-400"
+              data-testid="demo-advance-result"
+            >
+              {advanced}
+            </p>
+          )}
         </CardContent>
       </Card>
-      {advanced && (
-        <p
-          className="text-xs font-mono text-charcoal-400"
-          data-testid="demo-advance-result"
-        >
-          {advanced}
-        </p>
-      )}
     </div>
   );
 }

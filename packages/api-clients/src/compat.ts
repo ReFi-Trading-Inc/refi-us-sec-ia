@@ -17,12 +17,7 @@ type Schemas = components["schemas"];
 // ---------- Flat aliases for OpenAPI-defined schemas ----------
 
 export type OkResult = Schemas["OkResult"];
-export type BrokerInfo = Schemas["BrokerInfo"];
-export type BrokerConnection = Schemas["BrokerConnection"];
-export type BrokerAccount = Schemas["BrokerAccount"];
-export type Position = Schemas["Position"];
 export type OrderRequest = Schemas["OrderRequest"];
-export type Order = Schemas["Order"];
 export type EligibilityDecision = Schemas["EligibilityDecision"];
 
 // ---------- Extended OpenAPI types ----------
@@ -58,70 +53,6 @@ export type SiweNonceResponse = {
 export type SiweVerifyRequest = {
   message: string;
   signature: string;
-};
-
-// TODO(openapi): model account activation gates in refi-api.yaml. Backend-
-// owned booleans for finishing onboarding.
-export type AccountActivationStatus = {
-  eligibility: boolean;
-  wallet: boolean;
-  kyc: boolean;
-  profile: boolean;
-  broker: boolean;
-  disclosures: boolean;
-};
-
-export type AccountActivationResponse = {
-  activated: boolean;
-  account_id?: string;
-};
-
-// TODO(openapi): model strategy catalog in refi-api.yaml.
-export type StrategyDescriptor = {
-  id: string;
-  name: string;
-  description?: string;
-  version?: number;
-};
-
-// TODO(openapi): model broker-connect endpoints in refi-api.yaml. Keys are
-// POSTed once and never stored client-side; see
-// hooks/onboarding.ts:useBrokerConnectApiKey.
-export type BrokerConnectStartResponse = {
-  redirect_url?: string;
-  state?: string;
-};
-
-/**
- * Raw API-key broker connection. PAPER ONLY.
- *
- * `environment` is narrowed to the literal so a live credential cannot be
- * expressed by this client at all — not merely rejected by a form. Signal must
- * never hold a credential capable of placing, cancelling, or modifying an
- * order, and a raw live key carries whatever authority the broker granted it
- * regardless of what this frontend does with it.
- *
- * SCOPE OF THE GUARANTEE, stated precisely: this narrows what the shipped
- * frontend can originate. It does NOT prove the ReFi system refuses a live
- * credential — this request still goes browser-direct to the external
- * /v1/brokers/connect/keys, so a modified client or a plain HTTP call bypasses
- * every check in this repository. Backend refusal of `environment: "live"` is
- * unproven here and tracked as D-SIGNAL-01 (EXTERNAL PROOF REQUIRED).
- *
- * The intended live path is not this endpoint at all. The settled requirement
- * is read access WITHOUT broker-write authority; the mechanism that delivers
- * it belongs to the backend's broker-connection contract, not to this type.
- */
-export type BrokerApiKeyConnectRequest = {
-  broker_id: string;
-  api_key_id: string;
-  api_secret_key: string;
-  environment: "paper";
-};
-
-export type BrokerConnectKeyResponse = {
-  connected: boolean;
-  broker_id: string;
 };
 
 // ---------- Subscription mode (Phase 2 surface 1) ----------

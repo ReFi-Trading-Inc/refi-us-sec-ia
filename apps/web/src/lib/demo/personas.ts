@@ -12,13 +12,17 @@
  *  - applicant: the public applicant walking eligibility → onboarding → pending
  *    internal review. Signs in WITHOUT an eligibility decision so the public
  *    screening step is exercised for real.
+ *  - invited: a person whose human Alpha admission has ALREADY occurred in the
+ *    backend of record but who has not set up yet: identity check → Investor
+ *    Profile → Alpaca paper keys → holdings ingested → first advice. This is
+ *    the walkthrough that shows the product being set up.
  *  - admitted: a person whose human Alpha admission has ALREADY occurred in the
  *    backend of record (the demo backend/simulator projection asserts it; this
  *    registry does not). Signs in with an eligibility decision so the demo can
  *    start inside the product. Nothing here grants trading, broker, or
  *    subscription authority.
  */
-export const DEMO_PERSONAS = ["applicant", "admitted"] as const;
+export const DEMO_PERSONAS = ["applicant", "invited", "admitted"] as const;
 export type DemoPersona = (typeof DEMO_PERSONAS)[number];
 
 export function isDemoPersona(v: unknown): v is DemoPersona {
@@ -47,6 +51,14 @@ export const DEMO_PERSONA_PROFILES: Readonly<
     label: "Applicant — public application, pending internal review",
     issuesEligibility: false,
     entryPath: "/us/eligibility",
+  },
+  invited: {
+    key: "invited",
+    authId: "demo-invited-01",
+    label:
+      "Invited investor — admitted, setting up: identity, profile, Alpaca paper keys",
+    issuesEligibility: true,
+    entryPath: "/us/onboarding/kyc",
   },
   admitted: {
     key: "admitted",

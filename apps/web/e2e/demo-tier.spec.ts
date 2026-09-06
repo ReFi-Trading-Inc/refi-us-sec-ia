@@ -486,3 +486,319 @@ test.describe("Demo tier — no wallet step", () => {
     );
   });
 });
+
+// Shape-valid, low-entropy fixture secret (40 alphanumerics); never real.
+const DEMO_FIXTURE_SECRET = "demoFixtureSecret".padEnd(40, "0");
+
+// A complete, valid Investor Profile v2 payload (mirrors investor-profile.spec).
+const PROFILE_ANSWERS = {
+  questionnaireVersion: 2,
+  accountType: "individual",
+  goal: "long_term_wealth",
+  horizon: "gt_10y",
+  withdrawalPattern: "gradual",
+  incomeBand: "100_200k",
+  incomeStability: "very_predictable",
+  netWorthBand: "500k_1m",
+  liquidNetWorthBand: "250_500k",
+  accountShareOfLiquidAssets: "10_25pct",
+  emergencyReserveBand: "gt_6mo",
+  debtSignal: "none",
+  liquidityLikelihood: "very_unlikely",
+  knowledgeLevel: "experienced",
+  experienceYears: "5_10y",
+  productExperience: ["stocks", "funds"],
+  drawdownBehavior: "stay",
+  lossThreshold: "pct_20",
+  growthProtectionPreference: 4,
+  riskTradeoffChoice: "plan_b",
+  restrictions: ["none"],
+  expectedFinancialChange: "no",
+  productIntent: ["disciplined_long_term"],
+};
+
+test.describe("Demo tier — invited investor sets up: identity → profile → Alpaca keys → holdings → advice", () => {
+  test.describe.configure({ mode: "serial" });
+
+  async function freshInvited(page: Page) {
+    await page.goto("/us/demo");
+    const res = await signIn(page, "invited");
+    expect(res.status()).toBe(200);
+    // Presenter control: rebuild the invited world so the walkthrough is
+    // re-runnable (and this spec is order-independent under retries).
+    const reset = await page.request.post("/api/demo/advance", {
+      headers: H,
+      data: { reset: true },
+    });
+    expect(reset.status()).toBe(200);
+    // Identity lifecycle is BFF-local: reset the mock adapter as well.
+    await page.request.post("/api/v1/investor/kyc/verification/mock", {
+      headers: H,
+      data: { reset: true },
+    });
+  }
+
+  test("the invited persona starts admitted, unconnected, with no holdings and no advice", async ({
+    page,
+  }) => {
+    await freshInvited(page);
+    const session = (await (
+      await page.request.get("/api/v1/investor/session")
+    ).json()) as { data: { authId: string; accountId?: string } };
+    expect(session.data.authId).toBe("demo-invited-01");
+    // The account link is server-derived from the verified subject; the
+    // browser never supplied it and every read re-authorizes it upstream.
+    expect(session.data.accountId).toBe("acct_demo_invited_01");
+    const onboarding = (await (
+      await page.request.get("/api/v1/investor/onboarding")
+    ).json()) as {
+      data: {
+        onboarding: { state: string };
+        authorization: { status: string } | null;
+        connection: unknown;
+      };
+    };
+    expect(onboarding.data.onboarding.state).toBe("INVITED");
+    expect(onboarding.data.authorization?.status).toBe("AUTHORIZED");
+    expect(onboarding.data.connection).toBeNull();
+    // Before setup, the setup surface shows both backend words separately and
+    // offers no dashboard continuation: onboarding is INVITED, not READY.
+    await page.goto("/us/onboarding/activation");
+    await expect(page.getByTestId("setup-onboarding-state")).toHaveText(
+      /invited/i,
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId("setup-authorization")).toHaveText(
+      /^authorized$/i,
+    );
+    await expect(page.getByTestId("setup-dashboard")).toHaveCount(0);
+    await expect(page.getByTestId("setup-gate")).toHaveAttribute(
+      "data-reason",
+      "onboarding_not_ready",
+    );
+    // The authorization row is labelled as account authorization; no label
+    // presents the backend status as Alpha admission.
+    await expect(
+      page
+        .getByTestId("setup-backend-state")
+        .getByText("Account authorization", {
+          exact: true,
+        }),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId("setup-backend-state").getByText(/^Alpha admission$/),
+    ).toHaveCount(0);
+    const recs = (await (
+      await page.request.get("/api/v1/investor/recommendations")
+    ).json()) as { data: { items: unknown[] } };
+    expect(recs.data.items).toHaveLength(0);
+  });
+
+  test("identity check (mock) → Investor Profile v2 (survey) → paper keys → validation → sync → holdings → first advice", async ({
+    page,
+  }) => {
+    await freshInvited(page);
+
+    // 1. Identity: the mock adapter's presenter controls advance the lifecycle.
+    await page.goto("/us/onboarding/kyc");
+    await expect(page.getByTestId("kyc-state-not_started")).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByTestId("kyc-start").click();
+    await expect(page.getByTestId("kyc-state-in_progress")).toBeVisible({
+      timeout: 30_000,
+    });
+    for (const to of ["under_review", "passed"]) {
+      expect(
+        (
+          await page.request.post("/api/v1/investor/kyc/verification/mock", {
+            headers: H,
+            data: { to },
+          })
+        ).status(),
+      ).toBe(200);
+    }
+    await page.waitForURL("**/us/onboarding/investor-profile", {
+      timeout: 30_000,
+    });
+
+    // 2. Investor Profile v2: the risk survey, derived server-side. Submitted
+    //    through the same route the questionnaire uses; the result screen then
+    //    continues to the broker step.
+    const submit = await page.request.post("/api/v1/investor/profile/v2", {
+      headers: H,
+      data: PROFILE_ANSWERS,
+    });
+    expect(submit.status()).toBe(201);
+    const assessment = (await submit.json()) as {
+      data: { assessment: { permittedRiskBand: number | null } };
+    };
+    expect(assessment.data.assessment.permittedRiskBand).not.toBeNull();
+
+    // 3. Alpaca paper keys through the form. Format-only fixture values: the
+    //    BFF forwards them once to the demo world, which keeps nothing.
+    await page.goto("/us/onboarding/broker");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    const browserPaths: string[] = [];
+    page.on("request", (req) => {
+      browserPaths.push(new URL(req.url()).pathname);
+    });
+    await page
+      .getByRole("button", { name: /^connect$/i })
+      .first()
+      .click();
+    await page.getByLabel(/api key id/i).fill("PKDEMO1234567890ABCD");
+    await page.getByLabel(/secret key/i).fill(DEMO_FIXTURE_SECRET);
+    await page.getByRole("button", { name: /connect alpaca/i }).click();
+    await expect(page.getByTestId("broker-connection-status")).toHaveAttribute(
+      "data-stage",
+      /validating|syncing|synced/,
+      { timeout: 20_000 },
+    );
+    // The secret never appears in any browser-visible URL and the form is wiped.
+    for (const p of browserPaths) expect(p).not.toContain(DEMO_FIXTURE_SECRET);
+    await expect(page.getByLabel(/secret key/i)).toHaveCount(0);
+
+    // 4. The backend's own lifecycle completes: validated, then synced, then
+    //    the holdings the sync found appear.
+    await expect(page.getByTestId("broker-connection-status")).toHaveAttribute(
+      "data-stage",
+      "synced",
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId("broker-holdings-count")).toHaveText("9");
+    await expect(page.getByTestId("broker-holding").first()).toBeVisible();
+
+    // 5. Strategy review: profile band + template + holdings side by side.
+    await page.getByTestId("broker-continue").click();
+    await expect(page.getByTestId("strategy-permitted-band")).not.toHaveText(
+      "—",
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId("strategy-holdings-in-template")).toHaveText(
+      "9 of 9",
+    );
+
+    // 6. Setup checklist: all three investor steps done; admission and
+    //    management remain backend words, and there is no activate control.
+    await page.getByTestId("strategy-continue").click();
+    for (const k of ["identity", "profile", "broker"]) {
+      await expect(page.getByTestId(`setup-item-${k}`)).toHaveAttribute(
+        "data-done",
+        "true",
+        { timeout: 30_000 },
+      );
+    }
+    // After the sync the backend reports READY; with AUTHORIZED and all steps
+    // done the continuation appears. Both words are shown, neither as admission.
+    await expect(page.getByTestId("setup-onboarding-state")).toHaveText(
+      /ready/i,
+      { timeout: 30_000 },
+    );
+    await expect(page.getByTestId("setup-authorization")).toHaveText(
+      /^authorized$/i,
+    );
+    await expect(
+      page.getByRole("button", { name: PER_TRADE_CONTROL }),
+    ).toHaveCount(0);
+
+    // 7. Dashboard: the ingested holdings, live ticker, and the first
+    //    recommendation (not executable: management is not enabled).
+    await page.getByTestId("setup-dashboard").click();
+    await page.waitForURL("**/us/app/home");
+    await expect(page.getByTestId("ticker-tape")).toBeVisible({
+      timeout: 30_000,
+    });
+    expect(await page.getByTestId("ticker-item").count()).toBe(9);
+    const recs = (await (
+      await page.request.get("/api/v1/investor/recommendations")
+    ).json()) as {
+      data: { items: Array<{ status: string; executionEligible: boolean }> };
+    };
+    expect(recs.data.items).toHaveLength(1);
+    expect(recs.data.items[0]?.status).toBe("CURRENT");
+    expect(recs.data.items[0]?.executionEligible).toBe(false);
+    // The records carry the whole setup lineage.
+    await page.goto("/us/app/activity");
+    for (const t of [
+      "brokerage_connection",
+      "brokerage_sync",
+      "recommendation",
+    ]) {
+      await expect(
+        page.locator(`[data-record-type="${t}"]`).first(),
+      ).toBeVisible({ timeout: 30_000 });
+    }
+  });
+
+  test("a second connection attempt is refused upstream (409) and the account page shows the connection without a credential", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await signIn(page, "invited");
+    const again = await page.request.post(
+      "/api/v1/investor/broker/connection",
+      {
+        headers: H,
+        data: {
+          environment: "paper",
+          apiKeyId: "PKDEMO1234567890ABCD",
+          apiSecretKey: DEMO_FIXTURE_SECRET,
+        },
+      },
+    );
+    expect(again.status()).toBe(409);
+    expect(await again.text()).not.toContain(DEMO_FIXTURE_SECRET);
+    await page.goto("/us/app/account");
+    await expect(page.getByTestId("broker-connection-card")).toContainText(
+      /connected/i,
+      { timeout: 30_000 },
+    );
+    expect(
+      await page.getByTestId("broker-connection-card").innerText(),
+    ).not.toMatch(/PKDEMO|demoFixtureSecret/);
+  });
+});
+
+test.describe("Demo tier — onboarding aggregate and broker mutation preconditions", () => {
+  test("zero-account WAITLISTED applicant: aggregate renders the onboarding state with null account fields, never a fabricated account or a 500", async ({
+    page,
+  }) => {
+    await page.goto("/us/demo");
+    await signIn(page, "applicant");
+    const res = await page.request.get("/api/v1/investor/onboarding");
+    expect(res.status()).toBe(200);
+    const body = (await res.json()) as {
+      data: {
+        onboarding: { state: string };
+        accountId: string | null;
+        profile: unknown;
+        authorization: unknown;
+        connection: unknown;
+        upstream: { state: string };
+        identity: { state: string | null };
+      };
+    };
+    expect(body.data.onboarding.state).toBe("WAITLISTED");
+    expect(body.data.accountId).toBeNull();
+    expect(body.data.profile).toBeNull();
+    expect(body.data.authorization).toBeNull();
+    expect(body.data.connection).toBeNull();
+    expect(body.data.upstream.state).toBe("account_scope");
+    expect(body.data.identity.state).not.toBeUndefined();
+    // No account → the broker mutation is refused at account-scope resolution,
+    // before any authorization read or credential forwarding.
+    const post = await page.request.post("/api/v1/investor/broker/connection", {
+      headers: H,
+      data: {
+        environment: "paper",
+        apiKeyId: "PKDEMO1234567890ABCD",
+        apiSecretKey: DEMO_FIXTURE_SECRET,
+      },
+    });
+    expect(post.status()).toBe(503);
+    const text = await post.text();
+    expect(text).toContain("account_scope");
+    expect(text).not.toContain(DEMO_FIXTURE_SECRET);
+  });
+});

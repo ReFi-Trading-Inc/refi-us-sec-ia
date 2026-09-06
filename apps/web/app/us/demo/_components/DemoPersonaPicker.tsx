@@ -35,21 +35,25 @@ export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
     }
   }
 
-  async function advance() {
+  async function control(body: { fills: number } | { reset: true }) {
     setAdvanced(null);
     const res = await fetch("/api/demo/advance", {
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ fills: 1 }),
+      body: JSON.stringify(body),
     });
-    const body = (await res.json()) as {
-      data?: { filled: number; events: number };
+    const out = (await res.json()) as {
+      data?: { filled: number; events: number; persona?: string };
     };
+    if (!res.ok || !out.data) {
+      setAdvanced("Sign in as a walkthrough profile first.");
+      return;
+    }
     setAdvanced(
-      res.ok && body.data
-        ? `Advanced: ${String(body.data.filled)} fill(s), ${String(body.data.events)} event(s) emitted.`
-        : "Sign in as the admitted profile first.",
+      "reset" in body
+        ? `Reset: the ${out.data.persona ?? ""} walkthrough starts over.`
+        : `Advanced: ${String(out.data.filled)} fill(s), ${String(out.data.events)} event(s) emitted.`,
     );
   }
 
@@ -77,19 +81,33 @@ export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
       <Card data-testid="demo-advance-card">
         <CardContent className="pt-5 flex items-center justify-between gap-4">
           <p className="text-sm text-charcoal-200">
-            Presenter control: advance the market so the next scheduled order
-            fills now and the event stream shows it.
+            Presenter controls: advance the market so the next scheduled order
+            (or the invited profile&apos;s broker validation and sync) happens
+            now; or reset the signed-in profile&apos;s walkthrough for the next
+            audience.
           </p>
-          <Button
-            size="sm"
-            variant="tertiary"
-            data-testid="demo-advance"
-            onClick={() => {
-              void advance();
-            }}
-          >
-            Advance market
-          </Button>
+          <div className="flex shrink-0 gap-2">
+            <Button
+              size="sm"
+              variant="tertiary"
+              data-testid="demo-advance"
+              onClick={() => {
+                void control({ fills: 1 });
+              }}
+            >
+              Advance
+            </Button>
+            <Button
+              size="sm"
+              variant="tertiary"
+              data-testid="demo-reset"
+              onClick={() => {
+                void control({ reset: true });
+              }}
+            >
+              Reset walkthrough
+            </Button>
+          </div>
         </CardContent>
       </Card>
       {advanced && (

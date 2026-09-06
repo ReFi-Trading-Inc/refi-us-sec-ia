@@ -3,32 +3,7 @@
 // accidental shim deletion) surfaces here before it breaks UI builds.
 
 import { describe, expect, expectTypeOf, test } from "vitest";
-import type { AccountActivationStatus, OrderPreviewResult } from "../compat";
-
-describe("AccountActivationStatus", () => {
-  test("has exactly the six boolean gating flags", () => {
-    const v: AccountActivationStatus = {
-      eligibility: false,
-      wallet: false,
-      kyc: false,
-      profile: false,
-      broker: false,
-      disclosures: false,
-    };
-    const keys = Object.keys(v).sort();
-    expect(keys).toEqual(
-      [
-        "broker",
-        "disclosures",
-        "eligibility",
-        "kyc",
-        "profile",
-        "wallet",
-      ].sort(),
-    );
-    expectTypeOf(v.eligibility).toEqualTypeOf<boolean>();
-  });
-});
+import type { OrderPreviewResult } from "../compat";
 
 describe("OrderPreviewResult", () => {
   test("includes the latency_ms shim extension", () => {

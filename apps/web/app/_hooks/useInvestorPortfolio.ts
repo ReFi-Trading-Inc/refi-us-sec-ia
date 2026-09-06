@@ -17,8 +17,9 @@ export interface PortfolioResponse {
 
 export const PORTFOLIO_QUERY_KEY = ["investor", "portfolio"] as const;
 
-export function useInvestorPortfolio() {
+export function useInvestorPortfolio(options?: { enabled?: boolean }) {
   return useQuery({
+    enabled: options?.enabled ?? true,
     queryKey: PORTFOLIO_QUERY_KEY,
     queryFn: async (): Promise<PortfolioResponse> => {
       const res = await fetch("/api/v1/investor/portfolio", {

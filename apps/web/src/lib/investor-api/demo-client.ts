@@ -173,7 +173,56 @@ interface World {
   pendingFills: Array<{ orderRecordId: string; fillAt: number }>;
   createdAt: number;
   lastValuationEventBucket: number;
+  /**
+   * Invited persona only: the brokerage connection the investor creates during
+   * setup and the holdings the sync ingests. `null` until `createBrokerageConnection`.
+   * The admitted persona's connection is a fixed fixture (see `connection()`).
+   */
+  setup: SetupState | null;
+  /** Invited persona only: holdings observed at the broker after the first sync. */
+  holdings: Holding[] | null;
 }
+
+interface SetupState {
+  connectionId: string;
+  connectionStatus: "PENDING_VALIDATION" | "CONNECTED";
+  credentialStatus: "PENDING" | "VALID";
+  stateVersion: number;
+  createdAt: number;
+  /** Wall-clock moments the demo clock validates credentials and completes the first sync. */
+  validateAt: number;
+  syncAt: number;
+  validatedAt: number | null;
+  lastSyncedAt: number | null;
+  syncRunId: string | null;
+  actionReceiptId: string;
+}
+
+interface Holding {
+  security: Security;
+  qty: number;
+  avg: number;
+}
+
+/**
+ * What the invited investor already holds at Alpaca (paper) before any advice:
+ * a concentrated, self-directed book — the sync "finds" it. Quantities are
+ * whole shares; cash is separate (`INVITED_CASH`).
+ */
+const INVITED_HOLDINGS: ReadonlyArray<[string, number, number]> = [
+  ["AAPL", 40, 189.2],
+  ["MSFT", 25, 402.5],
+  ["NVDA", 60, 96.4],
+  ["TSLA", 30, 262.1],
+  ["AMZN", 20, 171.8],
+  ["GOOGL", 15, 158.6],
+  ["KO", 100, 62.3],
+  ["JPM", 12, 198.7],
+  ["COST", 3, 812.4],
+];
+const INVITED_CASH = 12_400;
+const INVITED_VALIDATE_MS = 4_000;
+const INVITED_SYNC_MS = 9_000;
 
 const worlds = new Map<DemoPersona, World>();
 
@@ -195,7 +244,8 @@ function idAt(records: S["AccountRecord"][], i: number): string | null {
 }
 
 function personaFor(authId: string): DemoPersona {
-  // demo-applicant-01 → applicant, demo-admitted-01 → admitted; anything else
+  // demo-applicant-01 → applicant, demo-invited-01 → invited,
+  // demo-admitted-01 → admitted; anything else
   // is treated as an applicant with no accounts (never an authority upgrade).
   const m = /^demo-([a-z]+)-\d{2}$/.exec(authId);
   return m && isDemoPersona(m[1]) ? m[1] : "applicant";
@@ -223,9 +273,13 @@ function buildWorld(persona: DemoPersona): World {
   };
   const world: World = {
     persona,
-    userId:
-      persona === "admitted" ? "usr_demo_admitted_01" : "usr_demo_applicant_01",
-    accountId: persona === "admitted" ? "acct_demo_admitted_01" : null,
+    userId: `usr_demo_${persona}_01`,
+    accountId:
+      persona === "admitted"
+        ? "acct_demo_admitted_01"
+        : persona === "invited"
+          ? "acct_demo_invited_01"
+          : null,
     connectionId: "brokerconn_demo_0001",
     templateId: "template_us_sp500_following_v1",
     portfolioId: "portfolio_sp500_following_01",
@@ -240,6 +294,8 @@ function buildWorld(persona: DemoPersona): World {
     pendingFills: [],
     createdAt: now,
     lastValuationEventBucket: -1,
+    setup: null,
+    holdings: null,
   };
   if (persona !== "admitted") return world;
 
@@ -371,6 +427,10 @@ function appendEvent(
  * prices moved. Idempotent for the same `now`.
  */
 function tick(w: World, now: number, force = false): void {
+  if (w.persona === "invited") {
+    tickSetup(w, now);
+    return;
+  }
   if (w.persona !== "admitted") return;
   const due = w.pendingFills.filter((f) => force || f.fillAt <= now);
   for (const f of due) {
@@ -418,11 +478,170 @@ function tick(w: World, now: number, force = false): void {
 }
 
 function liveEquity(w: World, now: number): number {
+  if (w.persona === "invited") {
+    const invested = (w.holdings ?? []).reduce(
+      (acc, h) => acc + h.qty * priceAt(h.security, now),
+      0,
+    );
+    return invested + INVITED_CASH;
+  }
   const invested = w.securities.reduce(
     (acc, s) => acc + heldQty(w, s) * priceAt(s, now),
     0,
   );
   return invested + equityAt(w, w.now) * 0.4;
+}
+
+/**
+ * The invited account's valuation: there is none until the broker is connected
+ * and synced (the backend has no snapshot to project) — `getAccountValuation`
+ * answers 404 RESOURCE_NOT_FOUND in that window.
+ */
+function invitedValuation(w: World, t: number): S["AccountValuation"] {
+  const su = w.setup;
+  if (!su || su.lastSyncedAt === null || !w.holdings) {
+    throw new InvestorApiError({
+      status: 404,
+      code: "RESOURCE_NOT_FOUND",
+      message: "no account snapshot yet",
+      correlationId: null,
+    });
+  }
+  return {
+    account_snapshot_id: "snapshot_demo_invited_0001",
+    account_id: accountOf(w),
+    broker_connection_id: su.connectionId,
+    account_environment: "paper",
+    reconciliation_run_id: "reconciliation_demo_invited_0001",
+    as_of_time: iso(t),
+    broker_observed_at: iso(su.lastSyncedAt),
+    fresh_until: iso(t + 10 * 60_000),
+    freshness_status: "FRESH",
+    status: "READY",
+    currency: "USD",
+    equity: dec(liveEquity(w, t)),
+    cash: dec(INVITED_CASH),
+    buying_power: dec(INVITED_CASH),
+    pending_buy_notional: "0",
+    pending_sell_notional: "0",
+    open_order_count: 0,
+    unknown_order_count: 0,
+    position_count: w.holdings.length,
+    management_scope_status: "PENDING_SETUP",
+    reconciliation_hold_status: "CLEAR",
+  };
+}
+
+/** Invited persona: the first advice, computed as template-weight targets vs. the ingested holdings. */
+function invitedFirstRecommendation(w: World, now: number): RecSpec {
+  const equity = liveEquity(w, now);
+  const legs: S["RecommendationLeg"][] = w.securities.map((s) => {
+    const current = w.holdings?.find((h) => h.security === s)?.qty ?? 0;
+    const target = (equity * 0.6 * (s.weight / totalWeight(w))) / s.price;
+    const delta = target - current;
+    const belowMin = Math.abs(delta * s.price) < Number(w.prefs.minOrder);
+    return {
+      recommendation_id: "recommendation_demo_invited_0001",
+      security_id: s.securityId,
+      symbol: s.symbol,
+      current_quantity: dec(current, 4),
+      target_quantity: dec(target, 4),
+      delta_quantity: dec(delta, 4),
+      reference_price: dec(s.price),
+      notional_delta: dec(delta * s.price),
+      reason_codes: belowMin
+        ? ["TARGET_DELTA", "BELOW_MIN_ORDER"]
+        : ["TARGET_DELTA"],
+      executable: false,
+    };
+  });
+  return {
+    id: "recommendation_demo_invited_0001",
+    status: "CURRENT",
+    createdAt: now,
+    turnover: 38.2,
+    executionEligible: false,
+    freshness: "fresh",
+    // A FRESH recommendation carries no freshness reason codes (contract
+    // conditional); "management not enabled" is stated on the record instead.
+    reasonCodes: [],
+    seed: 71,
+    legsOverride: legs,
+  };
+}
+
+/**
+ * Invited persona clock: credentials validate, then the first sync ingests the
+ * holdings, then the first recommendation is computed. Each step appends a
+ * record and its event, exactly as the backend would surface them.
+ */
+function tickSetup(w: World, now: number): void {
+  const su = w.setup;
+  if (!su) return;
+  if (su.connectionStatus === "PENDING_VALIDATION" && now >= su.validateAt) {
+    su.connectionStatus = "CONNECTED";
+    su.credentialStatus = "VALID";
+    su.validatedAt = su.validateAt;
+    su.stateVersion += 1;
+    const r = record(
+      w,
+      w.records.length + 1,
+      "brokerage_connection",
+      su.validateAt,
+      {
+        entity_id: su.connectionId,
+        status: "CONNECTED",
+        completed_at: iso(su.validateAt),
+      },
+    );
+    w.records.push(r);
+    appendEvent(w, r, su.validateAt, su.stateVersion);
+  }
+  if (
+    su.connectionStatus === "CONNECTED" &&
+    su.lastSyncedAt === null &&
+    now >= su.syncAt
+  ) {
+    const bySymbol = new Map(w.securities.map((x) => [x.symbol, x] as const));
+    w.holdings = INVITED_HOLDINGS.flatMap(([sym, qty, avg]) => {
+      const security = bySymbol.get(sym);
+      return security ? [{ security, qty, avg }] : [];
+    });
+    su.lastSyncedAt = su.syncAt;
+    su.syncRunId = "sync_demo_invited_0001";
+    su.stateVersion += 1;
+    const sync = record(w, w.records.length + 1, "brokerage_sync", su.syncAt, {
+      entity_id: su.syncRunId,
+      status: "COMPLETE",
+      completed_at: iso(su.syncAt),
+      related_record_id: null,
+    });
+    w.records.push(sync);
+    appendEvent(w, sync, su.syncAt, su.stateVersion);
+    const val = record(w, w.records.length + 1, "valuation", su.syncAt + 1, {
+      entity_id: "snapshot_demo_invited_0001",
+      status: "READY",
+      notional: dec(liveEquity(w, su.syncAt)),
+      currency: "USD",
+    });
+    w.records.push(val);
+    appendEvent(w, val, su.syncAt + 1);
+    const rec = invitedFirstRecommendation(w, su.syncAt + 2);
+    w.recs.push(rec);
+    const recRecord = record(
+      w,
+      w.records.length + 1,
+      "recommendation",
+      su.syncAt + 2,
+      {
+        entity_id: rec.id,
+        status: rec.status,
+        reason_codes: ["MANAGEMENT_NOT_ENABLED"],
+      },
+    );
+    w.records.push(recRecord);
+    appendEvent(w, recRecord, su.syncAt + 2);
+  }
 }
 
 function heldQty(w: World, s: Security): number {
@@ -437,6 +656,15 @@ export function advanceDemoWorld(
 ): { filled: number; events: number } {
   const w = worldFor(authId);
   const before = w.events.length;
+  if (w.persona === "invited") {
+    if (w.setup) {
+      const now = Date.now();
+      w.setup.validateAt = Math.min(w.setup.validateAt, now);
+      w.setup.syncAt = Math.min(w.setup.syncAt, now);
+      tick(w, now);
+    }
+    return { filled: 0, events: w.events.length - before };
+  }
   const count = Math.max(0, Math.min(opts.fills ?? 1, w.pendingFills.length));
   const now = Date.now();
   const forced = w.pendingFills
@@ -498,6 +726,16 @@ export function resetDemoWorldsForTests(): void {
   worlds.clear();
 }
 
+/**
+ * Presenter control (demo tier only): rebuild the caller's world from its
+ * seed — the invited walkthrough can be run again for the next audience.
+ */
+export function resetDemoWorld(authId: string): { persona: DemoPersona } {
+  const persona = personaFor(authId);
+  worlds.delete(persona);
+  return { persona };
+}
+
 // ─── Fixture builders ───────────────────────────────────────────────────────
 
 function equityAt(w: World, t: number): number {
@@ -509,13 +747,37 @@ function equityAt(w: World, t: number): number {
 }
 
 function positions(w: World, at = Date.now()): S["AccountPosition"][] {
-  return w.securities.map((s) => {
-    const qty = heldQty(w, s);
-    const live = priceAt(s, at);
-    const avg = s.price * 0.93;
+  if (w.persona === "invited") {
+    if (!w.holdings) return [];
+    return w.holdings.map((h) =>
+      positionFor(
+        w,
+        h.security,
+        h.qty,
+        h.avg,
+        at,
+        "snapshot_demo_invited_0001",
+      ),
+    );
+  }
+  return w.securities.map((s) =>
+    positionFor(w, s, heldQty(w, s), s.price * 0.93, at, "snapshot_demo_0090"),
+  );
+}
+
+function positionFor(
+  w: World,
+  s: Security,
+  qty: number,
+  avg: number,
+  at: number,
+  snapshotId: string,
+): S["AccountPosition"] {
+  const live = priceAt(s, at);
+  {
     return {
       account_id: accountOf(w),
-      account_snapshot_id: "snapshot_demo_0090",
+      account_snapshot_id: snapshotId,
       security_id: s.securityId,
       listing_id: s.listingId,
       broker_asset_id: `alpaca-asset-${s.symbol.toLowerCase().replace(".", "")}`,
@@ -535,12 +797,13 @@ function positions(w: World, at = Date.now()): S["AccountPosition"][] {
       fresh_until: iso(at + 10 * 60_000),
       freshness_status: "FRESH",
     };
-  });
+  }
 }
 const totalWeight = (w: World) =>
   w.securities.reduce((a, s) => a + s.weight, 0);
 
 function valuation(w: World, t: number, idx: number): S["AccountValuation"] {
+  if (w.persona === "invited") return invitedValuation(w, t);
   const equity = idx === 90 ? liveEquity(w, Date.now()) : equityAt(w, t);
   const cash = equityAt(w, w.now) * 0.4;
   return {
@@ -925,11 +1188,26 @@ export class DemoInvestorApiClient implements InvestorApiReadClient {
     const p = (o as { path?: Record<string, string> }).path ?? {};
     switch (op) {
       case "getOnboardingStatus":
+        tick(w, Date.now());
         return {
           data: {
             user_id: w.userId,
-            state: w.persona === "admitted" ? "READY" : "WAITLISTED",
-            required_steps: w.persona === "admitted" ? [] : ["INTERNAL_REVIEW"],
+            state:
+              w.persona === "admitted"
+                ? "READY"
+                : w.persona === "invited"
+                  ? w.setup?.lastSyncedAt !== null && w.setup
+                    ? "READY"
+                    : "INVITED"
+                  : "WAITLISTED",
+            required_steps:
+              w.persona === "admitted"
+                ? []
+                : w.persona === "invited"
+                  ? w.setup?.lastSyncedAt !== null && w.setup
+                    ? []
+                    : ["BROKERAGE_CONNECTION"]
+                  : ["INTERNAL_REVIEW"],
             policy_version: "closed-us-alpha-1",
             evaluated_at: iso(w.now - 60_000),
           },
@@ -1000,23 +1278,42 @@ export class DemoInvestorApiClient implements InvestorApiReadClient {
         return { data: this.advisoryProfile(w) };
       case "listComplianceProfileAttestations":
         this.requireAccount(w, o);
-        return { data: page([this.attestation(w)], q) };
+        return {
+          data: page(w.persona === "admitted" ? [this.attestation(w)] : [], q),
+        };
       case "getCurrentComplianceProfileAttestation":
         this.requireAccount(w, o);
-        return { data: this.attestation(w) };
-      case "listBrokerageConnections":
-        this.requireAccount(w, o);
-        return { data: page([this.connection(w)], q) };
-      case "getBrokerageConnection":
-        this.requireAccount(w, o);
-        if (p["connection_id"] !== w.connectionId)
+        if (w.persona !== "admitted")
           throw new InvestorApiError({
             status: 404,
             code: "RESOURCE_NOT_FOUND",
             message: "resource not found",
             correlationId: null,
           });
-        return { data: this.connection(w) };
+        return { data: this.attestation(w) };
+      case "listBrokerageConnections": {
+        this.requireAccount(w, o);
+        tick(w, Date.now());
+        const conn = this.connectionOrNull(w);
+        return { data: page(conn ? [conn] : [], q) };
+      }
+      case "getBrokerageConnection": {
+        this.requireAccount(w, o);
+        tick(w, Date.now());
+        const conn = this.connectionOrNull(w);
+        if (!conn || p["connection_id"] !== conn.connection_id)
+          throw new InvestorApiError({
+            status: 404,
+            code: "RESOURCE_NOT_FOUND",
+            message: "resource not found",
+            correlationId: null,
+          });
+        return { data: conn };
+      }
+      case "createBrokerageConnection":
+        return { data: this.createConnection(w, o) };
+      case "syncBrokerageConnection":
+        return { data: this.syncConnection(w, o) };
       case "getAccountValuation":
         this.requireAccount(w, o);
         tick(w, Date.now());
@@ -1028,6 +1325,11 @@ export class DemoInvestorApiClient implements InvestorApiReadClient {
         };
       case "listAccountValuations": {
         this.requireAccount(w, o);
+        if (w.persona === "invited") {
+          tick(w, Date.now());
+          const synced = w.setup?.lastSyncedAt !== null && w.setup;
+          return { data: page(synced ? [valuation(w, Date.now(), 0)] : [], q) };
+        }
         const series = Array.from({ length: 91 }, (_, i) =>
           valuation(w, w.now - (90 - i) * DAY, i),
         ).reverse();
@@ -1039,7 +1341,11 @@ export class DemoInvestorApiClient implements InvestorApiReadClient {
         return { data: page(positions(w), q) };
       case "listAccountMemberships":
         this.requireAccount(w, o);
-        return { data: page([this.membership(w)], q) };
+        // The invited account has not joined a template: joining is the
+        // backend's subscription decision (26b), never a demo fabrication.
+        return {
+          data: page(w.persona === "admitted" ? [this.membership(w)] : [], q),
+        };
       case "getAccountPreferences":
         this.requireAccount(w, o);
         return { data: this.preferences(w, w.prefs) };
@@ -1199,14 +1505,136 @@ export class DemoInvestorApiClient implements InvestorApiReadClient {
     };
   }
   private account(w: World): S["Account"] {
+    const invited = w.persona === "invited";
     return {
       account_id: accountOf(w),
       status: "active",
       product_mode: "automated_portfolio_management",
       authorization: this.authorization(w),
-      managed_enabled: true,
-      management_scope_status: "ACTIVE",
+      // Management is enabled by the backend after setup review — never by
+      // anything the browser does. The invited account stays unmanaged here.
+      managed_enabled: !invited,
+      management_scope_status: invited ? "PENDING_SETUP" : "ACTIVE",
       reconciliation_hold_status: "CLEAR",
+    };
+  }
+  /** The account's connection: the admitted fixture, or the invited setup state, or none. */
+  private connectionOrNull(w: World): S["BrokerageConnection"] | null {
+    if (w.persona === "admitted") return this.connection(w);
+    const su = w.setup;
+    if (!su) return null;
+    const acct = accountOf(w);
+    return {
+      connection_id: su.connectionId,
+      account_id: acct,
+      broker: "alpaca",
+      account_environment: "paper",
+      connection_status: su.connectionStatus,
+      credential_status: su.credentialStatus,
+      state_version: su.stateVersion,
+      created_at: iso(su.createdAt),
+      updated_at: iso(su.lastSyncedAt ?? su.validatedAt ?? su.createdAt),
+      validated_at: su.validatedAt === null ? null : iso(su.validatedAt),
+      last_synced_at: su.lastSyncedAt === null ? null : iso(su.lastSyncedAt),
+      stale_at:
+        su.lastSyncedAt === null
+          ? null
+          : iso(su.lastSyncedAt + 24 * 60 * 60_000),
+      sync_run_id: su.syncRunId,
+      broker_account_id:
+        su.validatedAt === null ? null : "alpaca-paper-demo-invited",
+      action_receipt_id: su.actionReceiptId,
+      status_path: `/api/v1/investor/accounts/${acct}/brokerage-connections/${su.connectionId}`,
+    };
+  }
+  /**
+   * createBrokerageConnection — the ONLY credential-bearing call. The demo
+   * validates the request against the contract and keeps nothing from the
+   * credentials: not the key, not the secret, not a hash. It records that a
+   * connection was requested and lets the clock validate and sync it.
+   */
+  private createConnection(
+    w: World,
+    o: CallOptions<OperationId>,
+  ): S["BrokerageConnection"] {
+    this.requireAccount(w, o);
+    if (w.persona !== "invited")
+      throw new DemoUnsupportedOperationError("createBrokerageConnection");
+    const body = (o as { body?: unknown }).body;
+    assertMatches("BrokerageConnectionRequest", body, "request");
+    const req = body as S["BrokerageConnectionRequest"];
+    if (req.account_environment !== "paper")
+      throw new InvestorApiError({
+        status: 422,
+        code: "VALIDATION_ERROR",
+        message: "only paper connections are accepted in this environment",
+        correlationId: null,
+      });
+    if (w.setup)
+      throw new InvestorApiError({
+        status: 409,
+        code: "CONFLICT",
+        message: "a brokerage connection already exists for this account",
+        correlationId: null,
+      });
+    const now = Date.now();
+    w.setup = {
+      connectionId: "brokerconn_demo_invited_0001",
+      connectionStatus: "PENDING_VALIDATION",
+      credentialStatus: "PENDING",
+      stateVersion: 1,
+      createdAt: now,
+      validateAt: now + INVITED_VALIDATE_MS,
+      syncAt: now + INVITED_SYNC_MS,
+      validatedAt: null,
+      lastSyncedAt: null,
+      syncRunId: null,
+      actionReceiptId: "action_demo_invited_connect_0001",
+    };
+    const r = record(w, w.records.length + 1, "brokerage_connection", now, {
+      entity_id: w.setup.connectionId,
+      status: "PENDING_VALIDATION",
+    });
+    w.records.push(r);
+    appendEvent(w, r, now, 1);
+    const conn = this.connectionOrNull(w);
+    if (!conn)
+      throw new DemoUnsupportedOperationError("createBrokerageConnection");
+    return conn;
+  }
+  private syncConnection(
+    w: World,
+    o: CallOptions<OperationId>,
+  ): S["BrokerageSyncReceipt"] {
+    if (w.persona !== "invited")
+      throw new DemoUnsupportedOperationError("syncBrokerageConnection");
+    this.requireAccount(w, o);
+    const su = w.setup;
+    const p = (o as { path?: Record<string, string> }).path ?? {};
+    if (!su || p["connection_id"] !== su.connectionId)
+      throw new InvestorApiError({
+        status: 404,
+        code: "RESOURCE_NOT_FOUND",
+        message: "resource not found",
+        correlationId: null,
+      });
+    const now = Date.now();
+    if (su.connectionStatus !== "CONNECTED")
+      throw new InvestorApiError({
+        status: 409,
+        code: "CONFLICT",
+        message: "connection is not yet validated",
+        correlationId: null,
+      });
+    su.syncAt = Math.min(su.syncAt, now);
+    tick(w, now);
+    return {
+      sync_receipt_id: "syncreceipt_demo_invited_0001",
+      connection_id: su.connectionId,
+      sync_run_id: su.syncRunId ?? "sync_demo_invited_0001",
+      status: "COMPLETE",
+      status_path: `/api/v1/investor/accounts/${accountOf(w)}/brokerage-connections/${su.connectionId}`,
+      accepted_at: iso(now),
     };
   }
   private advisoryProfile(w: World): S["AdvisoryProfile"] {

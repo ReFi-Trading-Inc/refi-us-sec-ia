@@ -15,7 +15,7 @@ const buttonVariants = cva(
         tertiary:
           "bg-transparent text-mint-400 hover:text-mint-300 hover:bg-charcoal-800 active:bg-charcoal-700",
         danger:
-          "bg-status-rejected text-white hover:bg-red-500 active:bg-red-700",
+          "bg-status-rejected text-charcoal-950 hover:bg-status-rejected-text active:bg-status-rejected",
       },
       size: {
         sm: "h-8 px-3 text-sm",

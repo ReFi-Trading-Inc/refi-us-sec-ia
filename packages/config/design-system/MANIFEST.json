@@ -1,0 +1,8 @@
+{
+  "source": "Claude Design project \"ReFi.Trading Design System\"",
+  "projectId": "79789eca-2bad-4917-b5e2-fd55f668a62e",
+  "path": "colors_and_type.css",
+  "retrievedAt": "2026-09-05",
+  "sha256": "3689e92f10e68ba7832aa017b1ca9650d4b6685b8834403b8abb576be1f251f3",
+  "note": "Vendored token snapshot. Read-only; the design system is the source of truth for brand tokens. Re-vendor by fetching the file again and updating sha256; scripts/design-token-parity.ts fails if this file drifts from the hash or if packages/config/tailwind/index.ts stops matching it."
+}

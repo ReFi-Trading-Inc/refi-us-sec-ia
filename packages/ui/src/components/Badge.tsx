@@ -11,7 +11,7 @@ const badgeVariants = cva(
         approved:
           "bg-status-approved/15 text-status-approved border-status-approved/30",
         rejected:
-          "bg-status-rejected/15 text-status-rejected border-status-rejected/30",
+          "bg-status-rejected/15 text-status-rejected-text border-status-rejected/30",
         warning:
           "bg-status-warning/15 text-status-warning border-status-warning/30",
         expired:

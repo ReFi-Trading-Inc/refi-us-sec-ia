@@ -18,11 +18,19 @@ export default function OnboardingLayout({
 
   return (
     <div className="min-h-screen bg-charcoal-950 text-charcoal-100 font-sans">
-      <header className="border-b border-charcoal-800 px-8 py-4 flex items-center justify-between">
-        <Link href="/us" className="text-sm font-semibold text-charcoal-200">
+      {/* Stacks on phones; the step row scrolls inside itself so the page
+          never scrolls sideways (five labels do not fit a 390px viewport). */}
+      <header className="border-b border-charcoal-800 px-4 sm:px-8 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <Link
+          href="/us"
+          className="text-sm font-semibold text-charcoal-200 shrink-0"
+        >
           {usBrand.productSurface}
         </Link>
-        <nav aria-label="Onboarding steps" className="flex items-center gap-6">
+        <nav
+          aria-label="Onboarding steps"
+          className="flex items-center gap-4 sm:gap-6 overflow-x-auto whitespace-nowrap -mx-4 px-4 sm:mx-0 sm:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
           {onboardingSteps.map((step, i) => {
             const done = i < currentIndex;
             const active = i === currentIndex;
@@ -30,7 +38,7 @@ export default function OnboardingLayout({
               <span
                 key={step.key}
                 className={cn(
-                  "text-xs font-medium",
+                  "text-xs font-medium shrink-0",
                   active && "text-mint-400",
                   done && "text-charcoal-400",
                   !active && !done && "text-charcoal-600",
@@ -43,7 +51,9 @@ export default function OnboardingLayout({
           })}
         </nav>
       </header>
-      <main className="max-w-2xl mx-auto px-8 py-12">{children}</main>
+      <main className="max-w-2xl mx-auto px-4 sm:px-8 py-8 sm:py-12">
+        {children}
+      </main>
     </div>
   );
 }

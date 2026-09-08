@@ -4,7 +4,7 @@ import { cn } from "../lib/utils";
 import { Loader2 } from "../icons";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400 focus-visible:ring-offset-2 focus-visible:ring-offset-charcoal-900 disabled:pointer-events-none disabled:opacity-40 select-none",
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-mint-400 focus-visible:ring-offset-2 focus-visible:ring-offset-charcoal-900 disabled:pointer-events-none disabled:opacity-40 select-none",
   {
     variants: {
       variant: {

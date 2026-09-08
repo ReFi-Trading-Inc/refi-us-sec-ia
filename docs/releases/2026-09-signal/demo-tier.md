@@ -337,3 +337,43 @@ journey, credential never in a URL or response, 409 on a second connection),
 live key / live environment / cross-origin refused by the BFF, no credential
 field in the read), package tests "invited persona" (contract validity of every
 step), contract assertion "broker connection".
+
+## 13. Simulated game handoff (slice 4) — the funnel starts in the game
+
+**Why.** The integration map's Track 1 begins in the ReFi Alpha game
+(game.refi.trading → `/us/alpha-claim` → eligibility), but the deployed game
+is in LINK mode and cannot mint a token (§6). Until the mint-handoff service
+and a game rebuild exist, the demo tier mints an equivalent token itself so the
+walkthrough can show the acquisition funnel end to end.
+
+**What.** `POST /api/demo/handoff` signs an ES256 `AlphaHandoffToken` with a
+DEMO-ONLY key pair (`DEMO_HANDOFF_PRIVATE_KEY_JWK`, private half;
+`ALPHA_HANDOFF_PUBLIC_KEY_JWK` on the demo project is the matching public
+half) for the fixed subject `demo-game-player-01`, five-minute lifetime, fresh
+`jti`, `campaignSource: demo-tier-simulated-handoff`, destination
+`ELIGIBILITY`. It returns the same `/us/alpha-claim?token=` path the game would
+redirect to. The claim page and claim route are **unchanged**: the token is
+verified, strict-parsed, max-age-checked, and jti-consumed exactly like a
+game-minted one (contract assertion: the claim route contains no demo
+special case).
+
+The picker (`/us/demo`) gains a "Start from the game" card: _Simulate game
+handoff_ signs in as the applicant persona, mints, and lands on the real claim
+page; _Open the game_ links to game.refi.trading.
+
+**Gating.** 404 unless all three hold: `REFI_ENV=demo`,
+`DEMO_HANDOFF_PRIVATE_KEY_JWK` set, `FLAG_ALPHA_CLAIM_ROUTE=on`. Same-origin
+browser POST; session required (game lineage never replaces sign-in); strict
+empty body so no caller can choose claims. Proved for prod/staging/dev by
+contract assertions and the main E2E lane; the demo E2E lane generates a
+throwaway pair per run and proves mint → claim (201) → replay (200) → tampered
+(401) → eligibility.
+
+**Identity rule (§5) unchanged.** After the claim the presenter still has no
+eligibility decision and cannot reach onboarding without the public screening
+step; the demo player id never becomes an investor identity.
+
+**Vercel (demo project only), Zeshan's side.** Run
+`pnpm exec tsx scripts/gen-demo-handoff-keys.ts`, set the two JWKs it prints
+and `FLAG_ALPHA_CLAIM_ROUTE=on`, redeploy. Never set the private key on
+production; never reuse the game's production key.

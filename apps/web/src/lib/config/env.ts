@@ -206,6 +206,14 @@ const serverSchema = clientSchema.extend({
    * set on a deployed production tier; the route answers 404 otherwise.
    */
   REFI_KYC_MOCK_CONTROLS: z.enum(["0", "1"]).default("0"),
+  /**
+   * Demo tier ONLY: private half of the demo-tier handoff key pair, so the
+   * walkthrough can mint a simulated game handoff token that the real
+   * alpha-claim route verifies with ALPHA_HANDOFF_PUBLIC_KEY_JWK. Never the
+   * game's production key. Unset everywhere but the demo project; the mint
+   * route is 404 without it. No default, ever.
+   */
+  DEMO_HANDOFF_PRIVATE_KEY_JWK: z.string().min(1).optional(),
 });
 
 function formatError(error: z.ZodError): string {
@@ -328,6 +336,8 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     REFI_INVESTOR_API_MODE: process.env["REFI_INVESTOR_API_MODE"] || undefined,
     REFI_KYC_PROVIDER: process.env["REFI_KYC_PROVIDER"] || undefined,
     REFI_KYC_MOCK_CONTROLS: process.env["REFI_KYC_MOCK_CONTROLS"] || undefined,
+    DEMO_HANDOFF_PRIVATE_KEY_JWK:
+      process.env["DEMO_HANDOFF_PRIVATE_KEY_JWK"] || undefined,
     // No withFallback: a signing key must never have a committed default.
     BFF_ASSERTION_PRIVATE_KEY_JWK:
       process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"] || undefined,

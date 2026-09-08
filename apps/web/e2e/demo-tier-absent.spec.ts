@@ -25,6 +25,11 @@ test.describe("Demo tier is absent outside REFI_ENV=demo", () => {
     expect(
       (await request.delete("/api/demo/session", { headers: H })).status(),
     ).toBe(404);
+    expect(
+      (
+        await request.post("/api/demo/handoff", { headers: H, data: {} })
+      ).status(),
+    ).toBe(404);
   });
 
   test("demo entry page is 404 and no indicator renders", async ({ page }) => {

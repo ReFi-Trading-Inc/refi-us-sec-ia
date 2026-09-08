@@ -6939,6 +6939,233 @@ await section(
   );
 }
 
+// ─── Demo simulated game handoff: dark everywhere but a keyed demo tier; the REAL claim route verifies it ──
+
+{
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  const stripComments = (src: string) =>
+    src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const { createRequire } = await import("node:module");
+  const requireWeb = createRequire(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const { NextRequest } = (await import(
+    requireWeb.resolve("next/server")
+  )) as typeof import("next/server");
+  const { generateKeyPairSync } = await import("node:crypto");
+  const handoff = await import("../apps/web/app/api/demo/handoff/route.ts");
+  const claim =
+    await import("../apps/web/app/api/v1/investor/alpha-claim/route.ts");
+  const session = await import("../apps/web/app/api/demo/session/route.ts");
+  const ORIGIN = "http://localhost:3000";
+  const post = (
+    path: string,
+    body: unknown,
+    opts: { origin?: string | null; cookie?: string } = {},
+  ) => {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    const origin = opts.origin === undefined ? ORIGIN : opts.origin;
+    if (origin) headers["origin"] = origin;
+    if (opts.cookie) headers["cookie"] = opts.cookie;
+    return new NextRequest(`${ORIGIN}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  };
+  const pair = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const PUB = JSON.stringify(pair.publicKey.export({ format: "jwk" }));
+  const PRIV = JSON.stringify(pair.privateKey.export({ format: "jwk" }));
+  const withEnv = async (
+    vars: Record<string, string | undefined>,
+    fn: () => Promise<void>,
+  ) => {
+    const saved: Record<string, string | undefined> = {};
+    for (const k of Object.keys(vars)) saved[k] = process.env[k];
+    for (const [k, v] of Object.entries(vars)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    resetServerEnvCacheForTests();
+    try {
+      await fn();
+    } finally {
+      for (const [k, v] of Object.entries(saved)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+      resetServerEnvCacheForTests();
+    }
+  };
+  const KEYED = {
+    DEMO_HANDOFF_PRIVATE_KEY_JWK: PRIV,
+    ALPHA_HANDOFF_PUBLIC_KEY_JWK: PUB,
+    FLAG_ALPHA_CLAIM_ROUTE: "on",
+  };
+
+  await section(
+    "demo handoff: 404 on prod, staging and dev even with a key; 404 on demo without the key or with the claim flag off",
+    async () => {
+      for (const tier of ["prod", "staging", "dev"]) {
+        await withEnv({ REFI_ENV: tier, ...KEYED }, async () => {
+          assert.equal(
+            (await handoff.POST(post("/api/demo/handoff", {}))).status,
+            404,
+            tier,
+          );
+        });
+      }
+      await withEnv(
+        { REFI_ENV: "demo", ...KEYED, DEMO_HANDOFF_PRIVATE_KEY_JWK: undefined },
+        async () => {
+          assert.equal(
+            (await handoff.POST(post("/api/demo/handoff", {}))).status,
+            404,
+            "demo without key",
+          );
+        },
+      );
+      await withEnv(
+        { REFI_ENV: "demo", ...KEYED, FLAG_ALPHA_CLAIM_ROUTE: "off" },
+        async () => {
+          assert.equal(
+            (await handoff.POST(post("/api/demo/handoff", {}))).status,
+            404,
+            "demo with the claim route dark",
+          );
+        },
+      );
+    },
+  );
+
+  await section(
+    "demo handoff: same-origin + session + strict body; the token is ES256 for a fixed demo player and the REAL claim route accepts it exactly as a game token",
+    async () => {
+      await withEnv({ REFI_ENV: "demo", ...KEYED }, async () => {
+        assert.equal(
+          (await handoff.POST(post("/api/demo/handoff", {}, { origin: null })))
+            .status,
+          403,
+          "origin required",
+        );
+        assert.equal(
+          (await handoff.POST(post("/api/demo/handoff", {}))).status,
+          401,
+          "session required",
+        );
+        const signin = await session.POST(
+          post("/api/demo/session", { persona: "applicant" }),
+        );
+        assert.equal(signin.status, 200);
+        const cookie = (signin.headers.get("set-cookie") ?? "")
+          .split(/,(?=[^ ;]+=)/)
+          .map((c) => c.split(";")[0] ?? "")
+          .filter((c) => c.startsWith("us_session_v1="))
+          .join("; ");
+        assert.ok(cookie.length > 0, "session cookie minted");
+        assert.equal(
+          (
+            await handoff.POST(
+              post("/api/demo/handoff", { sub: "someone-else" }, { cookie }),
+            )
+          ).status,
+          400,
+          "strict body: no caller-chosen claims",
+        );
+        const minted = await handoff.POST(
+          post("/api/demo/handoff", {}, { cookie }),
+        );
+        assert.equal(minted.status, 200);
+        const body = (await minted.json()) as {
+          data: {
+            claimPath: string;
+            simulated: boolean;
+            authorityAsserted: boolean;
+          };
+        };
+        assert.equal(body.data.simulated, true);
+        assert.equal(body.data.authorityAsserted, false);
+        const token = new URL(body.data.claimPath, ORIGIN).searchParams.get(
+          "token",
+        );
+        assert.ok(token, "claimPath carries the token");
+        const [h, b] = token.split(".");
+        const header = JSON.parse(
+          Buffer.from(h ?? "", "base64url").toString(),
+        ) as { alg: string };
+        const claims = JSON.parse(
+          Buffer.from(b ?? "", "base64url").toString(),
+        ) as Record<string, unknown>;
+        assert.equal(header.alg, "ES256");
+        assert.equal(claims["sub"], handoff.DEMO_GAME_PLAYER_ID);
+        assert.equal(
+          claims["campaignSource"],
+          handoff.DEMO_HANDOFF_CAMPAIGN_SOURCE,
+        );
+        assert.equal(claims["intendedDestination"], "ELIGIBILITY");
+        assert.ok(
+          (claims["exp"] as number) - (claims["iat"] as number) <= 600,
+          "lifetime within the claim route's maximum",
+        );
+        const first = await claim.POST(
+          post("/api/v1/investor/alpha-claim", { token }),
+        );
+        assert.equal(first.status, 201, "real claim route accepts the token");
+        const replay = await claim.POST(
+          post("/api/v1/investor/alpha-claim", { token }),
+        );
+        assert.equal(
+          replay.status,
+          200,
+          "replay is idempotent, not a new binding",
+        );
+        const bad = await claim.POST(
+          post("/api/v1/investor/alpha-claim", {
+            token: token.slice(0, -6) + "AAAAAA",
+          }),
+        );
+        assert.equal(bad.status, 401, "tampered token still refused");
+      });
+    },
+  );
+
+  await section(
+    "demo handoff: game lineage never touches identity, KYC, admission, or account scope",
+    async () => {
+      const src = stripComments(read("apps/web/app/api/demo/handoff/route.ts"));
+      assert.ok(
+        !/investor-api|demo-client|resolveAccountScope|kyc|eligibility|ELIGIBILITY_COOKIE|cookies\.set/.test(
+          src,
+        ),
+        "handoff route mints a token and nothing else",
+      );
+      assert.ok(
+        /getAuthContext\(req\)/.test(src) &&
+          /DEMO_HANDOFF_PRIVATE_KEY_JWK/.test(src),
+        "session-gated and keyed by the demo-only private JWK",
+      );
+      const claimSrc = stripComments(
+        read("apps/web/app/api/v1/investor/alpha-claim/route.ts"),
+      );
+      assert.ok(
+        !/demo|DEMO_HANDOFF/.test(claimSrc),
+        "the claim route has no demo special case",
+      );
+      const env = stripComments(read("apps/web/src/lib/config/env.ts"));
+      assert.ok(
+        !/DEMO_HANDOFF_PRIVATE_KEY_JWK:\s*withFallback|DEMO_HANDOFF_PRIVATE_KEY_JWK:\s*JSON/.test(
+          env,
+        ),
+        "the demo private key has no committed default",
+      );
+    },
+  );
+}
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

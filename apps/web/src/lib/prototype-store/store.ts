@@ -15,11 +15,19 @@
  * this implementation with a real KV.
  */
 import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 function rootDir(): string {
   const fromEnv = process.env["REFI_PROTOTYPE_STORE_DIR"];
   if (fromEnv) return resolve(fromEnv);
+  // Serverless (Vercel) bundles are read-only except the OS temp dir. Without
+  // an explicit override every mutation would fail with ENOENT/EROFS on
+  // `mkdir /var/task/apps/web/.refi-prototype-store` (demo KYC start, 2026-09-08).
+  // The temp dir is per-instance and ephemeral — acceptable only for the
+  // prototype tiers; a durable backing is the real fix (docs/alpha-go-live-checklist.md).
+  if (process.env["VERCEL"] === "1")
+    return join(tmpdir(), "refi-prototype-store");
   // process.cwd() in Next.js dev is apps/web by default; in tests it's the
   // repo root. Resolve relative to a stable anchor (the apps/web dir).
   const cwd = process.cwd();
@@ -59,15 +67,18 @@ export interface KVStore<T> {
 export function kvStore<T>(name: string): KVStore<T> {
   const dir = join(rootDir(), safeKey(name));
 
-  async function pathFor(key: string): Promise<string> {
-    await ensureDir(dir);
+  function pathFor(key: string): string {
     return join(dir, `${safeKey(key)}.json`);
+  }
+  async function writablePathFor(key: string): Promise<string> {
+    await ensureDir(dir);
+    return pathFor(key);
   }
 
   return {
     async get(key) {
       try {
-        const buf = await fs.readFile(await pathFor(key), "utf8");
+        const buf = await fs.readFile(pathFor(key), "utf8");
         return JSON.parse(buf) as T;
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
@@ -75,10 +86,13 @@ export function kvStore<T>(name: string): KVStore<T> {
       }
     },
     async put(key, value) {
-      await atomicWrite(await pathFor(key), JSON.stringify(value, null, 2));
+      await atomicWrite(
+        await writablePathFor(key),
+        JSON.stringify(value, null, 2),
+      );
     },
     async putIfAbsent(key, value) {
-      const p = await pathFor(key);
+      const p = await writablePathFor(key);
       try {
         await fs.access(p);
         return false;
@@ -106,7 +120,7 @@ export function kvStore<T>(name: string): KVStore<T> {
     },
     async delete(key) {
       try {
-        await fs.unlink(await pathFor(key));
+        await fs.unlink(pathFor(key));
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
       }

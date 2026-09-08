@@ -175,6 +175,105 @@ test.describe("Demo tier — persona sign-in", () => {
     expect(direct.status()).toBe(401);
   });
 
+  test("simulated game handoff: dark without a session; mints a real ES256 token; the REAL claim route accepts it once and lands at eligibility", async ({
+    page,
+  }) => {
+    // Same-origin + session are required, like every demo control.
+    const anon = await page.request.post("/api/demo/handoff", {
+      headers: H,
+      data: {},
+    });
+    expect(anon.status()).toBe(401);
+    await signIn(page, "applicant");
+    const crossOrigin = await page.request.post("/api/demo/handoff", {
+      headers: { ...H, origin: "https://evil.example" },
+      data: {},
+    });
+    expect(crossOrigin.status()).toBe(403);
+    const strict = await page.request.post("/api/demo/handoff", {
+      headers: H,
+      data: { sub: "someone-else" },
+    });
+    expect(strict.status()).toBe(400);
+
+    const minted = await page.request.post("/api/demo/handoff", {
+      headers: H,
+      data: {},
+    });
+    expect(minted.status()).toBe(200);
+    const { data } = (await minted.json()) as {
+      data: {
+        claimPath: string;
+        simulated: boolean;
+        authorityAsserted: boolean;
+      };
+    };
+    expect(data.simulated).toBe(true);
+    expect(data.authorityAsserted).toBe(false);
+    expect(data.claimPath).toMatch(/^\/us\/alpha-claim\?token=/);
+    const token = new URL(data.claimPath, ORIGIN).searchParams.get("token");
+    expect(token).toBeTruthy();
+    // ES256 header, demo player subject, no behavioural claims.
+    const [h, b] = (token as string).split(".");
+    const header = JSON.parse(
+      Buffer.from(h as string, "base64url").toString(),
+    ) as { alg: string };
+    const claims = JSON.parse(
+      Buffer.from(b as string, "base64url").toString(),
+    ) as Record<string, unknown>;
+    expect(header.alg).toBe("ES256");
+    expect(claims["sub"]).toBe("demo-game-player-01");
+    expect(claims["iss"]).toBe("refi-alpha");
+    expect(claims["aud"]).toBe("refi-us-sec-ia");
+    expect(
+      (claims["exp"] as number) - (claims["iat"] as number),
+    ).toBeLessThanOrEqual(600);
+
+    // The real claim route consumes it: first claim 201, replay 200 (idempotent).
+    const first = await page.request.post("/api/v1/investor/alpha-claim", {
+      headers: H,
+      data: { token },
+    });
+    expect(first.status()).toBe(201);
+    const firstBody = (await first.json()) as {
+      data: { alphaPlayerId: string; firstConsumption: boolean };
+    };
+    expect(firstBody.data.alphaPlayerId).toBe("demo-game-player-01");
+    expect(firstBody.data.firstConsumption).toBe(true);
+    const replay = await page.request.post("/api/v1/investor/alpha-claim", {
+      headers: H,
+      data: { token },
+    });
+    expect(replay.status()).toBe(200);
+
+    // A tampered token is still refused by the real verifier.
+    const tampered = await page.request.post("/api/v1/investor/alpha-claim", {
+      headers: H,
+      data: { token: (token as string).slice(0, -6) + "AAAAAA" },
+    });
+    expect(tampered.status()).toBe(401);
+
+    // The browser path: the picker's game card → claim page → eligibility.
+    await page.goto("/us/demo");
+    await expect(page.getByTestId("demo-game-card")).toBeVisible();
+    await expect(page.getByTestId("demo-game-link")).toHaveAttribute(
+      "href",
+      "https://game.refi.trading",
+    );
+    await page.getByTestId("demo-game-handoff").click();
+    await expect(page).toHaveURL(/\/us\/alpha-claim\?token=/);
+    await expect(page.getByText(/progress claimed/i)).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page).toHaveURL(/\/us\/eligibility/, { timeout: 15_000 });
+    // Game lineage grants nothing: still no eligibility decision, still no
+    // onboarding access without the public screening step.
+    const cookies = await page.context().cookies();
+    expect(cookies.find((c) => c.name === "us_eligibility_v1")).toBeUndefined();
+    await page.goto("/us/onboarding/kyc");
+    await expect(page).toHaveURL(/\/us\/eligibility/);
+  });
+
   test("sign-out clears the demo session", async ({ page }) => {
     await page.goto("/us/demo");
     await signIn(page, "admitted");

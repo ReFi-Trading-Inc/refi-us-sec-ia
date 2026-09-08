@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { Button, Card, CardContent, StatusBanner } from "@ui/components";
 
+// The acquisition funnel starts in the ReFi Alpha game (game.refi.trading).
+// The deployed game cannot mint a handoff yet, so the demo tier mints a
+// simulated token itself (/api/demo/handoff) and walks the REAL claim page.
+const GAME_URL = "https://game.refi.trading";
+
 interface PersonaOption {
   key: string;
   label: string;
@@ -27,6 +32,46 @@ export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [advanced, setAdvanced] = useState<string | null>(null);
+  const [handoffNote, setHandoffNote] = useState<string | null>(null);
+
+  /**
+   * Game-first story: sign in as the applicant persona (game lineage never
+   * replaces sign-in), mint a simulated handoff, then land on the real claim
+   * page with the token exactly as the game would deliver it.
+   */
+  async function startFromGame() {
+    setBusy("game");
+    setError(null);
+    setHandoffNote(null);
+    try {
+      const signin = await fetch("/api/demo/session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ persona: "applicant" }),
+      });
+      if (!signin.ok) throw new Error("signin");
+      const res = await fetch("/api/demo/handoff", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+      if (res.status === 404) {
+        setHandoffNote(
+          "The simulated handoff is not configured on this deployment. Open the game directly, or start as the applicant persona.",
+        );
+        setBusy(null);
+        return;
+      }
+      if (!res.ok) throw new Error(String(res.status));
+      const body = (await res.json()) as { data: { claimPath: string } };
+      window.location.assign(body.data.claimPath);
+    } catch {
+      setError("The demo sign-in is not available on this deployment.");
+      setBusy(null);
+    }
+  }
 
   async function choose(p: PersonaOption) {
     setBusy(p.key);
@@ -74,6 +119,57 @@ export function DemoPersonaPicker({ personas }: { personas: PersonaOption[] }) {
   return (
     <div className="flex flex-col gap-4" data-testid="demo-persona-picker">
       {error && <StatusBanner variant="error">{error}</StatusBanner>}
+      <Card data-testid="demo-game-card">
+        <CardContent className="pt-5 flex flex-col gap-4">
+          <div className="min-w-0 flex flex-col gap-1">
+            <p className="text-base font-semibold text-charcoal-50">
+              Start from the game
+            </p>
+            <p className="text-sm text-charcoal-400">
+              The acquisition funnel: a player finishes the ReFi Alpha game and
+              hands their progress to ReFi. This walkthrough mints a simulated
+              handoff and passes through the real claim step. Game progress is
+              lineage only — it never grants identity, admission, or any
+              authority.
+            </p>
+            <p className="text-xs font-mono uppercase tracking-wider text-charcoal-500">
+              Game → claim progress → eligibility → identity → application
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button
+              size="md"
+              variant="secondary"
+              disabled={busy !== null}
+              loading={busy === "game"}
+              onClick={() => {
+                void startFromGame();
+              }}
+              data-testid="demo-game-handoff"
+              className="w-full sm:w-auto sm:min-w-44"
+            >
+              Simulate game handoff
+            </Button>
+            <a
+              href={GAME_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="demo-game-link"
+              className="inline-flex items-center justify-center rounded-md border border-charcoal-700 px-4 py-2 text-sm font-medium text-charcoal-200 hover:border-mint-400/60 hover:text-charcoal-50 transition-colors w-full sm:w-auto"
+            >
+              Open the game ↗
+            </a>
+          </div>
+          {handoffNote && (
+            <p
+              className="text-xs font-mono text-charcoal-400"
+              data-testid="demo-game-handoff-note"
+            >
+              {handoffNote}
+            </p>
+          )}
+        </CardContent>
+      </Card>
       {personas.map((p) => {
         const { title, description } = splitLabel(p.label);
         const featured = p.key === "invited";

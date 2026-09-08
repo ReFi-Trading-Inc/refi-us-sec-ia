@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test";
+import { generateKeyPairSync } from "node:crypto";
 import { resolve } from "node:path";
 import { E2E_SESSION_JWT_SECRET } from "./e2e/session";
 
@@ -14,6 +15,16 @@ import { E2E_SESSION_JWT_SECRET } from "./e2e/session";
 const PROTOTYPE_STORE_DIR = resolve(__dirname, ".refi-prototype-store-e2e");
 process.env["REFI_PROTOTYPE_STORE_DIR"] = PROTOTYPE_STORE_DIR;
 const PORT = 3000;
+// A throwaway P-256 pair per run so the lane can prove the simulated game
+// handoff end to end: /api/demo/handoff mints with the private half, the
+// REAL alpha-claim route verifies with the public half. Never persisted.
+const demoHandoffKeys = generateKeyPairSync("ec", { namedCurve: "P-256" });
+const DEMO_HANDOFF_PUBLIC_JWK = JSON.stringify(
+  demoHandoffKeys.publicKey.export({ format: "jwk" }),
+);
+const DEMO_HANDOFF_PRIVATE_JWK = JSON.stringify(
+  demoHandoffKeys.privateKey.export({ format: "jwk" }),
+);
 
 export default defineConfig({
   testDir: "./e2e",
@@ -63,15 +74,12 @@ export default defineConfig({
       REFI_INVESTOR_API_ASSERTION_MODE: "simulator-fixture",
       REFI_KYC_PROVIDER: "mock",
       REFI_KYC_MOCK_CONTROLS: "1",
-      // The alpha-claim route is live on the demo tier; the key is a
-      // placeholder so every real token fails verification (invalid → 401).
+      // The alpha-claim route is live on the demo tier, verifying with the
+      // per-run demo public key; the demo handoff route mints with the
+      // private half. A bogus token still fails verification (401).
       FLAG_ALPHA_CLAIM_ROUTE: "on",
-      ALPHA_HANDOFF_PUBLIC_KEY_JWK: JSON.stringify({
-        kty: "EC",
-        crv: "P-256",
-        x: "e2e-x",
-        y: "e2e-y",
-      }),
+      ALPHA_HANDOFF_PUBLIC_KEY_JWK: DEMO_HANDOFF_PUBLIC_JWK,
+      DEMO_HANDOFF_PRIVATE_KEY_JWK: DEMO_HANDOFF_PRIVATE_JWK,
       ALPHA_HANDOFF_ISSUER: "refi-alpha",
       ALPHA_HANDOFF_AUDIENCE: "refi-us-sec-ia",
     },

@@ -32,6 +32,16 @@
       }
     },
     {
+      "source": "apps/web/app/api/demo/handoff/route.ts",
+      "route": "/api/demo/handoff",
+      "methods": ["POST"],
+      "purpose": "Demo-tier SIMULATED game handoff: mints an ES256 AlphaHandoffToken with a demo-only key pair (DEMO_HANDOFF_PRIVATE_KEY_JWK) for a fixed demo player subject so the walkthrough passes through the REAL /us/alpha-claim page and route, which verifies it like a game-minted token. 404 unless REFI_ENV=demo, the demo key is set, and FLAG_ALPHA_CLAIM_ROUTE=on; same-origin; session required. Game lineage only — asserts no identity, admission, or authority.",
+      "owner": "demo-tier",
+      "auth": {
+        "POST": "demo-tier-gated"
+      }
+    },
+    {
       "source": "apps/web/app/api/demo/session/route.ts",
       "route": "/api/demo/session",
       "methods": ["DELETE", "GET", "POST"],

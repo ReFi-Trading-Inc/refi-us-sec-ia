@@ -32,6 +32,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { importJWK, jwtVerify } from "jose";
 import { correlationIdFrom } from "../../../../../src/lib/bff/correlation";
+import { requestOrigin } from "../../../../../src/lib/bff/origin";
 import { getServerEnv } from "../../../../../src/lib/config/env";
 import { bindHandoff } from "../../../../../src/lib/prototype-store/entities/alpha-application";
 import { consumeJtiIfAbsent } from "../../../../../src/lib/prototype-store/entities/alpha-handoff-jti";
@@ -150,7 +151,7 @@ function enforceSameOrigin(
       403,
     );
   }
-  if (normalizedDeclared !== req.nextUrl.origin) {
+  if (normalizedDeclared !== requestOrigin(req)) {
     return errorResponse(
       correlationId,
       "origin_untrusted",

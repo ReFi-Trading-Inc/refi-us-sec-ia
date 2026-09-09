@@ -28,6 +28,7 @@ import { z } from "zod";
 import { importJWK, SignJWT } from "jose";
 import { getServerEnv } from "../../../../src/lib/config/env";
 import { getAuthContext } from "../../../../src/lib/bff/auth";
+import { requestOrigin } from "../../../../src/lib/bff/origin";
 
 /** Fixed demo player subject — a label, never an identity. */
 export const DEMO_GAME_PLAYER_ID = "demo-game-player-01";
@@ -51,7 +52,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const origin = req.headers.get("origin");
-  if (!origin || origin === "null" || origin !== req.nextUrl.origin) {
+  if (!origin || origin === "null" || origin !== requestOrigin(req)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const auth = await getAuthContext(req);

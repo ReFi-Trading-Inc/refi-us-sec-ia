@@ -214,6 +214,13 @@ const serverSchema = clientSchema.extend({
    * route is 404 without it. No default, ever.
    */
   DEMO_HANDOFF_PRIVATE_KEY_JWK: z.string().min(1).optional(),
+  /**
+   * "1" ONLY behind a TLS-terminating edge proxy that owns Host and
+   * X-Forwarded-Proto (Cloud Run). Same-origin checks then compare the browser
+   * Origin to `${x-forwarded-proto}://${host}` instead of Next's bind address
+   * (`https://0.0.0.0:3000` in standalone mode). See lib/bff/origin.ts.
+   */
+  REFI_TRUST_PROXY_HOST: z.enum(["0", "1"]).default("0"),
 });
 
 function formatError(error: z.ZodError): string {
@@ -338,6 +345,7 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     REFI_KYC_MOCK_CONTROLS: process.env["REFI_KYC_MOCK_CONTROLS"] || undefined,
     DEMO_HANDOFF_PRIVATE_KEY_JWK:
       process.env["DEMO_HANDOFF_PRIVATE_KEY_JWK"] || undefined,
+    REFI_TRUST_PROXY_HOST: process.env["REFI_TRUST_PROXY_HOST"] || undefined,
     // No withFallback: a signing key must never have a committed default.
     BFF_ASSERTION_PRIVATE_KEY_JWK:
       process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"] || undefined,

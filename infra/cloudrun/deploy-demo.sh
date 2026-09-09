@@ -27,6 +27,8 @@ YAML="$(mktemp)"
 trap 'rm -f "$YAML"' EXIT
 {
   echo 'REFI_PROTOTYPE_STORE_DIR: "/tmp/refi-prototype-store"'
+  # Cloud Run's front end owns Host/X-Forwarded-Proto; see lib/bff/origin.ts.
+  echo 'REFI_TRUST_PROXY_HOST: "1"'
   grep -E '^[A-Z0-9_]+=' "$ENV_FILE" \
     | grep -vE '^(NEXT_PUBLIC_|REFI_PROTOTYPE_STORE_DIR=|VERCEL)' \
     | python3 -c '

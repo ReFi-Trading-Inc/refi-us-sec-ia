@@ -6573,7 +6573,7 @@ await section(
       );
       assert.ok(
         /export function DELETE/.test(sessionRoute) &&
-          /origin !== req\.nextUrl\.origin/.test(sessionRoute),
+          /origin !== requestOrigin\(req\)/.test(sessionRoute),
         "DELETE session is same-origin only",
       );
       assert.ok(
@@ -7162,6 +7162,148 @@ await section(
         ),
         "the demo private key has no committed default",
       );
+    },
+  );
+}
+
+// ─── Same-origin behind a TLS-terminating proxy: opt-in, exact Host match, default unchanged ──
+
+{
+  const { createRequire } = await import("node:module");
+  const requireWeb = createRequire(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const { NextRequest } = (await import(
+    requireWeb.resolve("next/server")
+  )) as typeof import("next/server");
+  const { isSameOrigin, requestOrigin } =
+    await import("../apps/web/src/lib/bff/origin.ts");
+  const mk = (headers: Record<string, string>) =>
+    new NextRequest("http://0.0.0.0:3000/api/x", { method: "POST", headers });
+  const withFlag = async (v: string | undefined, fn: () => Promise<void>) => {
+    const saved = process.env["REFI_TRUST_PROXY_HOST"];
+    if (v === undefined) delete process.env["REFI_TRUST_PROXY_HOST"];
+    else process.env["REFI_TRUST_PROXY_HOST"] = v;
+    try {
+      await fn();
+    } finally {
+      if (saved === undefined) delete process.env["REFI_TRUST_PROXY_HOST"];
+      else process.env["REFI_TRUST_PROXY_HOST"] = saved;
+    }
+  };
+
+  await section(
+    "same-origin: without REFI_TRUST_PROXY_HOST the expected origin is Next's own URL and forwarded headers are ignored",
+    async () => {
+      await withFlag(undefined, async () => {
+        const req = mk({
+          origin: "https://demo.example",
+          host: "demo.example",
+          "x-forwarded-proto": "https",
+        });
+        assert.equal(requestOrigin(req), "http://0.0.0.0:3000");
+        assert.equal(
+          isSameOrigin(req),
+          false,
+          "forwarded host must not be trusted by default",
+        );
+      });
+    },
+  );
+
+  await section(
+    "same-origin: with REFI_TRUST_PROXY_HOST=1 the browser Origin must equal ${x-forwarded-proto}://${host} exactly",
+    async () => {
+      await withFlag("1", async () => {
+        const ok = mk({
+          origin: "https://demo.example",
+          host: "demo.example",
+          "x-forwarded-proto": "https",
+        });
+        assert.equal(requestOrigin(ok), "https://demo.example");
+        assert.equal(isSameOrigin(ok), true);
+        for (const [label, headers] of [
+          [
+            "different host",
+            {
+              origin: "https://evil.example",
+              host: "demo.example",
+              "x-forwarded-proto": "https",
+            },
+          ],
+          [
+            "http origin for an https host",
+            {
+              origin: "http://demo.example",
+              host: "demo.example",
+              "x-forwarded-proto": "https",
+            },
+          ],
+          [
+            "subdomain",
+            {
+              origin: "https://a.demo.example",
+              host: "demo.example",
+              "x-forwarded-proto": "https",
+            },
+          ],
+          [
+            "missing origin",
+            { host: "demo.example", "x-forwarded-proto": "https" },
+          ],
+          [
+            "null origin",
+            {
+              origin: "null",
+              host: "demo.example",
+              "x-forwarded-proto": "https",
+            },
+          ],
+        ] as const) {
+          assert.equal(isSameOrigin(mk({ ...headers })), false, label);
+        }
+        // Without any Host header the check falls back to Next's own URL.
+        assert.equal(
+          requestOrigin(
+            new NextRequest("http://0.0.0.0:3000/api/x", { method: "POST" }),
+          ),
+          "http://0.0.0.0:3000",
+        );
+      });
+    },
+  );
+
+  await section(
+    "same-origin: every route-local origin check goes through requestOrigin (no bare nextUrl.origin comparisons)",
+    async () => {
+      const files = [
+        "apps/web/app/api/v1/investor/alpha-claim/route.ts",
+        "apps/web/app/api/v1/investor/session/route.ts",
+        "apps/web/app/api/demo/session/route.ts",
+        "apps/web/app/api/demo/advance/route.ts",
+        "apps/web/app/api/demo/handoff/route.ts",
+        "apps/web/src/lib/bff/origin.ts",
+      ];
+      for (const f of files) {
+        const src = readFileSync(join(REPO_ROOT, f), "utf8").replace(
+          /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+          "",
+        );
+        const bare = (src.match(/nextUrl\.origin/g) ?? []).length;
+        if (f.endsWith("origin.ts")) {
+          assert.equal(
+            bare,
+            1,
+            "origin.ts holds the single fallback to nextUrl.origin",
+          );
+        } else {
+          assert.equal(bare, 0, `${f} must compare against requestOrigin(req)`);
+          assert.ok(
+            /requestOrigin\(req\)/.test(src),
+            `${f} uses requestOrigin`,
+          );
+        }
+      }
     },
   );
 }

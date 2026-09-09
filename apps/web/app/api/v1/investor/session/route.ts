@@ -5,6 +5,7 @@
  * upstream (G-002 Bucket A); this projection is what the UI consumes.
  */
 import type { NextRequest } from "next/server";
+import { requestOrigin } from "@lib/bff/origin";
 import { NextResponse } from "next/server";
 import { bffRead } from "@lib/bff/handler";
 import { getSession, putSession } from "@lib/prototype-store";
@@ -34,7 +35,7 @@ export const GET = bffRead({
  */
 export function DELETE(req: NextRequest): NextResponse {
   const origin = req.headers.get("origin");
-  if (!origin || origin === "null" || origin !== req.nextUrl.origin) {
+  if (!origin || origin === "null" || origin !== requestOrigin(req)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const res = NextResponse.json(

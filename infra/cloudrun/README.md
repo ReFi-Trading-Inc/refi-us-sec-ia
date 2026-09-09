@@ -39,6 +39,14 @@ named so it can move without renaming anything else.
      && vercel env pull --environment production --yes .env.demo
    ```
 
+   **Trap:** variables marked _sensitive_ on Vercel come back as **empty
+   strings** (`SESSION_JWT_SECRET`, `SESSION_SECRET`, `ELIGIBILITY_JWT_SECRET`,
+   `IP_HASH_SECRET`, `DEMO_HANDOFF_PRIVATE_KEY_JWK`). The Cloud Run demo does
+   not need Vercel's values — it signs its own cookies — so fill them with
+   fresh 32-byte secrets and a fresh P-256 pair (public half into
+   `ALPHA_HANDOFF_PUBLIC_KEY_JWK`, private into `DEMO_HANDOFF_PRIVATE_KEY_JWK`).
+   An empty secret silently breaks sign-in (403) and the handoff (404).
+
 2. Build the image (5–10 min):
 
    ```

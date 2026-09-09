@@ -30,6 +30,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { SignJWT } from "jose";
 import { getServerEnv } from "../../../../src/lib/config/env";
+import { requestOrigin } from "../../../../src/lib/bff/origin";
 import {
   DEMO_PERSONA_COOKIE,
   DEMO_PERSONA_PROFILES,
@@ -53,7 +54,7 @@ function notFound(): NextResponse {
 
 function sameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin");
-  return origin !== null && origin !== "null" && origin === req.nextUrl.origin;
+  return origin !== null && origin !== "null" && origin === requestOrigin(req);
 }
 
 export function GET(req: NextRequest): NextResponse {

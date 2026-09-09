@@ -18,6 +18,7 @@ import {
   isTerminalKycState,
   useAdvanceMockKycVerification,
   useKycVerification,
+  useResetMockKycVerification,
   useStartKycVerification,
   type KycLifecycleState,
 } from "../../../_hooks/useKycVerification";
@@ -27,12 +28,21 @@ import {
 const showMockControls =
   typeof process !== "undefined" &&
   process.env["NEXT_PUBLIC_REFI_ENV"] !== "prod";
+// On the demo tier the panel is a presenter control and reads as one; on dev
+// builds it keeps the blunt "development only" wording. Never shown on prod.
+const isDemoTier =
+  typeof process !== "undefined" &&
+  process.env["NEXT_PUBLIC_REFI_ENV"] === "demo";
+const mockPanelCopy = isDemoTier
+  ? "Presenter control — simulated identity check. No document is collected and no vendor is contacted; these buttons move the demo's verification state."
+  : "Development only — MOCK identity-verification adapter. This is not a KYC check; these buttons move a test state machine.";
 
 export default function OnboardingKycPage() {
   const router = useRouter();
   const verification = useKycVerification({ poll: true });
   const start = useStartKycVerification();
   const advance = useAdvanceMockKycVerification();
+  const reset = useResetMockKycVerification();
 
   const view = verification.data;
   const state: KycLifecycleState = view?.session?.state ?? "not_started";
@@ -133,8 +143,7 @@ export default function OnboardingKycPage() {
           className="rounded-lg border border-charcoal-700 bg-charcoal-900 p-3 flex flex-wrap gap-2"
         >
           <p className="w-full text-xs text-charcoal-500 mb-1">
-            Development only — MOCK identity-verification adapter. This is not a
-            KYC check; these buttons move a test state machine.
+            {mockPanelCopy}
           </p>
           {KYC_LIFECYCLE_STATES.filter((s) => s !== "not_started").map((s) => (
             <Button
@@ -144,11 +153,22 @@ export default function OnboardingKycPage() {
               onClick={() => {
                 advance.mutate(s);
               }}
-              disabled={advance.isPending}
+              disabled={advance.isPending || reset.isPending}
             >
               {s}
             </Button>
           ))}
+          <Button
+            size="sm"
+            variant="tertiary"
+            data-testid="kyc-mock-reset"
+            onClick={() => {
+              reset.mutate();
+            }}
+            disabled={advance.isPending || reset.isPending}
+          >
+            reset
+          </Button>
         </div>
       )}
     </div>

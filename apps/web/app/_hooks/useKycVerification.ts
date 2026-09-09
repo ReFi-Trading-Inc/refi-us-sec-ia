@@ -117,3 +117,15 @@ export function useAdvanceMockKycVerification() {
     },
   });
 }
+
+/** Development/demo-only control: forget the MOCK session so a walkthrough can replay from not_started. */
+export function useResetMockKycVerification() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      postJson<{ ok: boolean; reset: true }>(`${BASE}/mock`, { reset: true }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+}

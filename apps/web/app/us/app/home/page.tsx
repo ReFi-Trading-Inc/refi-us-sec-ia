@@ -42,7 +42,7 @@ export default function HomePage() {
 
   return (
     <div className="flex flex-col gap-8 max-w-4xl" data-testid="home-page">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold text-charcoal-50">
           {home.heading}
         </h1>
@@ -67,7 +67,7 @@ export default function HomePage() {
       ) : p ? (
         <>
           <TickerTape positions={p.positions} />
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <Kpi
               label={home.portfolioValue}
               value={formatCurrency(p.valuation.equity)}
@@ -215,7 +215,7 @@ function Kpi({
       <CardContent className="pt-4">
         <p className="text-xs text-charcoal-500 mb-1">{label}</p>
         <p
-          className={`text-2xl font-mono tabular-nums ${tone ?? "text-charcoal-100"}`}
+          className={`text-xl sm:text-2xl font-mono tabular-nums break-words ${tone ?? "text-charcoal-100"}`}
           data-testid={testId}
         >
           {value}

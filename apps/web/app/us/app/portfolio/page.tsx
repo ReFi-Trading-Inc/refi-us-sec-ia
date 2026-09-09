@@ -31,7 +31,7 @@ export default function PortfolioPage() {
 
   return (
     <div className="flex flex-col gap-6 max-w-5xl" data-testid="portfolio-page">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="text-xl font-semibold text-charcoal-50">
           {portfolio.heading}
         </h1>
@@ -53,7 +53,7 @@ export default function PortfolioPage() {
       {p && (
         <>
           <TickerTape positions={p.positions} />
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               [portfolio.totalValue, formatCurrency(p.valuation.equity)],
               [portfolio.cash, formatCurrency(p.valuation.cash)],

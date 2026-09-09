@@ -36,7 +36,17 @@ import sys, json
 for line in sys.stdin:
     k, _, v = line.rstrip("\n").partition("=")
     if len(v) >= 2 and v[0] == v[-1] and v[0] in "\"'"'"'":
+        quote = v[0]
         v = v[1:-1]
+        # dotenv double-quoted values escape inner quotes and backslashes
+        # (vercel env pull writes JSON JWKs this way).
+        if quote == "\"":
+            # dotenv double-quoted values use JSON-style escapes (\" and \\);
+            # vercel env pull writes JSON JWKs this way.
+            try:
+                v = json.loads("\"" + v + "\"")
+            except ValueError:
+                pass
     print(f"{k}: {json.dumps(v)}")
 '
 } > "$YAML"

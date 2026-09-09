@@ -1,0 +1,15 @@
+.git
+node_modules
+**/node_modules
+.turbo
+**/.next
+**/.refi-prototype-store*
+**/test-results
+**/playwright-report
+.env*
+**/.env*
+!**/.env.example
+artifacts
+september-12-launch
+*.xlsx
+.claude

@@ -1,0 +1,30 @@
+# Cloud Build: demo-tier image of the standalone Next.js app.
+#   gcloud builds submit --config infra/cloudrun/cloudbuild.demo.yaml --project refi-game-prod .
+# Build-time args are the PUBLIC demo-tier constants only; server-only env
+# (REFI_ENV=demo, secrets, demo handoff keys) is set on the Cloud Run service.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/web/Dockerfile
+      - --build-arg
+      - NEXT_PUBLIC_REFI_ENV=demo
+      - --build-arg
+      - NEXT_PUBLIC_REFI_DATA_ADAPTER=live
+      - --build-arg
+      - NEXT_PUBLIC_API_BASE_URL=https://demo.refi.trading
+      - -t
+      - ${_IMAGE}:${SHORT_SHA}
+      - -t
+      - ${_IMAGE}:latest
+      - .
+images:
+  - ${_IMAGE}:${SHORT_SHA}
+  - ${_IMAGE}:latest
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/refi-game-prod/refi/demo-web
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1800s

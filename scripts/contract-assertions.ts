@@ -9096,10 +9096,30 @@ await section(
     "REFI_CONNECTED_STORE_NAMESPACE",
     "REFI_CONNECTED_STORE_BACKING",
     "REFI_ENV",
+    "BRIDGE_ASSERTION_PRIVATE_KEY_JWK",
+    "BRIDGE_ASSERTION_ISSUER",
+    "IDENTITY_CCID_UPSTREAM_AUDIENCE",
+    "IDENTITY_CCID_JWKS_URL",
   ];
   const savedEnv: Record<string, string | undefined> = {};
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   process.env["REFI_AUTH_PROVIDER"] = "stytch";
+  // The bridge → exchange chain must be configured whenever the provider is
+  // on (env invariant); this section never reaches the exchange because no
+  // upstream is configured, so completion fails closed with 503.
+  {
+    const { generateKeyPairSync } = await import("node:crypto");
+    const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"] = JSON.stringify({
+      ...(privateKey.export({ format: "jwk" }) as Record<string, string>),
+      kid: "bridge-stytch-section",
+    });
+  }
+  process.env["BRIDGE_ASSERTION_ISSUER"] = "https://bff-dev.refi.trading";
+  process.env["IDENTITY_CCID_UPSTREAM_AUDIENCE"] =
+    "https://identity-ccid.dev.refi.internal";
+  process.env["IDENTITY_CCID_JWKS_URL"] =
+    "https://identity-ccid-74kl57biwa-uw.a.run.app/.well-known/jwks.json";
   process.env["STYTCH_PROJECT_ID"] =
     "project-test-00000000-0000-0000-0000-000000000000";
   process.env["STYTCH_SECRET"] = "secret-test-" + "x".repeat(24);
@@ -9862,6 +9882,1198 @@ await section(
     if (savedProxy === undefined) delete process.env["REFI_TRUST_PROXY_HOST"];
     else process.env["REFI_TRUST_PROXY_HOST"] = savedProxy;
     resetServerEnvCacheForTests();
+  }
+}
+
+// ─── Identity bridge + Daniel's exchange + connected session (US Connected Identity Alpha path): separate key, closed claims, verified result, jti once, durable session ──
+
+{
+  const { resetServerEnvCacheForTests, getServerEnv: getServerEnvBridge } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const cs = await import("../apps/web/src/lib/connected-store/index.ts");
+  const sessions =
+    await import("../apps/web/src/lib/connected-store/session.ts");
+  const replay = await import("../apps/web/src/lib/connected-store/replay.ts");
+  const bridge = await import("../apps/web/src/lib/auth/identity-bridge.ts");
+  const exchange =
+    await import("../apps/web/src/lib/auth/identity-exchange.ts");
+  const chain = await import("../apps/web/src/lib/auth/connected-login.ts");
+  const sessionSeam =
+    await import("../apps/web/src/lib/auth/connected-session.ts");
+  const stytchMod = await import("../apps/web/src/lib/auth/stytch.ts");
+  const flow = await import("../apps/web/src/lib/auth/login-flow.ts");
+  const ua = await import("../apps/web/src/lib/investor-api/user-assertion.ts");
+  const { getAuthContext: getAuthContextBridge } =
+    await import("../apps/web/src/lib/bff/auth.ts");
+  const bridgeJwksRoute =
+    await import("../apps/web/app/.well-known/identity-bridge-jwks.json/route.ts");
+  const startRoute =
+    await import("../apps/web/app/api/v1/auth/login/start/route.ts");
+  const completeRoute =
+    await import("../apps/web/app/api/v1/auth/login/complete/route.ts");
+  const nodeCryptoB = await import("node:crypto");
+  const { createRequire: createRequireBridge } = await import("node:module");
+  const requireWebBridge = createRequireBridge(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const joseB = (await import(
+    requireWebBridge.resolve("jose")
+  )) as typeof import("jose");
+  const { NextRequest: NextRequestB } = (await import(
+    requireWebBridge.resolve("next/server")
+  )) as typeof import("next/server");
+
+  // Keys: bridge, investor-api (BFF) and Daniel's backend — three distinct pairs.
+  const genJwk = (kid: string) => {
+    const { privateKey } = nodeCryptoB.generateKeyPairSync("ec", {
+      namedCurve: "P-256",
+    });
+    const jwk = privateKey.export({ format: "jwk" }) as Record<string, string>;
+    return { ...jwk, kid, alg: "ES256", use: "sig" };
+  };
+  const bridgeJwk = genJwk("bridge-k1");
+  const bffJwk = genJwk("bff-k1");
+  const backendJwk = genJwk("ccid-k1");
+  const backendPublic = (() => {
+    const { d: _d, ...pub } = backendJwk;
+    return { keys: [pub] };
+  })();
+  const backendPrivateKey = await joseB.importJWK(backendJwk, "ES256");
+
+  const ENV_KEYS = [
+    "REFI_AUTH_PROVIDER",
+    "STYTCH_PROJECT_ID",
+    "STYTCH_SECRET",
+    "STYTCH_ENV",
+    "REFI_AUTH_CALLBACK_URL",
+    "REFI_CONNECTED_STORE_NAMESPACE",
+    "REFI_CONNECTED_STORE_BACKING",
+    "REFI_ENV",
+    "BRIDGE_ASSERTION_SIGNER",
+    "BRIDGE_ASSERTION_PRIVATE_KEY_JWK",
+    "BRIDGE_ASSERTION_KMS_KEY_VERSION",
+    "BRIDGE_ASSERTION_KID",
+    "BRIDGE_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK",
+    "BRIDGE_ASSERTION_ISSUER",
+    "IDENTITY_CCID_UPSTREAM_AUDIENCE",
+    "IDENTITY_CCID_JWKS_URL",
+    "IDENTITY_RESULT_ISSUER",
+    "IDENTITY_RESULT_AUDIENCE",
+    "BFF_ASSERTION_SIGNER",
+    "BFF_ASSERTION_PRIVATE_KEY_JWK",
+    "BFF_ASSERTION_KMS_KEY_VERSION",
+    "BFF_ASSERTION_KID",
+    "BFF_ASSERTION_ISSUER",
+    "REFI_IDENTITY_CCID_BASE_URL",
+    "REFI_INVESTOR_API_ALLOW_REMOTE",
+    "REFI_TRUST_PROXY_HOST",
+  ];
+  const savedEnv: Record<string, string | undefined> = {};
+  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+  const baseEnv = () => {
+    for (const k of ENV_KEYS) delete process.env[k];
+    process.env["REFI_AUTH_PROVIDER"] = "stytch";
+    process.env["STYTCH_PROJECT_ID"] =
+      "project-test-00000000-0000-0000-0000-000000000000";
+    process.env["STYTCH_SECRET"] = "secret-test-" + "x".repeat(24);
+    process.env["STYTCH_ENV"] = "test";
+    process.env["REFI_AUTH_CALLBACK_URL"] =
+      "https://bff-dev.refi.trading/us/auth/callback";
+    process.env["REFI_CONNECTED_STORE_NAMESPACE"] = "us-connected-test";
+    process.env["REFI_CONNECTED_STORE_BACKING"] = "prototype";
+    process.env["BRIDGE_ASSERTION_SIGNER"] = "jwk";
+    process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"] = JSON.stringify(bridgeJwk);
+    process.env["BRIDGE_ASSERTION_ISSUER"] = "https://bff-dev.refi.trading";
+    process.env["IDENTITY_CCID_UPSTREAM_AUDIENCE"] =
+      "https://identity-ccid.dev.refi.internal";
+    process.env["IDENTITY_CCID_JWKS_URL"] =
+      "https://identity-ccid-74kl57biwa-uw.a.run.app/.well-known/jwks.json";
+    process.env["BFF_ASSERTION_SIGNER"] = "jwk";
+    process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"] = JSON.stringify(bffJwk);
+    process.env["BFF_ASSERTION_ISSUER"] = "urn:refinity:bff:dev";
+    process.env["REFI_TRUST_PROXY_HOST"] = "1";
+    resetServerEnvCacheForTests();
+    bridge.resetBridgeSignerCache();
+    ua.resetSigningKeyCache();
+  };
+  const envError = (): string => {
+    resetServerEnvCacheForTests();
+    try {
+      getServerEnvBridge();
+      return "";
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  };
+
+  // Shared backing across "instances": same Map, fresh store factories.
+  const backing = new Map<string, Map<string, unknown>>();
+  const instance =
+    (): Parameters<typeof cs.setConnectedStoreFactoryForTests>[0] =>
+    <T>(collection: string) => {
+      const col = () => {
+        let m = backing.get(collection);
+        if (!m) {
+          m = new Map();
+          backing.set(collection, m);
+        }
+        return m as Map<string, T>;
+      };
+      return {
+        async get(k: string) {
+          return col().get(k) ?? null;
+        },
+        async put(k: string, v: T) {
+          col().set(k, v);
+        },
+        async putIfAbsent(k: string, v: T) {
+          if (col().has(k)) return false;
+          col().set(k, v);
+          return true;
+        },
+        async list(prefix?: string) {
+          return [...col().entries()]
+            .filter(([k]) => !prefix || k.startsWith(prefix))
+            .map(([key, value]) => ({ key, value }));
+        },
+        async delete(k: string) {
+          col().delete(k);
+        },
+      };
+    };
+  const sessionsInStore = () =>
+    backing.get("us-connected-test--connected-session")?.size ?? 0;
+
+  // Daniel's exchange, as a fixture: verifies the bridge assertion the way
+  // identity-ccid would (bridge JWKS, iss/aud, exp/nbf, closed claims, single
+  // use) and answers with an identity_result signed by the backend key.
+  const seenBridgeJtis = new Set<string>();
+  const exchangeCalls: Array<Record<string, unknown>> = [];
+  let resultOverride:
+    ((claims: Record<string, unknown>) => Record<string, unknown>) | null =
+    null;
+  let resultSigner: {
+    key: CryptoKey | Uint8Array;
+    alg: string;
+    kid: string;
+  } | null = null;
+  let exchangeFailure: Error | null = null;
+  const fakeExchange: import("../apps/web/src/lib/investor-api/demo-client.ts").InvestorApiReadClient =
+    {
+      async call(opId, options) {
+        assert.equal(opId, "exchangeIdentity");
+        if (exchangeFailure) throw exchangeFailure;
+        const body = (options as { body: Record<string, unknown> }).body;
+        exchangeCalls.push(body);
+        const bridgeJwks = await bridge.getBridgePublicJwks();
+        const { payload, protectedHeader } = await joseB.jwtVerify(
+          body["identity_assertion"] as string,
+          joseB.createLocalJWKSet(bridgeJwks as import("jose").JSONWebKeySet),
+          {
+            algorithms: ["ES256"],
+            issuer: "https://bff-dev.refi.trading",
+            audience: "https://identity-ccid.dev.refi.internal",
+            clockTolerance: 30,
+          },
+        );
+        assert.equal(protectedHeader.typ, "JWT");
+        assert.ok(
+          !seenBridgeJtis.has(payload.jti as string),
+          "backend saw a bridge jti twice",
+        );
+        seenBridgeJtis.add(payload.jti as string);
+        const now = Math.floor(Date.now() / 1000);
+        let claims: Record<string, unknown> = {
+          iss: "urn:refinity:identity-ccid:dev",
+          aud: "urn:refinity:frontend-bff:dev",
+          sub: `user-${nodeCryptoB.randomBytes(12).toString("hex")}`,
+          iat: now,
+          nbf: now,
+          exp: now + 300,
+          jti: `idr_${nodeCryptoB.randomBytes(16).toString("hex")}`,
+          sid: payload.sid,
+          auth_time: payload.auth_time,
+          email: payload.email,
+          email_verified: true,
+          amr: payload.amr,
+        };
+        if (resultOverride) claims = resultOverride(claims);
+        const signer = resultSigner ?? {
+          key: backendPrivateKey,
+          alg: "ES256",
+          kid: "ccid-k1",
+        };
+        const token = await new joseB.SignJWT(claims)
+          .setProtectedHeader({ alg: signer.alg, kid: signer.kid, typ: "JWT" })
+          .sign(signer.key);
+        return {
+          status: 200,
+          correlationId: "ccid_x",
+          headers: new Headers(),
+          data: {
+            data: {
+              identity_result: token,
+              token_type: "JWT",
+              expires_at: new Date((now + 300) * 1000).toISOString(),
+            },
+          },
+        } as never;
+      },
+    };
+
+  const fakeStytchB = () => {
+    const tokens = new Map<string, string>();
+    let authAt = "2026-09-10T03:00:00Z";
+    const userFor = (email: string) => ({
+      user_id: `user-test-${Buffer.from(email).toString("hex").slice(0, 24)}`,
+      email,
+    });
+    const authenticated = (email: string, type: string) => {
+      const u = userFor(email);
+      return {
+        request_id: "req",
+        status_code: 200,
+        user_id: u.user_id,
+        method_id: "m",
+        user: {
+          user_id: u.user_id,
+          emails: [
+            { email_id: `email-${u.user_id}`, email: u.email, verified: true },
+          ],
+        },
+        session: {
+          session_id: `session-${u.user_id}`,
+          user_id: u.user_id,
+          started_at: authAt,
+          authentication_factors: [
+            {
+              type,
+              delivery_method: "email",
+              last_authenticated_at: authAt,
+              email_factor: {
+                email_id: `email-${u.user_id}`,
+                email_address: u.email,
+              },
+            },
+          ],
+        },
+      };
+    };
+    const client: import("../apps/web/src/lib/auth/stytch.ts").StytchClientLike =
+      {
+        magicLinks: {
+          email: {
+            async loginOrCreate(req) {
+              const u = userFor(req.email);
+              const t = `tok_${nodeCryptoB.randomBytes(16).toString("hex")}`;
+              tokens.set(t, req.email);
+              return {
+                request_id: "r",
+                user_id: u.user_id,
+                email_id: `email-${u.user_id}`,
+              };
+            },
+          },
+          async authenticate(req) {
+            const email = tokens.get(req.token);
+            if (!email) throw new Error("invalid token");
+            tokens.delete(req.token);
+            return authenticated(email, "magic_link");
+          },
+        },
+        otps: {
+          email: {
+            async loginOrCreate(req) {
+              const u = userFor(req.email);
+              return {
+                request_id: "r",
+                user_id: u.user_id,
+                email_id: `email-${u.user_id}`,
+              };
+            },
+          },
+          async authenticate(req) {
+            const email = [...tokens.values()].at(-1) ?? "otp@example.com";
+            if (req.code !== "123456") throw new Error("bad code");
+            return authenticated(email, "otp");
+          },
+        },
+      };
+    return {
+      client,
+      lastToken: () => [...tokens.keys()].at(-1) ?? "",
+      authAt: () => Math.floor(Date.parse(authAt) / 1000),
+    };
+  };
+
+  const ORIGIN = "https://bff-dev.refi.trading";
+  let ipN = 120;
+  const nextIp = () => `203.0.113.${String(ipN++)}`;
+  const reqB = (
+    path: string,
+    body: unknown,
+    opts: { cookie?: string; ip?: string } = {},
+  ) => {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "x-forwarded-proto": "https",
+      host: "bff-dev.refi.trading",
+      origin: ORIGIN,
+      "x-real-ip": opts.ip ?? nextIp(),
+    };
+    if (opts.cookie) headers["cookie"] = opts.cookie;
+    return new NextRequestB(`${ORIGIN}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  };
+  const cookiesOf = (res: Response, name: string) =>
+    (res.headers.get("set-cookie") ?? "")
+      .split(/,\s*(?=[^ ;,]+=)/)
+      .map((c) => (c.split(";")[0] ?? "").trim())
+      .filter((c) => c.startsWith(`${name}=`))
+      .map((c) => c.slice(name.length + 1));
+
+  // A CompletedLogin fixture straight from the login-flow (no routes).
+  const provider = fakeStytchB();
+  const completedLogin = async (email: string, ip = nextIp()) => {
+    const started = await flow.startEmailLogin({
+      email,
+      method: "email_link",
+      clientIp: ip,
+      correlationId: "c_start",
+    });
+    return flow.completeEmailLogin({
+      loginId: started.loginId,
+      state: started.state,
+      token: provider.lastToken(),
+      correlationId: "c_complete",
+    });
+  };
+  const decode = (jwt: string) => {
+    const [h, p] = jwt.split(".");
+    return {
+      header: JSON.parse(
+        Buffer.from(h ?? "", "base64url").toString(),
+      ) as Record<string, unknown>,
+      claims: JSON.parse(
+        Buffer.from(p ?? "", "base64url").toString(),
+      ) as Record<string, unknown>,
+    };
+  };
+
+  baseEnv();
+  cs.setConnectedStoreFactoryForTests(instance());
+  stytchMod.setStytchClientForTests(provider.client);
+  exchange.setIdentityExchangeClientForTests(fakeExchange);
+  exchange.setIdentityResultKeySetForTests(
+    backendPublic as import("jose").JSONWebKeySet,
+  );
+
+  try {
+    await section(
+      "identity bridge: closed ES256 profile — exact header/claims, ≤300 s, opaque sub (never email/provider id), genuine auth_time, verifies against the BRIDGE JWKS and not the Investor API JWKS",
+      async () => {
+        const completed = await completedLogin("bridge-alice@example.com");
+        const sid = sessions.newSessionId();
+        const minted = await bridge.mintBridgeAssertion({
+          identity: completed.identity,
+          sub: completed.sub,
+          sid,
+        });
+        const { header, claims } = decode(minted.token);
+        assert.deepEqual(Object.keys(header).sort(), ["alg", "kid", "typ"]);
+        assert.equal(header.alg, "ES256");
+        assert.equal(header.typ, "JWT");
+        assert.equal(header.kid, "bridge-k1");
+        assert.deepEqual(
+          Object.keys(claims).sort(),
+          [...bridge.BRIDGE_REQUIRED_CLAIMS, "amr"].sort(),
+          "exactly the closed claim set",
+        );
+        assert.equal(claims.iss, "https://bff-dev.refi.trading");
+        assert.equal(claims.aud, "https://identity-ccid.dev.refi.internal");
+        assert.equal(claims.sub, completed.sub);
+        assert.ok(
+          /^usr_[0-9a-f]{32}$/.test(claims.sub as string),
+          "sub is the durable opaque subject",
+        );
+        assert.notEqual(claims.sub, completed.identity.providerUserId);
+        assert.ok(!(claims.sub as string).includes("@"));
+        assert.equal(claims.email, "bridge-alice@example.com");
+        assert.equal(claims.email_verified, true);
+        assert.equal(
+          claims.auth_time,
+          provider.authAt(),
+          "auth_time is the provider's, not now",
+        );
+        assert.equal(claims.sid, sid);
+        assert.equal(claims.jti, minted.jti);
+        assert.deepEqual(claims.amr, ["email_link"]);
+        assert.equal(
+          (claims.exp as number) - (claims.iat as number),
+          bridge.BRIDGE_ASSERTION_TTL_SECONDS,
+        );
+        assert.ok((claims.exp as number) - (claims.iat as number) <= 300);
+        assert.equal(claims.nbf, claims.iat);
+        const bridgeJwks = await bridge.getBridgePublicJwks();
+        await joseB.jwtVerify(
+          minted.token,
+          joseB.createLocalJWKSet(bridgeJwks as import("jose").JSONWebKeySet),
+          {
+            algorithms: ["ES256"],
+            issuer: "https://bff-dev.refi.trading",
+            audience: "https://identity-ccid.dev.refi.internal",
+          },
+        );
+        const investorJwks = await ua.getPublicJwks();
+        await assert.rejects(
+          joseB.jwtVerify(
+            minted.token,
+            joseB.createLocalJWKSet(
+              investorJwks as import("jose").JSONWebKeySet,
+            ),
+            { algorithms: ["ES256"] },
+          ),
+          "the Investor API key set must NOT verify a bridge assertion",
+        );
+        assert.ok(
+          !bridgeJwks.keys.some((k) => "d" in k),
+          "no private material",
+        );
+        assert.ok(!bridgeJwks.keys.some((k) => k.kid === "bff-k1"));
+        assert.ok(!investorJwks.keys.some((k) => k.kid === "bridge-k1"));
+      },
+    );
+
+    await section(
+      "identity bridge: key separation — identical signing identity for both boundaries is rejected by the env schema AND by the bridge signer (jwk, kms key version, kid, issuer); no ephemeral fallback",
+      async () => {
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"] =
+          JSON.stringify(bffJwk);
+        assert.match(
+          envError(),
+          /BRIDGE_ASSERTION_PRIVATE_KEY_JWK[\s\S]*different private keys/,
+        );
+        // Same key material, different serialisation: the schema cannot see it, the signer must.
+        process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"] = JSON.stringify({
+          ...bffJwk,
+          kid: "bridge-k1",
+        });
+        assert.equal(envError(), "");
+        bridge.resetBridgeSignerCache();
+        await assert.rejects(
+          bridge.getBridgeSigner(),
+          bridge.BridgeConfigurationError,
+        );
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_SIGNER"] = "kms";
+        process.env["BRIDGE_ASSERTION_KMS_KEY_VERSION"] =
+          "projects/p/locations/l/keyRings/r/cryptoKeys/investor-api-assertion/cryptoKeyVersions/1";
+        process.env["BRIDGE_ASSERTION_KID"] = "kms-1";
+        process.env["BFF_ASSERTION_SIGNER"] = "kms";
+        process.env["BFF_ASSERTION_KMS_KEY_VERSION"] =
+          process.env["BRIDGE_ASSERTION_KMS_KEY_VERSION"];
+        process.env["BFF_ASSERTION_KID"] = "kms-bff-1";
+        assert.match(
+          envError(),
+          /BRIDGE_ASSERTION_KMS_KEY_VERSION[\s\S]*different KMS keys/,
+        );
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_KID"] = "shared-kid";
+        process.env["BFF_ASSERTION_KID"] = "shared-kid";
+        assert.match(envError(), /BRIDGE_ASSERTION_KID[\s\S]*must differ/);
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_ISSUER"] = "urn:refinity:bff:dev";
+        assert.match(envError(), /BRIDGE_ASSERTION_ISSUER/);
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_SIGNER"] = "kms";
+        assert.match(
+          envError(),
+          /kms requires BRIDGE_ASSERTION_KMS_KEY_VERSION and BRIDGE_ASSERTION_KID/,
+        );
+        baseEnv();
+        delete process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"];
+        assert.match(
+          envError(),
+          /BRIDGE_ASSERTION_PRIVATE_KEY_JWK[\s\S]*no ephemeral key/,
+        );
+        // Provider off → bridge config is not demanded (routes are dark anyway)…
+        process.env["REFI_AUTH_PROVIDER"] = "unconfigured";
+        assert.equal(envError(), "");
+        // …but the signer itself still refuses to invent a key.
+        bridge.resetBridgeSignerCache();
+        await assert.rejects(
+          bridge.getBridgeSigner(),
+          /BRIDGE_ASSERTION_PRIVATE_KEY_JWK is not configured/,
+        );
+        baseEnv();
+        for (const k of [
+          "BRIDGE_ASSERTION_ISSUER",
+          "IDENTITY_CCID_UPSTREAM_AUDIENCE",
+          "IDENTITY_CCID_JWKS_URL",
+        ]) {
+          baseEnv();
+          delete process.env[k];
+          assert.match(
+            envError(),
+            new RegExp(`${k}[\\s\\S]*required when REFI_AUTH_PROVIDER=stytch`),
+          );
+        }
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_ISSUER"] = "http://bff-dev.refi.trading";
+        assert.match(envError(), /must be an https issuer/);
+        baseEnv();
+      },
+    );
+
+    await section(
+      "identity bridge: input refusals — non-opaque sub, unverified email, missing/future auth_time, empty amr, bad sid; separate KMS client seam is honoured",
+      async () => {
+        const completed = await completedLogin("bridge-bob@example.com");
+        const sid = sessions.newSessionId();
+        const base = { identity: completed.identity, sub: completed.sub, sid };
+        await assert.rejects(
+          bridge.mintBridgeAssertion({ ...base, sub: "bob@example.com" }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({ ...base, sub: "short" }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({ ...base, sid: "x" }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({
+            ...base,
+            identity: { ...completed.identity, emailVerified: false as never },
+          }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({
+            ...base,
+            identity: { ...completed.identity, authTime: 0 },
+          }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({
+            ...base,
+            identity: {
+              ...completed.identity,
+              authTime: Math.floor(Date.now() / 1000) + 3600,
+            },
+          }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({
+            ...base,
+            identity: { ...completed.identity, amr: [] as never },
+          }),
+          bridge.BridgeInputError,
+        );
+        // KMS seam: the bridge asks ITS factory, with ITS key version, never the Investor API's.
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_SIGNER"] = "kms";
+        process.env["BRIDGE_ASSERTION_KMS_KEY_VERSION"] =
+          "projects/p/locations/l/keyRings/r/cryptoKeys/identity-bridge/cryptoKeyVersions/1";
+        process.env["BRIDGE_ASSERTION_KID"] = "bridge-kms-1";
+        resetServerEnvCacheForTests();
+        const seen: string[] = [];
+        bridge.setBridgeKmsClientFactoryForTests(async () => ({
+          async getPublicKey(req) {
+            seen.push(`pub:${req.name}`);
+            const { d: _d, ...pub } = bridgeJwk;
+            const pem = nodeCryptoB
+              .createPublicKey({ key: pub, format: "jwk" })
+              .export({ type: "spki", format: "pem" }) as string;
+            return [{ pem }];
+          },
+          async asymmetricSign(req) {
+            seen.push(`sign:${req.name}`);
+            const key = nodeCryptoB.createPrivateKey({
+              key: bridgeJwk,
+              format: "jwk",
+            });
+            // Sign the digest directly with deterministic DER output via node (sha256 of the digest is NOT what KMS does; use the raw sign primitive on the prehashed digest).
+            const sig = nodeCryptoB.sign(null, req.digest.sha256, {
+              key,
+              dsaEncoding: "der",
+            });
+            return [{ signature: new Uint8Array(sig) }];
+          },
+        }));
+        try {
+          const signer = await bridge.getBridgeSigner();
+          assert.equal(signer.kind, "kms");
+          assert.equal(signer.kid, "bridge-kms-1");
+          const jwk = await signer.publicJwk();
+          assert.equal(jwk.kid, "bridge-kms-1");
+          assert.ok(
+            seen.every((s) => s.includes("identity-bridge")),
+            "only the bridge key version is ever named",
+          );
+        } finally {
+          bridge.setBridgeKmsClientFactoryForTests(null);
+          baseEnv();
+        }
+      },
+    );
+
+    await section(
+      "bridge JWKS route: /.well-known/identity-bridge-jwks.json serves ONLY bridge public keys (+ retiring key), application/jwk-set+json, 5-minute cache; /.well-known/jwks.json is untouched; misconfiguration → 503 without detail",
+      async () => {
+        baseEnv();
+        const { d: _d, ...prevPub } = genJwk("bridge-k0");
+        process.env["BRIDGE_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"] =
+          JSON.stringify(prevPub);
+        resetServerEnvCacheForTests();
+        const res = await bridgeJwksRoute.GET();
+        assert.equal(res.status, 200);
+        assert.equal(
+          res.headers.get("content-type"),
+          "application/jwk-set+json",
+        );
+        assert.equal(
+          res.headers.get("cache-control"),
+          "public, max-age=300, must-revalidate",
+        );
+        const body = (await res.json()) as {
+          keys: Array<Record<string, unknown>>;
+        };
+        assert.deepEqual(
+          body.keys.map((k) => k.kid),
+          ["bridge-k1", "bridge-k0"],
+        );
+        assert.ok(body.keys.every((k) => !("d" in k)));
+        const inv = (await ua.getPublicJwks()) as {
+          keys: Array<Record<string, unknown>>;
+        };
+        assert.deepEqual(
+          inv.keys.map((k) => k.kid),
+          ["bff-k1"],
+        );
+        process.env["BRIDGE_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"] =
+          JSON.stringify(genJwk("bridge-k0"));
+        resetServerEnvCacheForTests();
+        bridge.resetBridgeSignerCache();
+        const leak = await bridgeJwksRoute.GET();
+        assert.equal(
+          leak.status,
+          503,
+          "a previous key with a private component is refused, never published",
+        );
+        assert.deepEqual(await leak.json(), { error: "jwks_unavailable" });
+        baseEnv();
+        delete process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"];
+        process.env["REFI_AUTH_PROVIDER"] = "unconfigured";
+        resetServerEnvCacheForTests();
+        bridge.resetBridgeSignerCache();
+        const dark = await bridgeJwksRoute.GET();
+        assert.equal(dark.status, 503);
+        assert.equal(dark.headers.get("cache-control"), "no-store");
+        baseEnv();
+      },
+    );
+
+    await section(
+      "exchange (step 5): request built ONLY from the frozen client's IdentityExchangeRequest fields and the durable pending-login bindings; backend result verified; durable session created with the backend sub, the bridge sid, genuine auth_time; cookie is a reference",
+      async () => {
+        exchangeCalls.length = 0;
+        const before = sessionsInStore();
+        const completed = await completedLogin("exchange-carol@example.com");
+        const established = await sessionSeam.establishConnectedSession({
+          completed,
+          correlationId: "c_est",
+        });
+        assert.equal(exchangeCalls.length, 1);
+        const body = exchangeCalls[0] as Record<string, unknown>;
+        assert.deepEqual(
+          Object.keys(body).sort(),
+          [
+            "challenge",
+            "identity_assertion",
+            "network_context",
+            "nonce",
+            "redirect_uri",
+            "state",
+          ],
+          "no invented fields; acquisition/invitation_token omitted",
+        );
+        assert.equal(body.state, completed.login.state);
+        assert.equal(body.challenge, completed.login.challenge);
+        assert.equal(body.nonce, completed.login.nonce);
+        assert.equal(
+          body.redirect_uri,
+          "https://bff-dev.refi.trading/us/auth/callback",
+        );
+        assert.equal(body.network_context, completed.login.networkContext);
+        assert.equal(established.continuePath, "/us/app/home");
+        assert.equal(established.cookies.length, 1);
+        const c = established.cookies[0]!;
+        assert.equal(c.name, "us_session_v1");
+        assert.ok(
+          c.options.httpOnly &&
+            c.options.secure &&
+            c.options.sameSite === "lax" &&
+            c.options.path === "/",
+        );
+        assert.equal(sessionsInStore(), before + 1);
+        const { claims: cookieClaims } = decode(c.value);
+        assert.equal(cookieClaims.src, "connected");
+        const record = await sessions.getActiveConnectedSession(
+          cookieClaims.sid as string,
+        );
+        assert.ok(record, "durable session exists");
+        assert.ok(
+          /^user-[0-9a-f]{24}$/.test(record.sub),
+          "session sub is the BACKEND opaque user id",
+        );
+        assert.equal(cookieClaims.sub, record.sub);
+        assert.equal(record.authTime, provider.authAt());
+        assert.deepEqual(record.amr, ["email_link"]);
+        assert.equal(
+          decode(body.identity_assertion as string).claims.sid,
+          record.sid,
+          "bridge sid became the session sid",
+        );
+        assert.ok(
+          await replay.isJtiConsumed(
+            "identity-result-jti",
+            record.identityResultJti,
+          ),
+        );
+        assert.ok(
+          await replay.isJtiConsumed(
+            "bridge-assertion-jti",
+            decode(body.identity_assertion as string).claims.jti as string,
+          ),
+        );
+        // The cookie resolves through the durable record on a FRESH instance.
+        cs.setConnectedStoreFactoryForTests(instance());
+        const ctx = await getAuthContextBridge(
+          new NextRequestB(
+            "https://bff-dev.refi.trading/api/v1/investor/status",
+            { headers: { cookie: `us_session_v1=${c.value}` } },
+          ),
+        );
+        assert.ok(ctx);
+        assert.equal(ctx.authId, record.sub);
+        assert.equal(ctx.sid, record.sid);
+        assert.equal(ctx.authTime, provider.authAt());
+        assert.deepEqual(ctx.amr, ["email_link"]);
+        assert.equal(ctx.source, "backend");
+        assert.equal(
+          ctx.accountId,
+          undefined,
+          "no prototype account link on a connected session",
+        );
+        // Revoked durably → dead everywhere at once; the cookie itself is unchanged.
+        await sessions.revokeConnectedSession(record.sid, "test");
+        cs.setConnectedStoreFactoryForTests(instance());
+        assert.equal(
+          await getAuthContextBridge(
+            new NextRequestB("https://bff-dev.refi.trading/x", {
+              headers: { cookie: `us_session_v1=${c.value}` },
+            }),
+          ),
+          null,
+        );
+      },
+    );
+
+    await section(
+      "identity result: wrong iss/aud, expired, HS256, unknown kid, unverified or mismatched email, malformed sub/sid/jti, missing claims, future auth_time — all refused with NO session; a replayed jti is refused across instances and after restart",
+      async () => {
+        const secret = new TextEncoder().encode("k".repeat(48));
+        const cases: Array<
+          [
+            string,
+            (c: Record<string, unknown>) => Record<string, unknown>,
+            typeof resultSigner,
+          ]
+        > = [
+          [
+            "iss",
+            (c) => ({ ...c, iss: "urn:refinity:identity-ccid:prod" }),
+            null,
+          ],
+          [
+            "aud",
+            (c) => ({ ...c, aud: "urn:refinity:frontend-bff:prod" }),
+            null,
+          ],
+          [
+            "expired",
+            (c) => ({
+              ...c,
+              exp: (c.iat as number) - 120,
+              nbf: (c.iat as number) - 600,
+              iat: (c.iat as number) - 600,
+            }),
+            null,
+          ],
+          ["hs256", (c) => c, { key: secret, alg: "HS256", kid: "ccid-k1" }],
+          [
+            "unknown kid",
+            (c) => c,
+            { key: backendPrivateKey, alg: "ES256", kid: "ccid-k9" },
+          ],
+          ["email_verified", (c) => ({ ...c, email_verified: false }), null],
+          [
+            "email mismatch",
+            (c) => ({ ...c, email: "someone-else@example.com" }),
+            null,
+          ],
+          ["sub is an email", (c) => ({ ...c, sub: "dave@example.com" }), null],
+          ["sid", (c) => ({ ...c, sid: "s" }), null],
+          ["jti", (c) => ({ ...c, jti: "!" }), null],
+          [
+            "missing auth_time",
+            (c) => {
+              const { auth_time: _a, ...r } = c;
+              return r;
+            },
+            null,
+          ],
+          [
+            "future auth_time",
+            (c) => ({ ...c, auth_time: (c.iat as number) + 3600 }),
+            null,
+          ],
+          ["amr empty", (c) => ({ ...c, amr: [] }), null],
+        ];
+        for (const [name, override, signer] of cases) {
+          const before = sessionsInStore();
+          resultOverride = override;
+          resultSigner = signer;
+          try {
+            const completed = await completedLogin(
+              `neg-${cases.indexOf([name, override, signer] as never)}-dave@example.com`.replace(
+                /-1-/,
+                `-${String(name.length)}-`,
+              ),
+            );
+            await assert.rejects(
+              sessionSeam.establishConnectedSession({
+                completed,
+                correlationId: "c_neg",
+              }),
+              (e: unknown) =>
+                e instanceof flow.LoginRefusedError &&
+                e.reason === "identity_result_rejected",
+              `identity result with bad ${name} must be refused`,
+            );
+          } finally {
+            resultOverride = null;
+            resultSigner = null;
+          }
+          assert.equal(
+            sessionsInStore(),
+            before,
+            `no session after bad ${name}`,
+          );
+        }
+        // Replay: the same result token presented twice.
+        let captured = "";
+        resultOverride = (c) => ({
+          ...c,
+          jti: "idr_replay_fixed_0000000000000001",
+        });
+        const completedA = await completedLogin("replay-erin@example.com");
+        const first = await sessionSeam.establishConnectedSession({
+          completed: completedA,
+          correlationId: "c_r1",
+        });
+        captured = first.cookies[0]!.value;
+        assert.ok(captured);
+        cs.setConnectedStoreFactoryForTests(instance()); // "another instance / after restart"
+        const completedB = await completedLogin("replay-erin@example.com");
+        const before = sessionsInStore();
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed: completedB,
+            correlationId: "c_r2",
+          }),
+          (e: unknown) =>
+            e instanceof flow.LoginRefusedError &&
+            e.reason === "identity_result_rejected",
+        );
+        assert.equal(sessionsInStore(), before);
+        resultOverride = null;
+        // Direct verify: jti already consumed → rejected even with a valid signature.
+        const now = Math.floor(Date.now() / 1000);
+        const dup = await new joseB.SignJWT({
+          iss: "urn:refinity:identity-ccid:dev",
+          aud: "urn:refinity:frontend-bff:dev",
+          sub: "user-000000000000000000000001",
+          iat: now,
+          nbf: now,
+          exp: now + 60,
+          jti: "idr_replay_fixed_0000000000000001",
+          sid: "sid_00000000000000000000000000000001",
+          auth_time: now - 5,
+          email: "replay-erin@example.com",
+          email_verified: true,
+        })
+          .setProtectedHeader({ alg: "ES256", kid: "ccid-k1" })
+          .sign(backendPrivateKey);
+        await assert.rejects(
+          exchange.verifyIdentityResult({
+            token: dup,
+            expectedEmail: "replay-erin@example.com",
+            correlationId: "c_dup",
+          }),
+          /jti replay/,
+        );
+      },
+    );
+
+    await section(
+      "bridge assertion single use: a minted assertion is recorded before it is sent and can never be presented twice; exchange unavailability (upstream unset, client failure, remote JWKS with the switch off) → 503-class error, no session, login consumed",
+      async () => {
+        const completed = await completedLogin("once-frank@example.com");
+        const sid = sessions.newSessionId();
+        const minted = await bridge.mintBridgeAssertion({
+          identity: completed.identity,
+          sub: completed.sub,
+          sid,
+        });
+        const args = {
+          bridge: minted,
+          bridgeSub: completed.sub,
+          login: completed.login,
+          email: completed.identity.email,
+          correlationId: "c_once",
+        };
+        const first = await exchange.exchangeIdentity(args);
+        assert.ok(first.sub);
+        await assert.rejects(
+          exchange.exchangeIdentity(args),
+          /already presented/,
+        );
+        // Client failure → unavailable, no session.
+        exchangeFailure = new Error("upstream 503");
+        const beforeFail = sessionsInStore();
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed: await completedLogin("fail-gina@example.com"),
+            correlationId: "c_f",
+          }),
+          sessionSeam.IdentityExchangeUnavailableError,
+        );
+        exchangeFailure = null;
+        assert.equal(sessionsInStore(), beforeFail);
+        // No fixture client and no upstream configured → unavailable BEFORE any network.
+        exchange.setIdentityExchangeClientForTests(null);
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed: await completedLogin("nocfg-hana@example.com"),
+            correlationId: "c_n",
+          }),
+          sessionSeam.IdentityExchangeUnavailableError,
+        );
+        exchange.setIdentityExchangeClientForTests(fakeExchange);
+        // Remote backend JWKS is refused while REFI_INVESTOR_API_ALLOW_REMOTE is off.
+        exchange.setIdentityResultKeySetForTests(null);
+        await assert.rejects(
+          exchange.verifyIdentityResult({
+            token: "a.b.c",
+            expectedEmail: "x@example.com",
+            correlationId: "c_rm",
+          }),
+          /remote backend JWKS is not accepted/,
+        );
+        exchange.setIdentityResultKeySetForTests(
+          backendPublic as import("jose").JSONWebKeySet,
+        );
+        assert.equal(sessionsInStore(), beforeFail);
+      },
+    );
+
+    await section(
+      "end to end through the routes: start → callback token → complete → session cookie set, login cookie cleared, getAuthContext resolves the durable session; a second completion with the same link is refused",
+      async () => {
+        const ip = nextIp();
+        const start = await startRoute.POST(
+          reqB(
+            "/api/v1/auth/login/start",
+            { email: "e2e-iris@example.com", method: "email_link" },
+            { ip },
+          ),
+        );
+        assert.equal(start.status, 200);
+        const loginCookie = cookiesOf(start, "us_login_v1")[0]!;
+        const token = provider.lastToken();
+        const done = await completeRoute.POST(
+          reqB(
+            "/api/v1/auth/login/complete",
+            { token },
+            { cookie: `us_login_v1=${loginCookie}`, ip },
+          ),
+        );
+        const doneText = await done.text();
+        assert.equal(done.status, 200, doneText);
+        const payload = JSON.parse(doneText) as {
+          data: { ok: boolean; continuePath: string };
+        };
+        assert.equal(payload.data.ok, true);
+        assert.equal(payload.data.continuePath, "/us/app/home");
+        const sessionCookie = cookiesOf(done, "us_session_v1")[0];
+        assert.ok(
+          sessionCookie,
+          `session cookie set: ${done.headers.get("set-cookie") ?? "<none>"}`,
+        );
+        assert.equal(
+          cookiesOf(done, "us_login_v1")[0],
+          "",
+          "login cookie cleared",
+        );
+        const ctx = await getAuthContextBridge(
+          new NextRequestB(
+            "https://bff-dev.refi.trading/api/v1/investor/status",
+            { headers: { cookie: `us_session_v1=${sessionCookie}` } },
+          ),
+        );
+        assert.ok(
+          ctx &&
+            ctx.sid &&
+            ctx.authTime === provider.authAt() &&
+            ctx.source === "backend",
+        );
+        const again = await completeRoute.POST(
+          reqB(
+            "/api/v1/auth/login/complete",
+            { token },
+            { cookie: `us_login_v1=${loginCookie}`, ip },
+          ),
+        );
+        assert.equal(again.status, 401);
+        assert.equal(cookiesOf(again, "us_session_v1").length, 0);
+        // A tampered cookie (sub swapped) never resolves.
+        const [h, , s] = sessionCookie.split(".");
+        const { claims } = decode(sessionCookie);
+        const forged = `${h}.${Buffer.from(JSON.stringify({ ...claims, sub: "user-attacker00000000000000" })).toString("base64url")}.${s}`;
+        assert.equal(
+          await getAuthContextBridge(
+            new NextRequestB("https://bff-dev.refi.trading/x", {
+              headers: { cookie: `us_session_v1=${forged}` },
+            }),
+          ),
+          null,
+        );
+        // A validly signed cookie naming a sid that does not exist durably never resolves.
+        const ghost = await new joseB.SignJWT({
+          sid: "sid_00000000000000000000000000000009",
+          auth_time: 1,
+          src: "connected",
+        })
+          .setProtectedHeader({ alg: "HS256" })
+          .setSubject("user-000000000000000000000009")
+          .setExpirationTime("1h")
+          .sign(
+            new TextEncoder().encode(getServerEnvBridge().SESSION_JWT_SECRET),
+          );
+        assert.equal(
+          await getAuthContextBridge(
+            new NextRequestB("https://bff-dev.refi.trading/x", {
+              headers: { cookie: `us_session_v1=${ghost}` },
+            }),
+          ),
+          null,
+        );
+      },
+    );
+
+    await section(
+      "source guards: the bridge never imports the Investor API signer state; the exchange builds its body from the login record and consumes jtis durably; the chain order is bridge → exchange → verify → session; auth-context reads auth_time from the durable record",
+      async () => {
+        const strip = (f: string) =>
+          readFileSync(join(REPO_ROOT, f), "utf8").replace(
+            /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+            "",
+          );
+        const b = strip("apps/web/src/lib/auth/identity-bridge.ts");
+        assert.ok(
+          !/user-assertion/.test(b),
+          "bridge does not import the Investor API assertion module",
+        );
+        assert.ok(
+          /BRIDGE_ASSERTION_PRIVATE_KEY_JWK/.test(b) &&
+            !/BFF_ASSERTION_PRIVATE_KEY_JWK[^\n]*parseJwk\(env\.BFF_ASSERTION_PRIVATE_KEY_JWK[^\n]*"jwk"\)/.test(
+              b,
+            ),
+        );
+        assert.ok(
+          !/ALLOW_EPHEMERAL|generateKeyPair/.test(b),
+          "no ephemeral bridge key",
+        );
+        const r = strip(
+          "apps/web/app/.well-known/identity-bridge-jwks.json/route.ts",
+        );
+        assert.ok(
+          /getBridgePublicJwks/.test(r) &&
+            !/user-assertion|getPublicJwks\b/.test(r),
+        );
+        const x = strip("apps/web/src/lib/auth/identity-exchange.ts");
+        assert.ok(
+          /consumeJtiOnce\("bridge-assertion-jti"/.test(x) &&
+            /consumeJtiOnce\("identity-result-jti"/.test(x),
+        );
+        assert.ok(/call\("exchangeIdentity"/.test(x));
+        assert.ok(
+          !/acquisition|invitation_token/.test(
+            x.replace(/[^\n]*omitted[^\n]*/g, ""),
+          ),
+          "no invented request fields",
+        );
+        assert.ok(
+          /createRemoteJWKSet\(new URL\(url\)/.test(x) &&
+            !/payload\.jku|header\.jku|jwks_uri/.test(x),
+          "JWKS URL is pinned, never taken from the token",
+        );
+        const c = strip("apps/web/src/lib/auth/connected-login.ts");
+        const order = [
+          "mintBridgeAssertion(",
+          "exchangeIdentity(",
+          "createConnectedSession(",
+          "mintConnectedSessionCookie(",
+        ].map((s) => c.indexOf(s));
+        assert.ok(
+          order.every(
+            (i, n) => i >= 0 && (n === 0 || i > (order[n - 1] as number)),
+          ),
+          "chain order is fixed",
+        );
+        const a = strip("apps/web/src/lib/bff/auth.ts");
+        assert.ok(
+          /getActiveConnectedSession\(sid\)/.test(a) &&
+            /authTime: record\.authTime/.test(a) &&
+            /record\.sub !== sub\) return null/.test(a),
+        );
+        assert.ok(/source: "backend"/.test(a));
+      },
+    );
+  } finally {
+    exchange.setIdentityExchangeClientForTests(null);
+    exchange.setIdentityResultKeySetForTests(null);
+    sessionSeam.setConnectedSessionEstablisher(null);
+    stytchMod.setStytchClientForTests(null);
+    bridge.setBridgeKmsClientFactoryForTests(null);
+    bridge.resetBridgeSignerCache();
+    cs.setConnectedStoreFactoryForTests(null);
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+    resetServerEnvCacheForTests();
+    ua.resetSigningKeyCache();
   }
 }
 

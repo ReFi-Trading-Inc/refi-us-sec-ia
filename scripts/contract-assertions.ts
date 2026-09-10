@@ -6868,9 +6868,11 @@ await section(
         !/alpaca\.markets|paper-api/.test(route),
         "the BFF never calls Alpaca",
       );
-      // D-LAUNCH-06 rebaseline: AccountAuthorization is READ and ENFORCED
-      // (exactly AUTHORIZED) before the canonical mutation; the credential
-      // payload is built only after the check.
+      // Daniel 2026-09-09 correction: NO AccountAuthorization precondition
+      // before the FIRST brokerage connection. An admitted account without a
+      // connection legitimately reports DENIED / BROKER_CONNECTION_MISSING, so
+      // requiring AUTHORIZED here was circular. The credential is still built
+      // only inside connectBrokerage and forwarded exactly once.
       {
         const lib = stripComments(
           read("apps/web/src/lib/investor-api/brokerage-connection.ts"),
@@ -6878,17 +6880,18 @@ await section(
         const fn = lib.slice(
           lib.indexOf("export async function connectBrokerage"),
         );
-        const iAuthz = fn.indexOf('client.call("getAccountAuthorization"');
-        const iCheck = fn.indexOf('!== "AUTHORIZED"');
-        const iCreate = fn.indexOf('client.call("createBrokerageConnection"');
-        const iCred = fn.indexOf("credentials:");
         assert.ok(
-          iAuthz >= 0 && iCheck > iAuthz && iCreate > iCheck && iCred > iCheck,
-          "connectBrokerage must read getAccountAuthorization, require AUTHORIZED, and only then build/forward the credential to createBrokerageConnection",
+          !/getAccountAuthorization/.test(fn),
+          "connectBrokerage must not read AccountAuthorization before the first connection (circular gate removed 2026-09-09)",
         );
         assert.ok(
-          /return \{ kind: "not_authorized", authorization: status \}/.test(fn),
-          "non-AUTHORIZED fails closed with the backend word, no credential",
+          !/not_authorized/.test(lib) && !/!== "AUTHORIZED"/.test(lib),
+          "no AUTHORIZED-before-connect branch remains in the connection module",
+        );
+        assert.equal(
+          (fn.match(/client\.call\("createBrokerageConnection"/g) ?? []).length,
+          1,
+          "the credential is forwarded to createBrokerageConnection exactly once",
         );
         assert.ok(
           /connectBrokerage\(/.test(route) &&
@@ -6896,9 +6899,9 @@ await section(
           "the route mutates only through connectBrokerage",
         );
         assert.ok(
-          /reasonCode: "account_not_authorized"/.test(route) &&
-            /status: 412/.test(route),
-          "blocked path uses the existing 412 precondition refusal shape",
+          !/account_not_authorized/.test(route) &&
+            !/getAccountAuthorization/.test(route),
+          "the route has no authorization precondition and never relabels the backend word",
         );
       }
       // Onboarding aggregate: account-local reads only after authoritative scope resolution.

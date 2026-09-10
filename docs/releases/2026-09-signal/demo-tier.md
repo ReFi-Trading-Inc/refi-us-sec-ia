@@ -276,7 +276,11 @@ The walkthrough:
    keys never parse), forwards ONCE to the contract's
    `createBrokerageConnection`, and returns the status projection. Nothing
    logs, stores, hashes or echoes the credentials; the BFF never calls Alpaca.
-   **Precondition (D-LAUNCH-06 rebaseline):** before the credential payload is
+   **Precondition (D-LAUNCH-06 rebaseline) — SUPERSEDED 2026-09-09 by Daniel's
+   integration list: there is no AUTHORIZED-before-first-connection rule; an
+   admitted account without a connection legitimately reports DENIED /
+   BROKER_CONNECTION_MISSING and connecting must proceed. Historical text
+   retained below.** Before the credential payload is
    built, the BFF reads `getAccountAuthorization` for the resolved account and
    requires exactly `AUTHORIZED`; `PENDING`/`DENIED`/`SUSPENDED` fail closed as
    `412 account_not_authorized` (the existing local-precondition refusal shape,

@@ -5,10 +5,12 @@
  *        credentials never cross this boundary) via `listBrokerageConnections`.
  * POST — connect Alpaca (paper) with an API key pair: the ONLY credential-
  *        bearing request in the app. Same-origin only (bffMutate CSRF), session
- *        required, account scope re-derived server-side, shape validated,
- *        `AccountAuthorization.status === AUTHORIZED` read and enforced, then
+ *        required, account scope re-derived server-side, shape validated, then
  *        forwarded ONCE to the contract's `createBrokerageConnection`, and then
- *        forgotten. Nothing here logs, stores, hashes, echoes or reuses the
+ *        forgotten. No AccountAuthorization precondition: before the FIRST
+ *        connection the backend legitimately reports DENIED /
+ *        BROKER_CONNECTION_MISSING (Daniel 2026-09-09); authorization is
+ *        re-read after sync and gates economic actions, not connecting. Nothing here logs, stores, hashes, echoes or reuses the
  *        credentials, and nothing here calls Alpaca. Live keys are refused by
  *        schema (`environment` is the literal "paper"; D-LAUNCH-07 is OPEN).
  */
@@ -84,12 +86,9 @@ export const POST = bffMutate<Body>({
       .digest("hex")
       .slice(0, 64);
     try {
-      // Precondition enforced INSIDE connectBrokerage: AccountAuthorization
-      // must be exactly AUTHORIZED before the credential payload is built or
-      // forwarded. PENDING / DENIED / SUSPENDED → 412 blocked
-      // (`account_not_authorized`, the repository's existing local-precondition
-      // refusal shape — cf. `account_not_linked` on profile v2); the response
-      // carries the backend status word and never the credentials.
+      // Forwarded ONCE through connectBrokerage; the response is the status
+      // projection and never the credentials. Backend errors (including a
+      // canonical refusal) surface through the InvestorApiError branch below.
       const outcome = await connectBrokerage(
         client,
         accountId,
@@ -99,18 +98,6 @@ export const POST = bffMutate<Body>({
         },
         idempotencyKey,
       );
-      if (outcome.kind === "not_authorized") {
-        return {
-          data: {
-            ok: false,
-            reason: "account_not_authorized",
-            authorization: outcome.authorization,
-          },
-          outcome: "blocked" as const,
-          reasonCode: "account_not_authorized",
-          status: 412,
-        };
-      }
       return {
         data: { ok: true, connection: outcome.connection },
         references: [`brokerage-connection:${outcome.connection.connectionId}`],

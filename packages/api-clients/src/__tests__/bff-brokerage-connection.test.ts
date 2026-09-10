@@ -1,18 +1,18 @@
 /**
- * The canonical broker-connection mutation enforces AccountAuthorization
- * BEFORE forwarding any credential (D-LAUNCH-06 rebaseline). Exercised with a
- * recording fake client so every authorization status is proven, not just the
- * AUTHORIZED demo fixture.
+ * The canonical broker-connection mutation has NO AccountAuthorization
+ * precondition (Daniel 2026-09-09, correcting the 2026-09-05 rebaseline): an
+ * admitted account with no brokerage connection legitimately reports DENIED
+ * with BROKER_CONNECTION_MISSING, so gating the FIRST connection on AUTHORIZED
+ * was circular. Exercised with a recording fake client so every authorization
+ * status is proven irrelevant to connecting — and so the credential is
+ * forwarded exactly once and never echoed.
  */
 import { describe, expect, test } from "vitest";
-import {
-  connectBrokerage,
-  type ConnectBrokerageOutcome,
-} from "../../../../apps/web/src/lib/investor-api/brokerage-connection";
+import { connectBrokerage } from "../../../../apps/web/src/lib/investor-api/brokerage-connection";
 
 type Call = { op: string; opts: unknown };
 
-function fakeClient(authorization: string) {
+function fakeClient(authorization: string, reasonCodes: string[] = []) {
   const calls: Call[] = [];
   const client = {
     call: (op: string, opts?: unknown) => {
@@ -26,7 +26,7 @@ function fakeClient(authorization: string) {
             data: {
               state_version: 1,
               status: authorization,
-              reason_codes: [],
+              reason_codes: reasonCodes,
               expires_at: null,
               policy_version: "closed-us-alpha-1",
               last_evaluated_at: "2026-09-05T00:00:00Z",
@@ -72,9 +72,11 @@ const INPUT = {
   apiSecretKey: "testFixtureSecret".padEnd(40, "0"),
 };
 
-describe("connectBrokerage: AccountAuthorization is read and enforced before createBrokerageConnection", () => {
-  test("AUTHORIZED → authorization is read first, then the connection mutation proceeds once", async () => {
-    const { client, calls } = fakeClient("AUTHORIZED");
+describe("connectBrokerage: no AccountAuthorization precondition before the first connection", () => {
+  test("DENIED / BROKER_CONNECTION_MISSING (the legitimate pre-connection state) → the connection is created; authorization is not consulted", async () => {
+    const { client, calls } = fakeClient("DENIED", [
+      "BROKER_CONNECTION_MISSING",
+    ]);
     const out = await connectBrokerage(
       client,
       "acct_test_0000001",
@@ -82,43 +84,63 @@ describe("connectBrokerage: AccountAuthorization is read and enforced before cre
       "k".repeat(16),
     );
     expect(out.kind).toBe("accepted");
-    expect(calls.map((c) => c.op)).toEqual([
-      "getAccountAuthorization",
-      "createBrokerageConnection",
-    ]);
-    // The projection returned to the browser carries no credential field.
+    expect(calls.map((c) => c.op)).toEqual(["createBrokerageConnection"]);
     expect(JSON.stringify(out)).not.toMatch(
       /PKTESTFIXTURE|testFixtureSecret|api_key|api_secret/,
     );
   });
 
-  test.each(["PENDING", "DENIED", "SUSPENDED"])(
-    "%s → blocked before create: createBrokerageConnection is never called, no credential leaves, the backend word is echoed",
+  test.each(["AUTHORIZED", "PENDING", "DENIED", "SUSPENDED", "SOMETHING_NEW"])(
+    "%s → createBrokerageConnection is called exactly once and getAccountAuthorization never; no credential leaves",
     async (status) => {
       const { client, calls } = fakeClient(status);
-      const out: ConnectBrokerageOutcome = await connectBrokerage(
+      const out = await connectBrokerage(
         client,
         "acct_test_0000001",
         INPUT,
         "k".repeat(16),
       );
-      expect(out).toEqual({ kind: "not_authorized", authorization: status });
-      expect(calls.map((c) => c.op)).toEqual(["getAccountAuthorization"]);
+      expect(out.kind).toBe("accepted");
+      expect(
+        calls.filter((c) => c.op === "createBrokerageConnection"),
+      ).toHaveLength(1);
+      expect(calls.some((c) => c.op === "getAccountAuthorization")).toBe(false);
       expect(JSON.stringify(out)).not.toMatch(
         /PKTESTFIXTURE|testFixtureSecret/,
       );
     },
   );
 
-  test("an unknown/unmodelled status is treated as not authorized (fail closed)", async () => {
-    const { client, calls } = fakeClient("SOMETHING_NEW");
+  test("the credential is forwarded verbatim, once, with the idempotency key, and the response is the status projection", async () => {
+    const { client, calls } = fakeClient("DENIED", [
+      "BROKER_CONNECTION_MISSING",
+    ]);
     const out = await connectBrokerage(
       client,
       "acct_test_0000001",
       INPUT,
-      "k".repeat(16),
+      "idem-key-0001",
     );
-    expect(out.kind).toBe("not_authorized");
-    expect(calls.map((c) => c.op)).toEqual(["getAccountAuthorization"]);
+    const create = calls.find((c) => c.op === "createBrokerageConnection");
+    if (!create) throw new Error("createBrokerageConnection was not called");
+    const opts = create.opts as {
+      body: {
+        credentials: { api_key: string; api_secret: string };
+        account_environment: string;
+      };
+      idempotencyKey: string;
+    };
+    expect(opts.body.account_environment).toBe("paper");
+    expect(opts.body.credentials).toEqual({
+      api_key: INPUT.apiKeyId,
+      api_secret: INPUT.apiSecretKey,
+    });
+    expect(opts.idempotencyKey).toBe("idem-key-0001");
+    expect(out.kind).toBe("accepted");
+    // The lint project cannot resolve the web app's types across the package
+    // boundary, so assert on the serialised projection.
+    const serialised = JSON.stringify(out);
+    expect(serialised).toMatch(/"connectionId":"brokerconn_test_0001"/);
+    expect(serialised).toMatch(/"connectionStatus":"PENDING_VALIDATION"/);
   });
 });

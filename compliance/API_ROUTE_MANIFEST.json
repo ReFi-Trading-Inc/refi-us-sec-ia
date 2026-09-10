@@ -317,6 +317,17 @@
       }
     },
     {
+      "source": "apps/web/app/api/v1/investor/profile/v2/attestation/route.ts",
+      "route": "/api/v1/investor/profile/v2/attestation",
+      "methods": ["GET", "POST"],
+      "purpose": "ComplianceProfileAttestation submission (Daniel step 6) through the frozen v1.1.0-alpha.2 client: POST submits the LATEST questionnaire-v2 decision after verifying, against the backend, that every effective disclosure has an ACTIVE ACCEPT consent; the chain is recorded as distinct durable states (disclosure delivered → consent accepted → attestation constructed → submitted → backend acknowledgment) and only the backend 201 is evidence. The body carries nothing; every input is server state under the session's account scope. KYC provenance comes from the provider boundary — the mock is never evidence, so the chain stops at `blocked` (KYC_EVIDENCE_MOCK / KYC_EVIDENCE_MISSING) until a genuine provider exists. Deterministic Idempotency-Key; no mutation retry; contract drift 502. GET lists this account's submission records.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read",
+        "POST": "bff-mutate"
+      }
+    },
+    {
       "source": "apps/web/app/api/v1/investor/profile/v2/draft/route.ts",
       "route": "/api/v1/investor/profile/v2/draft",
       "methods": ["GET", "POST"],

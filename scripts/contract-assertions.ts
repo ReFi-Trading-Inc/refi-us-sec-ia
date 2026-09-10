@@ -5741,15 +5741,23 @@ await section(
           );
         }
       }
-      // Still nothing in apps/web submits an attestation.
-      for (const file of [...walk("apps/web/app"), ...walk("apps/web/src")]) {
-        assert.ok(
-          !/call\(\s*["']createComplianceProfileAttestation["']/.test(
-            read(file),
-          ),
-          `${file} must not submit an attestation`,
-        );
-      }
+      // Exactly ONE module in apps/web submits an attestation: the step-6
+      // submission chain (2026-09-10), which only reaches the call after the
+      // backend-verified consent step and a pinned-authority build. Nothing
+      // else — no route, no client module, no KYC module — calls it.
+      const SUBMISSION_MODULE =
+        "apps/web/src/lib/compliance/attestation-submission.ts";
+      const submitters = [
+        ...walk("apps/web/app"),
+        ...walk("apps/web/src"),
+      ].filter((file) =>
+        /call\(\s*["']createComplianceProfileAttestation["']/.test(read(file)),
+      );
+      assert.deepEqual(
+        submitters,
+        [SUBMISSION_MODULE],
+        "only the designated submission module may submit an attestation",
+      );
     },
   );
 
@@ -6099,6 +6107,11 @@ await section(
     "signal reads: no attestation submission and no mutation appears as a side effect of this slice",
     async () => {
       for (const f of [...walk("apps/web/app"), ...walk("apps/web/src")]) {
+        // The designated step-6 submission chain is the one permitted caller
+        // (asserted exactly in the attestation-mapping section above).
+        if (f === "apps/web/src/lib/compliance/attestation-submission.ts") {
+          continue;
+        }
         const src = stripComments(read(f));
         assert.ok(
           !/call\(\s*["']createComplianceProfileAttestation["']/.test(src),
@@ -11073,6 +11086,697 @@ await section(
     resetServerEnvCacheForTests();
     ua.resetSigningKeyCache();
   }
+}
+
+// ─── Attestation submission (Daniel step 6): distinct durable states, consent verified against the backend, mock KYC never evidence, only a backend 201 acknowledges ──
+
+{
+  const { createInvestorApiClient: createClientAtt } =
+    await import("../packages/api-clients/src/investor-api/index.ts");
+  const submission =
+    await import("../apps/web/src/lib/compliance/attestation-submission.ts");
+  const entity =
+    await import("../apps/web/src/lib/prototype-store/entities/attestation-submission.ts");
+  const mapping =
+    await import("../apps/web/src/lib/compliance/attestation-mapping.ts");
+  const provenance = await import("../apps/web/src/lib/kyc/provenance.ts");
+  const { assessInvestorProfile: assessAtt } =
+    await import("../apps/web/src/lib/sec203a/investor-profile-engine.ts");
+  const { answersSnapshotHash: snapshotHashAtt } =
+    await import("../apps/web/src/lib/prototype-store/entities/investor-profile-v2.ts");
+  const {
+    resetServerEnvCacheForTests: resetEnvAtt,
+    getServerEnv: getServerEnvAtt,
+  } = await import("../apps/web/src/lib/config/env.ts");
+  const attRoute =
+    await import("../apps/web/app/api/v1/investor/profile/v2/attestation/route.ts");
+  const { createRequire: createRequireAtt } = await import("node:module");
+  const requireWebAtt = createRequireAtt(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const joseAtt = (await import(
+    requireWebAtt.resolve("jose")
+  )) as typeof import("jose");
+  const { NextRequest: NextRequestAtt } = (await import(
+    requireWebAtt.resolve("next/server")
+  )) as typeof import("next/server");
+
+  const ACCOUNT = "acct_att_000001";
+  const HASH = "3".repeat(64);
+  const disclosure = {
+    content_hash: HASH,
+    content_ref:
+      "https://example.invalid/disclosures/automated-portfolio-alpha-1",
+    disclosure_key: "automated_portfolio_alpha",
+    disclosure_version: 1,
+    effective_at: "2026-09-01T00:00:00Z",
+    locale: "en-US",
+    status: "EFFECTIVE",
+  };
+  const receiptFor = (hash: string, status = "ACTIVE") => ({
+    account_id: ACCOUNT,
+    consent_key: "automated_portfolio_alpha",
+    consent_receipt_id: "consent_att_00000001",
+    disclosure_hash: hash,
+    disclosure_key: "automated_portfolio_alpha",
+    disclosure_version: 1,
+    expires_at: "2026-12-01T00:00:00Z",
+    recorded_at: "2026-09-01T00:00:00Z",
+    status,
+  });
+  const headersAtt = {
+    "Content-Type": "application/json",
+    "Cache-Control": "private, no-store",
+    "X-Correlation-Id": "corr_att",
+  };
+  type SeenAtt = {
+    url: string;
+    method: string;
+    headers: Headers;
+    body: unknown;
+  };
+  function fakeUpstreamAtt(opts: {
+    receipts?: unknown[];
+    attestationStatus?: number;
+    attestationBody?: (req: Record<string, unknown>) => unknown;
+    failAttestationTransport?: boolean;
+  }) {
+    const seen: SeenAtt[] = [];
+    const fetchImpl = async (
+      url: URL | RequestInfo,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const u = url.toString();
+      const method = init?.method ?? "GET";
+      const body =
+        typeof init?.body === "string"
+          ? (JSON.parse(init.body) as unknown)
+          : undefined;
+      seen.push({ url: u, method, headers: new Headers(init?.headers), body });
+      const page = (items: unknown[]) =>
+        new Response(
+          JSON.stringify({
+            data: { items, page: { has_more: false, next_cursor: null } },
+          }),
+          { status: 200, headers: headersAtt },
+        );
+      if (u.includes("/api/v1/investor/disclosures") && method === "GET")
+        return page([disclosure]);
+      if (u.includes("/api/v1/investor/consents") && method === "GET")
+        return page(opts.receipts ?? [receiptFor(HASH)]);
+      if (
+        u.endsWith(
+          `/api/v1/investor/accounts/${ACCOUNT}/compliance-profile-attestations`,
+        ) &&
+        method === "POST"
+      ) {
+        if (opts.failAttestationTransport) throw new TypeError("fetch failed");
+        const req = body as Record<string, unknown>;
+        const status = opts.attestationStatus ?? 201;
+        if (status >= 400) {
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: "COMPLIANCE_ATTESTATION_REPLAYED",
+                message: "replayed",
+                correlation_id: "corr_att",
+              },
+            }),
+            { status, headers: headersAtt },
+          );
+        }
+        const data = opts.attestationBody
+          ? opts.attestationBody(req)
+          : {
+              ...req,
+              account_id: ACCOUNT,
+              payload_sha256: "b".repeat(64),
+              status: "ACCEPTED",
+              received_at: "2026-09-10T00:00:00Z",
+              authorization: {
+                expires_at: null,
+                last_evaluated_at: "2026-09-10T00:00:00Z",
+                policy_version: "closed-us-alpha-1",
+                reason_codes: [],
+                state_version: 1,
+                status: "PENDING",
+              },
+            };
+        return new Response(JSON.stringify({ data }), {
+          status,
+          headers: headersAtt,
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "RESOURCE_NOT_FOUND",
+            message: "x",
+            correlation_id: "corr_att",
+          },
+        }),
+        { status: 404, headers: headersAtt },
+      );
+    };
+    const client = createClientAtt({
+      identityCcid: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("id-b"),
+      },
+      investorApi: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("inv-b"),
+      },
+      mintAssertion: () => Promise.resolve("assertion"),
+      fetch: fetchImpl as typeof fetch,
+    });
+    return {
+      client,
+      seen,
+      posts: () => seen.filter((s) => s.method === "POST"),
+    };
+  }
+
+  const AT = "2026-09-04T12:00:00.000Z";
+  const answers = {
+    questionnaireVersion: 2 as const,
+    accountType: "individual" as const,
+    goal: "long_term_wealth" as const,
+    horizon: "gt_10y" as const,
+    withdrawalPattern: "gradual" as const,
+    incomeBand: "100_200k" as const,
+    incomeStability: "very_predictable" as const,
+    netWorthBand: "500k_1m" as const,
+    liquidNetWorthBand: "250_500k" as const,
+    accountShareOfLiquidAssets: "10_25pct" as const,
+    emergencyReserveBand: "gt_6mo" as const,
+    debtSignal: "none" as const,
+    liquidityLikelihood: "very_unlikely" as const,
+    knowledgeLevel: "experienced" as const,
+    experienceYears: "5_10y" as const,
+    productExperience: ["stocks", "funds"] as ("stocks" | "funds")[],
+    drawdownBehavior: "stay" as const,
+    lossThreshold: "pct_20" as const,
+    growthProtectionPreference: 4 as const,
+    riskTradeoffChoice: "plan_b" as const,
+    restrictions: ["none"] as "none"[],
+    expectedFinancialChange: "no" as const,
+    productIntent: ["disciplined_long_term"] as "disciplined_long_term"[],
+    reconciledFlags: [] as never[],
+  };
+  const assessment = assessAtt(answers, { assessedAt: AT });
+  const NORMALIZED_PASSED = {
+    status: "passed" as const,
+    provider: "test-only-kyc-adapter",
+    level: "frontend-lifecycle",
+    evidence_ref: "kyc-session:test_0001",
+  };
+  // TEST-ONLY trusted provenance: proves chain mechanics. No runtime module
+  // may call establishTrustedKycProvenance (asserted elsewhere and below).
+  const TRUSTED = provenance.establishTrustedKycProvenance({
+    adapterId: "test-only-kyc-adapter",
+    evidenceRef: "kyc-session:test_0001",
+    normalized: NORMALIZED_PASSED,
+  });
+  const MOCK = provenance.mockKycProvenance(
+    {
+      referenceId: "mock_0001",
+      state: "passed",
+      startedAt: AT,
+      updatedAt: AT,
+      history: [
+        { state: "in_progress", at: AT },
+        { state: "passed", at: AT },
+      ],
+    },
+    "mock",
+  );
+  const evidenceFor = (
+    profileVersion: number,
+    kyc:
+      | import("../apps/web/src/lib/kyc/provenance.ts").KycEvidenceProvenance
+      | null,
+  ): import("../apps/web/src/lib/compliance/attestation-mapping.ts").AttestationEvidenceInput => ({
+    accountId: ACCOUNT,
+    answersVersion: {
+      profileVersion,
+      answers,
+      answerSnapshotHash: snapshotHashAtt(answers),
+    },
+    assessment,
+    kyc,
+    recomputeAnswerSnapshotHash: snapshotHashAtt,
+  });
+  let seq = 100;
+  const nextSeq = () => seq++;
+  const statesOf = (r: { history: Array<{ state: string }> }) =>
+    r.history.map((h) => h.state);
+
+  await section(
+    "attestation chain: disclosure delivered → consent accepted → constructed → submitted (recorded BEFORE the call, deterministic Idempotency-Key) → acknowledged on 201; body is exactly the built request; only the backend id is copied back",
+    async () => {
+      const { client, seen, posts } = fakeUpstreamAtt({});
+      const v = nextSeq();
+      const out = await submission.submitComplianceProfileAttestation(client, {
+        accountId: ACCOUNT,
+        evidence: evidenceFor(v, TRUSTED),
+        correlationId: "c_att_1",
+      });
+      assert.equal(out.kind, "acknowledged");
+      if (out.kind !== "acknowledged") return;
+      assert.deepEqual(statesOf(out.record), [
+        "disclosure_delivered",
+        "consent_accepted",
+        "attestation_constructed",
+        "submitted",
+        "acknowledged",
+      ]);
+      assert.ok(
+        out.record.history.every(
+          (h) =>
+            h.correlationId === "c_att_1" && !Number.isNaN(Date.parse(h.at)),
+        ),
+      );
+      const built = mapping.buildComplianceProfileAttestationRequest(
+        evidenceFor(v, TRUSTED),
+      );
+      assert.ok(built.ok);
+      if (!built.ok) return;
+      assert.equal(out.record.attestationId, built.request.attestation_id);
+      assert.equal(out.record.evidenceSha256, built.request.evidence_sha256);
+      const post = posts()[0]!;
+      assert.deepEqual(
+        post.body,
+        built.request,
+        "wire body is the pinned-authority request, nothing added",
+      );
+      assert.equal(
+        post.headers.get("Idempotency-Key"),
+        submission.attestationIdempotencyKey(built.request),
+      );
+      assert.match(
+        post.headers.get("Idempotency-Key") ?? "",
+        /^att-[0-9a-f]{48}$/,
+      );
+      assert.equal(
+        out.record.idempotencyKey,
+        post.headers.get("Idempotency-Key"),
+      );
+      assert.equal(post.headers.get("X-Refinity-User-Assertion"), "assertion");
+      assert.equal(
+        out.record.backendAttestationId,
+        built.request.attestation_id,
+      );
+      assert.ok(
+        !("authorization" in out.record),
+        "backend authorization projection is never copied into frontend state",
+      );
+      assert.deepEqual(
+        seen.map((s) => s.method),
+        ["GET", "GET", "POST"],
+      );
+      // Idempotent: the same decision again re-sends nothing.
+      const again = await submission.submitComplianceProfileAttestation(
+        client,
+        {
+          accountId: ACCOUNT,
+          evidence: evidenceFor(v, TRUSTED),
+          correlationId: "c_att_1b",
+        },
+      );
+      assert.equal(again.kind, "already_acknowledged");
+      assert.equal(posts().length, 1);
+      // KYC block in the body is the normalized wire block, never provenance.
+      assert.deepEqual((post.body as { kyc: unknown }).kyc, NORMALIZED_PASSED);
+      assert.ok(!JSON.stringify(post.body).includes("production_provider"));
+    },
+  );
+
+  await section(
+    "attestation chain: consent is verified against the backend — missing, WITHDRAWN or hash-mismatched receipts stop at disclosure_delivered with NO submission; once consent appears the SAME record continues",
+    async () => {
+      for (const receipts of [
+        [],
+        [receiptFor(HASH, "WITHDRAWN")],
+        [receiptFor("4".repeat(64))],
+      ]) {
+        const { client, posts } = fakeUpstreamAtt({ receipts });
+        const v = nextSeq();
+        const out = await submission.submitComplianceProfileAttestation(
+          client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_2",
+          },
+        );
+        assert.equal(out.kind, "consent_required");
+        if (out.kind !== "consent_required") return;
+        assert.deepEqual(out.missing, [
+          {
+            disclosure_key: "automated_portfolio_alpha",
+            disclosure_version: 1,
+          },
+        ]);
+        assert.equal(out.record.state, "disclosure_delivered");
+        assert.equal(posts().length, 0, "nothing submitted without consent");
+        const { client: later, posts: laterPosts } = fakeUpstreamAtt({});
+        const cont = await submission.submitComplianceProfileAttestation(
+          later,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_2b",
+          },
+        );
+        assert.equal(cont.kind, "acknowledged");
+        if (cont.kind !== "acknowledged") return;
+        assert.equal(
+          cont.record.attestationId,
+          out.record.attestationId,
+          "same record continues",
+        );
+        assert.deepEqual(statesOf(cont.record), [
+          "disclosure_delivered",
+          "consent_accepted",
+          "attestation_constructed",
+          "submitted",
+          "acknowledged",
+        ]);
+        assert.equal(laterPosts().length, 1);
+      }
+    },
+  );
+
+  await section(
+    "attestation chain: mock KYC (the only provider today) and missing KYC stop at `blocked` after consent, naming KYC_EVIDENCE_MOCK / KYC_EVIDENCE_MISSING; nothing is submitted; the record is terminal and a retry re-enters nothing",
+    async () => {
+      for (const [kyc, reason] of [
+        [MOCK, "KYC_EVIDENCE_MOCK"],
+        [null, "KYC_EVIDENCE_MISSING"],
+      ] as const) {
+        const { client, posts } = fakeUpstreamAtt({});
+        const v = nextSeq();
+        const out = await submission.submitComplianceProfileAttestation(
+          client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, kyc),
+            correlationId: "c_att_3",
+          },
+        );
+        assert.equal(out.kind, "blocked");
+        if (out.kind !== "blocked") return;
+        assert.deepEqual(out.reasons, [reason]);
+        assert.deepEqual(statesOf(out.record), [
+          "disclosure_delivered",
+          "consent_accepted",
+          "blocked",
+        ]);
+        assert.equal(posts().length, 0);
+        // A structurally "production_provider" claim without the trusted marker is refused too.
+        const claimed = {
+          ...MOCK,
+          source: "production_provider" as const,
+          adapterId: "vendor-x",
+        };
+        const c2 = await submission.submitComplianceProfileAttestation(client, {
+          accountId: ACCOUNT,
+          evidence: evidenceFor(nextSeq(), claimed),
+          correlationId: "c_att_3b",
+        });
+        assert.equal(c2.kind, "blocked");
+        if (c2.kind === "blocked")
+          assert.deepEqual(c2.reasons, ["KYC_PROVENANCE_UNTRUSTED"]);
+        // Retry of the blocked record: terminal, no new transition, still nothing sent.
+        const retry = await submission.submitComplianceProfileAttestation(
+          client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_3c",
+          },
+        );
+        assert.equal(retry.kind, "terminal");
+        if (retry.kind === "terminal")
+          assert.equal(retry.record.history.length, 3);
+        assert.equal(posts().length, 0);
+      }
+    },
+  );
+
+  await section(
+    "attestation chain: a backend refusal (409 COMPLIANCE_ATTESTATION_REPLAYED) is recorded as `rejected` with the contract code and is never relabelled acknowledged; a transport failure leaves the record at `submitted` and the retry reuses the SAME Idempotency-Key",
+    async () => {
+      const { client, posts } = fakeUpstreamAtt({ attestationStatus: 409 });
+      const v = nextSeq();
+      const out = await submission.submitComplianceProfileAttestation(client, {
+        accountId: ACCOUNT,
+        evidence: evidenceFor(v, TRUSTED),
+        correlationId: "c_att_4",
+      });
+      assert.equal(out.kind, "rejected");
+      if (out.kind !== "rejected") return;
+      assert.equal(out.code, "COMPLIANCE_ATTESTATION_REPLAYED");
+      assert.equal(out.status, 409);
+      assert.equal(out.record.state, "rejected");
+      assert.equal(out.record.backendAttestationId, undefined);
+      assert.equal(posts().length, 1);
+      const after = await submission.submitComplianceProfileAttestation(
+        fakeUpstreamAtt({}).client,
+        {
+          accountId: ACCOUNT,
+          evidence: evidenceFor(v, TRUSTED),
+          correlationId: "c_att_4b",
+        },
+      );
+      assert.equal(after.kind, "terminal");
+      // Transport failure mid-submit.
+      const v2 = nextSeq();
+      const broken = fakeUpstreamAtt({ failAttestationTransport: true });
+      await assert.rejects(
+        submission.submitComplianceProfileAttestation(broken.client, {
+          accountId: ACCOUNT,
+          evidence: evidenceFor(v2, TRUSTED),
+          correlationId: "c_att_4c",
+        }),
+      );
+      const built = mapping.buildComplianceProfileAttestationRequest(
+        evidenceFor(v2, TRUSTED),
+      );
+      assert.ok(built.ok);
+      if (!built.ok) return;
+      const rec = await entity.getAttestationSubmission(
+        ACCOUNT,
+        built.request.attestation_id,
+      );
+      assert.equal(
+        rec?.state,
+        "submitted",
+        "in-flight call is visible in the record",
+      );
+      const key1 = rec?.idempotencyKey;
+      const ok = fakeUpstreamAtt({});
+      const retried = await submission.submitComplianceProfileAttestation(
+        ok.client,
+        {
+          accountId: ACCOUNT,
+          evidence: evidenceFor(v2, TRUSTED),
+          correlationId: "c_att_4d",
+        },
+      );
+      assert.equal(retried.kind, "acknowledged");
+      assert.equal(ok.posts()[0]?.headers.get("Idempotency-Key"), key1);
+      assert.equal(broken.posts()[0]?.headers.get("Idempotency-Key"), key1);
+    },
+  );
+
+  await section(
+    "attestation record: transitions are strictly ordered — skipping, reversing or leaving a terminal state throws; history is append-only",
+    async () => {
+      const id = "att_" + "f".repeat(32);
+      const opened = await entity.openAttestationSubmission({
+        accountId: ACCOUNT,
+        attestationId: id,
+        correlationId: "c",
+      });
+      assert.equal(opened.state, "disclosure_delivered");
+      await assert.rejects(
+        entity.advanceAttestationSubmission({
+          accountId: ACCOUNT,
+          attestationId: id,
+          to: "submitted",
+          correlationId: "c",
+        }),
+        entity.AttestationTransitionError,
+      );
+      await assert.rejects(
+        entity.advanceAttestationSubmission({
+          accountId: ACCOUNT,
+          attestationId: id,
+          to: "acknowledged",
+          correlationId: "c",
+        }),
+        entity.AttestationTransitionError,
+      );
+      const blocked = await entity.advanceAttestationSubmission({
+        accountId: ACCOUNT,
+        attestationId: id,
+        to: "blocked",
+        correlationId: "c",
+        detail: { reasons: ["X"] },
+      });
+      assert.equal(blocked.state, "blocked");
+      for (const to of [
+        "consent_accepted",
+        "submitted",
+        "acknowledged",
+        "rejected",
+        "disclosure_delivered",
+      ] as const) {
+        await assert.rejects(
+          entity.advanceAttestationSubmission({
+            accountId: ACCOUNT,
+            attestationId: id,
+            to,
+            correlationId: "c",
+          }),
+          entity.AttestationTransitionError,
+        );
+      }
+      const reread = await entity.getAttestationSubmission(ACCOUNT, id);
+      assert.deepEqual(statesOf(reread!), ["disclosure_delivered", "blocked"]);
+      assert.deepEqual(
+        await entity.openAttestationSubmission({
+          accountId: ACCOUNT,
+          attestationId: id,
+          correlationId: "c2",
+        }),
+        reread,
+        "open is idempotent",
+      );
+      assert.ok(
+        (await entity.listAttestationSubmissions(ACCOUNT)).some(
+          (r) => r.attestationId === id,
+        ),
+      );
+    },
+  );
+
+  await section(
+    "attestation route: POST carries no body, requires same-origin + session, fails closed 503 when no upstream is configured, and is receipted; GET lists this account's records; no runtime module establishes trusted KYC provenance",
+    async () => {
+      const secret = getServerEnvAtt().SESSION_JWT_SECRET;
+      const token = await new joseAtt.SignJWT({ sub: "user-att-route-1" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setExpirationTime("1h")
+        .sign(new TextEncoder().encode(secret));
+      const req = (opts: { origin?: string; cookie?: boolean } = {}) =>
+        new NextRequestAtt(
+          "http://localhost:3000/api/v1/investor/profile/v2/attestation",
+          {
+            method: "POST",
+            headers: {
+              ...(opts.origin === undefined
+                ? { origin: "http://localhost:3000" }
+                : opts.origin
+                  ? { origin: opts.origin }
+                  : {}),
+              ...(opts.cookie === false
+                ? {}
+                : { cookie: `us_session_v1=${token}` }),
+              "content-type": "application/json",
+            },
+            body: "{}",
+          },
+        );
+      assert.equal(
+        (await attRoute.POST(req({ origin: "https://evil.example" }))).status,
+        403,
+      );
+      assert.equal((await attRoute.POST(req({ cookie: false }))).status, 401);
+      const savedBase = process.env["REFI_INVESTOR_API_BASE_URL"];
+      const savedStage = process.env["REFI_RELEASE_STAGE"];
+      delete process.env["REFI_INVESTOR_API_BASE_URL"];
+      // Signal stage: the action is not permitted at all (403, before any
+      // body or upstream); automated Alpha: permitted, then fails closed.
+      process.env["REFI_RELEASE_STAGE"] = "signal";
+      resetEnvAtt();
+      try {
+        assert.equal((await attRoute.POST(req())).status, 403);
+        process.env["REFI_RELEASE_STAGE"] = "automated_alpha";
+        resetEnvAtt();
+        const res = await attRoute.POST(req());
+        const body = (await res.json()) as {
+          data?: { reason?: string };
+          receipt?: { action?: string };
+        };
+        assert.equal(res.status, 503);
+        assert.equal(body.data?.reason, "upstream_unavailable");
+        assert.equal(body.receipt?.action, "submitComplianceAttestation");
+      } finally {
+        if (savedBase === undefined)
+          delete process.env["REFI_INVESTOR_API_BASE_URL"];
+        else process.env["REFI_INVESTOR_API_BASE_URL"] = savedBase;
+        if (savedStage === undefined) delete process.env["REFI_RELEASE_STAGE"];
+        else process.env["REFI_RELEASE_STAGE"] = savedStage;
+        resetEnvAtt();
+      }
+      const get = await attRoute.GET(
+        new NextRequestAtt(
+          "http://localhost:3000/api/v1/investor/profile/v2/attestation",
+          {
+            headers: { cookie: `us_session_v1=${token}` },
+          },
+        ),
+      );
+      assert.equal(get.status, 200);
+      const strip = (f: string) =>
+        readFileSync(join(REPO_ROOT, f), "utf8").replace(
+          /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+          "",
+        );
+      for (const f of [
+        "apps/web/src/lib/compliance/attestation-submission.ts",
+        "apps/web/app/api/v1/investor/profile/v2/attestation/route.ts",
+        "apps/web/src/lib/prototype-store/entities/attestation-submission.ts",
+      ]) {
+        assert.ok(
+          !/establishTrustedKycProvenance\s*\(/.test(strip(f)),
+          `${f} must not establish trusted KYC provenance`,
+        );
+      }
+      const r = strip(
+        "apps/web/app/api/v1/investor/profile/v2/attestation/route.ts",
+      );
+      assert.ok(!/parse:/.test(r), "the route accepts no body");
+      assert.ok(
+        /mockKycProvenance\(/.test(r) &&
+          /submitComplianceProfileAttestation\(/.test(r),
+      );
+      const s = strip(
+        "apps/web/src/lib/compliance/attestation-submission.ts",
+      ).slice(
+        strip("apps/web/src/lib/compliance/attestation-submission.ts").indexOf(
+          "export async function submitComplianceProfileAttestation",
+        ),
+      );
+      const order = [
+        "listEffectiveDisclosures(",
+        "listActiveConsents(",
+        "buildComplianceProfileAttestationRequest(",
+        'to: "submitted"',
+        'call("createComplianceProfileAttestation"',
+        'to: "acknowledged"',
+      ].map((x) => s.indexOf(x));
+      assert.ok(
+        order.every(
+          (i, n) => i >= 0 && (n === 0 || i > (order[n - 1] as number)),
+        ),
+        "chain order is fixed in source",
+      );
+    },
+  );
 }
 
 // ─── Done ───────────────────────────────────────────────────────────────────

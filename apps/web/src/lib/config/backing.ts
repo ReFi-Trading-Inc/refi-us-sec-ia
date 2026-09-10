@@ -23,6 +23,7 @@ export type BackingMode = (typeof BACKING_MODES)[number];
 export const ENTITY_MATRIX = {
   "alpha-application": ["prototype", "durable"],
   "alpha-handoff-jti": ["prototype", "durable"],
+  "attestation-submission": ["prototype", "durable"],
 } as const satisfies Record<string, readonly BackingMode[]>;
 
 export type EntityId = keyof typeof ENTITY_MATRIX;

@@ -59,6 +59,9 @@ importers:
       "@google-cloud/firestore":
         specifier: ^8.7.0
         version: 8.7.0
+      "@google-cloud/kms":
+        specifier: 6.1.0
+        version: 6.1.0
       "@hookform/resolvers":
         specifier: ^5.4.0
         version: 5.4.0(react-hook-form@7.82.0(react@19.2.8))
@@ -140,10 +143,10 @@ importers:
         version: 10.5.4(postcss@8.5.26)
       eslint:
         specifier: ^9.39.5
-        version: 9.39.5(jiti@2.6.1)
+        version: 9.39.5(jiti@1.21.7)
       eslint-config-next:
         specifier: ^16.2.11
-        version: 16.2.11(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3)
+        version: 16.2.11(@typescript-eslint/parser@8.65.0(eslint@9.39.5(jiti@1.21.7))(typescript@6.0.3))(eslint@9.39.5(jiti@1.21.7))(typescript@6.0.3)
       postcss:
         specifier: ">=8.5.23 <9"
         version: 8.5.26
@@ -207,23 +210,23 @@ importers:
         version: 9.39.5
       "@typescript-eslint/eslint-plugin":
         specifier: ^8.0.0
-        version: 8.65.0(@typescript-eslint/parser@8.65.0(eslint@9.39.5(jiti@1.21.7))(typescript@6.0.3))(eslint@9.39.5(jiti@1.21.7))(typescript@6.0.3)
+        version: 8.65.0(@typescript-eslint/parser@8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3))(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3)
       "@typescript-eslint/parser":
         specifier: ^8.0.0
-        version: 8.65.0(eslint@9.39.5(jiti@1.21.7))(typescript@6.0.3)
+        version: 8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3)
       eslint-config-next:
         specifier: ^16.0.0
-        version: 16.2.11(@typescript-eslint/parser@8.65.0(eslint@9.39.5(jiti@1.21.7))(typescript@6.0.3))(eslint@9.39.5(jiti@1.21.7))(typescript@6.0.3)
+        version: 16.2.11(@typescript-eslint/parser@8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3))(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3)
       eslint-config-prettier:
         specifier: ^9.0.0
-        version: 9.1.2(eslint@9.39.5(jiti@1.21.7))
+        version: 9.1.2(eslint@9.39.5(jiti@2.6.1))
       globals:
         specifier: ^16.0.0
         version: 16.5.0
     devDependencies:
       eslint:
         specifier: ^9.0.0
-        version: 9.39.5(jiti@1.21.7)
+        version: 9.39.5(jiti@2.6.1)
       tailwindcss:
         specifier: ^3.4.0
         version: 3.4.19(tsx@4.23.1)(yaml@2.9.0)
@@ -945,6 +948,13 @@ packages:
         integrity: sha512-EvMpZQUXkTRdweSvOu6VL6EEQwHjHAgWz2UYZR+Mj6Ao52S+TWieHbSn15jiNnEw8F8RhbZj7IGXZ1PFB1eA+A==,
       }
     engines: { node: ">=18" }
+
+  "@google-cloud/kms@6.1.0":
+    resolution:
+      {
+        integrity: sha512-Rl3dVdfjElLKG7GgiS71JYN2q8IaOu2Ea3BwxxLNxSA5F9MSC/4g08xuM62Asfj+pEkIVOlNOrR6K9YTM9Wt/A==,
+      }
+    engines: { node: ">=22" }
 
   "@grpc/grpc-js@1.14.4":
     resolution:
@@ -6731,6 +6741,13 @@ packages:
       }
     engines: { node: ">=18" }
 
+  gcp-metadata@9.0.3:
+    resolution:
+      {
+        integrity: sha512-2YYnIlHaKBGT2IPg3G2M57hia9Galz15zsEOvw9T3oRf0lSn6KN6VcHQLqby7x8ksYKnjXvp3rp2KJyLCN6zfQ==,
+      }
+    engines: { node: ">=22" }
+
   generator-function@2.0.1:
     resolution:
       {
@@ -6886,6 +6903,13 @@ packages:
       }
     engines: { node: ">=18" }
 
+  google-auth-library@11.0.2:
+    resolution:
+      {
+        integrity: sha512-vzpgPutxrghPsnjrjpzLX2bdv8IOL719Rh0oEjGnQu8YCIbnbMuTTQ5zU9LcKvLdOPgCxBwppbvnhgW90Qna5Q==,
+      }
+    engines: { node: ">=22" }
+
   google-gax@5.0.7:
     resolution:
       {
@@ -6893,12 +6917,26 @@ packages:
       }
     engines: { node: ">=18" }
 
+  google-gax@6.2.0:
+    resolution:
+      {
+        integrity: sha512-Ii5SHZBTTD/Sya/RilYA4QwGY+odowapOns67HPQ9uvU0be6CF+owZIyPhuVegpMOqIt6EgeGAIbzw5N31btng==,
+      }
+    engines: { node: ">=22" }
+
   google-logging-utils@1.1.3:
     resolution:
       {
         integrity: sha512-eAmLkjDjAFCVXg7A1unxHsLf961m6y17QFqXqAXGj/gVkKFrEICfStRfwUlGNfeCEjNRa32JEWOUTlYXPyyKvA==,
       }
     engines: { node: ">=14" }
+
+  google-logging-utils@2.0.1:
+    resolution:
+      {
+        integrity: sha512-HMhaQghlOTvbcb3c4T5jmmOMtG3JUF1iOQMezaJXL86CDS+Tm2vHd0IeLFRAx3+ewd+bo9E1HFHoy17X5aJa9A==,
+      }
+    engines: { node: ">=22" }
 
   gopd@1.2.0:
     resolution:
@@ -8867,6 +8905,13 @@ packages:
       }
     engines: { node: ">=18" }
 
+  proto3-json-serializer@4.0.2:
+    resolution:
+      {
+        integrity: sha512-VUQlb/J2WjOG8BKhdLwJUz+MKxSMtBGYh+TaNmRtiYVhlIzXjzeAGIx7gtc3lXlA2iURzfF2+cXaQvC2ofwzpg==,
+      }
+    engines: { node: ">=22" }
+
   protobufjs@8.7.1:
     resolution:
       {
@@ -9197,6 +9242,13 @@ packages:
         integrity: sha512-qqoc4kkGgP9cmQDWELlOpAmfgJOg0Yi7MT82ZjiPWu451ayju4itwomjM4/dBEliify8C1b3tSaeCOldugtwPQ==,
       }
     engines: { node: ">=18" }
+
+  retry-request@9.0.1:
+    resolution:
+      {
+        integrity: sha512-4kGHEBl0ME6gR+8QB1sPMyg58jUxLUcCZNeqLDrfqzk0eWQN8XJFmeu7fmZCjlZCRW0S2u64Ik1HkO/0sWgCYQ==,
+      }
+    engines: { node: ">=22" }
 
   rettime@0.11.11:
     resolution:
@@ -9782,6 +9834,13 @@ packages:
         integrity: sha512-5yDliI1uWkYPo7W+Zvrxg6YmoWuj5iC5EydewqrRTvc68nyMTZhlPPlLg6cptUGfbQAb+N9XDPDPzF6N081lug==,
       }
     engines: { node: ">=18" }
+
+  teeny-request@11.0.1:
+    resolution:
+      {
+        integrity: sha512-bNr5j2YjSdajgCVsp+8JVjRf1uHIbpNISLeKp/7V1NnVMX3Gh6H/kECNGlm2Q3I68ACODQ0iv6aZ3Rvm8WgLGA==,
+      }
+    engines: { node: ">=22" }
 
   terser-webpack-plugin@5.6.1:
     resolution:
@@ -11339,6 +11398,12 @@ snapshots:
       functional-red-black-tree: 1.0.1
       google-gax: 5.0.7
       protobufjs: 8.7.1
+    transitivePeerDependencies:
+      - supports-color
+
+  "@google-cloud/kms@6.1.0":
+    dependencies:
+      google-gax: 6.2.0
     transitivePeerDependencies:
       - supports-color
 
@@ -15723,13 +15788,13 @@ snapshots:
       - eslint-plugin-import-x
       - supports-color
 
-  eslint-config-next@16.2.11(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3):
+  eslint-config-next@16.2.11(@typescript-eslint/parser@8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3))(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3):
     dependencies:
       "@next/eslint-plugin-next": 16.2.11
       eslint: 9.39.5(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.10
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.6.1))
-      eslint-plugin-import: 2.32.0(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.6.1))
       eslint-plugin-jsx-a11y: 6.10.2(eslint@9.39.5(jiti@2.6.1))
       eslint-plugin-react: 7.37.5(eslint@9.39.5(jiti@2.6.1))
       eslint-plugin-react-hooks: 7.1.1(eslint@9.39.5(jiti@2.6.1))
@@ -15743,9 +15808,9 @@ snapshots:
       - eslint-plugin-import-x
       - supports-color
 
-  eslint-config-prettier@9.1.2(eslint@9.39.5(jiti@1.21.7)):
+  eslint-config-prettier@9.1.2(eslint@9.39.5(jiti@2.6.1)):
     dependencies:
-      eslint: 9.39.5(jiti@1.21.7)
+      eslint: 9.39.5(jiti@2.6.1)
 
   eslint-import-resolver-node@0.3.10:
     dependencies:
@@ -15781,7 +15846,7 @@ snapshots:
       tinyglobby: 0.2.17
       unrs-resolver: 1.12.2
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.6.1))
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.6.1))
     transitivePeerDependencies:
       - supports-color
 
@@ -15796,10 +15861,11 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-module-utils@2.14.0(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.6.1)):
+  eslint-module-utils@2.14.0(@typescript-eslint/parser@8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.6.1)):
     dependencies:
       debug: 3.2.7
     optionalDependencies:
+      "@typescript-eslint/parser": 8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3)
       eslint: 9.39.5(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.10
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0)(eslint@9.39.5(jiti@2.6.1))
@@ -15835,7 +15901,7 @@ snapshots:
       - eslint-import-resolver-webpack
       - supports-color
 
-  eslint-plugin-import@2.32.0(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.6.1)):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3))(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.6.1)):
     dependencies:
       "@rtsao/scc": 1.1.0
       array-includes: 3.1.9
@@ -15846,7 +15912,7 @@ snapshots:
       doctrine: 2.1.0
       eslint: 9.39.5(jiti@2.6.1)
       eslint-import-resolver-node: 0.3.10
-      eslint-module-utils: 2.14.0(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.6.1))
+      eslint-module-utils: 2.14.0(@typescript-eslint/parser@8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3))(eslint-import-resolver-node@0.3.10)(eslint-import-resolver-typescript@3.10.1)(eslint@9.39.5(jiti@2.6.1))
       hasown: 2.0.4
       is-core-module: 2.16.2
       is-glob: 4.0.3
@@ -15857,6 +15923,8 @@ snapshots:
       semver: 6.3.1
       string.prototype.trimend: 1.0.10
       tsconfig-paths: 3.15.0
+    optionalDependencies:
+      "@typescript-eslint/parser": 8.65.0(eslint@9.39.5(jiti@2.6.1))(typescript@6.0.3)
     transitivePeerDependencies:
       - eslint-import-resolver-typescript
       - eslint-import-resolver-webpack
@@ -16315,6 +16383,14 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  gcp-metadata@9.0.3:
+    dependencies:
+      gaxios: 7.2.0
+      google-logging-utils: 2.0.1
+      json-bigint: 1.0.0
+    transitivePeerDependencies:
+      - supports-color
+
   generator-function@2.0.1: {}
 
   gensync@1.0.0-beta.2: {}
@@ -16413,6 +16489,17 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  google-auth-library@11.0.2:
+    dependencies:
+      base64-js: 1.5.1
+      ecdsa-sig-formatter: 1.0.11
+      gaxios: 7.2.0
+      gcp-metadata: 9.0.3
+      google-logging-utils: 2.0.1
+      jws: 4.0.1
+    transitivePeerDependencies:
+      - supports-color
+
   google-gax@5.0.7:
     dependencies:
       "@grpc/grpc-js": 1.14.4
@@ -16429,7 +16516,25 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  google-gax@6.2.0:
+    dependencies:
+      "@grpc/grpc-js": 1.14.4
+      "@grpc/proto-loader": 0.8.1
+      "@opentelemetry/api": 1.9.1
+      duplexify: 4.1.3
+      google-auth-library: 11.0.2
+      google-logging-utils: 2.0.1
+      node-fetch: 3.3.2
+      object-hash: 3.0.0
+      proto3-json-serializer: 4.0.2
+      protobufjs: 8.7.1
+      retry-request: 9.0.1
+    transitivePeerDependencies:
+      - supports-color
+
   google-logging-utils@1.1.3: {}
+
+  google-logging-utils@2.0.1: {}
 
   gopd@1.2.0: {}
 
@@ -17560,6 +17665,10 @@ snapshots:
     dependencies:
       protobufjs: 8.7.1
 
+  proto3-json-serializer@4.0.2:
+    dependencies:
+      protobufjs: 8.7.1
+
   protobufjs@8.7.1:
     dependencies:
       long: 5.3.2
@@ -17770,6 +17879,13 @@ snapshots:
     dependencies:
       extend: 3.0.2
       teeny-request: 10.1.3
+    transitivePeerDependencies:
+      - supports-color
+
+  retry-request@9.0.1:
+    dependencies:
+      extend: 3.0.2
+      teeny-request: 11.0.1
     transitivePeerDependencies:
       - supports-color
 
@@ -18201,6 +18317,15 @@ snapshots:
   tapable@2.3.3: {}
 
   teeny-request@10.1.3:
+    dependencies:
+      http-proxy-agent: 7.0.2
+      https-proxy-agent: 7.0.6(supports-color@10.2.2)
+      node-fetch: 3.3.2
+      stream-events: 1.0.5
+    transitivePeerDependencies:
+      - supports-color
+
+  teeny-request@11.0.1:
     dependencies:
       http-proxy-agent: 7.0.2
       https-proxy-agent: 7.0.6(supports-color@10.2.2)

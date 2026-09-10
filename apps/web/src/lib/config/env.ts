@@ -161,6 +161,18 @@ const serverSchemaBase = clientSchema.extend({
    */
   BFF_ASSERTION_ALLOW_EPHEMERAL_KEY: z.enum(["0", "1"]).default("0"),
   /**
+   * Which signer mints the per-request Investor assertion (Daniel 2026-09-09
+   * step 3). "jwk" (default): BFF_ASSERTION_PRIVATE_KEY_JWK (or the opted-in
+   * ephemeral key). "kms": Google Cloud KMS asymmetric sign on a
+   * non-exportable P-256 key version — the private key never leaves KMS and
+   * the same key serves every replica and restart.
+   */
+  BFF_ASSERTION_SIGNER: z.enum(["jwk", "kms"]).default("jwk"),
+  /** projects/…/locations/…/keyRings/…/cryptoKeys/…/cryptoKeyVersions/N (kms only). */
+  BFF_ASSERTION_KMS_KEY_VERSION: z.string().min(1).optional(),
+  /** The published `kid` for the KMS key version (kms only); stable per version. */
+  BFF_ASSERTION_KID: z.string().min(1).optional(),
+  /**
    * Release surface. Gated verbs are refused with 403 until Managed paper —
    * enforced in bffMutate, not merely documented in the allowlist.
    */
@@ -249,10 +261,31 @@ const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
   // control, no demo world, no MSW/mock data adapter, and never on the demo
   // tier. REFI_INVESTOR_API_ALLOW_REMOTE stays a separate reviewed switch
   // that is OFF until Daniel's step 4 returns the bound addendum.
-  if (env.REFI_INVESTOR_API_CREDENTIAL_MODE !== "native-cloud-run") return;
   const fail = (path: string, message: string) => {
     ctx.addIssue({ code: "custom", path: [path], message });
   };
+  // KMS signer configuration is all-or-nothing on every tier.
+  if (
+    env.BFF_ASSERTION_SIGNER === "kms" &&
+    (!env.BFF_ASSERTION_KMS_KEY_VERSION || !env.BFF_ASSERTION_KID)
+  ) {
+    fail(
+      "BFF_ASSERTION_SIGNER",
+      "kms requires BFF_ASSERTION_KMS_KEY_VERSION and BFF_ASSERTION_KID",
+    );
+  }
+  if (env.REFI_INVESTOR_API_CREDENTIAL_MODE !== "native-cloud-run") return;
+  // A connected deployment signs with a persistent key: KMS, or a JWK from
+  // the secret store. Never the per-process ephemeral key.
+  if (
+    env.BFF_ASSERTION_SIGNER === "jwk" &&
+    !env.BFF_ASSERTION_PRIVATE_KEY_JWK
+  ) {
+    fail(
+      "BFF_ASSERTION_PRIVATE_KEY_JWK",
+      "a connected deployment needs a persistent signing key (BFF_ASSERTION_SIGNER=kms or a JWK from the secret store)",
+    );
+  }
   if (env.REFI_INVESTOR_API_MODE !== "client") {
     fail(
       "REFI_INVESTOR_API_MODE",
@@ -427,6 +460,10 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     // No withFallback: a signing key must never have a committed default.
     BFF_ASSERTION_PRIVATE_KEY_JWK:
       process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"] || undefined,
+    BFF_ASSERTION_SIGNER: process.env["BFF_ASSERTION_SIGNER"] || undefined,
+    BFF_ASSERTION_KMS_KEY_VERSION:
+      process.env["BFF_ASSERTION_KMS_KEY_VERSION"] || undefined,
+    BFF_ASSERTION_KID: process.env["BFF_ASSERTION_KID"] || undefined,
     BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK:
       process.env["BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"] || undefined,
   });

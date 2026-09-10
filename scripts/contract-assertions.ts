@@ -6423,17 +6423,44 @@ await section(
   );
 
   await section(
-    "demo slice adds no brokerage-credential, allocation, account-action, or order route",
+    "demo slice adds no brokerage-credential, allocation, account-action, or order route; the automated-Alpha surface is exactly the six contracted mutation routes (2026-09-10) and still no order/execution/intent route",
     async () => {
       const manifest = JSON.parse(
         read("compliance/API_ROUTE_MANIFEST.json"),
-      ) as { routes: Array<{ route: string }> };
+      ) as { routes: Array<{ route: string; auth: Record<string, string> }> };
+      // The ONLY allocation / maintenance routes that may exist: each maps to
+      // one contracted v1.1.0-alpha.2 operation, is bff-mutate (same-origin,
+      // session, release-stage policy — 403 at signal), and is proved in the
+      // "Automated-Alpha economic gating" section. Anything else here fails.
+      const AUTOMATED_ALPHA_ROUTES = [
+        "/api/v1/investor/allocation/join",
+        "/api/v1/investor/allocation/leave",
+        "/api/v1/investor/allocation/preview",
+        "/api/v1/investor/allocation/update",
+        "/api/v1/investor/broker/connection/[id]/rotate",
+        "/api/v1/investor/broker/connection/[id]/sync",
+      ];
+      const adjacent = manifest.routes.filter((r) =>
+        /brokerage-connections|credentials|allocation|\/actions|orders|execut|intent|rotate|sync/.test(
+          r.route,
+        ),
+      );
+      assert.deepEqual(
+        adjacent.map((r) => r.route).sort(),
+        AUTOMATED_ALPHA_ROUTES,
+        "execution-adjacent routes are exactly the contracted automated-Alpha set",
+      );
+      for (const r of adjacent) {
+        assert.deepEqual(
+          r.auth,
+          { POST: "bff-mutate" },
+          `${r.route} is a gated mutation`,
+        );
+      }
       for (const r of manifest.routes) {
         assert.ok(
-          !/brokerage-connections|credentials|allocation|\/actions|orders|execut|intent/.test(
-            r.route,
-          ),
-          `unexpected execution-adjacent route ${r.route}`,
+          !/orders|execut|intent|cancel|liquidat|transfer/.test(r.route),
+          `unexpected execution route ${r.route}`,
         );
       }
     },
@@ -11775,6 +11802,619 @@ await section(
         ),
         "chain order is fixed in source",
       );
+    },
+  );
+}
+
+// ─── Automated-Alpha economic gating (mandate: subscription requires AccountAuthorization; DENIED never relabelled; account scope authoritative; backend owns execution) ──
+
+{
+  const { createInvestorApiClient: createClientBk } =
+    await import("../packages/api-clients/src/investor-api/index.ts");
+  const actions =
+    await import("../apps/web/src/lib/investor-api/account-actions.ts");
+  const maint =
+    await import("../apps/web/src/lib/investor-api/brokerage-maintenance.ts");
+  const {
+    resetServerEnvCacheForTests: resetEnvBk,
+    getServerEnv: getServerEnvBk,
+  } = await import("../apps/web/src/lib/config/env.ts");
+  const routes = {
+    preview:
+      await import("../apps/web/app/api/v1/investor/allocation/preview/route.ts"),
+    join: await import("../apps/web/app/api/v1/investor/allocation/join/route.ts"),
+    update:
+      await import("../apps/web/app/api/v1/investor/allocation/update/route.ts"),
+    leave:
+      await import("../apps/web/app/api/v1/investor/allocation/leave/route.ts"),
+    rotate:
+      await import("../apps/web/app/api/v1/investor/broker/connection/[id]/rotate/route.ts"),
+    sync: await import("../apps/web/app/api/v1/investor/broker/connection/[id]/sync/route.ts"),
+  };
+  const { createRequire: createRequireBk } = await import("node:module");
+  const requireWebBk = createRequireBk(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const joseBk = (await import(
+    requireWebBk.resolve("jose")
+  )) as typeof import("jose");
+  const { NextRequest: NextRequestBk } = (await import(
+    requireWebBk.resolve("next/server")
+  )) as typeof import("next/server");
+  const examplesBk = JSON.parse(
+    readFileSync(
+      join(
+        REPO_ROOT,
+        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.2/examples.json",
+      ),
+      "utf8",
+    ),
+  ) as { responses: Record<string, { data: Record<string, unknown> }> };
+
+  const OWNED = "acct_alpha_owned_01";
+  const OTHER = "acct_alpha_other_02";
+  const CONN = "brokerconn_alpha_0001";
+  const FOREIGN_CONN = "brokerconn_other_0009";
+  const headersBk = {
+    "Content-Type": "application/json",
+    "Cache-Control": "private, no-store",
+    "X-Correlation-Id": "corr_bk",
+  };
+  type SeenBk = {
+    url: string;
+    method: string;
+    headers: Headers;
+    body: unknown;
+  };
+  function upstreamBk(
+    opts: {
+      authorization?: string;
+      actionError?: { status: number; code: string };
+      previewError?: { status: number; code: string };
+    } = {},
+  ) {
+    const seen: SeenBk[] = [];
+    const page = (items: unknown[]) =>
+      new Response(
+        JSON.stringify({
+          data: { items, page: { has_more: false, next_cursor: null } },
+        }),
+        { status: 200, headers: headersBk },
+      );
+    const err = (e: { status: number; code: string }) =>
+      new Response(
+        JSON.stringify({
+          error: { code: e.code, message: "x", correlation_id: "corr_bk" },
+        }),
+        { status: e.status, headers: headersBk },
+      );
+    const fetchImpl = async (
+      url: URL | RequestInfo,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const u = url.toString();
+      const method = init?.method ?? "GET";
+      const body =
+        typeof init?.body === "string"
+          ? (JSON.parse(init.body) as unknown)
+          : undefined;
+      seen.push({ url: u, method, headers: new Headers(init?.headers), body });
+      const path = new URL(u).pathname;
+      if (path === "/api/v1/investor/accounts" && method === "GET") {
+        return page(
+          [
+            {
+              ...examplesBk.responses["AccountSummary"]?.data,
+              account_id: OWNED,
+            },
+          ].filter((a) => a.account_id),
+        );
+      }
+      if (
+        path === `/api/v1/investor/accounts/${OWNED}/authorization` &&
+        method === "GET"
+      ) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesBk.responses["AccountAuthorizationEnvelope"]!.data,
+              status: opts.authorization ?? "AUTHORIZED",
+            },
+          }),
+          { status: 200, headers: headersBk },
+        );
+      }
+      if (
+        path === `/api/v1/investor/accounts/${OWNED}/brokerage-connections` &&
+        method === "GET"
+      ) {
+        const c = examplesBk.responses["BrokerageConnectionEnvelope"]!.data;
+        return page([
+          { ...c, account_id: OWNED, connection_id: CONN },
+          {
+            ...c,
+            account_id: OWNED,
+            connection_id: "brokerconn_alpha_dead",
+            connection_status: "DISCONNECTED",
+          },
+        ]);
+      }
+      if (
+        path === `/api/v1/investor/accounts/${OWNED}/allocation-previews` &&
+        method === "POST"
+      ) {
+        if (opts.previewError) return err(opts.previewError);
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesBk.responses["AllocationPreviewEnvelope"]!.data,
+              account_id: OWNED,
+            },
+          }),
+          { status: 201, headers: headersBk },
+        );
+      }
+      if (
+        path === `/api/v1/investor/accounts/${OWNED}/actions` &&
+        method === "POST"
+      ) {
+        if (opts.actionError) return err(opts.actionError);
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesBk.responses["ActionReceiptEnvelope"]!.data,
+              account_id: OWNED,
+            },
+          }),
+          { status: 202, headers: headersBk },
+        );
+      }
+      if (
+        path ===
+          `/api/v1/investor/accounts/${OWNED}/brokerage-connections/${CONN}/credentials/rotate` &&
+        method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesBk.responses["BrokerageConnectionEnvelope"]!.data,
+              account_id: OWNED,
+              connection_id: CONN,
+              credential_status: "ROTATING",
+            },
+          }),
+          { status: 202, headers: headersBk },
+        );
+      }
+      if (
+        path ===
+          `/api/v1/investor/accounts/${OWNED}/brokerage-connections/${CONN}/sync` &&
+        method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesBk.responses["BrokerageSyncReceiptEnvelope"]!.data,
+              connection_id: CONN,
+            },
+          }),
+          { status: 202, headers: headersBk },
+        );
+      }
+      return err({ status: 404, code: "RESOURCE_NOT_FOUND" });
+    };
+    const client = createClientBk({
+      identityCcid: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("id-b"),
+      },
+      investorApi: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("inv-b"),
+      },
+      mintAssertion: () => Promise.resolve("assertion"),
+      fetch: fetchImpl as typeof fetch,
+    });
+    return {
+      client,
+      seen,
+      posts: () => seen.filter((s) => s.method === "POST"),
+      ops: () => seen.map((s) => `${s.method} ${new URL(s.url).pathname}`),
+    };
+  }
+  const econ = (action: "join_template" | "update_allocation") => ({
+    action,
+    templateId: "template_us_sp500_following_v1",
+    allocationPercent: "0.25",
+    allocationPreviewId: "preview_alpha_0001",
+  });
+
+  await section(
+    "economic gating: join_template and update_allocation read AccountAuthorization first and are refused on PENDING / DENIED / SUSPENDED with the backend status word verbatim — createAccountAction is never called, nothing is relabelled",
+    async () => {
+      for (const status of ["PENDING", "DENIED", "SUSPENDED"]) {
+        for (const action of ["join_template", "update_allocation"] as const) {
+          const { client, ops } = upstreamBk({ authorization: status });
+          const out = await actions.submitAccountAction(
+            client,
+            OWNED,
+            econ(action),
+          );
+          assert.equal(out.kind, "not_authorized");
+          if (out.kind !== "not_authorized") return;
+          assert.equal(out.authorization, status, "status word verbatim");
+          assert.equal(out.action, action);
+          assert.deepEqual(
+            ops(),
+            [`GET /api/v1/investor/accounts/${OWNED}/authorization`],
+            "authorization read, action never sent",
+          );
+        }
+      }
+    },
+  );
+
+  await section(
+    "economic gating: AUTHORIZED forwards join/update exactly once with the exact contracted body (action + parameters only) under a deterministic Idempotency-Key; a different percent is a different key; the same submission is the same key",
+    async () => {
+      for (const action of ["join_template", "update_allocation"] as const) {
+        const { client, ops, posts } = upstreamBk({});
+        const out = await actions.submitAccountAction(
+          client,
+          OWNED,
+          econ(action),
+        );
+        assert.equal(out.kind, "accepted");
+        if (out.kind !== "accepted") return;
+        assert.equal(out.upstreamStatus, 202);
+        assert.equal(out.receipt.status, "ACCEPTED");
+        assert.deepEqual(ops(), [
+          `GET /api/v1/investor/accounts/${OWNED}/authorization`,
+          `POST /api/v1/investor/accounts/${OWNED}/actions`,
+        ]);
+        const post = posts()[0]!;
+        assert.deepEqual(post.body, {
+          action,
+          parameters: {
+            template_id: "template_us_sp500_following_v1",
+            allocation_percent: "0.25",
+            allocation_preview_id: "preview_alpha_0001",
+          },
+        });
+        const k = post.headers.get("Idempotency-Key");
+        assert.equal(k, actions.actionIdempotencyKey(OWNED, econ(action)));
+        assert.notEqual(
+          k,
+          actions.actionIdempotencyKey(OWNED, {
+            ...econ(action),
+            allocationPercent: "0.30",
+          }),
+        );
+        assert.notEqual(k, actions.actionIdempotencyKey(OTHER, econ(action)));
+        assert.equal(
+          post.headers.get("X-Refinity-User-Assertion"),
+          "assertion",
+        );
+      }
+    },
+  );
+
+  await section(
+    "economic gating: leave_template is disengagement — sent without reading AccountAuthorization, with template_id only; createAllocationPreview is non-economic — no authorization read, exact body, 201 preview passed through unchanged",
+    async () => {
+      const { client, ops, posts } = upstreamBk({ authorization: "DENIED" });
+      const out = await actions.submitAccountAction(client, OWNED, {
+        action: "leave_template",
+        templateId: "template_us_sp500_following_v1",
+      });
+      assert.equal(out.kind, "accepted");
+      assert.deepEqual(ops(), [
+        `POST /api/v1/investor/accounts/${OWNED}/actions`,
+      ]);
+      assert.deepEqual(posts()[0]?.body, {
+        action: "leave_template",
+        parameters: { template_id: "template_us_sp500_following_v1" },
+      });
+      const p = upstreamBk({ authorization: "DENIED" });
+      const preview = await actions.previewAllocation(p.client, OWNED, {
+        templateId: "template_us_sp500_following_v1",
+        allocationPercent: "0.25",
+      });
+      assert.equal(preview.upstreamStatus, 201);
+      assert.deepEqual(p.ops(), [
+        `POST /api/v1/investor/accounts/${OWNED}/allocation-previews`,
+      ]);
+      assert.deepEqual(p.posts()[0]?.body, {
+        template_id: "template_us_sp500_following_v1",
+        allocation_percent: "0.25",
+      });
+      assert.deepEqual(preview.preview, {
+        ...examplesBk.responses["AllocationPreviewEnvelope"]!.data,
+        account_id: OWNED,
+      });
+      assert.equal(
+        p.posts()[0]?.headers.get("Idempotency-Key"),
+        actions.previewIdempotencyKey(OWNED, {
+          templateId: "template_us_sp500_following_v1",
+          allocationPercent: "0.25",
+        }),
+      );
+    },
+  );
+
+  await section(
+    "economic gating: backend refusals keep their contract code (ALLOCATION_PREVIEW_STALE, COMPLIANCE_ATTESTATION_REQUIRED, EXECUTION_DISABLED, ACCOUNT_BASELINE_ADOPTION_REQUIRED) and are never retried; no local code stands in for a backend decision",
+    async () => {
+      for (const [status, code] of [
+        [409, "ALLOCATION_PREVIEW_STALE"],
+        [422, "COMPLIANCE_ATTESTATION_REQUIRED"],
+        [409, "EXECUTION_DISABLED"],
+        [422, "ACCOUNT_BASELINE_ADOPTION_REQUIRED"],
+      ] as const) {
+        const { client, posts } = upstreamBk({ actionError: { status, code } });
+        await assert.rejects(
+          actions.submitAccountAction(client, OWNED, econ("join_template")),
+          (e: unknown) =>
+            e instanceof Error &&
+            e.name === "InvestorApiError" &&
+            (e as { code: string }).code === code &&
+            (e as { status: number }).status === status,
+        );
+        assert.equal(posts().length, 1, "mutation not retried");
+      }
+    },
+  );
+
+  await section(
+    "connection scope: rotate and sync refuse a connection id that is not this account's (foreign, terminal, malformed) BEFORE any mutation path is built; an owned connection is forwarded once with the exact path; rotation key derives from the key ID only",
+    async () => {
+      for (const [id, reason] of [
+        [FOREIGN_CONN, "not_owned"],
+        ["brokerconn_alpha_dead", "terminal"],
+        ["x", "malformed"],
+        [`${CONN}/../${FOREIGN_CONN}`, "malformed"],
+      ] as const) {
+        const { client, posts } = upstreamBk({});
+        const r = await maint.rotateBrokerageCredentials(client, OWNED, id, {
+          apiKeyId: "PK" + "A".repeat(18),
+          apiSecretKey: "s".repeat(40),
+        });
+        assert.deepEqual(r, { kind: "connection_out_of_scope", reason });
+        const s = await maint.syncBrokerageConnection(client, OWNED, id);
+        assert.deepEqual(s, { kind: "connection_out_of_scope", reason });
+        assert.equal(posts().length, 0);
+      }
+      const { client, posts, seen } = upstreamBk({});
+      const rot = await maint.rotateBrokerageCredentials(client, OWNED, CONN, {
+        apiKeyId: "PK" + "A".repeat(18),
+        apiSecretKey: "s".repeat(40),
+      });
+      assert.equal(rot.kind, "accepted");
+      if (rot.kind === "accepted")
+        assert.equal(rot.result.credentialStatus, "ROTATING");
+      const post = posts()[0]!;
+      assert.ok(
+        post.url.endsWith(
+          `/accounts/${OWNED}/brokerage-connections/${CONN}/credentials/rotate`,
+        ),
+      );
+      assert.deepEqual(post.body, {
+        credentials: {
+          api_key: "PK" + "A".repeat(18),
+          api_secret: "s".repeat(40),
+        },
+      });
+      assert.equal(
+        post.headers.get("Idempotency-Key"),
+        maint.rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18)),
+      );
+      assert.equal(
+        maint.rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18)),
+        maint.rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18)),
+      );
+      assert.ok(
+        !maint
+          .rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18))
+          .includes("s".repeat(10)),
+      );
+      const sync = await maint.syncBrokerageConnection(
+        client,
+        OWNED,
+        CONN,
+        () => 1_700_000_000_000,
+      );
+      assert.equal(sync.kind, "accepted");
+      const sp = posts()[1]!;
+      assert.ok(sp.url.endsWith(`/brokerage-connections/${CONN}/sync`));
+      assert.equal(sp.body, undefined, "sync has no body");
+      assert.equal(
+        sp.headers.get("Idempotency-Key"),
+        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_000_000),
+      );
+      assert.equal(
+        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_000_000),
+        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_030_000),
+        "same minute replays",
+      );
+      assert.notEqual(
+        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_000_000),
+        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_120_000),
+      );
+      assert.ok(
+        seen.every((s) => !s.url.includes(OTHER)),
+        "the other account is never addressed",
+      );
+    },
+  );
+
+  await section(
+    "routes: all six automated-Alpha mutation routes are same-origin + session + release-stage gated (403 at signal), accept no account_id from the browser (strict bodies), and fail closed 503 with a receipt when no upstream is configured",
+    async () => {
+      const secret = getServerEnvBk().SESSION_JWT_SECRET;
+      const token = await new joseBk.SignJWT({ sub: "user-bk-route-1" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setExpirationTime("1h")
+        .sign(new TextEncoder().encode(secret));
+      const req = (
+        path: string,
+        body: unknown,
+        opts: { origin?: string | null; cookie?: boolean } = {},
+      ) =>
+        new NextRequestBk(`http://localhost:3000${path}`, {
+          method: "POST",
+          headers: {
+            ...(opts.origin === null
+              ? {}
+              : { origin: opts.origin ?? "http://localhost:3000" }),
+            ...(opts.cookie === false
+              ? {}
+              : { cookie: `us_session_v1=${token}` }),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+      const cases: Array<[keyof typeof routes, string, unknown]> = [
+        [
+          "preview",
+          "/api/v1/investor/allocation/preview",
+          {
+            templateId: "template_us_sp500_following_v1",
+            allocationPercent: "0.25",
+          },
+        ],
+        [
+          "join",
+          "/api/v1/investor/allocation/join",
+          {
+            templateId: "template_us_sp500_following_v1",
+            allocationPercent: "0.25",
+            allocationPreviewId: "preview_alpha_0001",
+          },
+        ],
+        [
+          "update",
+          "/api/v1/investor/allocation/update",
+          {
+            templateId: "template_us_sp500_following_v1",
+            allocationPercent: "0.25",
+            allocationPreviewId: "preview_alpha_0001",
+          },
+        ],
+        [
+          "leave",
+          "/api/v1/investor/allocation/leave",
+          { templateId: "template_us_sp500_following_v1" },
+        ],
+        [
+          "rotate",
+          `/api/v1/investor/broker/connection/${CONN}/rotate`,
+          {
+            environment: "paper",
+            apiKeyId: "PK" + "A".repeat(18),
+            apiSecretKey: "s".repeat(40),
+          },
+        ],
+        ["sync", `/api/v1/investor/broker/connection/${CONN}/sync`, {}],
+      ];
+      const savedBase = process.env["REFI_INVESTOR_API_BASE_URL"];
+      const savedStage = process.env["REFI_RELEASE_STAGE"];
+      delete process.env["REFI_INVESTOR_API_BASE_URL"];
+      try {
+        process.env["REFI_RELEASE_STAGE"] = "signal";
+        resetEnvBk();
+        for (const [name, path, body] of cases) {
+          assert.equal(
+            (await routes[name].POST(req(path, body))).status,
+            403,
+            `${name} refused at signal`,
+          );
+        }
+        process.env["REFI_RELEASE_STAGE"] = "automated_alpha";
+        resetEnvBk();
+        for (const [name, path, body] of cases) {
+          assert.equal(
+            (
+              await routes[name].POST(
+                req(path, body, { origin: "https://evil.example" }),
+              )
+            ).status,
+            403,
+            `${name} cross-origin`,
+          );
+          assert.equal(
+            (await routes[name].POST(req(path, body, { cookie: false })))
+              .status,
+            401,
+            `${name} no session`,
+          );
+          if (name !== "sync") {
+            const smuggled = await routes[name].POST(
+              req(path, { ...(body as object), account_id: OTHER }),
+            );
+            assert.equal(
+              smuggled.status,
+              400,
+              `${name} refuses a browser-supplied account_id`,
+            );
+          }
+          const res = await routes[name].POST(req(path, body));
+          const parsed = (await res.json()) as {
+            data?: { reason?: string; upstream?: unknown };
+            receipt?: { action?: string };
+          };
+          assert.equal(res.status, 503, `${name}: ${JSON.stringify(parsed)}`);
+          assert.ok(parsed.receipt?.action, `${name} receipted`);
+        }
+        // Live keys never parse on rotate; the secret never appears in any response.
+        const live = await routes.rotate.POST(
+          req(`/api/v1/investor/broker/connection/${CONN}/rotate`, {
+            environment: "paper",
+            apiKeyId: "AK" + "A".repeat(18),
+            apiSecretKey: "s".repeat(40),
+          }),
+        );
+        assert.equal(live.status, 400);
+        assert.ok(!(await live.text()).includes("s".repeat(40)));
+      } finally {
+        if (savedBase === undefined)
+          delete process.env["REFI_INVESTOR_API_BASE_URL"];
+        else process.env["REFI_INVESTOR_API_BASE_URL"] = savedBase;
+        if (savedStage === undefined) delete process.env["REFI_RELEASE_STAGE"];
+        else process.env["REFI_RELEASE_STAGE"] = savedStage;
+        resetEnvBk();
+      }
+      const strip = (f: string) =>
+        readFileSync(join(REPO_ROOT, f), "utf8").replace(
+          /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+          "",
+        );
+      const a = strip("apps/web/src/lib/investor-api/account-actions.ts");
+      assert.ok(
+        !/order|cancel|intent|liquidat|transfer/i.test(
+          a.replace(/no order, cancel, intent, transfer or liquidation/i, ""),
+        ),
+        "no execution verbs exist in the adapter",
+      );
+      assert.ok(
+        a.indexOf('call("getAccountAuthorization"') <
+          a.indexOf('call("createAccountAction"'),
+        "authorization is read before the action is sent",
+      );
+      const m = strip("apps/web/src/lib/investor-api/brokerage-maintenance.ts");
+      assert.ok(
+        m.indexOf("assertConnectionInScope(client, accountId, connectionId)") <
+          m.indexOf('call("rotateBrokerageCredentials"'),
+      );
+      for (const f of ["rotate", "sync"] as const) {
+        const r = strip(
+          `apps/web/app/api/v1/investor/broker/connection/[id]/${f}/route.ts`,
+        );
+        assert.ok(!/console\./.test(r), `${f} route never logs`);
+        assert.ok(
+          !/data:\s*\{[^}]*(apiSecretKey|api_secret)/.test(r),
+          `${f} route never echoes the secret in a response`,
+        );
+      }
     },
   );
 }

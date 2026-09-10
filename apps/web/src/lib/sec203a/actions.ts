@@ -54,6 +54,17 @@ export const InvestorActions = [
   // BFF-only TEST CONTROL for the mock adapter. Enabled solely by
   // REFI_KYC_MOCK_CONTROLS=1; answers 404 everywhere else.
   "advanceMockKycVerification",
+  // ── Automated Alpha (v1.1.0-alpha.2, Daniel 2026-09-09) ──────────────────
+  // Each maps to exactly ONE contracted Investor API operation. None of them
+  // creates an order, intent, cancel, transfer, liquidation, or admission;
+  // the backend owns every resulting execution decision.
+  "submitComplianceAttestation", // createComplianceProfileAttestation
+  "syncBrokerConnection", // syncBrokerageConnection
+  "rotateBrokerCredentials", // rotateBrokerageCredentials
+  "previewAllocation", // createAllocationPreview (non-economic)
+  "joinTemplate", // createAccountAction { action: "join_template" }
+  "updateAllocation", // createAccountAction { action: "update_allocation" }
+  "leaveTemplate", // createAccountAction { action: "leave_template" }
 ] as const;
 
 export type InvestorActionName = (typeof InvestorActions)[number];

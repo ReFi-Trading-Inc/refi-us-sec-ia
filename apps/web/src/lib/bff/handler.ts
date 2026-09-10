@@ -21,7 +21,10 @@ import type {
   RecordAccessAction,
 } from "../sec203a/actions";
 import { appendActionReceipt } from "../prototype-store/entities/receipt";
-import { GATED_UNTIL_MANAGED_PAPER } from "../sec203a/admin-verbs";
+import {
+  GATED_UNTIL_MANAGED_PAPER,
+  NOT_PERMITTED_AT_RELEASE_STAGE,
+} from "../sec203a/admin-verbs";
 import { isInvestorActionPermitted } from "../sec203a/release-policy";
 import { getServerEnv } from "../config/env";
 import { appendRecordAccess } from "../prototype-store/entities/record-access-log";
@@ -159,12 +162,8 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
       // policy refusal rather than a body defect. Receipt precedes response
       // so a refusal is never invisible; if persistence throws, the catch
       // below fails the request closed.
-      if (
-        !isInvestorActionPermitted(
-          handler.action,
-          getServerEnv().REFI_RELEASE_STAGE,
-        )
-      ) {
+      const stage = getServerEnv().REFI_RELEASE_STAGE;
+      if (!isInvestorActionPermitted(handler.action, stage)) {
         await appendActionReceipt({
           action: handler.action,
           actor: "user",
@@ -172,11 +171,16 @@ export function bffMutate<T>(handler: BffMutateHandler<T>) {
           ...(auth.accountId ? { accountId: auth.accountId } : {}),
           correlationId,
           outcome: "blocked",
-          reasonCode: GATED_UNTIL_MANAGED_PAPER,
+          reasonCode:
+            stage === "signal"
+              ? GATED_UNTIL_MANAGED_PAPER
+              : NOT_PERMITTED_AT_RELEASE_STAGE,
         });
         return BffErrors.forbidden(
           correlationId,
-          "This action is not available in Signal mode.",
+          stage === "signal"
+            ? "This action is not available in Signal mode."
+            : "This action is not available at the current release stage.",
         );
       }
 

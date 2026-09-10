@@ -64,6 +64,7 @@ const { decimalStringRefiner } =
   await import("../apps/web/src/lib/sec203a/decimal.ts");
 
 const {
+  AUTOMATED_ALPHA_ADMIN_VERBS,
   INVESTOR_ADMIN_VERBS,
   INVESTOR_ACTION_TO_ADMIN_VERB,
   INVESTOR_ACTIONS_ROUTE_TEMPLATE,
@@ -504,10 +505,15 @@ await section(
     // `update_prefs` is deliberately absent: preference updates travel the
     // dedicated PATCH /preferences route and "should not be exposed as a second
     // public write path through /actions" (2026-08-17 §6).
+    //
+    // `update_allocation` was added by the frozen v1.1.0-alpha.2 package
+    // (AccountActionRequest.action enum: join_template | update_allocation |
+    // leave_template) and adopted on Daniel's 2026-09-09 integration list.
     const expected = [
       "pause_autopilot",
       "resume_autopilot",
       "join_template",
+      "update_allocation",
       "leave_template",
       "reduce_only",
     ];
@@ -546,8 +552,8 @@ await section(
     }
     assert.equal(
       INVESTOR_ADMIN_VERBS.length,
-      5,
-      "Daniel's 2026-08-17 reply fixes the client-emittable allowlist at exactly 5 verbs (update_prefs moved to the dedicated preferences route).",
+      6,
+      "The client-emittable allowlist is exactly 6 verbs: Daniel's 2026-08-17 five (update_prefs moved to the dedicated preferences route) plus update_allocation from the frozen v1.1.0-alpha.2 AccountActionRequest.action enum (adopted 2026-09-09).",
     );
   },
 );
@@ -616,15 +622,52 @@ await section(
       ["pause_autopilot", "reduce_only", "resume_autopilot"],
       "pause/resume/reduce_only stay unavailable until Managed paper (Daniel 2026-08-17 §6).",
     );
-    // The two sets partition the emittable allowlist — no verb may be in both,
-    // and none may be in neither.
+    // v1.1.0-alpha.2 (Daniel 2026-09-09): the automated Alpha emits exactly
+    // the AccountActionRequest.action enum — join / update_allocation / leave.
+    assert.deepEqual(
+      [...AUTOMATED_ALPHA_ADMIN_VERBS].sort(),
+      ["join_template", "leave_template", "update_allocation"],
+      "AUTOMATED_ALPHA_ADMIN_VERBS must equal alpha.2's AccountActionRequest.action enum.",
+    );
+    // The emittable allowlist is exactly: the Signal pair, plus the one verb
+    // alpha.2 added (update_allocation), plus the Managed-paper-gated three.
+    // No verb is in two sets; none is in none.
     assert.deepEqual(
       [
         ...SIGNAL_RELEASE_ADMIN_VERBS,
+        "update_allocation",
         ...MANAGED_PAPER_GATED_ADMIN_VERBS,
       ].sort(),
       [...INVESTOR_ADMIN_VERBS].sort(),
-      "Every emittable verb must be either Signal-enabled or Managed-paper-gated, and none may be both.",
+      "Every emittable verb must be Signal-enabled, the alpha.2 update_allocation, or Managed-paper-gated — and none may be two of those.",
+    );
+    for (const v of AUTOMATED_ALPHA_ADMIN_VERBS) {
+      assert.ok(
+        !(MANAGED_PAPER_GATED_ADMIN_VERBS as readonly string[]).includes(v),
+        `automated Alpha verb "${v}" must never be a Managed-paper-gated verb`,
+      );
+    }
+    // The three contracted actions map to their verbs and nothing else does.
+    const contracted = {
+      joinTemplate: "join_template",
+      updateAllocation: "update_allocation",
+      leaveTemplate: "leave_template",
+    } as const;
+    for (const [action, verb] of Object.entries(contracted)) {
+      assert.equal(
+        INVESTOR_ACTION_TO_ADMIN_VERB[
+          action as keyof typeof INVESTOR_ACTION_TO_ADMIN_VERB
+        ],
+        verb,
+        `${action} → ${verb}`,
+      );
+    }
+    assert.equal(
+      Object.values(INVESTOR_ACTION_TO_ADMIN_VERB).filter(
+        (v) => v === "update_allocation",
+      ).length,
+      1,
+      "exactly one action emits update_allocation",
     );
   },
 );
@@ -709,6 +752,9 @@ await section(
   async () => {
     const {
       SIGNAL_ALLOWED_ACTIONS,
+      AUTOMATED_ALPHA_ONLY_ACTIONS,
+      AUTOMATED_ALPHA_ALLOWED_ACTIONS,
+      AUTOMATED_ALPHA_WITHHELD_SIGNAL_ACTIONS,
       MANAGED_PAPER_GATED_ACTIONS,
       SIGNAL_ALLOWED_EXCEPTION_RESOLUTIONS,
       MANAGED_EXCEPTION_RESOLUTIONS,
@@ -726,8 +772,15 @@ await section(
     assert.deepEqual(
       unclassifiedInvestorActions(),
       [],
-      "Every InvestorActionName must be classified Signal-allowed or Managed-gated.",
+      "Every InvestorActionName must be classified Signal-allowed, automated-Alpha-only, or Managed-gated.",
     );
+    for (const a of AUTOMATED_ALPHA_ONLY_ACTIONS) {
+      assert.ok(
+        !(SIGNAL_ALLOWED_ACTIONS as readonly string[]).includes(a) &&
+          !(MANAGED_PAPER_GATED_ACTIONS as readonly string[]).includes(a),
+        `"${a}" must be classified automated-Alpha-only and nowhere else.`,
+      );
+    }
     assert.deepEqual(unclassifiedExceptionResolutions(), []);
     for (const a of SIGNAL_ALLOWED_ACTIONS) {
       assert.ok(
@@ -793,6 +846,163 @@ await section(
         `signal-stage verdict for resolution "${r}" must equal allowlist membership.`,
       );
     }
+  },
+);
+
+await section(
+  "Automated Alpha capability policy (v1.1.0-alpha.2, Daniel 2026-09-09 step 0): explicit allowlist, default deny, no execution surface",
+  async () => {
+    const {
+      SIGNAL_ALLOWED_ACTIONS,
+      AUTOMATED_ALPHA_ONLY_ACTIONS,
+      AUTOMATED_ALPHA_ALLOWED_ACTIONS,
+      AUTOMATED_ALPHA_WITHHELD_SIGNAL_ACTIONS,
+      MANAGED_PAPER_GATED_ACTIONS,
+      isInvestorActionPermitted,
+      isExceptionResolutionPermitted,
+      SIGNAL_ALLOWED_EXCEPTION_RESOLUTIONS,
+    } = await import("../apps/web/src/lib/sec203a/release-policy.ts");
+    const { InvestorActions, ExceptionResolutions } =
+      await import("../apps/web/src/lib/sec203a/actions.ts");
+    const { NOT_PERMITTED_AT_RELEASE_STAGE } =
+      await import("../apps/web/src/lib/sec203a/admin-verbs.ts");
+
+    // Exactly the intended actions, by name — a drift in either direction fails.
+    assert.deepEqual(
+      [...AUTOMATED_ALPHA_ALLOWED_ACTIONS].sort(),
+      [
+        "acknowledgeDisclosure",
+        "connectBroker",
+        "disconnectBroker",
+        "dismissSignal",
+        "joinTemplate",
+        "leaveTemplate",
+        "previewAllocation",
+        "refreshProfile",
+        "resolveException",
+        "rotateBrokerCredentials",
+        "saveProfileDraft",
+        "saveSignal",
+        "startKycVerification",
+        "submitComplianceAttestation",
+        "submitSupportRequest",
+        "syncBrokerConnection",
+        "updateAccountPrefs",
+        "updateAllocation",
+      ],
+      "AUTOMATED_ALPHA_ALLOWED_ACTIONS drifted from the reviewed alpha.2 mapping.",
+    );
+    assert.deepEqual([...AUTOMATED_ALPHA_ONLY_ACTIONS].sort(), [
+      "joinTemplate",
+      "leaveTemplate",
+      "previewAllocation",
+      "rotateBrokerCredentials",
+      "submitComplianceAttestation",
+      "syncBrokerConnection",
+      "updateAllocation",
+    ]);
+    assert.deepEqual(
+      [...AUTOMATED_ALPHA_WITHHELD_SIGNAL_ACTIONS],
+      ["advanceMockKycVerification"],
+      "the mock KYC test control is the only Signal action withheld from the automated Alpha",
+    );
+    // Default deny: the verdict is allowlist membership and nothing else.
+    for (const a of InvestorActions) {
+      assert.equal(
+        isInvestorActionPermitted(a, "automated_alpha"),
+        (AUTOMATED_ALPHA_ALLOWED_ACTIONS as readonly string[]).includes(a),
+        `automated_alpha verdict for "${a}" must equal allowlist membership.`,
+      );
+    }
+    // Allowlist = (Signal ∪ automated-only) − withheld. No Managed-gated action.
+    const expected = new Set<string>([
+      ...SIGNAL_ALLOWED_ACTIONS,
+      ...AUTOMATED_ALPHA_ONLY_ACTIONS,
+    ]);
+    for (const w of AUTOMATED_ALPHA_WITHHELD_SIGNAL_ACTIONS) expected.delete(w);
+    assert.deepEqual(
+      [...AUTOMATED_ALPHA_ALLOWED_ACTIONS].sort(),
+      [...expected].sort(),
+      "allowlist must be exactly Signal ∪ automated-only minus the withheld set",
+    );
+    for (const a of MANAGED_PAPER_GATED_ACTIONS) {
+      assert.equal(
+        isInvestorActionPermitted(a, "automated_alpha"),
+        false,
+        `Managed-gated "${a}" must stay denied at automated_alpha (not in alpha.2).`,
+      );
+    }
+    // Named denials that must never open: no execution-policy mutation, no
+    // pause/resume, no mode switch, no mock KYC control.
+    for (const a of [
+      "activateExecutionPolicy",
+      "updateExecutionPolicy",
+      "saveExecutionPolicyDraft",
+      "pauseManaged",
+      "resumeManaged",
+      "selectMode",
+      "advanceMockKycVerification",
+    ] as const) {
+      assert.equal(isInvestorActionPermitted(a, "automated_alpha"), false, a);
+    }
+    // No direct order / cancel / intent / transfer / liquidation / admission
+    // action exists in the enum at all — the name space itself is closed.
+    for (const forbidden of [
+      /order/i,
+      /cancel/i,
+      /intent/i,
+      /transfer/i,
+      /liquidat/i,
+      /admit|admission|approve/i,
+      /riskOverride|overrideRisk/i,
+    ]) {
+      assert.ok(
+        !InvestorActions.some((a) => forbidden.test(a)),
+        `no InvestorActionName may match ${String(forbidden)}`,
+      );
+    }
+    // Exception resolutions keep the Signal partition at automated_alpha.
+    for (const r of ExceptionResolutions) {
+      assert.equal(
+        isExceptionResolutionPermitted(r, "automated_alpha"),
+        (SIGNAL_ALLOWED_EXCEPTION_RESOLUTIONS as readonly string[]).includes(r),
+        `automated_alpha resolution verdict for "${r}"`,
+      );
+    }
+    // Signal stays unchanged: none of the new actions runs there.
+    for (const a of AUTOMATED_ALPHA_ONLY_ACTIONS) {
+      assert.equal(
+        isInvestorActionPermitted(a, "signal"),
+        false,
+        `${a} denied at signal`,
+      );
+    }
+    // The handler refuses with a stage-specific reason and never the Signal
+    // wording outside Signal.
+    const handler = readFileSync(
+      join(REPO_ROOT, "apps/web/src/lib/bff/handler.ts"),
+      "utf8",
+    ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+    assert.ok(
+      /isInvestorActionPermitted\(handler\.action, stage\)/.test(handler) &&
+        /NOT_PERMITTED_AT_RELEASE_STAGE/.test(handler),
+      "bffMutate enforces the policy for every stage with a stage-specific reason code",
+    );
+    assert.equal(
+      NOT_PERMITTED_AT_RELEASE_STAGE,
+      "not_permitted_at_release_stage",
+    );
+    // env enum carries the third stage and nothing else new.
+    const envSrc = readFileSync(
+      join(REPO_ROOT, "apps/web/src/lib/config/env.ts"),
+      "utf8",
+    );
+    assert.ok(
+      /REFI_RELEASE_STAGE:\s*z\s*\.enum\(\["signal",\s*"automated_alpha",\s*"managed_paper"\]\)/.test(
+        envSrc,
+      ),
+      "REFI_RELEASE_STAGE enum is exactly signal | automated_alpha | managed_paper",
+    );
   },
 );
 
@@ -7307,6 +7517,387 @@ await section(
           );
         }
       }
+    },
+  );
+}
+
+// ─── Native Cloud Run credential (Daniel 2026-09-09 step 1): audience-bound ID tokens, fail closed ──
+
+{
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const tokens =
+    await import("../apps/web/src/lib/investor-api/google-id-token.ts");
+  const b64 = (o: unknown) =>
+    Buffer.from(JSON.stringify(o)).toString("base64url");
+  const NOW = 1_800_000_000;
+  const mintFake = (
+    aud: string,
+    exp: number,
+    extra: Record<string, unknown> = {},
+  ) =>
+    `${b64({ alg: "RS256", typ: "JWT", kid: "google-1" })}.${b64({
+      aud,
+      exp,
+      iat: NOW,
+      iss: "https://accounts.google.com",
+      sub: "111111111111111111111",
+      email: "refi-bff-dev@example-project.iam.gserviceaccount.com",
+      email_verified: true,
+      ...extra,
+    })}.sig`;
+  const ID_AUD = "https://identity-ccid.dev.refi.internal";
+  const INV_AUD = "https://investor-api.dev.refi.internal";
+
+  await section(
+    "google-id-token: full-format metadata identity endpoint, one cache per audience, never cross-reused, refreshed before expiry",
+    async () => {
+      const calls: Array<{ url: string; headers: Record<string, string> }> = [];
+      let clock = NOW;
+      const fetchImpl: import("../apps/web/src/lib/investor-api/google-id-token.ts").MetadataFetch =
+        async (url, init) => {
+          calls.push({ url, headers: init.headers });
+          const aud = new URL(url).searchParams.get("audience") ?? "";
+          return {
+            ok: true,
+            status: 200,
+            text: async () => mintFake(aud, clock + 3600),
+          };
+        };
+      const providers = tokens.createNativeCredentialProviders({
+        identityCcidAudience: ID_AUD,
+        investorApiAudience: INV_AUD,
+        fetchImpl,
+        now: () => clock,
+      });
+      const t1 = await providers.identityCcid.getToken();
+      const t2 = await providers.investorApi.getToken();
+      assert.notEqual(t1, t2, "distinct tokens for distinct audiences");
+      assert.equal(tokens.decodeIdTokenClaims(t1).aud, ID_AUD);
+      assert.equal(tokens.decodeIdTokenClaims(t2).aud, INV_AUD);
+      assert.equal(calls.length, 2, "one metadata call per audience");
+      for (const c of calls) {
+        const u = new URL(c.url);
+        assert.equal(
+          u.origin + u.pathname,
+          tokens.METADATA_IDENTITY_URL,
+          "identity endpoint, not the token (access-token) endpoint",
+        );
+        assert.equal(
+          u.searchParams.get("format"),
+          "full",
+          "full-format identity token",
+        );
+        assert.equal(c.headers["Metadata-Flavor"], "Google");
+        assert.ok(
+          !/\/token(\?|$)/.test(c.url),
+          "never the OAuth access-token endpoint",
+        );
+      }
+      // Cached within lifetime: no new call.
+      await providers.identityCcid.getToken();
+      await providers.investorApi.getToken();
+      assert.equal(
+        calls.length,
+        2,
+        "cached tokens are reused within their lifetime",
+      );
+      // Concurrent callers coalesce into one refresh.
+      clock = NOW + 3600 - tokens.REFRESH_MARGIN_SECONDS + 1; // inside the refresh margin
+      await Promise.all([
+        providers.investorApi.getToken(),
+        providers.investorApi.getToken(),
+        providers.investorApi.getToken(),
+      ]);
+      assert.equal(calls.length, 3, "refresh ahead of expiry, coalesced");
+      assert.equal(
+        new URL(calls[2]!.url).searchParams.get("audience"),
+        INV_AUD,
+      );
+      // The identity provider was not refreshed by investor-api activity.
+      assert.equal(providers.identityCcid.cacheState().cached, true);
+      // A provider never answers for another audience: a metadata server that
+      // returns a token for the wrong audience is rejected outright.
+      const wrong = tokens.createIdTokenProvider({
+        audience: INV_AUD,
+        fetchImpl: async () => ({
+          ok: true,
+          status: 200,
+          text: async () => mintFake(ID_AUD, NOW + 3600),
+        }),
+        now: () => NOW,
+      });
+      await assert.rejects(wrong.getToken(), tokens.AudienceMismatchError);
+      // Same audience for both targets is refused at construction.
+      assert.throws(() =>
+        tokens.createNativeCredentialProviders({
+          identityCcidAudience: ID_AUD,
+          investorApiAudience: ID_AUD,
+        }),
+      );
+    },
+  );
+
+  await section(
+    "google-id-token: fails closed on metadata errors, timeouts, non-full tokens; error text never carries a token",
+    async () => {
+      const cases: Array<
+        [
+          string,
+          import("../apps/web/src/lib/investor-api/google-id-token.ts").MetadataFetch,
+        ]
+      > = [
+        [
+          "HTTP 500",
+          async () => ({ ok: false, status: 500, text: async () => "" }),
+        ],
+        [
+          "unreachable",
+          async () => {
+            throw new Error("ECONNREFUSED");
+          },
+        ],
+        [
+          "not a JWT",
+          async () => ({
+            ok: true,
+            status: 200,
+            text: async () => "ya29.access-token-looking-string",
+          }),
+        ],
+        [
+          "missing email (not full-format)",
+          async () => ({
+            ok: true,
+            status: 200,
+            text: async () =>
+              `${b64({ alg: "RS256" })}.${b64({ aud: INV_AUD, exp: NOW + 3600, sub: "1" })}.sig`,
+          }),
+        ],
+        [
+          "email_verified false",
+          async () => ({
+            ok: true,
+            status: 200,
+            text: async () =>
+              mintFake(INV_AUD, NOW + 3600, { email_verified: false }),
+          }),
+        ],
+        [
+          "already expiring",
+          async () => ({
+            ok: true,
+            status: 200,
+            text: async () => mintFake(INV_AUD, NOW + 10),
+          }),
+        ],
+      ];
+      for (const [label, fetchImpl] of cases) {
+        const p = tokens.createIdTokenProvider({
+          audience: INV_AUD,
+          fetchImpl,
+          now: () => NOW,
+        });
+        await assert.rejects(p.getToken(), (err: unknown) => {
+          assert.ok(
+            err instanceof tokens.GoogleIdTokenUnavailableError,
+            `${label}: fails closed with GoogleIdTokenUnavailableError`,
+          );
+          assert.ok(
+            !/eyJ|ya29|\.sig/.test(err.message),
+            `${label}: error message carries no token material`,
+          );
+          assert.equal(
+            p.cacheState().cached,
+            false,
+            `${label}: nothing cached`,
+          );
+          return true;
+        });
+      }
+      const src = readFileSync(
+        join(REPO_ROOT, "apps/web/src/lib/investor-api/google-id-token.ts"),
+        "utf8",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      assert.ok(
+        !/console\.|posthog|Sentry|localStorage/.test(src),
+        "provider never logs or exports a token",
+      );
+      assert.ok(
+        /format", "full"/.test(src) && /Metadata-Flavor/.test(src),
+        "full-format identity token via the metadata server",
+      );
+    },
+  );
+
+  await section(
+    "connected-deployment invariants: native credential mode fails boot on any downgrade path; remote stays a separate reviewed switch",
+    async () => {
+      const base: Record<string, string> = {
+        NEXT_PUBLIC_REFI_ENV: "staging",
+        REFI_ENV: "staging",
+        NEXT_PUBLIC_API_BASE_URL: "https://bff-dev.refi.trading",
+        NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "x",
+        NEXT_PUBLIC_POSTHOG_KEY: "x",
+        NEXT_PUBLIC_SENTRY_DSN: "https://x@o0.ingest.sentry.io/0",
+        SESSION_SECRET: "s".repeat(40),
+        IP_HASH_SECRET: "s".repeat(40),
+        ELIGIBILITY_JWT_SECRET: "s".repeat(40),
+        SESSION_JWT_SECRET: "s".repeat(40),
+        ALPHA_HANDOFF_PUBLIC_KEY_JWK: JSON.stringify({
+          kty: "EC",
+          crv: "P-256",
+          x: "a",
+          y: "b",
+        }),
+        ALPHA_HANDOFF_ISSUER: "refi-alpha",
+        ALPHA_HANDOFF_AUDIENCE: "refi-us-sec-ia",
+        REFI_INVESTOR_API_CREDENTIAL_MODE: "native-cloud-run",
+        REFI_INVESTOR_API_MODE: "client",
+        REFI_INVESTOR_API_ASSERTION_MODE: "mint",
+        BFF_ASSERTION_ALLOW_EPHEMERAL_KEY: "0",
+        REFI_KYC_MOCK_CONTROLS: "0",
+        REFI_KYC_PROVIDER: "unconfigured",
+        REFI_DATA_ADAPTER: "live",
+        REFI_INVESTOR_API_BASE_URL:
+          "https://investor-api-74kl57biwa-uw.a.run.app",
+        REFI_IDENTITY_CCID_BASE_URL:
+          "https://identity-ccid-74kl57biwa-uw.a.run.app",
+      };
+      const KEYS = [
+        ...Object.keys(base),
+        "REFI_INVESTOR_API_ALLOW_REMOTE",
+        "REFI_IDENTITY_CCID_GOOGLE_AUDIENCE",
+        "REFI_INVESTOR_API_GOOGLE_AUDIENCE",
+        "REFI_INVESTOR_API_MODE",
+      ];
+      const saved: Record<string, string | undefined> = {};
+      for (const k of KEYS) saved[k] = process.env[k];
+      const withEnv = async (
+        over: Record<string, string | undefined>,
+        fn: () => Promise<void>,
+      ) => {
+        for (const k of KEYS) delete process.env[k];
+        for (const [k, v] of Object.entries({ ...base, ...over }))
+          if (v !== undefined) process.env[k] = v;
+        resetServerEnvCacheForTests();
+        try {
+          await fn();
+        } finally {
+          for (const k of KEYS) {
+            if (saved[k] === undefined) delete process.env[k];
+            else process.env[k] = saved[k];
+          }
+          resetServerEnvCacheForTests();
+        }
+      };
+      const { getServerEnv } =
+        await import("../apps/web/src/lib/config/env.ts");
+      // Baseline connected configuration boots, with Daniel's fixed audiences
+      // as defaults and remote OFF.
+      await withEnv({}, async () => {
+        const env = getServerEnv();
+        assert.equal(env.REFI_INVESTOR_API_CREDENTIAL_MODE, "native-cloud-run");
+        assert.equal(
+          env.REFI_IDENTITY_CCID_GOOGLE_AUDIENCE,
+          "https://identity-ccid.dev.refi.internal",
+        );
+        assert.equal(
+          env.REFI_INVESTOR_API_GOOGLE_AUDIENCE,
+          "https://investor-api.dev.refi.internal",
+        );
+        assert.equal(
+          env.REFI_INVESTOR_API_ALLOW_REMOTE,
+          "0",
+          "remote is OFF until Daniel's step 4",
+        );
+      });
+      // Every downgrade path is a boot failure.
+      for (const [label, over] of [
+        [
+          "simulator assertion",
+          { REFI_INVESTOR_API_ASSERTION_MODE: "simulator-fixture" },
+        ],
+        ["ephemeral signing key", { BFF_ASSERTION_ALLOW_EPHEMERAL_KEY: "1" }],
+        ["mock KYC controls", { REFI_KYC_MOCK_CONTROLS: "1" }],
+        ["mock data adapter", { REFI_DATA_ADAPTER: "mock" }],
+        [
+          "demo world upstream",
+          {
+            REFI_INVESTOR_API_MODE: "demo",
+            REFI_ENV: "demo",
+            NEXT_PUBLIC_REFI_ENV: "demo",
+          },
+        ],
+        ["demo tier", { REFI_ENV: "demo", NEXT_PUBLIC_REFI_ENV: "demo" }],
+        [
+          "shared audience",
+          {
+            REFI_INVESTOR_API_GOOGLE_AUDIENCE:
+              "https://identity-ccid.dev.refi.internal",
+          },
+        ],
+      ] as const) {
+        await withEnv({ ...over }, async () => {
+          assert.throws(
+            () => getServerEnv(),
+            /Invalid server environment/,
+            `${label} must fail boot in native mode`,
+          );
+        });
+      }
+      // The same downgrades are legal OUTSIDE native mode (local/E2E/demo).
+      await withEnv(
+        {
+          REFI_INVESTOR_API_CREDENTIAL_MODE: "simulator-fixture",
+          REFI_INVESTOR_API_ASSERTION_MODE: "simulator-fixture",
+          REFI_KYC_MOCK_CONTROLS: "1",
+          REFI_DATA_ADAPTER: "mock",
+        },
+        async () => {
+          assert.doesNotThrow(() => getServerEnv());
+        },
+      );
+    },
+  );
+
+  await section(
+    "gateway: native mode wires two distinct audience-bound providers; simulator/unconfigured never leak into native; unconfigured fails closed",
+    async () => {
+      const src = readFileSync(
+        join(REPO_ROOT, "apps/web/src/lib/investor-api/gateway.ts"),
+        "utf8",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      assert.ok(
+        /case "native-cloud-run"/.test(src) &&
+          /providers\.identityCcid\.getToken\(\)/.test(src) &&
+          /providers\.investorApi\.getToken\(\)/.test(src),
+        "native mode uses the per-target providers",
+      );
+      assert.ok(
+        /identityBearer/.test(src) &&
+          /investorBearer/.test(src) &&
+          !/getBearer,\s*\)/.test(src),
+        "each RuntimeTarget receives its own bearer provider",
+      );
+      assert.ok(
+        !/WIF|impersonat|GOOGLE_APPLICATION_CREDENTIALS|print-identity-token/.test(
+          src,
+        ),
+        "no WIF, impersonation, key-file or human-token path",
+      );
+      const nativeBranch = src.slice(
+        src.indexOf('case "native-cloud-run"'),
+        src.indexOf('case "simulator-fixture"'),
+      );
+      assert.ok(
+        !/SIMULATOR_FIXTURE/.test(nativeBranch),
+        "native branch never falls back to the simulator fixture",
+      );
+      assert.ok(
+        /case "unconfigured"[\s\S]*GoogleCredentialUnavailableError/.test(src),
+        "unconfigured rejects for both targets",
+      );
     },
   );
 }

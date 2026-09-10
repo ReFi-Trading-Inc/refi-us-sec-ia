@@ -30,7 +30,7 @@ import {
 } from "./actions";
 
 /** Mirrors the REFI_RELEASE_STAGE enum in config/env.ts. */
-export type ReleaseStage = "signal" | "managed_paper";
+export type ReleaseStage = "signal" | "automated_alpha" | "managed_paper";
 
 /**
  * Actions available at the SIGNAL stage. Advice, consent, connection, and
@@ -62,6 +62,58 @@ export const SIGNAL_ALLOWED_ACTIONS = [
   "advanceMockKycVerification",
 ] as const;
 
+/**
+ * Actions that exist ONLY at the automated Alpha stage (v1.1.0-alpha.2,
+ * Daniel 2026-09-09). Each is one contracted operation; subscription and
+ * allocation are the investor's economic INSTRUCTION — the backend owns
+ * intent, risk, execution plan, order, fill and reconciliation. No direct
+ * order, cancel, intent, risk override, transfer, liquidation, admission or
+ * execution-policy mutation exists here or anywhere in the action enum.
+ */
+export const AUTOMATED_ALPHA_ONLY_ACTIONS = [
+  "submitComplianceAttestation",
+  "syncBrokerConnection",
+  "rotateBrokerCredentials",
+  "previewAllocation",
+  "joinTemplate",
+  "updateAllocation",
+  "leaveTemplate",
+] as const;
+
+/**
+ * Signal-allowed actions that the automated Alpha does NOT carry forward.
+ * The mock KYC control is a test surface; it never runs on a connected tier.
+ */
+export const AUTOMATED_ALPHA_WITHHELD_SIGNAL_ACTIONS = [
+  "advanceMockKycVerification",
+] as const;
+
+/**
+ * THE automated-Alpha allowlist — explicit, complete, default deny. Nothing
+ * is derived at runtime from "signal" or "managed_paper"; a new
+ * InvestorActionName must be added here by hand to run at this stage.
+ */
+export const AUTOMATED_ALPHA_ALLOWED_ACTIONS = [
+  "updateAccountPrefs", //           updateAccountPreferences
+  "refreshProfile", //               frontend-owned profile v2 (feeds attestation)
+  "acknowledgeDisclosure", //        recordConsent
+  "connectBroker", //                createBrokerageConnection
+  "disconnectBroker", //             disconnectBrokerageConnection
+  "resolveException", //             Signal remediation categories only
+  "dismissSignal",
+  "saveSignal",
+  "submitSupportRequest",
+  "saveProfileDraft",
+  "startKycVerification", //         frontend-owned adapter lifecycle
+  "submitComplianceAttestation", //  createComplianceProfileAttestation
+  "syncBrokerConnection", //         syncBrokerageConnection
+  "rotateBrokerCredentials", //      rotateBrokerageCredentials
+  "previewAllocation", //            createAllocationPreview
+  "joinTemplate", //                 createAccountAction join_template
+  "updateAllocation", //             createAccountAction update_allocation
+  "leaveTemplate", //                createAccountAction leave_template
+] as const;
+
 /** Actions that exist only once Managed paper is enabled. */
 export const MANAGED_PAPER_GATED_ACTIONS = [
   "activateExecutionPolicy",
@@ -73,6 +125,8 @@ export const MANAGED_PAPER_GATED_ACTIONS = [
 ] as const;
 
 type SignalAllowed = (typeof SIGNAL_ALLOWED_ACTIONS)[number];
+type AutomatedAlphaOnly = (typeof AUTOMATED_ALPHA_ONLY_ACTIONS)[number];
+type AutomatedAlphaAllowed = (typeof AUTOMATED_ALPHA_ALLOWED_ACTIONS)[number];
 type ManagedGated = (typeof MANAGED_PAPER_GATED_ACTIONS)[number];
 
 // ─── Compile-time completeness + disjointness proofs ────────────────────────
@@ -82,17 +136,41 @@ type ManagedGated = (typeof MANAGED_PAPER_GATED_ACTIONS)[number];
 // here is a compile error, which is what makes the policy default-deny in
 // practice and not just in prose.
 type _Overlap = SignalAllowed & ManagedGated;
-type _Unclassified = Exclude<InvestorActionName, SignalAllowed | ManagedGated>;
+type _OverlapAutoSignal = AutomatedAlphaOnly & SignalAllowed;
+type _OverlapAutoManaged = AutomatedAlphaOnly & ManagedGated;
+type _Unclassified = Exclude<
+  InvestorActionName,
+  SignalAllowed | AutomatedAlphaOnly | ManagedGated
+>;
+// The automated-Alpha allowlist may contain only Signal-allowed or
+// automated-Alpha-only actions — never a Managed-gated one.
+type _AutoAllowsManaged = AutomatedAlphaAllowed & ManagedGated;
+// ...and every automated-Alpha-only action must actually be on it.
+type _AutoOnlyMissing = Exclude<AutomatedAlphaOnly, AutomatedAlphaAllowed>;
 type _Assert<T extends never> = T;
 type _CheckOverlap = _Assert<_Overlap>;
+type _CheckOverlapAutoSignal = _Assert<_OverlapAutoSignal>;
+type _CheckOverlapAutoManaged = _Assert<_OverlapAutoManaged>;
 type _CheckComplete = _Assert<_Unclassified>;
+type _CheckAutoAllowsManaged = _Assert<_AutoAllowsManaged>;
+type _CheckAutoOnlyMissing = _Assert<_AutoOnlyMissing>;
 
 export function isInvestorActionPermitted(
   action: InvestorActionName,
   stage: ReleaseStage,
 ): boolean {
-  if (stage === "managed_paper") return true;
-  return (SIGNAL_ALLOWED_ACTIONS as readonly string[]).includes(action);
+  switch (stage) {
+    case "managed_paper":
+      // Legacy surface: admits every action. Kept as-is and NOT used for
+      // the automated Alpha (Daniel 2026-09-09 step 0).
+      return true;
+    case "automated_alpha":
+      return (AUTOMATED_ALPHA_ALLOWED_ACTIONS as readonly string[]).includes(
+        action,
+      );
+    case "signal":
+      return (SIGNAL_ALLOWED_ACTIONS as readonly string[]).includes(action);
+  }
 }
 
 // ─── Exception-resolution partition ─────────────────────────────────────────
@@ -127,6 +205,7 @@ export function isExceptionResolutionPermitted(
   resolution: ExceptionResolution,
   stage: ReleaseStage,
 ): boolean {
+  // automated_alpha keeps the Signal partition: Managed categories stay closed.
   if (stage === "managed_paper") return true;
   return (SIGNAL_ALLOWED_EXCEPTION_RESOLUTIONS as readonly string[]).includes(
     resolution,
@@ -138,6 +217,7 @@ export function isExceptionResolutionPermitted(
 export function unclassifiedInvestorActions(): string[] {
   const all = new Set<string>([
     ...SIGNAL_ALLOWED_ACTIONS,
+    ...AUTOMATED_ALPHA_ONLY_ACTIONS,
     ...MANAGED_PAPER_GATED_ACTIONS,
   ]);
   return InvestorActions.filter((a) => !all.has(a));

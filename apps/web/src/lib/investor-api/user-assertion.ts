@@ -36,10 +36,11 @@
  *
  * ─── auth_time is load-bearing ─────────────────────────────────────────────
  *
- * It is the input to the step-up rule (D-015): investor-api enforces a maximum
- * underlying auth_time age of 10 minutes and answers STEP_UP_REQUIRED
- * otherwise. Daniel, explicitly: "Merely minting a new BFF assertion from an
- * old session does not satisfy step-up." So auth_time must be propagated from
+ * It is the input to the step-up rule (D-015). A fixed ten-minute
+ * STEP_UP_REQUIRED window is NOT a v1.1.0-alpha.2 operation guarantee (Daniel
+ * 2026-09-09); each operation's own step-up/conflict profile applies. What is
+ * fixed: "Merely minting a new BFF assertion from an old session does not
+ * satisfy step-up." So auth_time must be propagated from
  * the identity-ccid assertion through the BFF session and NEVER replaced with
  * `now`. This module has no fallback for a missing auth_time — it throws,
  * because inventing one would silently defeat step-up.

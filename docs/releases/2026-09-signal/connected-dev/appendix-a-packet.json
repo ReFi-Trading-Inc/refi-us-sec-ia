@@ -1,0 +1,39 @@
+{
+  "_status": "NOT READY — do not send. null = not yet known; never a runtime placeholder. Updated 2026-09-09.",
+  "_source": "september-12-launch/frontend_nextsteps.md Appendix A (Daniel 2026-09-09)",
+  "contract_version": "v1.1.0-alpha.2",
+  "package_content_sha256": "c1b53c906653ca8860bf66cfc0df8fa862ff34d6cbf77298ac83cb55f006cb09",
+  "runtime_auth_mode": "native_cloud_run",
+  "frontend_project_id": null,
+  "frontend_region": null,
+  "frontend_service_name": null,
+  "frontend_ready_revision": null,
+  "frontend_source_revision": null,
+  "frontend_runtime_service_account_email": null,
+  "frontend_runtime_service_account_unique_id": null,
+  "frontend_bff_base_url": "https://bff-dev.refi.trading",
+  "frontend_bff_jwks_url": "https://bff-dev.refi.trading/.well-known/jwks.json",
+  "frontend_bff_current_signing_kid": null,
+  "upstream_identity_provider_id": null,
+  "upstream_identity_assertion_issuer": null,
+  "upstream_identity_assertion_audience": null,
+  "upstream_identity_jwks_url": null,
+  "upstream_identity_current_signing_kid": null,
+  "allowed_redirect_uris": [],
+  "integration_contact": null,
+  "security_contact": null,
+  "escalation_channel": null,
+  "_blocked_on": {
+    "frontend_project_id, frontend_region, frontend_service_name, frontend_ready_revision, frontend_source_revision, frontend_runtime_service_account_email, frontend_runtime_service_account_unique_id": "decision-gcp-project.md (founder) → PR A deploy",
+    "frontend_bff_current_signing_kid": "PR B signer + KMS key in the chosen project",
+    "upstream_identity_*, allowed_redirect_uris": "decision-identity-provider.md (founder) → Sprint B bridge",
+    "integration_contact, security_contact, escalation_channel": "Zeshan to name"
+  },
+  "_never_included": [
+    "JWTs",
+    "Alpaca keys",
+    "private JWKs",
+    "session cookies",
+    "invitation tokens"
+  ]
+}

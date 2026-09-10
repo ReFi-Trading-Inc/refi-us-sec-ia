@@ -251,6 +251,22 @@ const serverSchemaBase = clientSchema.extend({
    * (`https://0.0.0.0:3000` in standalone mode). See lib/bff/origin.ts.
    */
   REFI_TRUST_PROXY_HOST: z.enum(["0", "1"]).default("0"),
+  /**
+   * Connected security state (lib/connected-store): BFF sessions, pending
+   * logins, consumed jtis, opaque subject map. "durable" = Firestore, REQUIRED
+   * on a connected deployment; "prototype" = local filesystem, local/E2E only.
+   */
+  REFI_CONNECTED_STORE_BACKING: z
+    .enum(["prototype", "durable"])
+    .default("prototype"),
+  /**
+   * Collection namespace for connected state (`<ns>--connected-<entity>`).
+   * Lowercase kebab-case; may not contain demo/mock/prototype/simulator, so a
+   * connected deployment can never read demo or prototype collections.
+   */
+  REFI_CONNECTED_STORE_NAMESPACE: z.string().min(1).optional(),
+  /** Firestore project (durable backing). Read by the durable driver. */
+  GCP_PROJECT_ID: z.string().min(1).optional(),
 });
 
 const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
@@ -318,6 +334,33 @@ const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
   }
   if (env.REFI_ENV === "demo") {
     fail("REFI_ENV", "the demo tier is never a connected deployment");
+  }
+  // Durable security state is mandatory: sessions, pending logins, consumed
+  // jtis and the subject map must survive instances and restarts, and must
+  // never resolve to demo or prototype collections.
+  if (env.REFI_CONNECTED_STORE_BACKING !== "durable") {
+    fail(
+      "REFI_CONNECTED_STORE_BACKING",
+      'must be "durable" on a connected deployment — no process-memory or /tmp security state',
+    );
+  }
+  const ns = env.REFI_CONNECTED_STORE_NAMESPACE;
+  if (!ns || !/^[a-z][a-z0-9-]{2,39}$/.test(ns)) {
+    fail(
+      "REFI_CONNECTED_STORE_NAMESPACE",
+      "must be set to a lowercase kebab-case namespace on a connected deployment",
+    );
+  } else if (/demo|mock|prototype|simulator/.test(ns)) {
+    fail(
+      "REFI_CONNECTED_STORE_NAMESPACE",
+      "may not name demo, mock, prototype or simulator collections",
+    );
+  }
+  if (!env.GCP_PROJECT_ID) {
+    fail(
+      "GCP_PROJECT_ID",
+      "the durable (Firestore) backing needs the connected project id",
+    );
   }
   if (
     env.REFI_IDENTITY_CCID_GOOGLE_AUDIENCE ===
@@ -457,6 +500,11 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     DEMO_HANDOFF_PRIVATE_KEY_JWK:
       process.env["DEMO_HANDOFF_PRIVATE_KEY_JWK"] || undefined,
     REFI_TRUST_PROXY_HOST: process.env["REFI_TRUST_PROXY_HOST"] || undefined,
+    REFI_CONNECTED_STORE_BACKING:
+      process.env["REFI_CONNECTED_STORE_BACKING"] || undefined,
+    REFI_CONNECTED_STORE_NAMESPACE:
+      process.env["REFI_CONNECTED_STORE_NAMESPACE"] || undefined,
+    GCP_PROJECT_ID: process.env["GCP_PROJECT_ID"] || undefined,
     // No withFallback: a signing key must never have a committed default.
     BFF_ASSERTION_PRIVATE_KEY_JWK:
       process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"] || undefined,

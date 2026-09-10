@@ -142,6 +142,10 @@ export const POST = bffMutate<undefined>({
           data: {
             ok: true,
             state: outcome.record.state,
+            // The backend's canonical status travels with the result; an
+            // HTTP 201 is never presented as "accepted" on its own.
+            backendStatus: outcome.backendStatus,
+            latestForAccount: outcome.latestForAccount,
             attestation: outcome.attestation,
             upstreamStatus: outcome.upstreamStatus,
             contractVersion: CONTRACT_VERSION,
@@ -201,6 +205,22 @@ export const POST = bffMutate<undefined>({
           reasonCode: outcome.reasons[0] ?? "attestation_blocked",
           references: [`attestation:${outcome.record.attestationId}`],
           status: 412,
+        };
+      case "retryable":
+        return {
+          data: {
+            ok: false,
+            reason: "attestation_retryable",
+            state: outcome.record.state,
+            cause: outcome.cause,
+            upstreamStatus: outcome.status,
+            code: outcome.code,
+            retryAfterSeconds: outcome.retryAfterSeconds,
+          },
+          outcome: "blocked" as const,
+          reasonCode: outcome.code?.toLowerCase() ?? "upstream_ambiguous",
+          references: [`attestation:${outcome.record.attestationId}`],
+          status: outcome.status === 429 ? 429 : 503,
         };
       case "rejected":
         return {

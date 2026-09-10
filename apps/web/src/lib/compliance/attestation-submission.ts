@@ -20,12 +20,26 @@
  *                               `rejected` with the contract code and is
  *                               never relabelled
  *
+ * Answers are PARTITIONED (founder correction 2026-09-10):
+ *   - success 201 → `acknowledged`, retaining the backend's CANONICAL status
+ *     (`ACCEPTED` | `SUPERSEDED` | …), payload hash and received_at; HTTP
+ *     success alone is never equated with "accepted";
+ *   - semantic terminal refusal (401/403/404/409/422 envelopes) → `rejected`
+ *     with the contract code, never relabelled;
+ *   - retryable or ambiguous (429, 503, 5xx envelope, transport failure,
+ *     deadline) → the record STAYS `submitted` with its deterministic
+ *     Idempotency-Key; nothing here auto-retries. A later explicit call with
+ *     the identical decision recovers with the identical body and key.
+ *
+ * A stored attestation is never trading permission: authorization remains
+ * backend-owned and is re-read fresh wherever the contract requires it.
  * Nothing here retries a mutation, invents a field, or copies the backend's
  * authorization projection into frontend state.
  */
 import { createHash } from "node:crypto";
 import {
   InvestorApiError,
+  InvestorApiTransportError,
   type OperationResponse,
 } from "@refi/api-clients/investor-api";
 import type { InvestorApiReadClient } from "../investor-api/demo-client";
@@ -39,7 +53,9 @@ import {
 } from "../investor-api/pagination";
 import {
   advanceAttestationSubmission,
+  noteRetryableAnswer,
   openAttestationSubmission,
+  recordAcknowledgedDecision,
   type AttestationSubmissionRecord,
 } from "../prototype-store/entities/attestation-submission";
 import {
@@ -60,7 +76,11 @@ export type SubmitAttestationOutcome =
       kind: "acknowledged";
       record: AttestationSubmissionRecord;
       attestation: ComplianceProfileAttestation;
+      /** The backend's canonical status, as returned. */
+      backendStatus: ComplianceProfileAttestation["status"];
       upstreamStatus: number;
+      /** False when a NEWER decision for this account was already acknowledged. */
+      latestForAccount: boolean;
     }
   /** This decision already has backend evidence; nothing is re-sent. */
   | { kind: "already_acknowledged"; record: AttestationSubmissionRecord }
@@ -78,12 +98,22 @@ export type SubmitAttestationOutcome =
       record: AttestationSubmissionRecord;
       reasons: AttestationBlockReason[];
     }
+  /** Semantic terminal refusal from the backend (its contract code). */
   | {
       kind: "rejected";
       record: AttestationSubmissionRecord;
       status: number;
       code: string;
       correlationId: string | null;
+      retryAfterSeconds: number | null;
+    }
+  /** Retryable or ambiguous: the record stays `submitted` under the same key. */
+  | {
+      kind: "retryable";
+      record: AttestationSubmissionRecord;
+      cause: "transport" | "backend";
+      status: number | null;
+      code: string | null;
       retryAfterSeconds: number | null;
     }
   | {
@@ -93,6 +123,15 @@ export type SubmitAttestationOutcome =
       correlationId: string | null;
       retryAfterSeconds: number | null;
     };
+
+/** Contract profile statuses that are a definitive backend verdict on THIS request. */
+export const SEMANTIC_REJECTION_STATUSES: ReadonlySet<number> = new Set([
+  401, 403, 404, 409, 422,
+]);
+/** Statuses after which the same body/key may be recovered later. */
+export const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([
+  429, 500, 502, 503, 504,
+]);
 
 const MAX_PAGES = 4;
 
@@ -263,46 +302,114 @@ export async function submitComplianceProfileAttestation(
     return { kind: "terminal", record };
   }
 
-  // 5. acknowledged — or rejected with the contract's own code.
+  // 5. acknowledged with the backend's CANONICAL status — or a partitioned
+  //    non-success: semantic rejection (terminal) vs retryable/ambiguous
+  //    (record stays `submitted`; identical body/key recover it later).
   try {
     const res = await client.call("createComplianceProfileAttestation", {
       path: { account_id: accountId },
       idempotencyKey,
       body: built.request,
     });
+    const data = res.data.data;
+    const acknowledgedAt = new Date().toISOString();
     record = await advanceAttestationSubmission({
       accountId,
       attestationId,
       to: "acknowledged",
       correlationId,
-      detail: { backend_attestation_id: res.data.data.attestation_id },
-      patch: {
-        backendAttestationId: res.data.data.attestation_id,
-        acknowledgedAt: new Date().toISOString(),
+      detail: {
+        backend_attestation_id: data.attestation_id,
+        backend_status: data.status,
+        upstream_status: res.status,
       },
+      patch: {
+        backendAttestationId: data.attestation_id,
+        backendStatus: data.status,
+        backendPayloadSha256: data.payload_sha256,
+        backendReceivedAt: data.received_at,
+        acknowledgedAt,
+      },
+    });
+    const pointer = await recordAcknowledgedDecision({
+      accountId,
+      decisionSequence: built.request.decision_sequence,
+      attestationId,
+      backendStatus: data.status,
+      acknowledgedAt,
     });
     return {
       kind: "acknowledged",
       record,
-      attestation: res.data.data,
+      attestation: data,
+      backendStatus: data.status,
       upstreamStatus: res.status,
+      latestForAccount: pointer.moved,
     };
   } catch (err) {
+    const at = new Date().toISOString();
     if (err instanceof InvestorApiError) {
-      record = await advanceAttestationSubmission({
+      if (SEMANTIC_REJECTION_STATUSES.has(err.status)) {
+        record = await advanceAttestationSubmission({
+          accountId,
+          attestationId,
+          to: "rejected",
+          correlationId,
+          detail: { code: err.code, status: err.status },
+        });
+        return {
+          kind: "rejected",
+          record,
+          status: err.status,
+          code: err.code,
+          correlationId: err.correlationId,
+          retryAfterSeconds: err.retryAfterSeconds,
+        };
+      }
+      // 429 / 5xx envelope: not a verdict on the decision.
+      record = await noteRetryableAnswer({
         accountId,
         attestationId,
-        to: "rejected",
+        lastRetryable: {
+          kind: "backend",
+          status: err.status,
+          code: err.code,
+          retryAfterSeconds: err.retryAfterSeconds,
+          at,
+        },
         correlationId,
-        detail: { code: err.code, status: err.status },
       });
       return {
-        kind: "rejected",
+        kind: "retryable",
         record,
+        cause: "backend",
         status: err.status,
         code: err.code,
-        correlationId: err.correlationId,
         retryAfterSeconds: err.retryAfterSeconds,
+      };
+    }
+    if (err instanceof InvestorApiTransportError) {
+      // Lost/ambiguous: the backend may or may not have applied it; the
+      // identical body + key is the only correct next step.
+      record = await noteRetryableAnswer({
+        accountId,
+        attestationId,
+        lastRetryable: {
+          kind: "transport",
+          status: null,
+          code: null,
+          retryAfterSeconds: null,
+          at,
+        },
+        correlationId,
+      });
+      return {
+        kind: "retryable",
+        record,
+        cause: "transport",
+        status: null,
+        code: null,
+        retryAfterSeconds: null,
       };
     }
     throw err;

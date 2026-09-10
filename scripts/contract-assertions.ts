@@ -8482,6 +8482,7 @@ await section(
         }
         assert.deepEqual([...cs.CONNECTED_ENTITIES].sort(), [
           "bridge-assertion-jti",
+          "exchange-attempt",
           "identity-result-jti",
           "login-consumed",
           "login-state",
@@ -9937,6 +9938,10 @@ await section(
   const bridge = await import("../apps/web/src/lib/auth/identity-bridge.ts");
   const exchange =
     await import("../apps/web/src/lib/auth/identity-exchange.ts");
+  const attempts =
+    await import("../apps/web/src/lib/connected-store/exchange-attempt.ts");
+  const apiClientsB =
+    await import("../packages/api-clients/src/investor-api/index.ts");
   const chain = await import("../apps/web/src/lib/auth/connected-login.ts");
   const sessionSeam =
     await import("../apps/web/src/lib/auth/connected-session.ts");
@@ -10098,6 +10103,10 @@ await section(
     kid: string;
   } | null = null;
   let exchangeFailure: Error | null = null;
+  /** Backend receives and processes the request, then the answer is lost. */
+  let lostAfterSend = false;
+  let headerExtra: Record<string, unknown> | null = null;
+  const answersByBridgeJti = new Map<string, { body: string; token: string }>();
   const fakeExchange: import("../apps/web/src/lib/investor-api/demo-client.ts").InvestorApiReadClient =
     {
       async call(opId, options) {
@@ -10117,10 +10126,33 @@ await section(
           },
         );
         assert.equal(protectedHeader.typ, "JWT");
-        assert.ok(
-          !seenBridgeJtis.has(payload.jti as string),
-          "backend saw a bridge jti twice",
-        );
+        const prior = answersByBridgeJti.get(payload.jti as string);
+        if (prior) {
+          if (prior.body !== JSON.stringify(body)) {
+            throw new apiClientsB.InvestorApiError({
+              status: 422,
+              code: "VALIDATION_ERROR",
+              message: "binding fields changed for a presented assertion",
+              correlationId: "ccid_x",
+            });
+          }
+          if (lostAfterSend) {
+            lostAfterSend = false;
+            throw new apiClientsB.InvestorApiTransportError("lost", 1);
+          }
+          return {
+            status: 200,
+            correlationId: "ccid_x",
+            headers: new Headers(),
+            data: {
+              data: {
+                identity_result: prior.token,
+                token_type: "JWT",
+                expires_at: new Date(Date.now() + 300_000).toISOString(),
+              },
+            },
+          } as never;
+        }
         seenBridgeJtis.add(payload.jti as string);
         const now = Math.floor(Date.now() / 1000);
         let claims: Record<string, unknown> = {
@@ -10144,8 +10176,21 @@ await section(
           kid: "ccid-k1",
         };
         const token = await new joseB.SignJWT(claims)
-          .setProtectedHeader({ alg: signer.alg, kid: signer.kid, typ: "JWT" })
+          .setProtectedHeader({
+            alg: signer.alg,
+            kid: signer.kid,
+            typ: "JWT",
+            ...(headerExtra ?? {}),
+          })
           .sign(signer.key);
+        answersByBridgeJti.set(payload.jti as string, {
+          body: JSON.stringify(body),
+          token,
+        });
+        if (lostAfterSend) {
+          lostAfterSend = false;
+          throw new apiClientsB.InvestorApiTransportError("lost", 1);
+        }
         return {
           status: 200,
           correlationId: "ccid_x",
@@ -10729,51 +10774,133 @@ await section(
     );
 
     await section(
-      "identity result: wrong iss/aud, expired, HS256, unknown kid, unverified or mismatched email, malformed sub/sid/jti, missing claims, future auth_time — all refused with NO session; a replayed jti is refused across instances and after restart",
+      "identity result (closed): wrong iss/aud/alg/kid, expired, invalid lifetime, future iat, fractional NumericDate, extra claim, extra protected-header field, duplicate/empty/malformed amr, unverified or mismatched email, mismatched sid, mismatched auth_time, malformed sub/sid/jti, missing claims — all refused with NO session; a replayed jti is refused across instances and after restart",
       async () => {
         const secret = new TextEncoder().encode("k".repeat(48));
-        const cases: Array<
-          [
-            string,
-            (c: Record<string, unknown>) => Record<string, unknown>,
-            typeof resultSigner,
-          ]
-        > = [
+        type Case = [
+          string,
+          (c: Record<string, unknown>) => Record<string, unknown>,
+          typeof resultSigner,
+          Record<string, unknown> | null,
+        ];
+        const cases: Case[] = [
           [
             "iss",
             (c) => ({ ...c, iss: "urn:refinity:identity-ccid:prod" }),
+            null,
             null,
           ],
           [
             "aud",
             (c) => ({ ...c, aud: "urn:refinity:frontend-bff:prod" }),
             null,
+            null,
           ],
           [
             "expired",
             (c) => ({
               ...c,
-              exp: (c.iat as number) - 120,
-              nbf: (c.iat as number) - 600,
               iat: (c.iat as number) - 600,
+              nbf: (c.iat as number) - 600,
+              exp: (c.iat as number) - 300,
             }),
             null,
+            null,
           ],
-          ["hs256", (c) => c, { key: secret, alg: "HS256", kid: "ccid-k1" }],
+          [
+            "lifetime > 300",
+            (c) => ({ ...c, exp: (c.iat as number) + 301 }),
+            null,
+            null,
+          ],
+          [
+            "exp before iat",
+            (c) => ({ ...c, exp: (c.iat as number) - 1 }),
+            null,
+            null,
+          ],
+          [
+            "future iat",
+            (c) => ({
+              ...c,
+              iat: (c.iat as number) + 120,
+              nbf: (c.iat as number) + 120,
+              exp: (c.iat as number) + 400,
+            }),
+            null,
+            null,
+          ],
+          [
+            "fractional iat",
+            (c) => ({ ...c, iat: (c.iat as number) + 0.5 }),
+            null,
+            null,
+          ],
+          [
+            "fractional exp",
+            (c) => ({ ...c, exp: (c.exp as number) - 0.25 }),
+            null,
+            null,
+          ],
+          [
+            "fractional auth_time",
+            (c) => ({ ...c, auth_time: (c.auth_time as number) + 0.5 }),
+            null,
+            null,
+          ],
+          ["extra claim acr", (c) => ({ ...c, acr: "urn:x" }), null, null],
+          [
+            "extra claim account_id",
+            (c) => ({ ...c, account_id: "acct_x_00000001" }),
+            null,
+            null,
+          ],
+          ["extra header field", (c) => c, null, { cty: "JWT" }],
+          ["extra header field x5t", (c) => c, null, { x5t: "abc" }],
+          [
+            "hs256",
+            (c) => c,
+            { key: secret, alg: "HS256", kid: "ccid-k1" },
+            null,
+          ],
           [
             "unknown kid",
             (c) => c,
             { key: backendPrivateKey, alg: "ES256", kid: "ccid-k9" },
+            null,
           ],
-          ["email_verified", (c) => ({ ...c, email_verified: false }), null],
+          [
+            "email_verified",
+            (c) => ({ ...c, email_verified: false }),
+            null,
+            null,
+          ],
           [
             "email mismatch",
             (c) => ({ ...c, email: "someone-else@example.com" }),
             null,
+            null,
           ],
-          ["sub is an email", (c) => ({ ...c, sub: "dave@example.com" }), null],
-          ["sid", (c) => ({ ...c, sid: "s" }), null],
-          ["jti", (c) => ({ ...c, jti: "!" }), null],
+          [
+            "sub is an email",
+            (c) => ({ ...c, sub: "dave@example.com" }),
+            null,
+            null,
+          ],
+          ["sid malformed", (c) => ({ ...c, sid: "s" }), null, null],
+          [
+            "sid mismatch",
+            (c) => ({ ...c, sid: "sid_" + "9".repeat(32) }),
+            null,
+            null,
+          ],
+          [
+            "auth_time mismatch",
+            (c) => ({ ...c, auth_time: (c.auth_time as number) - 1 }),
+            null,
+            null,
+          ],
+          ["jti", (c) => ({ ...c, jti: "!" }), null, null],
           [
             "missing auth_time",
             (c) => {
@@ -10781,24 +10908,35 @@ await section(
               return r;
             },
             null,
-          ],
-          [
-            "future auth_time",
-            (c) => ({ ...c, auth_time: (c.iat as number) + 3600 }),
             null,
           ],
-          ["amr empty", (c) => ({ ...c, amr: [] }), null],
+          [
+            "missing sid",
+            (c) => {
+              const { sid: _s, ...r } = c;
+              return r;
+            },
+            null,
+            null,
+          ],
+          ["amr empty", (c) => ({ ...c, amr: [] }), null, null],
+          [
+            "amr duplicate",
+            (c) => ({ ...c, amr: ["email_link", "email_link"] }),
+            null,
+            null,
+          ],
+          ["amr not strings", (c) => ({ ...c, amr: [1] }), null, null],
         ];
-        for (const [name, override, signer] of cases) {
+        let n = 0;
+        for (const [name, override, signer, hdr] of cases) {
           const before = sessionsInStore();
           resultOverride = override;
           resultSigner = signer;
+          headerExtra = hdr;
           try {
             const completed = await completedLogin(
-              `neg-${cases.indexOf([name, override, signer] as never)}-dave@example.com`.replace(
-                /-1-/,
-                `-${String(name.length)}-`,
-              ),
+              `neg-${String(n++)}-dave@example.com`,
             );
             await assert.rejects(
               sessionSeam.establishConnectedSession({
@@ -10810,9 +10948,18 @@ await section(
                 e.reason === "identity_result_rejected",
               `identity result with bad ${name} must be refused`,
             );
+            const attempt = await attempts.getExchangeAttempt(
+              completed.login.loginId,
+            );
+            assert.equal(
+              attempt?.status,
+              "failed",
+              `${name}: attempt is failed, not recoverable`,
+            );
           } finally {
             resultOverride = null;
             resultSigner = null;
+            headerExtra = null;
           }
           assert.equal(
             sessionsInStore(),
@@ -10820,8 +10967,19 @@ await section(
             `no session after bad ${name}`,
           );
         }
-        // Replay: the same result token presented twice.
-        let captured = "";
+        // A well-formed result with amr omitted is VALID (amr is optional).
+        resultOverride = (c) => {
+          const { amr: _m, ...r } = c;
+          return r;
+        };
+        const okNoAmr = await sessionSeam.establishConnectedSession({
+          completed: await completedLogin("noamr-eve@example.com"),
+          correlationId: "c_noamr",
+        });
+        resultOverride = null;
+        assert.ok(okNoAmr.cookies[0]?.value);
+        // Replay: the same result JTI presented twice → second session refused,
+        // on another instance and after a restart (shared backing).
         resultOverride = (c) => ({
           ...c,
           jti: "idr_replay_fixed_0000000000000001",
@@ -10831,9 +10989,8 @@ await section(
           completed: completedA,
           correlationId: "c_r1",
         });
-        captured = first.cookies[0]!.value;
-        assert.ok(captured);
-        cs.setConnectedStoreFactoryForTests(instance()); // "another instance / after restart"
+        assert.ok(first.cookies[0]?.value);
+        cs.setConnectedStoreFactoryForTests(instance()); // another instance / after restart
         const completedB = await completedLogin("replay-erin@example.com");
         const before = sessionsInStore();
         await assert.rejects(
@@ -10845,9 +11002,12 @@ await section(
             e instanceof flow.LoginRefusedError &&
             e.reason === "identity_result_rejected",
         );
-        assert.equal(sessionsInStore(), before);
+        assert.equal(
+          sessionsInStore(),
+          before,
+          "same identity-result JTI never yields a second session",
+        );
         resultOverride = null;
-        // Direct verify: jti already consumed → rejected even with a valid signature.
         const now = Math.floor(Date.now() / 1000);
         const dup = await new joseB.SignJWT({
           iss: "urn:refinity:identity-ccid:dev",
@@ -10862,12 +11022,16 @@ await section(
           email: "replay-erin@example.com",
           email_verified: true,
         })
-          .setProtectedHeader({ alg: "ES256", kid: "ccid-k1" })
+          .setProtectedHeader({ alg: "ES256", kid: "ccid-k1", typ: "JWT" })
           .sign(backendPrivateKey);
         await assert.rejects(
           exchange.verifyIdentityResult({
             token: dup,
-            expectedEmail: "replay-erin@example.com",
+            binding: {
+              email: "replay-erin@example.com",
+              authTime: now - 5,
+              sid: "sid_00000000000000000000000000000001",
+            },
             correlationId: "c_dup",
           }),
           /jti replay/,
@@ -10876,64 +11040,249 @@ await section(
     );
 
     await section(
-      "bridge assertion single use: a minted assertion is recorded before it is sent and can never be presented twice; exchange unavailability (upstream unset, client failure, remote JWKS with the switch off) → 503-class error, no session, login consumed",
+      "exchange recovery (alpha.3 step 5): a lost/ambiguous answer keeps the login recoverable; the IDENTICAL stored request is re-sent (no re-mint); changed state/challenge/nonce/redirect/network_context are refused; a recovered result yields exactly one session; recovery works on a second instance and after restart; an expired assertion cannot be recovered; unavailability paths stay non-recoverable",
       async () => {
-        const completed = await completedLogin("once-frank@example.com");
-        const sid = sessions.newSessionId();
-        const minted = await bridge.mintBridgeAssertion({
-          identity: completed.identity,
-          sub: completed.sub,
-          sid,
-        });
-        const args = {
-          bridge: minted,
-          bridgeSub: completed.sub,
-          login: completed.login,
-          email: completed.identity.email,
-          correlationId: "c_once",
-        };
-        const first = await exchange.exchangeIdentity(args);
-        assert.ok(first.sub);
-        await assert.rejects(
-          exchange.exchangeIdentity(args),
-          /already presented/,
-        );
-        // Client failure → unavailable, no session.
-        exchangeFailure = new Error("upstream 503");
-        const beforeFail = sessionsInStore();
+        const attemptCollection = () =>
+          backing.get("us-connected-test--connected-exchange-attempt") as
+            | Map<
+                string,
+                import("../apps/web/src/lib/connected-store/exchange-attempt.ts").ExchangeAttemptRecord
+              >
+            | undefined;
+        exchangeCalls.length = 0;
+        const completed = await completedLogin("recover-frank@example.com");
+        const beforeSessions = sessionsInStore();
+        lostAfterSend = true;
         await assert.rejects(
           sessionSeam.establishConnectedSession({
-            completed: await completedLogin("fail-gina@example.com"),
-            correlationId: "c_f",
+            completed,
+            correlationId: "c_lost",
           }),
-          sessionSeam.IdentityExchangeUnavailableError,
+          (e: unknown) =>
+            e instanceof chain.ConnectedSessionRecoverableError &&
+            e instanceof sessionSeam.IdentityExchangeUnavailableError &&
+            e.recoverable === true,
+        );
+        assert.equal(
+          sessionsInStore(),
+          beforeSessions,
+          "no session from a lost answer",
+        );
+        const attempt = await attempts.getExchangeAttempt(
+          completed.login.loginId,
+        );
+        assert.equal(attempt?.status, "sent");
+        assert.equal(attempt?.attempts, 1);
+        assert.ok(
+          !(await replay.isJtiConsumed(
+            "bridge-assertion-jti",
+            attempt!.bridgeJti,
+          )),
+          "the bridge assertion is NOT consumed before a successful exchange",
+        );
+        for (const field of [
+          "state",
+          "challenge",
+          "nonce",
+          "redirectUri",
+          "networkContext",
+        ] as const) {
+          const altered = {
+            ...completed,
+            login: {
+              ...completed.login,
+              [field]:
+                field === "redirectUri"
+                  ? "https://bff-dev.refi.trading/us/auth/other"
+                  : "A".repeat(43),
+            },
+          };
+          const sent = exchangeCalls.length;
+          await assert.rejects(
+            sessionSeam.establishConnectedSession({
+              completed: altered,
+              correlationId: "c_alt",
+            }),
+            (e: unknown) =>
+              e instanceof flow.LoginRefusedError &&
+              e.reason === "state_mismatch",
+            `changed ${field} must be refused`,
+          );
+          assert.equal(
+            exchangeCalls.length,
+            sent,
+            `changed ${field}: nothing re-sent`,
+          );
+        }
+        await assert.rejects(
+          chain.recoverConnectedSession({
+            loginId: completed.login.loginId,
+            state: "B".repeat(43),
+            correlationId: "c_alt2",
+          }),
+          (e: unknown) =>
+            e instanceof flow.LoginRefusedError &&
+            e.reason === "state_mismatch",
+        );
+        cs.setConnectedStoreFactoryForTests(instance());
+        const recovered = await chain.recoverConnectedSession({
+          loginId: completed.login.loginId,
+          state: completed.login.state,
+          correlationId: "c_rec",
+        });
+        assert.ok(recovered?.cookies[0]?.value, "recovered session cookie");
+        assert.equal(exchangeCalls.length, 2);
+        assert.deepEqual(
+          exchangeCalls[0],
+          exchangeCalls[1],
+          "byte-identical request re-sent; no re-mint",
+        );
+        assert.equal(
+          sessionsInStore(),
+          beforeSessions + 1,
+          "exactly one session",
+        );
+        const done = await attempts.getExchangeAttempt(completed.login.loginId);
+        assert.equal(done?.status, "completed");
+        assert.equal(done?.attempts, 2);
+        assert.ok(
+          await replay.isJtiConsumed("bridge-assertion-jti", done!.bridgeJti),
+          "consumed after success",
+        );
+        const { claims } = decode(recovered!.cookies[0]!.value);
+        assert.equal(
+          claims.sid,
+          attempt?.sid,
+          "session sid is the bridge sid the result retained",
+        );
+        cs.setConnectedStoreFactoryForTests(instance());
+        const again = await chain.recoverConnectedSession({
+          loginId: completed.login.loginId,
+          state: completed.login.state,
+          correlationId: "c_rec2",
+        });
+        assert.equal(decode(again!.cookies[0]!.value).claims.sid, claims.sid);
+        assert.equal(
+          sessionsInStore(),
+          beforeSessions + 1,
+          "still exactly one session",
+        );
+        assert.equal(
+          exchangeCalls.length,
+          2,
+          "nothing re-sent after completion",
+        );
+        const same = await sessionSeam.establishConnectedSession({
+          completed,
+          correlationId: "c_same",
+        });
+        assert.equal(decode(same.cookies[0]!.value).claims.sid, claims.sid);
+        assert.equal(sessionsInStore(), beforeSessions + 1);
+        exchangeFailure = new apiClientsB.InvestorApiTransportError(
+          "connect",
+          1,
+        );
+        const c2 = await completedLogin("recover-gina@example.com");
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed: c2,
+            correlationId: "c_l2",
+          }),
+          chain.ConnectedSessionRecoverableError,
         );
         exchangeFailure = null;
-        assert.equal(sessionsInStore(), beforeFail);
-        // No fixture client and no upstream configured → unavailable BEFORE any network.
+        const r2 = await chain.recoverConnectedSession({
+          loginId: c2.login.loginId,
+          state: c2.login.state,
+          correlationId: "c_l2r",
+        });
+        assert.ok(r2?.cookies[0]?.value);
+        const c3 = await completedLogin("recover-hana@example.com");
+        lostAfterSend = true;
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed: c3,
+            correlationId: "c_l3",
+          }),
+          chain.ConnectedSessionRecoverableError,
+        );
+        const rec3 = attemptCollection()?.get(c3.login.loginId);
+        assert.ok(rec3);
+        attemptCollection()!.set(c3.login.loginId, {
+          ...rec3!,
+          bridgeExp: Math.floor(Date.now() / 1000) - 1,
+        });
+        await assert.rejects(
+          chain.recoverConnectedSession({
+            loginId: c3.login.loginId,
+            state: c3.login.state,
+            correlationId: "c_l3r",
+          }),
+          (e: unknown) =>
+            e instanceof flow.LoginRefusedError && e.reason === "expired",
+        );
+        assert.equal(
+          (await attempts.getExchangeAttempt(c3.login.loginId))?.status,
+          "failed",
+        );
+        exchangeFailure = new apiClientsB.InvestorApiError({
+          status: 422,
+          code: "VALIDATION_ERROR",
+          message: "x",
+          correlationId: "c",
+        });
+        const c4 = await completedLogin("refused-iris@example.com");
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed: c4,
+            correlationId: "c_l4",
+          }),
+          (e: unknown) =>
+            e instanceof flow.LoginRefusedError &&
+            e.reason === "identity_result_rejected",
+        );
+        exchangeFailure = null;
+        assert.equal(
+          (await attempts.getExchangeAttempt(c4.login.loginId))?.status,
+          "failed",
+        );
+        assert.equal(
+          await chain
+            .recoverConnectedSession({
+              loginId: c4.login.loginId,
+              state: c4.login.state,
+              correlationId: "c_l4r",
+            })
+            .catch((e: unknown) => (e as Error).message),
+          "login refused: already_consumed",
+        );
         exchange.setIdentityExchangeClientForTests(null);
         await assert.rejects(
           sessionSeam.establishConnectedSession({
-            completed: await completedLogin("nocfg-hana@example.com"),
+            completed: await completedLogin("nocfg-jane@example.com"),
             correlationId: "c_n",
           }),
-          sessionSeam.IdentityExchangeUnavailableError,
+          (e: unknown) =>
+            e instanceof sessionSeam.IdentityExchangeUnavailableError &&
+            !(e instanceof chain.ConnectedSessionRecoverableError),
         );
         exchange.setIdentityExchangeClientForTests(fakeExchange);
-        // Remote backend JWKS is refused while REFI_INVESTOR_API_ALLOW_REMOTE is off.
         exchange.setIdentityResultKeySetForTests(null);
         await assert.rejects(
           exchange.verifyIdentityResult({
             token: "a.b.c",
-            expectedEmail: "x@example.com",
+            binding: {
+              email: "x@example.com",
+              authTime: 1,
+              sid: "sid_" + "0".repeat(32),
+            },
             correlationId: "c_rm",
           }),
-          /remote backend JWKS is not accepted/,
+          /remote backend JWKS is not accepted|not JSON|compact JWS/,
         );
         exchange.setIdentityResultKeySetForTests(
           backendPublic as import("jose").JSONWebKeySet,
         );
-        assert.equal(sessionsInStore(), beforeFail);
       },
     );
 
@@ -10987,6 +11336,7 @@ await section(
             ctx.authTime === provider.authAt() &&
             ctx.source === "backend",
         );
+        const beforeAgain = sessionsInStore();
         const again = await completeRoute.POST(
           reqB(
             "/api/v1/auth/login/complete",
@@ -10994,8 +11344,62 @@ await section(
             { cookie: `us_login_v1=${loginCookie}`, ip },
           ),
         );
-        assert.equal(again.status, 401);
-        assert.equal(cookiesOf(again, "us_session_v1").length, 0);
+        assert.equal(
+          again.status,
+          200,
+          "same login cookie recovers the SAME session",
+        );
+        assert.equal(
+          decode(cookiesOf(again, "us_session_v1")[0] ?? "").claims.sid,
+          decode(sessionCookie).claims.sid,
+        );
+        assert.equal(sessionsInStore(), beforeAgain, "never a second session");
+        const ip2 = nextIp();
+        const start2 = await startRoute.POST(
+          reqB(
+            "/api/v1/auth/login/start",
+            { email: "e2e-kate@example.com", method: "email_link" },
+            { ip: ip2 },
+          ),
+        );
+        const loginCookie2 = cookiesOf(start2, "us_login_v1")[0]!;
+        const token2 = provider.lastToken();
+        lostAfterSend = true;
+        const lost = await completeRoute.POST(
+          reqB(
+            "/api/v1/auth/login/complete",
+            { token: token2 },
+            { cookie: `us_login_v1=${loginCookie2}`, ip: ip2 },
+          ),
+        );
+        assert.equal(lost.status, 503);
+        const lostBody = (await lost.json()) as {
+          code?: string;
+          recoverable?: boolean;
+        };
+        assert.equal(lostBody.code, "exchange_unavailable");
+        assert.equal(lostBody.recoverable, true);
+        assert.ok(
+          !/us_login_v1=;/.test(lost.headers.get("set-cookie") ?? ""),
+          "login cookie kept for recovery",
+        );
+        assert.equal(cookiesOf(lost, "us_session_v1").length, 0);
+        const sentBefore = exchangeCalls.length;
+        const rec = await completeRoute.POST(
+          reqB(
+            "/api/v1/auth/login/complete",
+            { token: "x".repeat(32) },
+            { cookie: `us_login_v1=${loginCookie2}`, ip: ip2 },
+          ),
+        );
+        assert.equal(rec.status, 200, "recovered through the route");
+        assert.ok(cookiesOf(rec, "us_session_v1")[0]);
+        assert.equal(exchangeCalls.length, sentBefore + 1);
+        assert.deepEqual(
+          exchangeCalls[sentBefore],
+          exchangeCalls[sentBefore - 1],
+          "identical request",
+        );
         // A tampered cookie (sub swapped) never resolves.
         const [h, , s] = sessionCookie.split(".");
         const { claims } = decode(sessionCookie);
@@ -11032,7 +11436,7 @@ await section(
     );
 
     await section(
-      "source guards: the bridge never imports the Investor API signer state; the exchange builds its body from the login record and consumes jtis durably; the chain order is bridge → exchange → verify → session; auth-context reads auth_time from the durable record",
+      "source guards: the bridge never imports the Investor API signer state; the exchange sends only the stored attempt request, consumes the result jti before any session and the bridge jti only AFTER success; verification checks structure before signature; the chain order is bridge → attempt → send → verify → session; auth-context reads auth_time from the durable record",
       async () => {
         const strip = (f: string) =>
           readFileSync(join(REPO_ROOT, f), "utf8").replace(
@@ -11043,12 +11447,6 @@ await section(
         assert.ok(
           !/user-assertion/.test(b),
           "bridge does not import the Investor API assertion module",
-        );
-        assert.ok(
-          /BRIDGE_ASSERTION_PRIVATE_KEY_JWK/.test(b) &&
-            !/BFF_ASSERTION_PRIVATE_KEY_JWK[^\n]*parseJwk\(env\.BFF_ASSERTION_PRIVATE_KEY_JWK[^\n]*"jwk"\)/.test(
-              b,
-            ),
         );
         assert.ok(
           !/ALLOW_EPHEMERAL|generateKeyPair/.test(b),
@@ -11063,10 +11461,18 @@ await section(
         );
         const x = strip("apps/web/src/lib/auth/identity-exchange.ts");
         assert.ok(
-          /consumeJtiOnce\("bridge-assertion-jti"/.test(x) &&
-            /consumeJtiOnce\("identity-result-jti"/.test(x),
+          !/consumeJtiOnce\("bridge-assertion-jti"/.test(x),
+          "the exchange never consumes the bridge jti (recovery must stay possible)",
         );
-        assert.ok(/call\("exchangeIdentity"/.test(x));
+        assert.ok(/consumeJtiOnce\("identity-result-jti"/.test(x));
+        assert.ok(
+          /body: \{ \.\.\.attempt\.request \}/.test(x),
+          "the stored attempt request is sent exactly",
+        );
+        assert.ok(
+          !/mintBridgeAssertion/.test(x),
+          "the exchange never re-mints",
+        );
         assert.ok(
           !/acquisition|invitation_token/.test(
             x.replace(/[^\n]*omitted[^\n]*/g, ""),
@@ -11076,20 +11482,55 @@ await section(
         assert.ok(
           /createRemoteJWKSet\(new URL\(url\)/.test(x) &&
             !/payload\.jku|header\.jku|jwks_uri/.test(x),
-          "JWKS URL is pinned, never taken from the token",
+          "JWKS URL is pinned",
+        );
+        const v = x.slice(
+          x.indexOf("export async function verifyIdentityResult"),
+        );
+        const vOrder = [
+          "unexpected claim",
+          "jwtVerify(",
+          "integerClaim(payload",
+          "amr duplicates",
+          "auth_time mismatch",
+          "sid mismatch",
+          'consumeJtiOnce("identity-result-jti"',
+        ].map((k) => v.indexOf(k));
+        assert.ok(
+          vOrder.every(
+            (i, n) => i >= 0 && (n === 0 || i > (vOrder[n - 1] as number)),
+          ),
+          "structure → signature → shapes → binding → jti",
+        );
+        assert.ok(
+          !/Math\.floor\(v\)|Math\.floor\(payload/.test(v),
+          "no NumericDate is floored into validity",
         );
         const c = strip("apps/web/src/lib/auth/connected-login.ts");
-        const order = [
-          "mintBridgeAssertion(",
-          "exchangeIdentity(",
+        const fin = c.slice(
+          c.indexOf("async function finish"),
+          c.indexOf("async function cookieFor"),
+        );
+        const fOrder = [
+          "sendIdentityExchange(",
+          "verifyIdentityResult(",
+          'consumeJtiOnce("bridge-assertion-jti"',
           "createConnectedSession(",
-          "mintConnectedSessionCookie(",
-        ].map((s) => c.indexOf(s));
+        ].map((k) => fin.indexOf(k));
         assert.ok(
-          order.every(
-            (i, n) => i >= 0 && (n === 0 || i > (order[n - 1] as number)),
+          fOrder.every(
+            (i, n) => i >= 0 && (n === 0 || i > (fOrder[n - 1] as number)),
           ),
-          "chain order is fixed",
+          "send → verify → consume bridge jti → session",
+        );
+        const est = c.slice(c.indexOf("establishConnectedSessionViaExchange"));
+        assert.ok(
+          est.indexOf("mintBridgeAssertion(") <
+            est.indexOf("openExchangeAttempt("),
+        );
+        assert.ok(
+          /sid: result\.sid/.test(fin),
+          "the session persists the result's sid",
         );
         const a = strip("apps/web/src/lib/bff/auth.ts");
         assert.ok(
@@ -11187,6 +11628,8 @@ await section(
   function fakeUpstreamAtt(opts: {
     receipts?: unknown[];
     attestationStatus?: number;
+    attestationError?: { status: number; code: string };
+    backendStatus?: "ACCEPTED" | "SUPERSEDED" | "EXPIRED";
     attestationBody?: (req: Record<string, unknown>) => unknown;
     failAttestationTransport?: boolean;
   }) {
@@ -11221,6 +11664,26 @@ await section(
       ) {
         if (opts.failAttestationTransport) throw new TypeError("fetch failed");
         const req = body as Record<string, unknown>;
+        if (opts.attestationError) {
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: opts.attestationError.code,
+                message: "x",
+                correlation_id: "corr_att",
+              },
+            }),
+            {
+              status: opts.attestationError.status,
+              headers: {
+                ...headersAtt,
+                ...(opts.attestationError.status === 429
+                  ? { "Retry-After": "7" }
+                  : {}),
+              },
+            },
+          );
+        }
         const status = opts.attestationStatus ?? 201;
         if (status >= 400) {
           return new Response(
@@ -11240,7 +11703,7 @@ await section(
               ...req,
               account_id: ACCOUNT,
               payload_sha256: "b".repeat(64),
-              status: "ACCEPTED",
+              status: opts.backendStatus ?? "ACCEPTED",
               received_at: "2026-09-10T00:00:00Z",
               authorization: {
                 expires_at: null,
@@ -11555,68 +12018,183 @@ await section(
   );
 
   await section(
-    "attestation chain: a backend refusal (409 COMPLIANCE_ATTESTATION_REPLAYED) is recorded as `rejected` with the contract code and is never relabelled acknowledged; a transport failure leaves the record at `submitted` and the retry reuses the SAME Idempotency-Key",
+    "attestation answers are partitioned: 201 carries the backend's CANONICAL status (ACCEPTED, SUPERSEDED) and the authorization projection is never converted into frontend authority; 4xx envelopes are terminal `rejected` with the contract code; 429 / 503 / lost answers keep the record `submitted` (no auto-retry) and an identical explicit recovery reuses the SAME Idempotency-Key, also after restart; an older decision's late answer never replaces a newer acknowledged decision",
     async () => {
-      const { client, posts } = fakeUpstreamAtt({ attestationStatus: 409 });
-      const v = nextSeq();
-      const out = await submission.submitComplianceProfileAttestation(client, {
-        accountId: ACCOUNT,
-        evidence: evidenceFor(v, TRUSTED),
-        correlationId: "c_att_4",
-      });
-      assert.equal(out.kind, "rejected");
-      if (out.kind !== "rejected") return;
-      assert.equal(out.code, "COMPLIANCE_ATTESTATION_REPLAYED");
-      assert.equal(out.status, 409);
-      assert.equal(out.record.state, "rejected");
-      assert.equal(out.record.backendAttestationId, undefined);
-      assert.equal(posts().length, 1);
-      const after = await submission.submitComplianceProfileAttestation(
+      for (const bs of ["ACCEPTED", "SUPERSEDED"] as const) {
+        const { client } = fakeUpstreamAtt({ backendStatus: bs });
+        const out = await submission.submitComplianceProfileAttestation(
+          client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(nextSeq(), TRUSTED),
+            correlationId: "c_bs",
+          },
+        );
+        assert.equal(out.kind, "acknowledged");
+        if (out.kind !== "acknowledged") return;
+        assert.equal(out.backendStatus, bs);
+        assert.equal(out.record.backendStatus, bs);
+        assert.equal(out.record.backendPayloadSha256, "b".repeat(64));
+        assert.equal(out.record.backendReceivedAt, "2026-09-10T00:00:00Z");
+        assert.ok(
+          !("authorization" in out.record),
+          "authorization projection never stored",
+        );
+        assert.ok(
+          !JSON.stringify(out.record).includes("PENDING") &&
+            !JSON.stringify(out.record).includes("AUTHORIZED"),
+        );
+      }
+      for (const [status, code] of [
+        [409, "COMPLIANCE_ATTESTATION_REPLAYED"],
+        [422, "VALIDATION_ERROR"],
+        [404, "RESOURCE_NOT_FOUND"],
+        [409, "ATTESTATION_SEQUENCE_CONFLICT"],
+      ] as const) {
+        const { client, posts } = fakeUpstreamAtt({
+          attestationError: { status, code },
+        });
+        const v = nextSeq();
+        const out = await submission.submitComplianceProfileAttestation(
+          client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_4",
+          },
+        );
+        assert.equal(out.kind, "rejected", `${String(status)} ${code}`);
+        if (out.kind !== "rejected") return;
+        assert.equal(out.code, code);
+        assert.equal(out.record.state, "rejected");
+        assert.equal(out.record.backendAttestationId, undefined);
+        assert.equal(posts().length, 1);
+        const after = await submission.submitComplianceProfileAttestation(
+          fakeUpstreamAtt({}).client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_4b",
+          },
+        );
+        assert.equal(after.kind, "terminal");
+      }
+      const retryables: Array<
+        [
+          Parameters<typeof fakeUpstreamAtt>[0],
+          "backend" | "transport",
+          number | null,
+          string | null,
+        ]
+      > = [
+        [
+          { attestationError: { status: 429, code: "RATE_LIMITED" } },
+          "backend",
+          429,
+          "RATE_LIMITED",
+        ],
+        [
+          { attestationError: { status: 503, code: "SERVICE_UNAVAILABLE" } },
+          "backend",
+          503,
+          "SERVICE_UNAVAILABLE",
+        ],
+        [{ failAttestationTransport: true }, "transport", null, null],
+      ];
+      for (const [opts, cause, status, code] of retryables) {
+        const v = nextSeq();
+        const broken = fakeUpstreamAtt(opts);
+        const out = await submission.submitComplianceProfileAttestation(
+          broken.client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_4c",
+          },
+        );
+        assert.equal(out.kind, "retryable", `${cause} ${String(status)}`);
+        if (out.kind !== "retryable") return;
+        assert.equal(out.cause, cause);
+        assert.equal(out.status, status);
+        assert.equal(out.code, code);
+        if (status === 429) assert.equal(out.retryAfterSeconds, 7);
+        assert.equal(out.record.state, "submitted", "record stays submitted");
+        assert.equal(out.record.lastRetryable?.kind, cause);
+        assert.equal(
+          out.record.history.filter((h) => h.state === "submitted").length,
+          2,
+          "retryable answer is recorded on the submitted record",
+        );
+        assert.equal(broken.posts().length, 1, "no auto-retry");
+        const key1 = out.record.idempotencyKey;
+        assert.ok(key1);
+        const built = mapping.buildComplianceProfileAttestationRequest(
+          evidenceFor(v, TRUSTED),
+        );
+        assert.ok(built.ok);
+        if (!built.ok) return;
+        const rec = await entity.getAttestationSubmission(
+          ACCOUNT,
+          built.request.attestation_id,
+        );
+        assert.equal(
+          rec?.idempotencyKey,
+          key1,
+          "key survives on disk (restart)",
+        );
+        const ok = fakeUpstreamAtt({});
+        const recovered = await submission.submitComplianceProfileAttestation(
+          ok.client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_4d",
+          },
+        );
+        assert.equal(recovered.kind, "acknowledged");
+        assert.equal(
+          ok.posts()[0]?.headers.get("Idempotency-Key"),
+          key1,
+          "identical key on recovery",
+        );
+        assert.deepEqual(
+          ok.posts()[0]?.body,
+          broken.posts()[0]?.body,
+          "identical body on recovery",
+        );
+        assert.equal(ok.posts().length, 1);
+      }
+      const newer = nextSeq() + 1000;
+      const older = newer - 1;
+      const n1 = await submission.submitComplianceProfileAttestation(
         fakeUpstreamAtt({}).client,
         {
           accountId: ACCOUNT,
-          evidence: evidenceFor(v, TRUSTED),
-          correlationId: "c_att_4b",
+          evidence: evidenceFor(newer, TRUSTED),
+          correlationId: "c_new",
         },
       );
-      assert.equal(after.kind, "terminal");
-      // Transport failure mid-submit.
-      const v2 = nextSeq();
-      const broken = fakeUpstreamAtt({ failAttestationTransport: true });
-      await assert.rejects(
-        submission.submitComplianceProfileAttestation(broken.client, {
-          accountId: ACCOUNT,
-          evidence: evidenceFor(v2, TRUSTED),
-          correlationId: "c_att_4c",
-        }),
-      );
-      const built = mapping.buildComplianceProfileAttestationRequest(
-        evidenceFor(v2, TRUSTED),
-      );
-      assert.ok(built.ok);
-      if (!built.ok) return;
-      const rec = await entity.getAttestationSubmission(
-        ACCOUNT,
-        built.request.attestation_id,
-      );
-      assert.equal(
-        rec?.state,
-        "submitted",
-        "in-flight call is visible in the record",
-      );
-      const key1 = rec?.idempotencyKey;
-      const ok = fakeUpstreamAtt({});
-      const retried = await submission.submitComplianceProfileAttestation(
-        ok.client,
+      assert.equal(n1.kind, "acknowledged");
+      if (n1.kind === "acknowledged") assert.equal(n1.latestForAccount, true);
+      const o1 = await submission.submitComplianceProfileAttestation(
+        fakeUpstreamAtt({ backendStatus: "SUPERSEDED" }).client,
         {
           accountId: ACCOUNT,
-          evidence: evidenceFor(v2, TRUSTED),
-          correlationId: "c_att_4d",
+          evidence: evidenceFor(older, TRUSTED),
+          correlationId: "c_old",
         },
       );
-      assert.equal(retried.kind, "acknowledged");
-      assert.equal(ok.posts()[0]?.headers.get("Idempotency-Key"), key1);
-      assert.equal(broken.posts()[0]?.headers.get("Idempotency-Key"), key1);
+      assert.equal(o1.kind, "acknowledged");
+      if (o1.kind === "acknowledged") {
+        assert.equal(
+          o1.latestForAccount,
+          false,
+          "older answer does not move the pointer",
+        );
+        assert.equal(o1.record.state, "acknowledged");
+      }
+      const latest = await entity.getLatestAcknowledgedDecision(ACCOUNT);
+      assert.equal(latest?.decisionSequence, newer);
     },
   );
 

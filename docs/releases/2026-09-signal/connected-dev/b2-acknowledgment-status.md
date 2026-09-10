@@ -1,0 +1,17 @@
+# B2 — acknowledgment / continuation status (frontend side)
+
+Status date: 2026-09-10 (founder correction pass). Contract: v1.1.0-alpha.3.
+
+Daniel supplied B2 in alpha.3 (corrected error profiles, `preference_mutation`,
+`AcknowledgmentContinuation`, MIGRATION.md §5, examples `preference_confirmation`).
+Frontend B2 work is **NOT fully complete**. Exact state:
+
+| Item                                                                                                                                                                                                                                                  | State            | Proof                                                                                                                                                                                                                                        |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client retains validated `error.continuation` on `InvestorApiError`                                                                                                                                                                                   | **DONE**         | `packages/api-clients/src/investor-api/errors.ts`, `client.ts` `failureFromResponse`; `investor-api-alpha3.test.ts` ("RETAINS the validated continuation exactly", "null (never inferred)", "malformed continuation is a contract mismatch") |
+| Preference BFF continuation pass-through (409 → response `data.continuation`; 403 ACCOUNT_AUTHORIZATION_REQUIRED forwarded as a backend decision)                                                                                                     | **DONE**         | `apps/web/app/api/v1/investor/preferences/route.ts`                                                                                                                                                                                          |
+| Preference user confirmation flow (initial PATCH → 409 → display exact disclosure/version/hash → actual consent → same desired fields + `continuation_ref` + `consent_receipt_id` + current If-Match + NEW Idempotency-Key → 202 → canonical re-read) | **NOT COMPLETE** | No BFF route or UI implements the confirmation PATCH; no test exercises the sequence end to end. Only the contract example's shape is asserted (`investor-api-alpha3.test.ts` "preference confirmation example sequence is representable").  |
+| Disconnect acknowledgment adapter and confirmation flow (`disconnectBrokerageConnection`, `AcknowledgmentConfirmationRequest`)                                                                                                                        | **NOT COMPLETE** | No adapter exists (Appendix C row 23 not wired).                                                                                                                                                                                             |
+
+Both NOT COMPLETE items are left for the next authorized slice; nothing in the
+current branches claims them.

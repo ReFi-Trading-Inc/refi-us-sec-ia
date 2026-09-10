@@ -74,8 +74,33 @@ export interface AttestationSubmissionRecord {
   idempotencyKey?: string;
   /** Set at `acknowledged` (backend authorization projection is NOT copied here). */
   backendAttestationId?: string;
+  /** The backend's CANONICAL attestation status as returned (ACCEPTED | SUPERSEDED | EXPIRED). */
+  backendStatus?: string;
+  backendPayloadSha256?: string;
+  backendReceivedAt?: string;
   acknowledgedAt?: string;
+  /** Last retryable/ambiguous answer while `submitted` (never a terminal verdict). */
+  lastRetryable?: {
+    kind: "transport" | "backend";
+    status: number | null;
+    code: string | null;
+    retryAfterSeconds: number | null;
+    at: string;
+  };
   meta: PrototypeMeta;
+}
+
+/**
+ * Per-account pointer to the NEWEST acknowledged decision (by
+ * decision_sequence). A late answer for an older decision can never move it
+ * backwards; it is bookkeeping only — never trading permission.
+ */
+export interface LatestAcknowledgedDecision {
+  accountId: string;
+  decisionSequence: number;
+  attestationId: string;
+  backendStatus: string;
+  acknowledgedAt: string;
 }
 
 export class AttestationTransitionError extends Error {
@@ -148,6 +173,67 @@ export async function openAttestationSubmission(args: {
  * Advance one step. Illegal transitions throw; the record is never rewritten
  * backwards and a terminal state never changes.
  */
+/** Record a retryable/ambiguous answer on a `submitted` record; no state change. */
+export async function noteRetryableAnswer(args: {
+  accountId: string;
+  attestationId: string;
+  lastRetryable: NonNullable<AttestationSubmissionRecord["lastRetryable"]>;
+  correlationId: string;
+}): Promise<AttestationSubmissionRecord> {
+  const k = key(args.accountId, args.attestationId);
+  const current = await store().get(k);
+  if (!current) throw new Error("attestation submission not open");
+  if (current.state !== "submitted") {
+    throw new AttestationTransitionError(current.state, "submitted");
+  }
+  const next: AttestationSubmissionRecord = {
+    ...current,
+    lastRetryable: args.lastRetryable,
+    history: [
+      ...current.history,
+      {
+        state: "submitted",
+        at: new Date().toISOString(),
+        correlationId: args.correlationId,
+        detail: {
+          retryable: true,
+          kind: args.lastRetryable.kind,
+          ...(args.lastRetryable.code ? { code: args.lastRetryable.code } : {}),
+          ...(args.lastRetryable.status !== null
+            ? { status: args.lastRetryable.status }
+            : {}),
+        },
+      },
+    ],
+  };
+  await store().put(k, next);
+  return next;
+}
+
+const latestStore = () =>
+  resolveKvStore<LatestAcknowledgedDecision>(
+    "attestation-submission",
+    "attestation-latest-decisions",
+  );
+
+export async function getLatestAcknowledgedDecision(
+  accountId: string,
+): Promise<LatestAcknowledgedDecision | null> {
+  return latestStore().get(accountId);
+}
+
+/** Advance the pointer only for a NEWER decision; older answers never replace it. */
+export async function recordAcknowledgedDecision(
+  next: LatestAcknowledgedDecision,
+): Promise<{ moved: boolean; latest: LatestAcknowledgedDecision }> {
+  const current = await latestStore().get(next.accountId);
+  if (current && current.decisionSequence >= next.decisionSequence) {
+    return { moved: false, latest: current };
+  }
+  await latestStore().put(next.accountId, next);
+  return { moved: true, latest: next };
+}
+
 export async function advanceAttestationSubmission(args: {
   accountId: string;
   attestationId: string;
@@ -162,7 +248,11 @@ export async function advanceAttestationSubmission(args: {
       | "decisionSequence"
       | "idempotencyKey"
       | "backendAttestationId"
+      | "backendStatus"
+      | "backendPayloadSha256"
+      | "backendReceivedAt"
       | "acknowledgedAt"
+      | "lastRetryable"
     >
   >;
 }): Promise<AttestationSubmissionRecord> {

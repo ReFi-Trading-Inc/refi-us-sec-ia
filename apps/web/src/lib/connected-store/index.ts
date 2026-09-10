@@ -37,6 +37,7 @@ export const CONNECTED_ENTITIES = [
   "login-consumed",
   "identity-result-jti",
   "bridge-assertion-jti",
+  "exchange-attempt",
   "subject-map",
   "subject-map-reverse",
 ] as const;

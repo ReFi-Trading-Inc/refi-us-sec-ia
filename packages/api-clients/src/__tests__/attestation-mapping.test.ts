@@ -374,6 +374,18 @@ describe("ledger: KYC evidence gate (D — provider-blocked) — trust is explic
             ? [join(dir, d.name)]
             : [],
       );
+    // Exactly one module submits an attestation: the step-6 chain
+    // (2026-09-10), which reaches the call only after backend-verified
+    // consent and a pinned-authority build. It still never establishes
+    // trusted provenance — so on every current tier it stops at `blocked`.
+    const SUBMISSION_MODULE = join(
+      root,
+      "src",
+      "lib",
+      "compliance",
+      "attestation-submission.ts",
+    );
+    const submitters: string[] = [];
     for (const f of [...walk(join(root, "app")), ...walk(join(root, "src"))]) {
       if (f.endsWith(join("kyc", "provenance.ts"))) continue;
       const code = readFileSync(f, "utf8").replace(
@@ -381,10 +393,11 @@ describe("ledger: KYC evidence gate (D — provider-blocked) — trust is explic
         "",
       );
       expect(code, f).not.toMatch(/establishTrustedKycProvenance\s*\(/);
-      expect(code, f).not.toMatch(
-        /call\(\s*["']createComplianceProfileAttestation["']/,
-      );
+      if (/call\(\s*["']createComplianceProfileAttestation["']/.test(code)) {
+        submitters.push(f);
+      }
     }
+    expect(submitters).toEqual([SUBMISSION_MODULE]);
   });
 });
 

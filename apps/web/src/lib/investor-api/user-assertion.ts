@@ -45,8 +45,14 @@
  * `now`. This module has no fallback for a missing auth_time — it throws,
  * because inventing one would silently defeat step-up.
  */
-import { SignJWT, exportJWK, generateKeyPair, importJWK, type JWK } from "jose";
+import { exportJWK, generateKeyPair, type JWK } from "jose";
 import { getServerEnv } from "../config/env";
+import {
+  createJwkAssertionSigner,
+  createKmsAssertionSigner,
+  type AssertionSigner,
+  type KmsSignClient,
+} from "./assertion-signer";
 
 /** The header investor-api reads the assertion from. */
 export const USER_ASSERTION_HEADER = "X-Refinity-User-Assertion";
@@ -278,9 +284,78 @@ export async function getSigningKey(): Promise<SigningKey> {
   return cachedKey;
 }
 
-/** Test seam: drop the cached key so a test can swap env and re-resolve. */
+/** Test seam: drop the cached key/signer so a test can swap env and re-resolve. */
 export function resetSigningKeyCache(): void {
   cachedKey = null;
+  cachedSigner = null;
+}
+
+// ─── Signer selection (Daniel 2026-09-09 step 3) ────────────────────────────
+
+let cachedSigner: AssertionSigner | null = null;
+let kmsClientFactory: (() => Promise<KmsSignClient>) | null = null;
+
+/**
+ * Test seam: substitute the KMS client (a fake that signs locally and returns
+ * DER, exactly like the service). Production resolves the real client lazily
+ * so deployments that sign with a JWK never load the KMS SDK.
+ */
+export function setKmsClientFactoryForTests(
+  factory: (() => Promise<KmsSignClient>) | null,
+): void {
+  kmsClientFactory = factory;
+  cachedSigner = null;
+}
+
+async function defaultKmsClient(): Promise<KmsSignClient> {
+  const { KeyManagementServiceClient } = await import("@google-cloud/kms");
+  const client = new KeyManagementServiceClient();
+  return {
+    getPublicKey: async (req) => {
+      const [res] = await client.getPublicKey(req);
+      return [{ pem: res.pem ?? null }];
+    },
+    asymmetricSign: async (req) => {
+      const [res] = await client.asymmetricSign({
+        name: req.name,
+        digest: { sha256: req.digest.sha256 },
+      });
+      return [{ signature: res.signature ?? null }];
+    },
+  };
+}
+
+/**
+ * The signer for this deployment:
+ *   BFF_ASSERTION_SIGNER=kms → Cloud KMS (non-exportable key; DER→JOSE;
+ *                              local verification after every sign)
+ *   BFF_ASSERTION_SIGNER=jwk → BFF_ASSERTION_PRIVATE_KEY_JWK, or the
+ *                              explicitly opted-in per-process ephemeral key
+ */
+export async function getAssertionSigner(): Promise<AssertionSigner> {
+  if (cachedSigner) return cachedSigner;
+  const env = getServerEnv();
+  if (env.BFF_ASSERTION_SIGNER === "kms") {
+    if (!env.BFF_ASSERTION_KMS_KEY_VERSION || !env.BFF_ASSERTION_KID) {
+      throw new Error(
+        "BFF_ASSERTION_SIGNER=kms requires BFF_ASSERTION_KMS_KEY_VERSION (full " +
+          "cryptoKeyVersion resource name) and BFF_ASSERTION_KID (the published kid).",
+      );
+    }
+    const client = await (kmsClientFactory ?? defaultKmsClient)();
+    cachedSigner = createKmsAssertionSigner({
+      keyVersionName: env.BFF_ASSERTION_KMS_KEY_VERSION,
+      kid: env.BFF_ASSERTION_KID,
+      client,
+    });
+    return cachedSigner;
+  }
+  const key = await getSigningKey();
+  cachedSigner = createJwkAssertionSigner(
+    key.privateJwk,
+    key.kid.startsWith("dev-ephemeral-") ? "ephemeral" : "jwk",
+  );
+  return cachedSigner;
 }
 
 /**
@@ -292,7 +367,8 @@ export function resetSigningKeyCache(): void {
  * expires. Remove the previous key only after the overlap window.
  */
 export async function getPublicJwks(): Promise<{ keys: JWK[] }> {
-  const { publicJwk } = await getSigningKey();
+  const signer = await getAssertionSigner();
+  const publicJwk = await signer.publicJwk();
   const keys: JWK[] = [publicJwk];
   const previous = getServerEnv().BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK;
   if (previous) {
@@ -441,8 +517,8 @@ export async function mintUserAssertion(
   }
   assertPublishableIssuer(env.BFF_ASSERTION_ISSUER, env.REFI_ENV);
 
-  const { kid, privateJwk } = await getSigningKey();
-  const key = await importJWK(privateJwk, USER_ASSERTION_ALG);
+  const signer = await getAssertionSigner();
+  const kid = signer.kid;
 
   const now = Math.floor(Date.now() / 1000);
   const exp = now + USER_ASSERTION_TTL_SECONDS;
@@ -452,23 +528,30 @@ export async function mintUserAssertion(
   const jti = crypto.randomUUID();
   if (!ASSERTION_ID_PATTERN.test(jti)) throw new ClaimPatternError("jti");
 
-  const token = await new SignJWT({
+  // Compact JWS assembled here so the signature can come from KMS (or a
+  // JWK) through the signer abstraction; header/claims are unchanged.
+  const header = { alg: USER_ASSERTION_ALG, kid, typ: "JWT" };
+  const claims = {
     sid: input.sid,
     auth_time: input.authTime,
     // Optional and forwarded verbatim (order preserved); never synthesised.
     // `acr` is never emitted — the guard above throws if a caller supplies it.
     ...(input.amr ? { amr: [...input.amr] } : {}),
-  })
-    .setProtectedHeader({ alg: USER_ASSERTION_ALG, kid, typ: "JWT" })
-    .setIssuer(env.BFF_ASSERTION_ISSUER)
-    .setAudience(env.INVESTOR_API_AUDIENCE)
-    .setSubject(input.userId)
-    .setIssuedAt(now)
-    .setNotBefore(now)
-    .setExpirationTime(exp)
-    .setJti(jti)
-    .sign(key);
-
+    iss: env.BFF_ASSERTION_ISSUER,
+    aud: env.INVESTOR_API_AUDIENCE,
+    sub: input.userId,
+    iat: now,
+    nbf: now,
+    exp,
+    jti,
+  };
+  const b64 = (o: unknown) =>
+    Buffer.from(JSON.stringify(o)).toString("base64url");
+  const signingInput = `${b64(header)}.${b64(claims)}`;
+  const signature = await signer.sign(
+    new Uint8Array(Buffer.from(signingInput, "utf8")),
+  );
+  const token = `${signingInput}.${Buffer.from(signature).toString("base64url")}`;
   return { token, jti, expiresAt: exp };
 }
 

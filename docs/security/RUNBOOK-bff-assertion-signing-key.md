@@ -30,13 +30,16 @@ which user it is calling for.
 
 ## 2. Configuration
 
-| Variable                                | Required                   | Notes                                                                                                          |
-| --------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `BFF_ASSERTION_ISSUER`                  | before first outbound call | Stable, environment-specific **URN**: `urn:refinity:bff:{dev\|staging\|prod}`. **Never a Vercel preview URL.** |
-| `INVESTOR_API_AUDIENCE`                 | before first outbound call | `urn:refinity:investor-api:dev` in dev.                                                                        |
-| `BFF_ASSERTION_PRIVATE_KEY_JWK`         | **every deployed tier**    | Private ES256 JWK as a JSON string, **must include `kid`**.                                                    |
-| `BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK` | during rotation only       | Public half of the retiring key.                                                                               |
-| `BFF_ASSERTION_ALLOW_EPHEMERAL_KEY`     | local/CI only              | `1` opts into the per-process key. Never set on a deployed tier.                                               |
+| Variable                                | Required                   | Notes                                                                                                                                        |
+| --------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BFF_ASSERTION_ISSUER`                  | before first outbound call | Stable, environment-specific **URN**: `urn:refinity:bff:{dev\|staging\|prod}`. **Never a Vercel preview URL.**                               |
+| `INVESTOR_API_AUDIENCE`                 | before first outbound call | `urn:refinity:investor-api:dev` in dev.                                                                                                      |
+| `BFF_ASSERTION_PRIVATE_KEY_JWK`         | **every deployed tier**    | Private ES256 JWK as a JSON string, **must include `kid`**.                                                                                  |
+| `BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK` | during rotation only       | Public half of the retiring key.                                                                                                             |
+| `BFF_ASSERTION_ALLOW_EPHEMERAL_KEY`     | local/CI only              | `1` opts into the per-process key. Never set on a deployed tier.                                                                             |
+| `BFF_ASSERTION_SIGNER`                  | connected tiers            | `jwk` (default) or `kms` (Cloud KMS asymmetric sign; see §2a). A native-Cloud-Run deployment must be `kms` or `jwk` with a secret-store key. |
+| `BFF_ASSERTION_KMS_KEY_VERSION`         | `kms` only                 | Full `cryptoKeyVersion` resource name of a non-exportable `EC_SIGN_P256_SHA256` key version.                                                 |
+| `BFF_ASSERTION_KID`                     | `kms` only                 | The `kid` published for that key version. Stable per version; changes only with rotation.                                                    |
 
 None of these are required to **boot** — they are enforced at mint time, so a
 tier that does not yet call investor-api deploys without them. They must all be
@@ -70,6 +73,37 @@ Published at: `{BFF_ASSERTION_ISSUER}/.well-known/jwks.json`
 generates a per-process ephemeral key so local development and CI work without a
 secret. No private key is ever committed. Every other configuration throws at
 mint time rather than signing with something investor-api cannot verify.
+
+### 2a. Cloud KMS signer (connected deployments)
+
+`BFF_ASSERTION_SIGNER=kms` signs with `asymmetricSign` on a non-exportable
+`EC_SIGN_P256_SHA256` key version. The private key never leaves KMS; every
+replica and every restart uses the same key; the public EC JWK is derived from
+`getPublicKey` and published with the configured `kid`. KMS returns a **DER**
+signature; the signer converts it to the JOSE `r || s` form JWT ES256 requires
+and verifies the result locally against the public key before the token is
+used, so an encoding mistake can never reach investor-api
+(`apps/web/src/lib/investor-api/ecdsa-signature.ts`, `assertion-signer.ts`).
+The KMS SDK is loaded lazily; `jwk` deployments never load it.
+
+Provisioning (project per `docs/releases/2026-09-signal/connected-dev/decision-gcp-project.md`):
+
+```
+gcloud kms keyrings create refi-bff --location us-central1 --project <PROJECT>
+gcloud kms keys create assertion --keyring refi-bff --location us-central1 --project <PROJECT> \
+  --purpose asymmetric-signing --default-algorithm ec-sign-p256-sha256 --protection-level hsm
+gcloud kms keys add-iam-policy-binding assertion --keyring refi-bff --location us-central1 --project <PROJECT> \
+  --member serviceAccount:refi-bff-dev@<PROJECT>.iam.gserviceaccount.com --role roles/cloudkms.signerVerifier
+# BFF_ASSERTION_KMS_KEY_VERSION=projects/<PROJECT>/locations/us-central1/keyRings/refi-bff/cryptoKeys/assertion/cryptoKeyVersions/1
+```
+
+Rotation with KMS: create the next key version, publish its public JWK as
+`BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK`-style overlap in reverse (publish the
+NEW public key at least five minutes before switching `BFF_ASSERTION_KMS_KEY_VERSION`
+and `BFF_ASSERTION_KID`, keep the OLD public key published for at least ten
+minutes after the last old-key token; investor-api caches the JWKS for at most
+300 s with a 30 s negative-key cache). Emergency revocation is coordinated with
+the backend, never a unilateral key disable.
 
 ## 3. Generating a key
 

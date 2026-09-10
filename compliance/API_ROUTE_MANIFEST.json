@@ -124,6 +124,46 @@
       }
     },
     {
+      "source": "apps/web/app/api/v1/investor/allocation/join/route.ts",
+      "route": "/api/v1/investor/allocation/join",
+      "methods": ["POST"],
+      "purpose": "Automated Alpha: createAccountAction { action: join_template } through the frozen client. ECONOMIC subscription change: AccountAuthorization must be exactly AUTHORIZED before the body is built or forwarded (PENDING/DENIED/SUSPENDED → 412 with the backend's status word verbatim, never relabelled). Requires a fresh allocation_preview_id; deterministic Idempotency-Key from the exact parameters; the backend owns every resulting execution decision.",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/allocation/leave/route.ts",
+      "route": "/api/v1/investor/allocation/leave",
+      "methods": ["POST"],
+      "purpose": "Automated Alpha: createAccountAction { action: leave_template } through the frozen client. DISENGAGEMENT (reduces exposure): never blocked here on a non-AUTHORIZED account — the backend decides. Account scope from the session only; deterministic Idempotency-Key; no retry.",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/allocation/preview/route.ts",
+      "route": "/api/v1/investor/allocation/preview",
+      "methods": ["POST"],
+      "purpose": "Automated Alpha: createAllocationPreview through the frozen v1.1.0-alpha.2 client. Non-economic (changes nothing); gated on the session's authoritative account scope only; the browser names a template and a percent, never an account. Deterministic Idempotency-Key; no mutation retry; contract errors keep their code.",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/allocation/update/route.ts",
+      "route": "/api/v1/investor/allocation/update",
+      "methods": ["POST"],
+      "purpose": "Automated Alpha: createAccountAction { action: update_allocation } through the frozen client. ECONOMIC: AccountAuthorization must be exactly AUTHORIZED before the body is built or forwarded (412 otherwise, status word verbatim). Requires a fresh allocation_preview_id; deterministic Idempotency-Key; no retry.",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
       "source": "apps/web/app/api/v1/investor/alpha-claim/route.ts",
       "route": "/api/v1/investor/alpha-claim",
       "methods": ["POST"],
@@ -141,6 +181,26 @@
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read",
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/broker/connection/[id]/rotate/route.ts",
+      "route": "/api/v1/investor/broker/connection/[id]/rotate",
+      "methods": ["POST"],
+      "purpose": "Automated Alpha: rotateBrokerageCredentials through the frozen client for a connection that MUST belong to the session's authoritative account (checked against listBrokerageConnections before any mutation path is built; foreign, terminal or malformed ids → 404 without an upstream call). Second credential-bearing request in the app: paper Alpaca key pair validated by shape, forwarded once, never logged/stored/echoed; Idempotency-Key from the key ID only.",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/broker/connection/[id]/sync/route.ts",
+      "route": "/api/v1/investor/broker/connection/[id]/sync",
+      "methods": ["POST"],
+      "purpose": "Automated Alpha: syncBrokerageConnection through the frozen client for a connection that MUST belong to the session's authoritative account (ownership checked before the call; 404 otherwise). No body; Idempotency-Key bucketed per minute; no retry.",
+      "owner": "investor-bff",
+      "auth": {
         "POST": "bff-mutate"
       }
     },

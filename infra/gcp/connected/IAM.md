@@ -83,8 +83,8 @@ REFI_KYC_MOCK_CONTROLS=0                 REFI_DATA_ADAPTER=live
 REFI_TRUST_PROXY_HOST=1                  REFI_RELEASE_STAGE=automated_alpha
 ```
 
-Audience note (mandate §17): Daniel's document uses
-`https://identity-ccid.dev.refi.internal`; the mandate text says
-`https://identity.dev.refi.internal`. The code defaults to Daniel's value and
-is overridable per tier. Reverify with Daniel before deployment; do not
-substitute a service URL.
+Audience authority (founder continuation 2026-09-10 §1): Daniel's document is
+authoritative — the Identity audience is exactly
+`https://identity-ccid.dev.refi.internal` and the Investor API audience is
+`https://investor-api.dev.refi.internal`. Any shorter spelling is incorrect
+and must not be configured. Never substitute a service URL.

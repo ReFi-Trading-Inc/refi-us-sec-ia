@@ -6,7 +6,11 @@ Technical authority stays with Daniel's `september-12-launch/frontend_nextsteps.
 (`c1b53c906653ca8860bf66cfc0df8fa862ff34d6cbf77298ac83cb55f006cb09`).
 Internal enums keep their technical names (e.g. release stage `automated_alpha`).
 
-**Current phase: US Investor Integration Foundation.** Updated 2026-09-09.
+**Current phase: US Investor Integration Foundation.** Updated 2026-09-10.
+
+Fixed technical values (Daniel's document is authoritative): Identity
+audience `https://identity-ccid.dev.refi.internal`; Investor API audience
+`https://investor-api.dev.refi.internal`.
 
 | Phase                                | State                                |
 | ------------------------------------ | ------------------------------------ |

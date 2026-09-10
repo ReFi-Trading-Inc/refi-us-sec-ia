@@ -12419,6 +12419,417 @@ await section(
   );
 }
 
+// ─── Two-user cross-user isolation (mandate: US Multi-User Acceptance groundwork; fixture-level, no credentials): account scope, actions, connections, attestation records, sessions, subjects ──
+
+{
+  const { createInvestorApiClient: createClientTu } =
+    await import("../packages/api-clients/src/investor-api/index.ts");
+  const scopeMod =
+    await import("../apps/web/src/lib/investor-api/account-scope.ts");
+  const actionsTu =
+    await import("../apps/web/src/lib/investor-api/account-actions.ts");
+  const maintTu =
+    await import("../apps/web/src/lib/investor-api/brokerage-maintenance.ts");
+  const attEntity =
+    await import("../apps/web/src/lib/prototype-store/entities/attestation-submission.ts");
+  const csTu = await import("../apps/web/src/lib/connected-store/index.ts");
+  const sessionsTu =
+    await import("../apps/web/src/lib/connected-store/session.ts");
+  const subjects =
+    await import("../apps/web/src/lib/connected-store/subject-map.ts");
+  const cookieMod = await import("../apps/web/src/lib/auth/session-cookie.ts");
+  const { getAuthContext: getAuthContextTu } =
+    await import("../apps/web/src/lib/bff/auth.ts");
+  const { resetServerEnvCacheForTests: resetEnvTu } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const { createRequire: createRequireTu } = await import("node:module");
+  const requireWebTu = createRequireTu(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const { NextRequest: NextRequestTu } = (await import(
+    requireWebTu.resolve("next/server")
+  )) as typeof import("next/server");
+  const examplesTu = JSON.parse(
+    readFileSync(
+      join(
+        REPO_ROOT,
+        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.2/examples.json",
+      ),
+      "utf8",
+    ),
+  ) as { responses: Record<string, { data: Record<string, unknown> }> };
+
+  const USERS = {
+    A: {
+      sub: "user-a-000000000000000000001",
+      account: "acct_two_user_a_01",
+      conn: "brokerconn_two_a_01",
+      assertion: "assertion-for-A",
+    },
+    B: {
+      sub: "user-b-000000000000000000002",
+      account: "acct_two_user_b_02",
+      conn: "brokerconn_two_b_02",
+      assertion: "assertion-for-B",
+    },
+  } as const;
+  type User = keyof typeof USERS;
+  const headersTu = {
+    "Content-Type": "application/json",
+    "Cache-Control": "private, no-store",
+    "X-Correlation-Id": "corr_tu",
+  };
+  const seenTu: Array<{ user: User | "?"; method: string; path: string }> = [];
+  // ONE upstream serving both users: it answers by the user assertion on the
+  // request, exactly as investor-api scopes by the asserted `sub`.
+  const fetchTu = async (
+    url: URL | RequestInfo,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const path = new URL(url.toString()).pathname;
+    const method = init?.method ?? "GET";
+    const assertion = new Headers(init?.headers).get(
+      "X-Refinity-User-Assertion",
+    );
+    const user: User | "?" =
+      assertion === USERS.A.assertion
+        ? "A"
+        : assertion === USERS.B.assertion
+          ? "B"
+          : "?";
+    seenTu.push({ user, method, path });
+    const page = (items: unknown[]) =>
+      new Response(
+        JSON.stringify({
+          data: { items, page: { has_more: false, next_cursor: null } },
+        }),
+        { status: 200, headers: headersTu },
+      );
+    const notFound = () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "RESOURCE_NOT_FOUND",
+            message: "x",
+            correlation_id: "corr_tu",
+          },
+        }),
+        { status: 404, headers: headersTu },
+      );
+    if (user === "?")
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "AUTHENTICATION_FAILED",
+            message: "x",
+            correlation_id: "corr_tu",
+          },
+        }),
+        { status: 401, headers: headersTu },
+      );
+    const me = USERS[user];
+    const account = {
+      ...examplesTu.responses["AccountEnvelope"]!.data,
+      account_id: me.account,
+    };
+    if (path === "/api/v1/investor/accounts" && method === "GET")
+      return page([account]);
+    const m = /^\/api\/v1\/investor\/accounts\/([^/]+)(\/.*)?$/.exec(path);
+    if (m) {
+      const [, accountId, rest = ""] = m;
+      if (accountId !== me.account) return notFound(); // backend-side isolation
+      if (rest === "/authorization")
+        return new Response(
+          JSON.stringify({
+            data: examplesTu.responses["AccountAuthorizationEnvelope"]!.data,
+          }),
+          { status: 200, headers: headersTu },
+        );
+      if (rest === "/brokerage-connections" && method === "GET") {
+        return page([
+          {
+            ...examplesTu.responses["BrokerageConnectionEnvelope"]!.data,
+            account_id: me.account,
+            connection_id: me.conn,
+          },
+        ]);
+      }
+      if (rest === "/actions" && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesTu.responses["ActionReceiptEnvelope"]!.data,
+              account_id: me.account,
+            },
+          }),
+          { status: 202, headers: headersTu },
+        );
+      }
+      if (
+        rest === `/brokerage-connections/${me.conn}/sync` &&
+        method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesTu.responses["BrokerageSyncReceiptEnvelope"]!.data,
+              connection_id: me.conn,
+            },
+          }),
+          { status: 202, headers: headersTu },
+        );
+      }
+    }
+    return notFound();
+  };
+  const clientFor = (user: User) =>
+    createClientTu({
+      identityCcid: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("id-b"),
+      },
+      investorApi: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("inv-b"),
+      },
+      mintAssertion: () => Promise.resolve(USERS[user].assertion),
+      fetch: fetchTu as typeof fetch,
+    });
+  const pathsFor = (user: User) =>
+    seenTu.filter((s) => s.user === user).map((s) => s.path);
+
+  await section(
+    "two users: account scope resolves to the caller's OWN account under the caller's assertion — a claimed account id belonging to the other user is ignored, never honoured; the other user's account is never addressed",
+    async () => {
+      seenTu.length = 0;
+      for (const [me, other] of [
+        ["A", "B"],
+        ["B", "A"],
+      ] as const) {
+        const own = await scopeMod.resolveAccountScope(clientFor(me), {
+          accountId: USERS[other].account,
+        });
+        assert.equal(
+          own,
+          USERS[me].account,
+          `${me}: a claim naming ${other}'s account is not honoured`,
+        );
+        const noClaim = await scopeMod.resolveAccountScope(clientFor(me), {});
+        assert.equal(noClaim, USERS[me].account);
+      }
+      assert.ok(
+        seenTu.every((s) => s.path === "/api/v1/investor/accounts"),
+        "scope resolution touches only listAccounts",
+      );
+      assert.ok(
+        !seenTu.some((s) => s.user === "A" && s.path.includes(USERS.B.account)),
+      );
+      assert.ok(
+        !seenTu.some((s) => s.user === "B" && s.path.includes(USERS.A.account)),
+      );
+    },
+  );
+
+  await section(
+    "two users: an economic action under A's assertion against B's account is refused by the backend (404) and nothing falls back; A's own account succeeds; B's connection id is out of scope for A (no upstream mutation), A's own sync succeeds",
+    async () => {
+      seenTu.length = 0;
+      const input = {
+        action: "join_template" as const,
+        templateId: "template_us_sp500_following_v1",
+        allocationPercent: "0.25",
+        allocationPreviewId: "preview_alpha_0001",
+      };
+      await assert.rejects(
+        actionsTu.submitAccountAction(clientFor("A"), USERS.B.account, input),
+        (e: unknown) =>
+          e instanceof Error &&
+          e.name === "InvestorApiError" &&
+          (e as { status: number }).status === 404,
+      );
+      assert.ok(
+        !pathsFor("A").some((p) => p.endsWith("/actions")),
+        "no action reached B's account",
+      );
+      const ok = await actionsTu.submitAccountAction(
+        clientFor("A"),
+        USERS.A.account,
+        input,
+      );
+      assert.equal(ok.kind, "accepted");
+      if (ok.kind === "accepted")
+        assert.equal(ok.receipt.account_id, USERS.A.account);
+      const cross = await maintTu.syncBrokerageConnection(
+        clientFor("A"),
+        USERS.A.account,
+        USERS.B.conn,
+      );
+      assert.deepEqual(cross, {
+        kind: "connection_out_of_scope",
+        reason: "not_owned",
+      });
+      assert.ok(
+        !pathsFor("A").some((p) => p.includes(USERS.B.conn)),
+        "B's connection never appears in A's upstream paths",
+      );
+      const own = await maintTu.syncBrokerageConnection(
+        clientFor("A"),
+        USERS.A.account,
+        USERS.A.conn,
+      );
+      assert.equal(own.kind, "accepted");
+      // Nothing under B's assertion happened at all in this section.
+      assert.deepEqual(pathsFor("B"), []);
+    },
+  );
+
+  await section(
+    "two users: attestation submission records are listed per account only; sessions resolve only their own subject (a cookie for A carrying B's sid is null); opaque subjects never collide or cross-resolve",
+    async () => {
+      const idA = "att_" + "a".repeat(32);
+      const idB = "att_" + "b".repeat(32);
+      await attEntity.openAttestationSubmission({
+        accountId: USERS.A.account,
+        attestationId: idA,
+        correlationId: "c",
+      });
+      await attEntity.openAttestationSubmission({
+        accountId: USERS.B.account,
+        attestationId: idB,
+        correlationId: "c",
+      });
+      const listA = (
+        await attEntity.listAttestationSubmissions(USERS.A.account)
+      ).map((r) => r.attestationId);
+      const listB = (
+        await attEntity.listAttestationSubmissions(USERS.B.account)
+      ).map((r) => r.attestationId);
+      assert.ok(listA.includes(idA) && !listA.includes(idB));
+      assert.ok(listB.includes(idB) && !listB.includes(idA));
+      assert.equal(
+        await attEntity.getAttestationSubmission(USERS.A.account, idB),
+        null,
+        "A cannot read B's record by id",
+      );
+
+      // Durable sessions + cookies (shared in-memory backing for the test).
+      const backing = new Map<string, Map<string, unknown>>();
+      csTu.setConnectedStoreFactoryForTests(<T>(collection: string) => {
+        const col = () => {
+          let m = backing.get(collection);
+          if (!m) {
+            m = new Map();
+            backing.set(collection, m);
+          }
+          return m as Map<string, T>;
+        };
+        return {
+          async get(k: string) {
+            return col().get(k) ?? null;
+          },
+          async put(k: string, v: T) {
+            col().set(k, v);
+          },
+          async putIfAbsent(k: string, v: T) {
+            if (col().has(k)) return false;
+            col().set(k, v);
+            return true;
+          },
+          async list(prefix?: string) {
+            return [...col().entries()]
+              .filter(([k]) => !prefix || k.startsWith(prefix))
+              .map(([key, value]) => ({ key, value }));
+          },
+          async delete(k: string) {
+            col().delete(k);
+          },
+        };
+      });
+      const savedNs = process.env["REFI_CONNECTED_STORE_NAMESPACE"];
+      process.env["REFI_CONNECTED_STORE_NAMESPACE"] = "us-connected-test";
+      resetEnvTu();
+      try {
+        const sA = await sessionsTu.createConnectedSession({
+          sub: USERS.A.sub,
+          authTime: 1_789_000_000,
+          amr: ["email_link"],
+          identityResultJti: "idr_tu_a_00000000000000000001",
+          correlationId: "c",
+        });
+        const sB = await sessionsTu.createConnectedSession({
+          sub: USERS.B.sub,
+          authTime: 1_789_000_100,
+          amr: ["email_otp"],
+          identityResultJti: "idr_tu_b_00000000000000000002",
+          correlationId: "c",
+        });
+        const cA = await cookieMod.mintConnectedSessionCookie(sA, {
+          secure: true,
+        });
+        const cB = await cookieMod.mintConnectedSessionCookie(sB, {
+          secure: true,
+        });
+        const ctxFor = async (cookie: string) =>
+          getAuthContextTu(
+            new NextRequestTu(
+              "https://bff-dev.refi.trading/api/v1/investor/status",
+              { headers: { cookie: `us_session_v1=${cookie}` } },
+            ),
+          );
+        const a = await ctxFor(cA.value);
+        const b = await ctxFor(cB.value);
+        assert.equal(a?.authId, USERS.A.sub);
+        assert.equal(a?.sid, sA.sid);
+        assert.equal(a?.authTime, 1_789_000_000);
+        assert.equal(b?.authId, USERS.B.sub);
+        assert.equal(b?.sid, sB.sid);
+        assert.equal(b?.authTime, 1_789_000_100);
+        assert.equal(
+          a?.accountId,
+          undefined,
+          "no account claim rides a connected session",
+        );
+        // A's sub with B's sid: signed by us in a hypothetical bug — still null (record.sub ≠ cookie sub).
+        const mixed = await cookieMod.mintConnectedSessionCookie(
+          { ...sB, sub: USERS.A.sub },
+          { secure: true },
+        );
+        assert.equal(await ctxFor(mixed.value), null);
+        // Revoking A never affects B.
+        await sessionsTu.revokeConnectedSession(sA.sid, "test");
+        assert.equal(await ctxFor(cA.value), null);
+        assert.equal((await ctxFor(cB.value))?.authId, USERS.B.sub);
+        // Opaque subjects: distinct provider users → distinct subs; reverse lookups never cross.
+        const mA = await subjects.getOrCreateOpaqueSubject({
+          provider: "stytch",
+          providerUserId: "user-test-two-user-aaaaaaaa",
+          correlationId: "c",
+        });
+        const mB = await subjects.getOrCreateOpaqueSubject({
+          provider: "stytch",
+          providerUserId: "user-test-two-user-bbbbbbbb",
+          correlationId: "c",
+        });
+        assert.notEqual(mA.record.sub, mB.record.sub);
+        assert.equal(
+          (await subjects.lookupSubject(mA.record.sub))?.providerUserId,
+          "user-test-two-user-aaaaaaaa",
+        );
+        assert.equal(
+          (await subjects.lookupSubject(mB.record.sub))?.providerUserId,
+          "user-test-two-user-bbbbbbbb",
+        );
+      } finally {
+        csTu.setConnectedStoreFactoryForTests(null);
+        if (savedNs === undefined)
+          delete process.env["REFI_CONNECTED_STORE_NAMESPACE"];
+        else process.env["REFI_CONNECTED_STORE_NAMESPACE"] = savedNs;
+        resetEnvTu();
+      }
+    },
+  );
+}
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

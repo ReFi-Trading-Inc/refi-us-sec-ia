@@ -1,5 +1,5 @@
 /**
- * Daniel's deterministic v1.1.0-alpha.2 loopback simulator for E2E.
+ * Daniel's deterministic v1.1.0-alpha.3 loopback simulator for E2E.
  *
  * The BFF's Investor API upstream in E2E is `tools/conformance.py serve` from
  * the vendored package (byte-identical, hash-verified by #70). Started once by
@@ -28,7 +28,7 @@ const PACKAGE_DIR = resolve(
   "api-clients",
   "contracts",
   "investor-api",
-  "v1.1.0-alpha.2",
+  "v1.1.0-alpha.3",
 );
 const TOOL = resolve(PACKAGE_DIR, "tools", "conformance.py");
 
@@ -51,7 +51,7 @@ export function findPython(): string {
     }
   }
   throw new Error(
-    "Python >= 3.11 is required to run Daniel's v1.1.0-alpha.2 simulator for " +
+    "Python >= 3.11 is required to run Daniel's v1.1.0-alpha.3 simulator for " +
       "E2E. CI pins it with actions/setup-python; locally set REFI_PYTHON_BIN.",
   );
 }

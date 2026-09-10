@@ -1,5 +1,5 @@
 /**
- * Signal recommendations — browser → same-origin BFF → frozen v1.1.0-alpha.2
+ * Signal recommendations — browser → same-origin BFF → frozen v1.1.0-alpha.3
  * client → Daniel's deterministic loopback simulator. No browser-side route
  * mock: the legacy `/v1/recommendations` interception is gone with the hook
  * it faked. Simulator evidence only — never a connected refinity-dev claim.

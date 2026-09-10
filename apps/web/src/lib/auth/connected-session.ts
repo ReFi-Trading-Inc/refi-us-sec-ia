@@ -9,11 +9,11 @@
  *   → durable connected session
  *
  * This module is the seam between the Stytch slice and the identity-bridge /
- * exchange slice. In this slice the seam fails closed: no bridge, no
- * exchange and therefore NO session can be created from provider state
- * alone. The bridge/exchange slice replaces `establishConnectedSession`'s
- * body; its contract (input, output, error) is fixed here so the login
- * routes and their tests do not change.
+ * exchange slice (`connected-login.ts`, the default implementation). The
+ * seam still fails closed: when the bridge or exchange is not configured the
+ * chain throws `IdentityExchangeUnavailableError` and NO session is created
+ * from provider state alone. Tests may inject a fake through
+ * `setConnectedSessionEstablisher`.
  */
 import type { CompletedLogin } from "./login-flow";
 
@@ -62,10 +62,10 @@ export async function establishConnectedSession(args: {
   completed: CompletedLogin;
   correlationId: string;
 }): Promise<EstablishedConnectedSession> {
-  if (!implementation) {
-    throw new IdentityExchangeUnavailableError(
-      "identity bridge and backend identity exchange are not wired",
-    );
-  }
-  return implementation(args);
+  if (implementation) return implementation(args);
+  // Lazy: keeps this seam import-light for the login routes and avoids an
+  // import cycle with the chain, which imports this module's error type.
+  const { establishConnectedSessionViaExchange } =
+    await import("./connected-login");
+  return establishConnectedSessionViaExchange(args);
 }

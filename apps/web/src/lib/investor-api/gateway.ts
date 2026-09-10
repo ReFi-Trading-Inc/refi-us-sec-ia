@@ -154,8 +154,24 @@ export function investorApiEventSourceFor(
   return eventSourceFromClient(createFrozenClient(auth, env));
 }
 
+/**
+ * A client for Daniel's identity exchange, which happens BEFORE any session
+ * exists. Its auth policy is the Google bearer for identity-ccid only; the
+ * per-request user assertion is never minted on this client (there is no
+ * user yet), so `mintAssertion` refuses.
+ */
+export function createIdentityExchangeClient(): InvestorApiReadClient {
+  const env = getServerEnv();
+  if (env.REFI_INVESTOR_API_MODE === "demo") {
+    throw new UpstreamNotConfiguredError(
+      "the demo upstream has no identity exchange",
+    );
+  }
+  return createFrozenClient(null, env);
+}
+
 function createFrozenClient(
-  auth: AuthContext,
+  auth: AuthContext | null,
   env: ReturnType<typeof getServerEnv>,
 ): InvestorApiClient {
   const allowRemote = env.REFI_INVESTOR_API_ALLOW_REMOTE === "1";
@@ -185,22 +201,27 @@ function createFrozenClient(
   }
 
   const mintAssertion =
-    env.REFI_INVESTOR_API_ASSERTION_MODE === "simulator-fixture"
-      ? () => Promise.resolve(SIMULATOR_FIXTURE_ASSERTION)
-      : async () => {
-          if (auth.sid === undefined)
-            throw new SessionAssertionInputError("sid");
-          if (auth.authTime === undefined) {
-            throw new SessionAssertionInputError("auth_time");
-          }
-          const minted = await mintUserAssertion({
-            userId: auth.authId,
-            sid: auth.sid,
-            authTime: auth.authTime,
-            ...(auth.amr !== undefined ? { amr: auth.amr } : {}),
-          });
-          return minted.token;
-        };
+    auth === null
+      ? () =>
+          Promise.reject(
+            new SessionAssertionInputError("session (pre-session client)"),
+          )
+      : env.REFI_INVESTOR_API_ASSERTION_MODE === "simulator-fixture"
+        ? () => Promise.resolve(SIMULATOR_FIXTURE_ASSERTION)
+        : async () => {
+            if (auth.sid === undefined)
+              throw new SessionAssertionInputError("sid");
+            if (auth.authTime === undefined) {
+              throw new SessionAssertionInputError("auth_time");
+            }
+            const minted = await mintUserAssertion({
+              userId: auth.authId,
+              sid: auth.sid,
+              authTime: auth.authTime,
+              ...(auth.amr !== undefined ? { amr: auth.amr } : {}),
+            });
+            return minted.token;
+          };
 
   return createInvestorApiClient({
     identityCcid: targetFor(

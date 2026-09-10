@@ -44,6 +44,8 @@ export function newSessionId(): string {
 }
 
 export async function createConnectedSession(args: {
+  /** Pre-chosen id (the bridge assertion's `sid`); generated when absent. */
+  sid?: string;
   sub: string;
   authTime: number;
   amr?: readonly string[];
@@ -57,9 +59,12 @@ export async function createConnectedSession(args: {
   if (!Number.isFinite(args.authTime) || args.authTime <= 0) {
     throw new Error("session requires the genuine auth_time");
   }
+  if (args.sid !== undefined && !SESSION_ID_PATTERN.test(args.sid)) {
+    throw new Error("session sid pattern");
+  }
   const issued = new Date();
   const record: ConnectedSessionRecord = {
-    sid: newSessionId(),
+    sid: args.sid ?? newSessionId(),
     sub: args.sub,
     authTime: Math.floor(args.authTime),
     ...(args.amr && args.amr.length > 0 ? { amr: [...args.amr] } : {}),

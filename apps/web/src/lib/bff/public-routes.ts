@@ -37,6 +37,16 @@ export const PUBLIC_UNAUTHENTICATED_ROUTES: ReadonlyArray<PublicRoute> = [
       "returns 503 rather than leaking configuration detail on error.",
   },
   {
+    path: "/.well-known/identity-bridge-jwks.json",
+    file: "app/.well-known/identity-bridge-jwks.json/route.ts",
+    reason:
+      "Machine-readable discovery document for the frontend IDENTITY BRIDGE " +
+      "(Daniel step 2/4): identity-ccid fetches it without a session to verify " +
+      "the upstream identity assertion at the exchange. A separate key set from " +
+      "/.well-known/jwks.json because the bridge signs with a separate key " +
+      "(mandate §15). Public key material only; 503 without detail on error.",
+  },
+  {
     path: "/api/health",
     file: "app/api/health/route.ts",
     reason:

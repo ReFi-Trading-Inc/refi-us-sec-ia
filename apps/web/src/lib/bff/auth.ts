@@ -61,6 +61,11 @@ import { jwtVerify } from "jose";
 import { getServerEnv } from "../config/env";
 import { getAuthSessionLink } from "../prototype-store/entities/auth-link";
 import { DEMO_PERSONA_ACCOUNT_LINK } from "../demo/account-link";
+import {
+  getActiveConnectedSession,
+  touchConnectedSession,
+} from "../connected-store/session";
+import { CONNECTED_SESSION_SOURCE } from "../auth/session-cookie";
 
 const SESSION_COOKIE = "us_session_v1";
 
@@ -176,6 +181,28 @@ export async function getAuthContext(
       );
       const sub = typeof payload.sub === "string" ? payload.sub : null;
       if (!sub) return null;
+      // Connected session (identity bridge → Daniel's exchange → durable
+      // record). The cookie is only a reference: the durable record is the
+      // session. Unknown, expired or revoked → null on every instance at
+      // once; `auth_time` and `amr` come from the record written at exchange
+      // time, never from the cookie and never re-stamped. No prototype-store
+      // account link is consulted: account scope is re-authorized per
+      // request against `listAccounts` under the user assertion.
+      if (payload["src"] === CONNECTED_SESSION_SOURCE) {
+        const sid = payload["sid"];
+        if (typeof sid !== "string") return null;
+        const record = await getActiveConnectedSession(sid);
+        if (!record || record.sub !== sub) return null;
+        const ctx: AuthContext = {
+          authId: record.sub,
+          sid: record.sid,
+          authTime: record.authTime,
+          source: "backend",
+        };
+        if (record.amr) ctx.amr = [...record.amr];
+        await touchConnectedSession(record.sid);
+        return ctx;
+      }
       const link = await getAuthSessionLink(sub);
       const ctx: AuthContext = { authId: sub, source: "prototype-bff" };
       if (link?.accountId) ctx.accountId = link.accountId;

@@ -255,6 +255,25 @@ const serverSchemaBase = clientSchema.extend({
   REFI_CONNECTED_STORE_NAMESPACE: z.string().min(1).optional(),
   /** Firestore project (durable backing). Read by the durable driver. */
   GCP_PROJECT_ID: z.string().min(1).optional(),
+  /**
+   * Email-first user authentication provider (founder decision 2026-09-09:
+   * Stytch Consumer Authentication, headless). "unconfigured" (default) keeps
+   * every /api/v1/auth/login/* route dark (404) — demo and prototype tiers
+   * never touch a provider. "stytch" requires the three values below.
+   */
+  REFI_AUTH_PROVIDER: z
+    .enum(["unconfigured", "stytch"])
+    .default("unconfigured"),
+  STYTCH_PROJECT_ID: z.string().min(1).optional(),
+  /** Server-only secret; never a NEXT_PUBLIC_ value, never logged. */
+  STYTCH_SECRET: z.string().min(1).optional(),
+  STYTCH_ENV: z.enum(["test", "live"]).default("test"),
+  /**
+   * The EXACT https callback the magic link returns to (Daniel: redirect URIs
+   * match exactly, no wildcard, no implicit trailing slash). Registered in
+   * the Stytch dashboard and sent as `redirect_uri` to the identity exchange.
+   */
+  REFI_AUTH_CALLBACK_URL: z.url().optional(),
 });
 
 const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
@@ -269,6 +288,31 @@ const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
   const fail = (path: string, message: string) => {
     ctx.addIssue({ code: "custom", path: [path], message });
   };
+  // Stytch configuration is all-or-nothing on every tier, and the callback
+  // must be https (Daniel: exact HTTPS redirect URIs).
+  if (env.REFI_AUTH_PROVIDER === "stytch") {
+    if (!env.STYTCH_PROJECT_ID || !env.STYTCH_SECRET) {
+      fail(
+        "REFI_AUTH_PROVIDER",
+        "stytch requires STYTCH_PROJECT_ID and STYTCH_SECRET",
+      );
+    }
+    if (
+      !env.REFI_AUTH_CALLBACK_URL ||
+      !env.REFI_AUTH_CALLBACK_URL.startsWith("https://")
+    ) {
+      fail(
+        "REFI_AUTH_CALLBACK_URL",
+        "stytch requires an exact https callback URL",
+      );
+    }
+    if (env.REFI_ENV === "demo") {
+      fail(
+        "REFI_AUTH_PROVIDER",
+        "the demo tier never uses a real identity provider",
+      );
+    }
+  }
   if (env.REFI_INVESTOR_API_MODE !== "client") {
     fail(
       "REFI_INVESTOR_API_MODE",
@@ -472,6 +516,11 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     REFI_CONNECTED_STORE_NAMESPACE:
       process.env["REFI_CONNECTED_STORE_NAMESPACE"] || undefined,
     GCP_PROJECT_ID: process.env["GCP_PROJECT_ID"] || undefined,
+    REFI_AUTH_PROVIDER: process.env["REFI_AUTH_PROVIDER"] || undefined,
+    STYTCH_PROJECT_ID: process.env["STYTCH_PROJECT_ID"] || undefined,
+    STYTCH_SECRET: process.env["STYTCH_SECRET"] || undefined,
+    STYTCH_ENV: process.env["STYTCH_ENV"] || undefined,
+    REFI_AUTH_CALLBACK_URL: process.env["REFI_AUTH_CALLBACK_URL"] || undefined,
     // No withFallback: a signing key must never have a committed default.
     BFF_ASSERTION_PRIVATE_KEY_JWK:
       process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"] || undefined,

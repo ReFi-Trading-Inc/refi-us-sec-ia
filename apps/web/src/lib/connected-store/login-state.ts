@@ -18,6 +18,9 @@ export const LOGIN_BINDING_MAX = 128;
 export const LOGIN_BINDING_PATTERN = /^[A-Za-z0-9_-]{22,128}$/;
 export const DEFAULT_LOGIN_TTL_SECONDS = 10 * 60;
 
+export const LOGIN_METHODS = ["email_link", "email_otp"] as const;
+export type LoginMethod = (typeof LOGIN_METHODS)[number];
+
 export interface PendingLoginRecord {
   loginId: string;
   state: string;
@@ -25,6 +28,12 @@ export interface PendingLoginRecord {
   nonce: string;
   redirectUri: string;
   networkContext: string;
+  /** Which email method this login was started with; completion must match. */
+  method: LoginMethod;
+  /** Provider method id (OTP `email_id`) needed to complete an OTP login. */
+  providerMethodId: string | null;
+  /** HMAC of the normalised email so completion can be bound to the same address; never the email. */
+  emailHash: string;
   createdAt: string;
   expiresAt: string;
   correlationId: string;
@@ -54,9 +63,22 @@ export function isValidLoginBinding(v: unknown): v is string {
   return typeof v === "string" && LOGIN_BINDING_PATTERN.test(v);
 }
 
+/** Attach the provider method id once the provider has been called (OTP). */
+export async function attachProviderMethodId(
+  loginId: string,
+  providerMethodId: string,
+): Promise<void> {
+  const rec = await pending().get(loginId);
+  if (!rec) throw new Error("unknown login");
+  await pending().put(loginId, { ...rec, providerMethodId });
+}
+
 export async function createPendingLogin(args: {
   redirectUri: string;
   networkContext: string;
+  method: LoginMethod;
+  emailHash: string;
+  providerMethodId?: string;
   ttlSeconds?: number;
   correlationId: string;
 }): Promise<PendingLoginRecord> {
@@ -66,6 +88,9 @@ export async function createPendingLogin(args: {
   if (!isValidLoginBinding(args.networkContext)) {
     throw new Error("networkContext must be a stable protected opaque id");
   }
+  if (!/^[0-9a-f]{64}$/.test(args.emailHash)) {
+    throw new Error("emailHash must be a hex HMAC, never an email");
+  }
   const created = new Date();
   const record: PendingLoginRecord = {
     loginId: newLoginBinding(),
@@ -74,6 +99,9 @@ export async function createPendingLogin(args: {
     nonce: newLoginBinding(),
     redirectUri: args.redirectUri,
     networkContext: args.networkContext,
+    method: args.method,
+    providerMethodId: args.providerMethodId ?? null,
+    emailHash: args.emailHash,
     createdAt: created.toISOString(),
     expiresAt: new Date(
       created.getTime() + (args.ttlSeconds ?? DEFAULT_LOGIN_TTL_SECONDS) * 1000,

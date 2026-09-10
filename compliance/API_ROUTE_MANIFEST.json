@@ -84,6 +84,26 @@
       }
     },
     {
+      "source": "apps/web/app/api/v1/auth/login/complete/route.ts",
+      "route": "/api/v1/auth/login/complete",
+      "methods": ["POST"],
+      "purpose": "Email-first login completion: binds to the pending login via the HttpOnly login cookie, consumes it exactly once (atomic, durable), authenticates the magic-link token or OTP code with the provider server-side, normalises the verified identity, maps the provider user id to the durable ReFi opaque subject, then hands off to the identity bridge / backend identity exchange to create the connected session. Never creates a session from provider state alone (503 fail-closed until the exchange is wired). 404 unless REFI_AUTH_PROVIDER=stytch; same-origin; per-IP rate limit; one neutral refusal message.",
+      "owner": "identity",
+      "auth": {
+        "POST": "public-rate-limited"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/auth/login/start/route.ts",
+      "route": "/api/v1/auth/login/start",
+      "methods": ["POST"],
+      "purpose": "Email-first login start (Stytch, headless): validates the email, creates the durable single-use pending login (state/challenge/nonce, exact https redirect, stable network_context), asks the provider to send a magic link or email OTP, returns only loginId/method/expiresAt and sets the HttpOnly login-binding cookie. 404 unless REFI_AUTH_PROVIDER=stytch (demo/prototype tiers never call a provider); same-origin; per-IP rate limit; no session.",
+      "owner": "identity",
+      "auth": {
+        "POST": "public-rate-limited"
+      }
+    },
+    {
       "source": "apps/web/app/api/v1/investor/activity/route.ts",
       "route": "/api/v1/investor/activity",
       "methods": ["GET"],

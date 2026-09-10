@@ -8097,6 +8097,8 @@ await section(
         const login = await logins.createPendingLogin({
           redirectUri: "https://bff-dev.refi.trading/us/auth/callback",
           networkContext: net,
+          method: "email_link",
+          emailHash: "a".repeat(64),
           correlationId: "c",
         });
         for (const v of [
@@ -8121,6 +8123,8 @@ await section(
           logins.createPendingLogin({
             redirectUri: "http://insecure.example/cb",
             networkContext: net,
+            method: "email_link",
+            emailHash: "a".repeat(64),
             correlationId: "c",
           }),
           /https/,
@@ -8175,6 +8179,8 @@ await section(
         const stale = await logins.createPendingLogin({
           redirectUri: "https://bff-dev.refi.trading/us/auth/callback",
           networkContext: net,
+          method: "email_link",
+          emailHash: "a".repeat(64),
           ttlSeconds: 1,
           correlationId: "c",
         });
@@ -8442,6 +8448,966 @@ await section(
     if (savedBacking === undefined)
       delete process.env["REFI_CONNECTED_STORE_BACKING"];
     else process.env["REFI_CONNECTED_STORE_BACKING"] = savedBacking;
+    resetServerEnvCacheForTests();
+  }
+}
+
+// ─── Email-first authentication (Stytch, headless): pending logins, provider verification, opaque subject, no session from provider state ──
+
+{
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const cs = await import("../apps/web/src/lib/connected-store/index.ts");
+  const stytchMod = await import("../apps/web/src/lib/auth/stytch.ts");
+  const flow = await import("../apps/web/src/lib/auth/login-flow.ts");
+  const sessionSeam =
+    await import("../apps/web/src/lib/auth/connected-session.ts");
+  const { createRequire: createRequireAuth } = await import("node:module");
+  const requireWebAuth = createRequireAuth(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const { NextRequest } = (await import(
+    requireWebAuth.resolve("next/server")
+  )) as typeof import("next/server");
+  const startRoute =
+    await import("../apps/web/app/api/v1/auth/login/start/route.ts");
+  const completeRoute =
+    await import("../apps/web/app/api/v1/auth/login/complete/route.ts");
+
+  // Shared fake backing (same idea as the connected-store section).
+  const backing = new Map<string, Map<string, unknown>>();
+  const instance =
+    (): Parameters<typeof cs.setConnectedStoreFactoryForTests>[0] =>
+    <T>(collection: string) => {
+      const col = () => {
+        let m = backing.get(collection);
+        if (!m) {
+          m = new Map();
+          backing.set(collection, m);
+        }
+        return m as Map<string, T>;
+      };
+      return {
+        async get(k: string) {
+          return col().get(k) ?? null;
+        },
+        async put(k: string, v: T) {
+          col().set(k, v);
+        },
+        async putIfAbsent(k: string, v: T) {
+          if (col().has(k)) return false;
+          col().set(k, v);
+          return true;
+        },
+        async list(prefix?: string) {
+          return [...col().entries()]
+            .filter(([k]) => !prefix || k.startsWith(prefix))
+            .map(([key, value]) => ({ key, value }));
+        },
+        async delete(k: string) {
+          col().delete(k);
+        },
+      };
+    };
+
+  // A fake provider that behaves like Stytch's API contract: loginOrCreate
+  // returns ids; authenticate returns a session with the email factor and
+  // last_authenticated_at; tokens/codes map to users.
+  function fakeStytch() {
+    const calls: Array<{ op: string; req: unknown }> = [];
+    const users = new Map<
+      string,
+      { user_id: string; email: string; verified: boolean }
+    >();
+    const tokens = new Map<string, string>(); // token -> email
+    const codes = new Map<string, { email: string; code: string }>(); // method_id -> code
+    let authAt = "2026-09-10T03:00:00Z";
+    const userFor = (email: string) => {
+      let u = users.get(email);
+      if (!u) {
+        u = {
+          user_id: `user-test-${Buffer.from(email).toString("hex").slice(0, 24)}`,
+          email,
+          verified: true,
+        };
+        users.set(email, u);
+      }
+      return u;
+    };
+    const authenticated = (email: string, type: string) => {
+      const u = userFor(email);
+      return {
+        request_id: "req",
+        status_code: 200,
+        user_id: u.user_id,
+        method_id: "m",
+        user: {
+          user_id: u.user_id,
+          emails: [
+            {
+              email_id: `email-${u.user_id}`,
+              email: u.email,
+              verified: u.verified,
+            },
+          ],
+        },
+        session: {
+          session_id: `session-${u.user_id}`,
+          user_id: u.user_id,
+          started_at: authAt,
+          authentication_factors: [
+            {
+              type,
+              delivery_method: "email",
+              last_authenticated_at: authAt,
+              email_factor: {
+                email_id: `email-${u.user_id}`,
+                email_address: u.email,
+              },
+            },
+          ],
+        },
+      };
+    };
+    const client: import("../apps/web/src/lib/auth/stytch.ts").StytchClientLike =
+      {
+        magicLinks: {
+          email: {
+            async loginOrCreate(req) {
+              calls.push({ op: "magicLinks.email.loginOrCreate", req });
+              const u = userFor(req.email);
+              const t = `tok_${Math.random().toString(36).slice(2)}${"x".repeat(20)}`;
+              tokens.set(t, req.email);
+              return {
+                request_id: "r",
+                user_id: u.user_id,
+                email_id: `email-${u.user_id}`,
+              };
+            },
+          },
+          async authenticate(req) {
+            calls.push({ op: "magicLinks.authenticate", req });
+            const email = tokens.get(req.token);
+            if (!email) throw new Error("invalid token");
+            tokens.delete(req.token);
+            return authenticated(email, "magic_link");
+          },
+        },
+        otps: {
+          email: {
+            async loginOrCreate(req) {
+              calls.push({ op: "otps.email.loginOrCreate", req });
+              const u = userFor(req.email);
+              const id = `email-${u.user_id}`;
+              codes.set(id, { email: req.email, code: "123456" });
+              return { request_id: "r", user_id: u.user_id, email_id: id };
+            },
+          },
+          async authenticate(req) {
+            calls.push({ op: "otps.authenticate", req });
+            const c = codes.get(req.method_id);
+            if (!c || c.code !== req.code) throw new Error("bad code");
+            codes.delete(req.method_id);
+            return authenticated(c.email, "otp");
+          },
+        },
+      };
+    return {
+      client,
+      calls,
+      users,
+      tokens,
+      lastToken: () => [...tokens.keys()].at(-1) ?? "",
+      setAuthAt: (iso: string) => {
+        authAt = iso;
+      },
+      setVerified: (email: string, v: boolean) => {
+        userFor(email).verified = v;
+      },
+      renameEmail: (from: string, to: string) => {
+        const u = users.get(from);
+        if (!u) throw new Error("no user");
+        users.delete(from);
+        u.email = to;
+        users.set(to, u);
+      },
+    };
+  }
+
+  const ENV_KEYS = [
+    "REFI_AUTH_PROVIDER",
+    "STYTCH_PROJECT_ID",
+    "STYTCH_SECRET",
+    "STYTCH_ENV",
+    "REFI_AUTH_CALLBACK_URL",
+    "REFI_CONNECTED_STORE_NAMESPACE",
+    "REFI_CONNECTED_STORE_BACKING",
+    "REFI_ENV",
+  ];
+  const savedEnv: Record<string, string | undefined> = {};
+  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+  process.env["REFI_AUTH_PROVIDER"] = "stytch";
+  process.env["STYTCH_PROJECT_ID"] =
+    "project-test-00000000-0000-0000-0000-000000000000";
+  process.env["STYTCH_SECRET"] = "secret-test-" + "x".repeat(24);
+  process.env["STYTCH_ENV"] = "test";
+  process.env["REFI_AUTH_CALLBACK_URL"] =
+    "https://bff-dev.refi.trading/us/auth/callback";
+  process.env["REFI_CONNECTED_STORE_NAMESPACE"] = "us-connected-test";
+  process.env["REFI_CONNECTED_STORE_BACKING"] = "prototype";
+  resetServerEnvCacheForTests();
+  cs.setConnectedStoreFactoryForTests(instance());
+  const provider = fakeStytch();
+  stytchMod.setStytchClientForTests(provider.client);
+  const ORIGIN = "https://bff-dev.refi.trading";
+  const req = (
+    path: string,
+    body: unknown,
+    opts: { origin?: string | null; cookie?: string; ip?: string } = {},
+  ) => {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "x-forwarded-proto": "https",
+      host: "bff-dev.refi.trading",
+    };
+    const origin = opts.origin === undefined ? ORIGIN : opts.origin;
+    if (origin) headers["origin"] = origin;
+    if (opts.cookie) headers["cookie"] = opts.cookie;
+    headers["x-real-ip"] = opts.ip ?? "203.0.113.10";
+    return new NextRequest(`${ORIGIN}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  };
+  // The start route is rate limited per IP (10 / 10 min); later sections use a fresh client IP per start.
+  let ipN = 20;
+  const nextIp = () => `203.0.113.${String(ipN++)}`;
+  const savedProxy = process.env["REFI_TRUST_PROXY_HOST"];
+  process.env["REFI_TRUST_PROXY_HOST"] = "1";
+  const cookieOf = (res: Response) =>
+    (res.headers.get("set-cookie") ?? "")
+      .split(/,(?=[^ ;]+=)/)
+      .map((c) => c.split(";")[0] ?? "")
+      .filter((c) => c.startsWith("us_login_v1="))
+      .join("; ");
+
+  try {
+    await section(
+      "stytch normalisation: email alone is never proof — a matching verified email factor and genuine auth time are required; provider ids are validated",
+      async () => {
+        const good = {
+          request_id: "r",
+          status_code: 200,
+          user_id: "user-test-abcdefghij",
+          method_id: "m",
+          user: {
+            user_id: "user-test-abcdefghij",
+            emails: [
+              { email_id: "e1", email: "A@Example.com", verified: true },
+            ],
+          },
+          session: {
+            session_id: "session-1",
+            user_id: "user-test-abcdefghij",
+            started_at: "2026-09-10T03:00:10Z",
+            authentication_factors: [
+              {
+                type: "magic_link",
+                delivery_method: "email",
+                last_authenticated_at: "2026-09-10T03:00:00Z",
+                email_factor: {
+                  email_id: "e1",
+                  email_address: "a@example.com",
+                },
+              },
+            ],
+          },
+        };
+        const id = stytchMod.normalizeStytchAuthentication(good, {
+          method: "email_link",
+          now: () => 1_788_000_000 + 3_600 * 24 * 365,
+        });
+        assert.equal(id.email, "a@example.com");
+        assert.equal(id.emailVerified, true);
+        assert.deepEqual(id.amr, ["email_link"]);
+        assert.equal(
+          id.authTime,
+          Math.floor(Date.parse("2026-09-10T03:00:00Z") / 1000),
+          "auth_time is the factor's last_authenticated_at, not now",
+        );
+        const mut = (f: (g: typeof good) => void) => {
+          const g = JSON.parse(JSON.stringify(good)) as typeof good;
+          f(g);
+          return g;
+        };
+        for (const [label, bad] of [
+          [
+            "unverified email",
+            mut((g) => {
+              g.user.emails[0]!.verified = false;
+            }),
+          ],
+          [
+            "no session",
+            mut((g) => {
+              delete (g as { session?: unknown }).session;
+            }),
+          ],
+          [
+            "no factor",
+            mut((g) => {
+              g.session.authentication_factors = [];
+            }),
+          ],
+          [
+            "wrong method",
+            mut((g) => {
+              g.session.authentication_factors[0]!.type = "otp";
+            }),
+          ],
+          [
+            "factor email not on user",
+            mut((g) => {
+              g.user.emails[0]!.email_id = "other";
+            }),
+          ],
+          [
+            "session/user mismatch",
+            mut((g) => {
+              g.session.user_id = "user-test-zzzzzzzzzz";
+            }),
+          ],
+          [
+            "malformed user id",
+            mut((g) => {
+              g.user_id = "alice@example.com";
+              g.session.user_id = "alice@example.com";
+            }),
+          ],
+          [
+            "no auth time evidence",
+            mut((g) => {
+              delete g.session.authentication_factors[0]!.last_authenticated_at;
+              delete (g.session as { started_at?: string }).started_at;
+            }),
+          ],
+          [
+            "auth time in the future",
+            mut((g) => {
+              g.session.authentication_factors[0]!.last_authenticated_at =
+                "2099-01-01T00:00:00Z";
+            }),
+          ],
+        ] as const) {
+          assert.throws(
+            () =>
+              stytchMod.normalizeStytchAuthentication(bad, {
+                method: "email_link",
+              }),
+            stytchMod.ProviderResultRejectedError,
+            label,
+          );
+        }
+        // Falls back to session.started_at only when the factor carries no time.
+        const noFactorTime = mut((g) => {
+          delete g.session.authentication_factors[0]!.last_authenticated_at;
+        });
+        assert.equal(
+          stytchMod.normalizeStytchAuthentication(noFactorTime, {
+            method: "email_link",
+            now: () => 4_000_000_000,
+          }).authTime,
+          Math.floor(Date.parse("2026-09-10T03:00:10Z") / 1000),
+        );
+      },
+    );
+
+    await section(
+      "login start (magic link + OTP): validated email, durable pending login with independent bindings, exact callback, stable network_context, safe response, HttpOnly binding cookie; dark unless the provider is configured",
+      async () => {
+        const res = await startRoute.POST(
+          req("/api/v1/auth/login/start", {
+            email: "  Investor@Example.com ",
+            method: "email_link",
+          }),
+        );
+        assert.equal(res.status, 200);
+        const body = (await res.json()) as {
+          data: { loginId: string; method: string; expiresAt: string };
+        };
+        assert.ok(
+          body.data.loginId &&
+            body.data.method === "email_link" &&
+            body.data.expiresAt,
+        );
+        assert.ok(
+          !JSON.stringify(body).includes("state"),
+          "state never in the body",
+        );
+        assert.ok(!/@/.test(JSON.stringify(body)), "email never echoed");
+        const setCookie = res.headers.get("set-cookie") ?? "";
+        assert.ok(
+          /us_login_v1=[^;]+; Path=\/; .*HttpOnly/i.test(setCookie) &&
+            /Secure/i.test(setCookie),
+          "HttpOnly Secure login-binding cookie",
+        );
+        const sent = provider.calls.find(
+          (c) => c.op === "magicLinks.email.loginOrCreate",
+        )!.req as {
+          email: string;
+          login_magic_link_url: string;
+          signup_magic_link_url: string;
+          login_expiration_minutes: number;
+        };
+        assert.equal(
+          sent.email,
+          "investor@example.com",
+          "normalised email to the provider",
+        );
+        assert.equal(
+          sent.login_magic_link_url,
+          "https://bff-dev.refi.trading/us/auth/callback",
+          "EXACT registered callback, no state in the link",
+        );
+        assert.equal(sent.signup_magic_link_url, sent.login_magic_link_url);
+        assert.equal(
+          sent.login_expiration_minutes,
+          flow.MAGIC_LINK_EXPIRY_MINUTES,
+        );
+        // OTP start attaches the provider method id to the pending login.
+        const otp = await startRoute.POST(
+          req("/api/v1/auth/login/start", {
+            email: "investor@example.com",
+            method: "email_otp",
+          }),
+        );
+        assert.equal(otp.status, 200);
+        assert.ok(
+          provider.calls.some((c) => c.op === "otps.email.loginOrCreate"),
+        );
+        // Bindings are random and independent, inside Daniel's window; network_context is stable per IP.
+        const logins = await cs
+          .connectedKvStore<
+            import("../apps/web/src/lib/connected-store/login-state.ts").PendingLoginRecord
+          >("login-state")
+          .list();
+        assert.ok(logins.length >= 2);
+        for (const { value } of logins) {
+          for (const v of [
+            value.state,
+            value.challenge,
+            value.nonce,
+            value.networkContext,
+          ])
+            assert.ok(/^[A-Za-z0-9_-]{22,128}$/.test(v));
+          assert.equal(
+            new Set([value.loginId, value.state, value.challenge, value.nonce])
+              .size,
+            4,
+          );
+          assert.ok(
+            /^[0-9a-f]{64}$/.test(value.emailHash) &&
+              !value.emailHash.includes("@"),
+            "email stored only as an HMAC",
+          );
+        }
+        assert.equal(
+          logins[0]!.value.networkContext,
+          logins[1]!.value.networkContext,
+          "same client → same network_context (stable, not per-retry random)",
+        );
+        assert.equal(
+          flow.networkContextFor("203.0.113.10"),
+          logins[0]!.value.networkContext,
+        );
+        assert.notEqual(
+          flow.networkContextFor("203.0.113.11"),
+          logins[0]!.value.networkContext,
+        );
+        // Refusals.
+        assert.equal(
+          (
+            await startRoute.POST(
+              req("/api/v1/auth/login/start", {
+                email: "not-an-email",
+                method: "email_link",
+              }),
+            )
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await startRoute.POST(
+              req("/api/v1/auth/login/start", {
+                email: "a@b.co",
+                method: "sms",
+              }),
+            )
+          ).status,
+          400,
+        );
+        assert.equal(
+          (
+            await startRoute.POST(
+              req(
+                "/api/v1/auth/login/start",
+                { email: "a@b.co", method: "email_link" },
+                { origin: "https://evil.example" },
+              ),
+            )
+          ).status,
+          403,
+        );
+        assert.equal(
+          (
+            await startRoute.POST(
+              req(
+                "/api/v1/auth/login/start",
+                { email: "a@b.co", method: "email_link" },
+                { origin: null },
+              ),
+            )
+          ).status,
+          403,
+        );
+        process.env["REFI_AUTH_PROVIDER"] = "unconfigured";
+        resetServerEnvCacheForTests();
+        assert.equal(
+          (
+            await startRoute.POST(
+              req("/api/v1/auth/login/start", {
+                email: "a@b.co",
+                method: "email_link",
+              }),
+            )
+          ).status,
+          404,
+          "dark without a provider (demo/prototype tiers)",
+        );
+        assert.equal(
+          (
+            await completeRoute.POST(
+              req("/api/v1/auth/login/complete", { token: "x".repeat(32) }),
+            )
+          ).status,
+          404,
+        );
+        process.env["REFI_AUTH_PROVIDER"] = "stytch";
+        resetServerEnvCacheForTests();
+      },
+    );
+
+    await section(
+      "login complete (magic link): cookie-bound, consumed once, provider-verified, opaque subject mapped; wrong state / replay / missing cookie / provider rejection refused; NO session is created from provider state",
+      async () => {
+        const start = await startRoute.POST(
+          req(
+            "/api/v1/auth/login/start",
+            {
+              email: "alice@example.com",
+              method: "email_link",
+            },
+            { ip: nextIp() },
+          ),
+        );
+        const cookie = cookieOf(start);
+        const token = provider.lastToken();
+        // Missing cookie → 400; wrong-state cookie → 401 (does not burn the login).
+        assert.equal(
+          (
+            await completeRoute.POST(
+              req("/api/v1/auth/login/complete", { token }),
+            )
+          ).status,
+          400,
+        );
+        const [lid] = cookie.replace("us_login_v1=", "").split(".");
+        assert.equal(
+          (
+            await completeRoute.POST(
+              req(
+                "/api/v1/auth/login/complete",
+                { token },
+                { cookie: `us_login_v1=${lid}.${"A".repeat(43)}` },
+              ),
+            )
+          ).status,
+          401,
+        );
+        // Exchange not wired → completion fails closed with 503 and sets NO session cookie…
+        const first = await completeRoute.POST(
+          req("/api/v1/auth/login/complete", { token }, { cookie }),
+        );
+        assert.equal(first.status, 503);
+        assert.equal(
+          ((await first.json()) as { code?: string }).code,
+          "exchange_unavailable",
+        );
+        assert.ok(
+          !/us_session_v1=[^;]/.test(first.headers.get("set-cookie") ?? ""),
+          "no session from provider state",
+        );
+        assert.ok(
+          /us_login_v1=;/.test(first.headers.get("set-cookie") ?? ""),
+          "login cookie cleared",
+        );
+        // …but the provider WAS consulted once and the login is consumed: a replay is refused.
+        assert.equal(
+          provider.calls.filter((c) => c.op === "magicLinks.authenticate")
+            .length,
+          1,
+        );
+        const replay = await completeRoute.POST(
+          req("/api/v1/auth/login/complete", { token }, { cookie }),
+        );
+        assert.equal(replay.status, 401, "replayed callback refused");
+        assert.equal(
+          provider.calls.filter((c) => c.op === "magicLinks.authenticate")
+            .length,
+          1,
+          "replay never reaches the provider",
+        );
+        // With a fake session establisher the full path completes and the subject is the durable opaque map.
+        let seen:
+          | import("../apps/web/src/lib/auth/login-flow.ts").CompletedLogin
+          | null = null;
+        sessionSeam.setConnectedSessionEstablisher(async ({ completed }) => {
+          seen = completed;
+          return {
+            continuePath: "/us/onboarding",
+            cookies: [
+              {
+                name: "us_session_v1",
+                value: "fake-session",
+                options: {
+                  httpOnly: true,
+                  secure: true,
+                  sameSite: "lax",
+                  path: "/",
+                  maxAge: 60,
+                },
+              },
+            ],
+          };
+        });
+        const start2 = await startRoute.POST(
+          req(
+            "/api/v1/auth/login/start",
+            {
+              email: "alice@example.com",
+              method: "email_link",
+            },
+            { ip: nextIp() },
+          ),
+        );
+        const ok = await completeRoute.POST(
+          req(
+            "/api/v1/auth/login/complete",
+            { token: provider.lastToken() },
+            { cookie: cookieOf(start2) },
+          ),
+        );
+        assert.equal(ok.status, 200);
+        assert.equal(
+          ((await ok.json()) as { data: { continuePath: string } }).data
+            .continuePath,
+          "/us/onboarding",
+        );
+        assert.ok(seen, "establisher received the completed login");
+        const c1 =
+          seen as unknown as import("../apps/web/src/lib/auth/login-flow.ts").CompletedLogin;
+        assert.equal(c1.identity.email, "alice@example.com");
+        assert.deepEqual(c1.identity.amr, ["email_link"]);
+        assert.ok(/^usr_[0-9a-f]{32}$/.test(c1.sub), "ReFi opaque subject");
+        assert.ok(
+          !c1.sub.includes("alice") &&
+            !JSON.stringify(c1.sub).includes("user-test"),
+          "subject derived from neither email nor provider id",
+        );
+        assert.equal(
+          c1.login.redirectUri,
+          "https://bff-dev.refi.trading/us/auth/callback",
+        );
+        // Same user again → same subject; OTP path converges on the same subject; another user differs.
+        const start3 = await startRoute.POST(
+          req(
+            "/api/v1/auth/login/start",
+            {
+              email: "alice@example.com",
+              method: "email_otp",
+            },
+            { ip: nextIp() },
+          ),
+        );
+        const otpOk = await completeRoute.POST(
+          req(
+            "/api/v1/auth/login/complete",
+            { code: "123456" },
+            { cookie: cookieOf(start3) },
+          ),
+        );
+        assert.equal(otpOk.status, 200);
+        const c2 =
+          seen as unknown as import("../apps/web/src/lib/auth/login-flow.ts").CompletedLogin;
+        assert.equal(
+          c2.sub,
+          c1.sub,
+          "OTP and magic link converge on one ReFi subject",
+        );
+        assert.deepEqual(c2.identity.amr, ["email_otp"]);
+        // OTP replay (same code again) refused before the provider.
+        const otpCalls = provider.calls.filter(
+          (c) => c.op === "otps.authenticate",
+        ).length;
+        assert.equal(
+          (
+            await completeRoute.POST(
+              req(
+                "/api/v1/auth/login/complete",
+                { code: "123456" },
+                { cookie: cookieOf(start3) },
+              ),
+            )
+          ).status,
+          401,
+        );
+        assert.equal(
+          provider.calls.filter((c) => c.op === "otps.authenticate").length,
+          otpCalls,
+          "OTP replay never reaches the provider",
+        );
+        // Email change at the provider does not change the subject.
+        provider.renameEmail("alice@example.com", "alice.new@example.com");
+        const start4 = await startRoute.POST(
+          req(
+            "/api/v1/auth/login/start",
+            {
+              email: "alice.new@example.com",
+              method: "email_link",
+            },
+            { ip: nextIp() },
+          ),
+        );
+        assert.equal(
+          (
+            await completeRoute.POST(
+              req(
+                "/api/v1/auth/login/complete",
+                { token: provider.lastToken() },
+                { cookie: cookieOf(start4) },
+              ),
+            )
+          ).status,
+          200,
+        );
+        const c3 =
+          seen as unknown as import("../apps/web/src/lib/auth/login-flow.ts").CompletedLogin;
+        assert.equal(c3.sub, c1.sub, "subject stable across an email change");
+        assert.equal(c3.identity.email, "alice.new@example.com");
+        // A different provider user gets a different subject.
+        const start5 = await startRoute.POST(
+          req(
+            "/api/v1/auth/login/start",
+            {
+              email: "bob@example.com",
+              method: "email_link",
+            },
+            { ip: nextIp() },
+          ),
+        );
+        assert.equal(
+          (
+            await completeRoute.POST(
+              req(
+                "/api/v1/auth/login/complete",
+                { token: provider.lastToken() },
+                { cookie: cookieOf(start5) },
+              ),
+            )
+          ).status,
+          200,
+        );
+        assert.notEqual(
+          (
+            seen as unknown as import("../apps/web/src/lib/auth/login-flow.ts").CompletedLogin
+          ).sub,
+          c1.sub,
+        );
+        // The address that authenticates must be the address the login was started for.
+        const start6 = await startRoute.POST(
+          req(
+            "/api/v1/auth/login/start",
+            {
+              email: "carol@example.com",
+              method: "email_link",
+            },
+            { ip: nextIp() },
+          ),
+        );
+        const carolCookie = cookieOf(start6);
+        const carolToken = provider.lastToken();
+        await startRoute.POST(
+          req(
+            "/api/v1/auth/login/start",
+            {
+              email: "dave@example.com",
+              method: "email_link",
+            },
+            { ip: nextIp() },
+          ),
+        );
+        const daveToken = provider.lastToken();
+        assert.equal(
+          (
+            await completeRoute.POST(
+              req(
+                "/api/v1/auth/login/complete",
+                { token: daveToken },
+                { cookie: carolCookie },
+              ),
+            )
+          ).status,
+          401,
+          "another address's token cannot complete this login",
+        );
+        void carolToken;
+        // Unverified provider email → refused.
+        provider.setVerified("bob@example.com", false);
+        const start7 = await startRoute.POST(
+          req(
+            "/api/v1/auth/login/start",
+            {
+              email: "bob@example.com",
+              method: "email_link",
+            },
+            { ip: nextIp() },
+          ),
+        );
+        assert.equal(
+          (
+            await completeRoute.POST(
+              req(
+                "/api/v1/auth/login/complete",
+                { token: provider.lastToken() },
+                { cookie: cookieOf(start7) },
+              ),
+            )
+          ).status,
+          401,
+        );
+        // Concurrent completion: exactly one winner.
+        const start8 = await startRoute.POST(
+          req(
+            "/api/v1/auth/login/start",
+            {
+              email: "erin@example.com",
+              method: "email_link",
+            },
+            { ip: nextIp() },
+          ),
+        );
+        const c8 = cookieOf(start8);
+        const t8 = provider.lastToken();
+        const both = await Promise.all([
+          completeRoute.POST(
+            req("/api/v1/auth/login/complete", { token: t8 }, { cookie: c8 }),
+          ),
+          completeRoute.POST(
+            req("/api/v1/auth/login/complete", { token: t8 }, { cookie: c8 }),
+          ),
+        ]);
+        assert.deepEqual(
+          both.map((r) => r.status).sort(),
+          [200, 401],
+          "one winner, one refusal",
+        );
+        sessionSeam.setConnectedSessionEstablisher(null);
+      },
+    );
+
+    await section(
+      "stytch: source guards — secrets only from server env, SDK lazy-loaded, no provider id or email in the subject path, routes are public-rate-limited and same-origin",
+      async () => {
+        const strip = (f: string) =>
+          readFileSync(join(REPO_ROOT, f), "utf8").replace(
+            /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+            "",
+          );
+        const st = strip("apps/web/src/lib/auth/stytch.ts");
+        assert.ok(
+          /await import\("stytch"\)/.test(st) &&
+            !/^import .*from "stytch"/m.test(st),
+          "SDK is a lazy dynamic import",
+        );
+        assert.ok(
+          !/NEXT_PUBLIC/.test(st) && !/console\./.test(st),
+          "no public env, no logging",
+        );
+        const lf = strip("apps/web/src/lib/auth/login-flow.ts");
+        assert.ok(
+          /consumePendingLogin\(/.test(lf) &&
+            lf.indexOf("consumePendingLogin(") <
+              lf.indexOf("magicLinks.authenticate"),
+          "pending login consumed BEFORE the provider is called",
+        );
+        assert.ok(
+          /getOrCreateOpaqueSubject\(/.test(lf) &&
+            !/sub:\s*identity\.email|sub:\s*identity\.providerUserId/.test(lf),
+          "subject only via the durable map",
+        );
+        for (const f of [
+          "apps/web/app/api/v1/auth/login/start/route.ts",
+          "apps/web/app/api/v1/auth/login/complete/route.ts",
+        ]) {
+          const r = strip(f);
+          assert.ok(
+            /REFI_AUTH_PROVIDER !== "stytch"/.test(r) &&
+              /requestOrigin\(req\)/.test(r) &&
+              /createRateLimiter/.test(r),
+            `${f}: dark switch, same-origin, rate limit`,
+          );
+          assert.ok(
+            !/getAuthContext|bffMutate|bffRead/.test(r),
+            `${f}: unauthenticated by design (no session yet)`,
+          );
+          assert.ok(!/console\./.test(r), `${f}: never logs`);
+        }
+        const manifest = JSON.parse(
+          readFileSync(
+            join(REPO_ROOT, "compliance/API_ROUTE_MANIFEST.json"),
+            "utf8",
+          ),
+        ) as { routes: Array<{ route: string; auth: Record<string, string> }> };
+        for (const p of [
+          "/api/v1/auth/login/start",
+          "/api/v1/auth/login/complete",
+        ]) {
+          const row = manifest.routes.find((r) => r.route === p);
+          assert.ok(
+            row && row.auth["POST"] === "public-rate-limited",
+            `${p} manifested as public-rate-limited`,
+          );
+        }
+        const env = strip("apps/web/src/lib/config/env.ts");
+        assert.ok(
+          /REFI_AUTH_PROVIDER === "stytch"/.test(env) &&
+            /the demo tier never uses a real identity provider/.test(env),
+          "stytch is refused on the demo tier and all-or-nothing",
+        );
+      },
+    );
+  } finally {
+    sessionSeam.setConnectedSessionEstablisher(null);
+    stytchMod.setStytchClientForTests(null);
+    cs.setConnectedStoreFactoryForTests(null);
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+    if (savedProxy === undefined) delete process.env["REFI_TRUST_PROXY_HOST"];
+    else process.env["REFI_TRUST_PROXY_HOST"] = savedProxy;
     resetServerEnvCacheForTests();
   }
 }

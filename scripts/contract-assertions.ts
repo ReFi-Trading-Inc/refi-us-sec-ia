@@ -6044,7 +6044,7 @@ await section(
       ]);
       const schemas = JSON.parse(
         read(
-          "packages/api-clients/contracts/investor-api/v1.1.0-alpha.2/schemas.json",
+          "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/schemas.json",
         ),
       ) as {
         $defs: Record<
@@ -11847,7 +11847,7 @@ await section(
     readFileSync(
       join(
         REPO_ROOT,
-        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.2/examples.json",
+        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/examples.json",
       ),
       "utf8",
     ),
@@ -12455,7 +12455,7 @@ await section(
     readFileSync(
       join(
         REPO_ROOT,
-        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.2/examples.json",
+        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/examples.json",
       ),
       "utf8",
     ),

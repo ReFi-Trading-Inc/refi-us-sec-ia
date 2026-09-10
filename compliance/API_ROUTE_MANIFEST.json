@@ -107,7 +107,7 @@
       "source": "apps/web/app/api/v1/investor/activity/route.ts",
       "route": "/api/v1/investor/activity",
       "methods": ["GET"],
-      "purpose": "Investor-visible account records through the frozen v1.1.0-alpha.2 Investor API client (listAccountRecords); server-derived account scope; the five execution-chain record variants (account_intent, risk_decision, execution_plan, order, fill) are validated but excluded from Signal rendering (D-LAUNCH-06). Read-only. C1b-2 row 20.",
+      "purpose": "Investor-visible account records through the frozen v1.1.0-alpha.3 Investor API client (listAccountRecords); server-derived account scope; the five execution-chain record variants (account_intent, risk_decision, execution_plan, order, fill) are validated but excluded from Signal rendering (D-LAUNCH-06). Read-only. C1b-2 row 20.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read"
@@ -117,7 +117,7 @@
       "source": "apps/web/app/api/v1/investor/activity/[id]/route.ts",
       "route": "/api/v1/investor/activity/[id]",
       "methods": ["GET"],
-      "purpose": "Single investor-visible account record through the frozen v1.1.0-alpha.2 client (getAccountRecord); execution-chain variants answer as absent. Read-only. C1b-2 row 20.",
+      "purpose": "Single investor-visible account record through the frozen v1.1.0-alpha.3 client (getAccountRecord); execution-chain variants answer as absent. Read-only. C1b-2 row 20.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read"
@@ -147,7 +147,7 @@
       "source": "apps/web/app/api/v1/investor/allocation/preview/route.ts",
       "route": "/api/v1/investor/allocation/preview",
       "methods": ["POST"],
-      "purpose": "Automated Alpha: createAllocationPreview through the frozen v1.1.0-alpha.2 client. Non-economic (changes nothing); gated on the session's authoritative account scope only; the browser names a template and a percent, never an account. Deterministic Idempotency-Key; no mutation retry; contract errors keep their code.",
+      "purpose": "Automated Alpha: createAllocationPreview through the frozen v1.1.0-alpha.3 client. Non-economic (changes nothing); gated on the session's authoritative account scope only; the browser names a template and a percent, never an account. Deterministic Idempotency-Key; no mutation retry; contract errors keep their code.",
       "owner": "investor-bff",
       "auth": {
         "POST": "bff-mutate"
@@ -218,7 +218,7 @@
       "source": "apps/web/app/api/v1/investor/disclosures/route.ts",
       "route": "/api/v1/investor/disclosures",
       "methods": ["GET"],
-      "purpose": "Effective disclosures read through the frozen v1.1.0-alpha.2 Investor API client (listEffectiveDisclosures): key, integer version, content hash, effective date, status. Fails closed with an explicit upstream state; never fabricates a document. C1b-2 slice 1.",
+      "purpose": "Effective disclosures read through the frozen v1.1.0-alpha.3 Investor API client (listEffectiveDisclosures): key, integer version, content hash, effective date, status. Fails closed with an explicit upstream state; never fabricates a document. C1b-2 slice 1.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read"
@@ -228,7 +228,7 @@
       "source": "apps/web/app/api/v1/investor/disclosures/[id]/acknowledge/route.ts",
       "route": "/api/v1/investor/disclosures/[id]/acknowledge",
       "methods": ["POST"],
-      "purpose": "Records ACCEPT consent for one effective disclosure through the frozen v1.1.0-alpha.2 Investor API client (recordConsent) with the exact disclosure_version/disclosure_hash the backend lists; stale tuples are refused (409); deterministic Idempotency-Key, no automatic mutation retry; contract drift fails closed (502). C1b-2 slice 1.",
+      "purpose": "Records ACCEPT consent for one effective disclosure through the frozen v1.1.0-alpha.3 Investor API client (recordConsent) with the exact disclosure_version/disclosure_hash the backend lists; stale tuples are refused (409); deterministic Idempotency-Key, no automatic mutation retry; contract drift fails closed (502). C1b-2 slice 1.",
       "owner": "investor-bff",
       "auth": {
         "POST": "bff-mutate"
@@ -238,7 +238,7 @@
       "source": "apps/web/app/api/v1/investor/events/route.ts",
       "route": "/api/v1/investor/events",
       "methods": ["GET"],
-      "purpose": "Same-origin SSE forwarding the backend account event stream (streamAccountEvents, v1.1.0-alpha.2) as validated AccountEvent frames with Last-Event-ID resume and keepalives; the browser never opens the upstream stream or supplies an account id. Read-only.",
+      "purpose": "Same-origin SSE forwarding the backend account event stream (streamAccountEvents, v1.1.0-alpha.3) as validated AccountEvent frames with Last-Event-ID resume and keepalives; the browser never opens the upstream stream or supplies an account id. Read-only.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-stream"
@@ -338,7 +338,7 @@
       "source": "apps/web/app/api/v1/investor/portfolio/route.ts",
       "route": "/api/v1/investor/portfolio",
       "methods": ["GET"],
-      "purpose": "Reconciled account truth through the frozen v1.1.0-alpha.2 client (getAccountValuation, listAccountValuations, listAccountPositions, listAccountMemberships, getTemplate, getAccountPreferences); server-derived account scope; bounded pagination; decimals preserved. Read-only. C1b-2 rows 15/16/24.",
+      "purpose": "Reconciled account truth through the frozen v1.1.0-alpha.3 client (getAccountValuation, listAccountValuations, listAccountPositions, listAccountMemberships, getTemplate, getAccountPreferences); server-derived account scope; bounded pagination; decimals preserved. Read-only. C1b-2 rows 15/16/24.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read"
@@ -380,7 +380,7 @@
       "source": "apps/web/app/api/v1/investor/profile/v2/attestation/route.ts",
       "route": "/api/v1/investor/profile/v2/attestation",
       "methods": ["GET", "POST"],
-      "purpose": "ComplianceProfileAttestation submission (Daniel step 6) through the frozen v1.1.0-alpha.2 client: POST submits the LATEST questionnaire-v2 decision after verifying, against the backend, that every effective disclosure has an ACTIVE ACCEPT consent; the chain is recorded as distinct durable states (disclosure delivered → consent accepted → attestation constructed → submitted → backend acknowledgment) and only the backend 201 is evidence. The body carries nothing; every input is server state under the session's account scope. KYC provenance comes from the provider boundary — the mock is never evidence, so the chain stops at `blocked` (KYC_EVIDENCE_MOCK / KYC_EVIDENCE_MISSING) until a genuine provider exists. Deterministic Idempotency-Key; no mutation retry; contract drift 502. GET lists this account's submission records.",
+      "purpose": "ComplianceProfileAttestation submission (Daniel step 6) through the frozen v1.1.0-alpha.3 client: POST submits the LATEST questionnaire-v2 decision after verifying, against the backend, that every effective disclosure has an ACTIVE ACCEPT consent; the chain is recorded as distinct durable states (disclosure delivered → consent accepted → attestation constructed → submitted → backend acknowledgment) and only the backend 201 is evidence. The body carries nothing; every input is server state under the session's account scope. KYC provenance comes from the provider boundary — the mock is never evidence, so the chain stops at `blocked` (KYC_EVIDENCE_MOCK / KYC_EVIDENCE_MISSING) until a genuine provider exists. Deterministic Idempotency-Key; no mutation retry; contract drift 502. GET lists this account's submission records.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read",
@@ -402,7 +402,7 @@
       "source": "apps/web/app/api/v1/investor/recommendations/route.ts",
       "route": "/api/v1/investor/recommendations",
       "methods": ["GET"],
-      "purpose": "Signal recommendation summaries through the frozen v1.1.0-alpha.2 client (listAccountRecommendations); server-derived account scope; bounded pagination; execution_eligible is informational only. Read-only. C1b-2 row 19.",
+      "purpose": "Signal recommendation summaries through the frozen v1.1.0-alpha.3 client (listAccountRecommendations); server-derived account scope; bounded pagination; execution_eligible is informational only. Read-only. C1b-2 row 19.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read"
@@ -412,7 +412,7 @@
       "source": "apps/web/app/api/v1/investor/recommendations/[id]/route.ts",
       "route": "/api/v1/investor/recommendations/[id]",
       "methods": ["GET"],
-      "purpose": "Single recommendation with its first contract page of constituent legs through the frozen v1.1.0-alpha.2 client (getAccountRecommendation + listAccountRecommendationLegs). Read-only; no order/action surface. C1b-2 row 19.",
+      "purpose": "Single recommendation with its first contract page of constituent legs through the frozen v1.1.0-alpha.3 client (getAccountRecommendation + listAccountRecommendationLegs). Read-only; no order/action surface. C1b-2 row 19.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read"

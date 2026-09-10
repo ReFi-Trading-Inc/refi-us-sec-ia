@@ -1,5 +1,5 @@
 /**
- * Server-only Investor API client for the vendored v1.1.0-alpha.2 contract.
+ * Server-only Investor API client for the vendored v1.1.0-alpha.3 contract.
  *
  * ─── Boundary ──────────────────────────────────────────────────────────────
  * This module runs in the BFF only. It must never be imported by browser code
@@ -404,12 +404,17 @@ async function failureFromResponse(
       problems,
     );
   }
+  // alpha.3 MIGRATION.md §5: the VALIDATED optional acknowledgment
+  // continuation is retained on the error so the BFF/UI confirmation flow can
+  // use it (preferences and disconnect). Never reconstructed or parsed from
+  // the message; absent → null.
   return new InvestorApiError({
     status: res.status,
     code: envelope.error.code,
     message: envelope.error.message,
     correlationId: envelope.error.correlation_id,
     retryAfterSeconds: parseRetryAfter(res.headers),
+    continuation: envelope.error.continuation ?? null,
   });
 }
 

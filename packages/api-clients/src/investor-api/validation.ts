@@ -14,7 +14,7 @@ import Ajv2020, {
   type ValidateFunction,
 } from "ajv/dist/2020";
 import addFormats from "ajv-formats";
-import schemas from "../../contracts/investor-api/v1.1.0-alpha.2/schemas.json";
+import schemas from "../../contracts/investor-api/v1.1.0-alpha.3/schemas.json";
 import { ContractVersionMismatchError } from "./errors";
 
 // schemas.json carries its own `$id`; Ajv indexes it under that URI.

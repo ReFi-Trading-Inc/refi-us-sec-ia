@@ -46,6 +46,7 @@ import {
 } from "../../../../../../../src/lib/prototype-store/entities/investor-profile-v2";
 import { listAttestationSubmissions } from "../../../../../../../src/lib/prototype-store/entities/attestation-submission";
 import { submitComplianceProfileAttestation } from "../../../../../../../src/lib/compliance/attestation-submission";
+import { CONTRACT_VERSION } from "../../../../../../../src/lib/investor-api/upstream-state";
 import type { AttestationEvidenceInput } from "../../../../../../../src/lib/compliance/attestation-mapping";
 
 export const GET = bffRead({
@@ -143,7 +144,7 @@ export const POST = bffMutate<undefined>({
             state: outcome.record.state,
             attestation: outcome.attestation,
             upstreamStatus: outcome.upstreamStatus,
-            contractVersion: "v1.1.0-alpha.2",
+            contractVersion: CONTRACT_VERSION,
           },
           references: [
             `attestation:${outcome.attestation.attestation_id}`,

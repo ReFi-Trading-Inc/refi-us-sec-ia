@@ -99,12 +99,26 @@ export const PATCH = bffMutate<Body>({
       };
     } catch (err) {
       if (err instanceof InvestorApiError) {
+        // alpha.3 `preference_mutation`: 409 ACKNOWLEDGMENT_REQUIRED carries
+        // the VALIDATED continuation (disclosure key/version/hash,
+        // continuation_ref, expiry, retry_idempotency_key=new_key). It is
+        // forwarded exactly so the confirmation UI records consent and
+        // retries the SAME desired fields with continuation_ref +
+        // consent_receipt_id under a NEW key. 403 ACCOUNT_AUTHORIZATION_REQUIRED
+        // is an explicit backend denial, forwarded as such — never weakened.
+        const backendDecision = err.status === 409 || err.status === 403;
         return {
-          data: { ok: false, code: err.code, status: err.status },
-          outcome:
-            err.status === 409 ? ("rejected" as const) : ("blocked" as const),
+          data: {
+            ok: false,
+            code: err.code,
+            status: err.status,
+            ...(err.continuation ? { continuation: err.continuation } : {}),
+          },
+          outcome: backendDecision
+            ? ("rejected" as const)
+            : ("blocked" as const),
           reasonCode: err.code.toLowerCase(),
-          status: err.status === 409 ? 409 : 502,
+          status: backendDecision ? err.status : 502,
         };
       }
       return {

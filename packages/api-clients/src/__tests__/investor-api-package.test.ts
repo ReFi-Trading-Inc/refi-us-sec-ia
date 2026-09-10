@@ -27,12 +27,12 @@ function sha256(path: string): string {
 
 describe("vendored contract package is byte-identical to Daniel's bundle.json", () => {
   it("pins the expected version and digests", () => {
-    expect(CONTRACT_VERSION).toBe("v1.1.0-alpha.2");
+    expect(CONTRACT_VERSION).toBe("v1.1.0-alpha.3");
     expect(PACKAGE_CONTENT_SHA256).toBe(
-      "c1b53c906653ca8860bf66cfc0df8fa862ff34d6cbf77298ac83cb55f006cb09",
+      "5eca1200f6af807093ea0986f835235e2da478b69478e621fd54954ba1d77608",
     );
     expect(SOURCE_CONTRACT_SHA256).toBe(
-      "b51556df2a28b531dad0a81d0001685da110bfdf7b2bd38e8e2ac899f22e0278",
+      "3f5df829b1b74d1c95aa41ba4b9bc306d6b6242b25737373082b95d52d8e1cdb",
     );
   });
 

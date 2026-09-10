@@ -31,6 +31,7 @@ import {
   UpstreamNotConfiguredError,
 } from "@lib/investor-api/gateway";
 import { acknowledgeDisclosure } from "@lib/investor-api/disclosure-consent";
+import { CONTRACT_VERSION } from "@lib/investor-api/upstream-state";
 
 const ackBody = z.object({
   /** Integer version as listed by `listEffectiveDisclosures`. */
@@ -118,7 +119,7 @@ export const POST = bffMutate<AckBody>({
             ok: true,
             receipt: outcome.receipt,
             upstreamStatus: outcome.status,
-            contractVersion: "v1.1.0-alpha.2",
+            contractVersion: CONTRACT_VERSION,
           },
           references: [
             `consent-receipt:${outcome.receipt.consent_receipt_id}`,

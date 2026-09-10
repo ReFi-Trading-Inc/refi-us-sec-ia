@@ -121,7 +121,8 @@ describe("connectBrokerage: no AccountAuthorization precondition before the firs
       INPUT,
       "idem-key-0001",
     );
-    const create = calls.find((c) => c.op === "createBrokerageConnection")!;
+    const create = calls.find((c) => c.op === "createBrokerageConnection");
+    if (!create) throw new Error("createBrokerageConnection was not called");
     const opts = create.opts as {
       body: {
         credentials: { api_key: string; api_secret: string };
@@ -135,12 +136,11 @@ describe("connectBrokerage: no AccountAuthorization precondition before the firs
       api_secret: INPUT.apiSecretKey,
     });
     expect(opts.idempotencyKey).toBe("idem-key-0001");
-    expect(out).toEqual({
-      kind: "accepted",
-      connection: expect.objectContaining({
-        connectionId: "brokerconn_test_0001",
-        connectionStatus: "PENDING_VALIDATION",
-      }),
-    });
+    expect(out.kind).toBe("accepted");
+    // The lint project cannot resolve the web app's types across the package
+    // boundary, so assert on the serialised projection.
+    const serialised = JSON.stringify(out);
+    expect(serialised).toMatch(/"connectionId":"brokerconn_test_0001"/);
+    expect(serialised).toMatch(/"connectionStatus":"PENDING_VALIDATION"/);
   });
 });

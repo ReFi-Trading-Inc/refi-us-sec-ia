@@ -67,32 +67,36 @@ export async function getBrokerageConnection(
   return live ? projectBrokerageConnection(live) : null;
 }
 
-// ─── The canonical connection mutation, with its precondition ───────────────
+// ─── The canonical connection mutation ──────────────────────────────────────
 
 export interface ConnectBrokerageInput {
   apiKeyId: string;
   apiSecretKey: string;
 }
 
-export type ConnectBrokerageOutcome =
-  | { kind: "accepted"; connection: BrokerageConnectionView }
-  | {
-      /** Account authorization is not AUTHORIZED: nothing was forwarded upstream. */
-      kind: "not_authorized";
-      authorization: string;
-    };
+export type ConnectBrokerageOutcome = {
+  kind: "accepted";
+  connection: BrokerageConnectionView;
+};
 
 /**
  * Connect Alpaca (paper) for the caller's account.
  *
- * Order is the point (D-LAUNCH-06 rebaseline: `AccountAuthorization.status`
- * is READ AND ENFORCED before every canonical mutation):
  *   1. `accountId` is the AUTHORITATIVE scope the caller already resolved via
  *      `resolveAccountScope` (ownership re-authorized against `listAccounts`);
- *   2. `getAccountAuthorization(account_id)` must be exactly `AUTHORIZED`;
- *      PENDING / DENIED / SUSPENDED fail closed here — the credential payload
- *      is never built, never forwarded, never logged;
- *   3. only then `createBrokerageConnection`, once.
+ *   2. `createBrokerageConnection`, once.
+ *
+ * There is deliberately NO `AccountAuthorization.status === AUTHORIZED`
+ * precondition here (Daniel 2026-09-09, correcting the 2026-09-05 rebaseline
+ * reading of D-LAUNCH-06): an admitted account with no brokerage connection
+ * legitimately reports `DENIED` with `BROKER_CONNECTION_MISSING`, so requiring
+ * AUTHORIZED before the FIRST connection is circular and prevents connecting
+ * at all. The correct order is: admitted/onboarding account → compliance and
+ * consent requirements → create brokerage connection → validation/sync →
+ * fresh account truth → account authorization → subscription/execution.
+ * AccountAuthorization remains mandatory before economic subscription/action
+ * execution where the contract requires it; the backend decides it and this
+ * module never relabels DENIED as anything else.
  *
  * The credentials pass through this function as arguments and into the one
  * upstream call; nothing here retains, hashes, or echoes them.
@@ -103,13 +107,6 @@ export async function connectBrokerage(
   input: ConnectBrokerageInput,
   idempotencyKey: string,
 ): Promise<ConnectBrokerageOutcome> {
-  const authz = await client.call("getAccountAuthorization", {
-    path: { account_id: accountId },
-  });
-  const status = authz.data.data.status;
-  if (status !== "AUTHORIZED") {
-    return { kind: "not_authorized", authorization: status };
-  }
   const res = await client.call("createBrokerageConnection", {
     path: { account_id: accountId },
     body: {

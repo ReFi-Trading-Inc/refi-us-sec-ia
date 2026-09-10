@@ -355,7 +355,11 @@ state). 10, 12, 26 (C) are deleted with no replacement — there is no activate
 verb; the setup checklist has no control. Row 14 (`useBrokerDisconnect`) is
 deleted from the browser; the acknowledged `disconnectBrokerageConnection`
 handoff remains A, outstanding.
-**Authorization precondition (corrective review, 2026-09-05):** the BFF mutation
+**Authorization precondition (corrective review, 2026-09-05) — SUPERSEDED
+2026-09-09 (Daniel's integration list): the precondition was circular (DENIED /
+BROKER_CONNECTION_MISSING is the legitimate pre-connection state) and has been
+removed; authorization gates economic actions, not the first connection.
+Historical text retained:** the BFF mutation
 reads `getAccountAuthorization` and requires exactly `AUTHORIZED` before the
 credential payload is built or forwarded; `PENDING`/`DENIED`/`SUSPENDED` fail
 closed (412, `account_not_authorized`, the existing local-precondition refusal

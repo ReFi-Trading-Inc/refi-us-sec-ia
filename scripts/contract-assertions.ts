@@ -9412,6 +9412,457 @@ await section(
   }
 }
 
+// ─── Assertion signer (Daniel 2026-09-09 step 3): KMS abstraction, DER→JOSE, stable kid, JWKS without private material ──
+
+{
+  const { resetServerEnvCacheForTests, getServerEnv: getServerEnvSigner } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const ecdsa =
+    await import("../apps/web/src/lib/investor-api/ecdsa-signature.ts");
+  const signerMod =
+    await import("../apps/web/src/lib/investor-api/assertion-signer.ts");
+  const ua = await import("../apps/web/src/lib/investor-api/user-assertion.ts");
+  const nodeCrypto = await import("node:crypto");
+  const { createRequire: createRequireSigner } = await import("node:module");
+  const requireWebSigner = createRequireSigner(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const jose = (await import(
+    requireWebSigner.resolve("jose")
+  )) as typeof import("jose");
+
+  await section(
+    "ecdsa-signature: DER ↔ JOSE conversion round-trips, pads short integers, strips the 0x00 sign pad, rejects malformed input",
+    async () => {
+      const { privateKey, publicKey } = nodeCrypto.generateKeyPairSync("ec", {
+        namedCurve: "P-256",
+      });
+      const msg = new TextEncoder().encode("signing-input.for.es256");
+      // Many signatures so both "high-bit set" (0x00-padded DER) and "leading
+      // zero" (short DER integer) cases occur.
+      for (let i = 0; i < 64; i++) {
+        const der = new Uint8Array(
+          nodeCrypto.sign("sha256", msg, {
+            key: privateKey,
+            dsaEncoding: "der",
+          }),
+        );
+        const jose = ecdsa.derToJose(der);
+        assert.equal(
+          jose.length,
+          64,
+          "JOSE ES256 signature is exactly 64 bytes",
+        );
+        assert.ok(
+          nodeCrypto.verify(
+            "sha256",
+            msg,
+            { key: publicKey, dsaEncoding: "ieee-p1363" },
+            jose,
+          ),
+          "converted signature verifies in JOSE (ieee-p1363) form",
+        );
+        assert.ok(
+          nodeCrypto.verify(
+            "sha256",
+            msg,
+            { key: publicKey, dsaEncoding: "der" },
+            ecdsa.joseToDer(jose),
+          ),
+          "JOSE → DER round-trip verifies in DER form",
+        );
+      }
+      // Deterministic vectors: r with the high bit set (DER pads 0x00), s short (leading zero byte stripped).
+      const r = new Uint8Array(32).fill(0xff);
+      const sShort = new Uint8Array(32);
+      sShort[31] = 0x01;
+      const jose = new Uint8Array([...r, ...sShort]);
+      const der = ecdsa.joseToDer(jose);
+      assert.deepEqual(
+        [...der.slice(0, 5)],
+        [0x30, 0x26, 0x02, 0x21, 0x00],
+        "high-bit r gets a 0x00 pad byte",
+      );
+      assert.deepEqual(
+        [...der.slice(der.length - 3)],
+        [0x02, 0x01, 0x01],
+        "short s is minimal, no padding",
+      );
+      assert.deepEqual(
+        [...ecdsa.derToJose(der)],
+        [...jose],
+        "round-trip restores fixed width",
+      );
+      for (const bad of [
+        new Uint8Array([0x31, 0x00]),
+        new Uint8Array([0x30, 0x02, 0x02, 0x00]),
+        new Uint8Array(70),
+      ]) {
+        assert.throws(() => ecdsa.derToJose(bad), "malformed DER is rejected");
+      }
+      assert.throws(
+        () => ecdsa.joseToDer(new Uint8Array(63)),
+        "wrong JOSE length is rejected",
+      );
+    },
+  );
+
+  // A fake KMS that behaves like the service: it holds the private key, returns
+  // the PEM public key, and signs the DIGEST it is handed with plain ECDSA
+  // P-256, returning DER. Node's crypto.sign cannot sign a pre-computed digest
+  // for EC keys (its null-algorithm mode is not digest-mode ECDSA), so the
+  // arithmetic is done here with BigInt; verification below is Node's own.
+  const P = 0xffffffff00000001000000000000000000000000ffffffffffffffffffffffffn;
+  const N = 0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551n;
+  const A = P - 3n;
+  const GX =
+    0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296n;
+  const GY =
+    0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5n;
+  const mod = (x: bigint, m: bigint) => ((x % m) + m) % m;
+  const inv = (x: bigint, m: bigint) => {
+    let [a0, b0, u, v] = [mod(x, m), m, 1n, 0n];
+    while (a0 !== 0n) {
+      const q = b0 / a0;
+      [a0, b0] = [b0 - q * a0, a0];
+      [u, v] = [v - q * u, u];
+    }
+    return mod(v, m);
+  };
+  type Pt = [bigint, bigint] | null;
+  const add = (p: Pt, q: Pt): Pt => {
+    if (!p) return q;
+    if (!q) return p;
+    const [x1, y1] = p,
+      [x2, y2] = q;
+    if (x1 === x2) {
+      if (mod(y1 + y2, P) === 0n) return null;
+      const l = mod((3n * x1 * x1 + A) * inv(2n * y1, P), P);
+      const x3 = mod(l * l - 2n * x1, P);
+      return [x3, mod(l * (x1 - x3) - y1, P)];
+    }
+    const l = mod((y2 - y1) * inv(x2 - x1, P), P);
+    const x3 = mod(l * l - x1 - x2, P);
+    return [x3, mod(l * (x1 - x3) - y1, P)];
+  };
+  const mul = (k: bigint, p: Pt): Pt => {
+    let r: Pt = null,
+      q = p;
+    while (k > 0n) {
+      if (k & 1n) r = add(r, q);
+      q = add(q, q);
+      k >>= 1n;
+    }
+    return r;
+  };
+  const bufToBig = (b: Uint8Array) =>
+    BigInt("0x" + Buffer.from(b).toString("hex"));
+  const bigTo32 = (x: bigint) =>
+    new Uint8Array(Buffer.from(x.toString(16).padStart(64, "0"), "hex"));
+  function fakeKms(
+    privateKey: import("node:crypto").KeyObject,
+    opts: { corruptSignature?: boolean; returnJose?: boolean } = {},
+  ) {
+    const calls = { getPublicKey: 0, asymmetricSign: 0 };
+    const publicKey = nodeCrypto.createPublicKey(privateKey);
+    const d = bufToBig(
+      Buffer.from(
+        (privateKey.export({ format: "jwk" }) as { d: string }).d,
+        "base64url",
+      ),
+    );
+    const client: import("../apps/web/src/lib/investor-api/assertion-signer.ts").KmsSignClient =
+      {
+        async getPublicKey() {
+          calls.getPublicKey++;
+          return [
+            {
+              pem: publicKey.export({ type: "spki", format: "pem" }).toString(),
+            },
+          ];
+        },
+        async asymmetricSign(req) {
+          calls.asymmetricSign++;
+          const z = bufToBig(req.digest.sha256);
+          let r = 0n,
+            sVal = 0n;
+          while (r === 0n || sVal === 0n) {
+            const k = mod(bufToBig(nodeCrypto.randomBytes(32)), N - 1n) + 1n;
+            const R = mul(k, [GX, GY]);
+            if (!R) continue;
+            r = mod(R[0], N);
+            sVal = mod(inv(k, N) * (z + r * d), N);
+          }
+          const jose = new Uint8Array([...bigTo32(r), ...bigTo32(sVal)]);
+          const bytes = opts.returnJose ? jose : ecdsa.joseToDer(jose);
+          if (opts.corruptSignature) bytes[bytes.length - 1] ^= 0x01;
+          return [{ signature: bytes }];
+        },
+      };
+    return { client, calls, publicKey };
+  }
+  const KEY_VERSION =
+    "projects/p/locations/us-central1/keyRings/refi-bff/cryptoKeys/assertion/cryptoKeyVersions/1";
+
+  await section(
+    "assertion-signer(kms): private key never leaves the client; public JWK derived from getPublicKey with the stable kid and no `d`; DER signatures converted and locally verified; a corrupted signature never leaves the signer",
+    async () => {
+      const { privateKey } = nodeCrypto.generateKeyPairSync("ec", {
+        namedCurve: "P-256",
+      });
+      const { client, calls, publicKey } = fakeKms(privateKey);
+      const signer = signerMod.createKmsAssertionSigner({
+        keyVersionName: KEY_VERSION,
+        kid: "bff-kms-2026-09-1",
+        client,
+      });
+      assert.equal(signer.kind, "kms");
+      const jwk = await signer.publicJwk();
+      assert.equal(jwk.kid, "bff-kms-2026-09-1");
+      assert.equal(jwk.kty, "EC");
+      assert.equal(jwk.crv, "P-256");
+      assert.equal(jwk.alg, "ES256");
+      assert.equal(jwk.use, "sig");
+      assert.ok(!("d" in jwk), "public JWK carries no private component");
+      assert.deepEqual(
+        { x: jwk.x, y: jwk.y },
+        (() => {
+          const e = publicKey.export({ format: "jwk" }) as {
+            x: string;
+            y: string;
+          };
+          return { x: e.x, y: e.y };
+        })(),
+        "public JWK matches the KMS public key",
+      );
+      const input = new TextEncoder().encode("hdr.payload");
+      const sig = await signer.sign(input);
+      assert.equal(sig.length, 64, "signature is JOSE r||s");
+      assert.ok(
+        nodeCrypto.verify(
+          "sha256",
+          input,
+          { key: publicKey, dsaEncoding: "ieee-p1363" },
+          sig,
+        ),
+        "JOSE signature verifies against the KMS public key",
+      );
+      await signer.sign(input);
+      assert.equal(
+        calls.getPublicKey,
+        1,
+        "public key fetched once per process",
+      );
+      assert.equal(
+        calls.asymmetricSign,
+        2,
+        "each sign is a KMS call — no private key locally",
+      );
+      // Corrupted DER from the service is caught by local verification.
+      const bad = fakeKms(privateKey, { corruptSignature: true });
+      const badSigner = signerMod.createKmsAssertionSigner({
+        keyVersionName: KEY_VERSION,
+        kid: "bff-kms-2026-09-1",
+        client: bad.client,
+      });
+      await assert.rejects(badSigner.sign(input), /failed local verification/);
+      // A service that already returns JOSE form is accepted without double conversion.
+      const joseKms = fakeKms(privateKey, { returnJose: true });
+      const joseSigner = signerMod.createKmsAssertionSigner({
+        keyVersionName: KEY_VERSION,
+        kid: "k1",
+        client: joseKms.client,
+      });
+      assert.equal((await joseSigner.sign(input)).length, 64);
+      // Resource-name and kid shapes are enforced.
+      assert.throws(
+        () =>
+          signerMod.createKmsAssertionSigner({
+            keyVersionName: "assertion-key",
+            kid: "k",
+            client,
+          }),
+        /cryptoKeyVersion resource name/,
+      );
+      assert.throws(
+        () =>
+          signerMod.createKmsAssertionSigner({
+            keyVersionName: KEY_VERSION,
+            kid: "",
+            client,
+          }),
+        /BFF_ASSERTION_KID/,
+      );
+      // Two signer instances over the same key version (two replicas / a restart) publish the same key and verify each other's tokens.
+      const a = signerMod.createKmsAssertionSigner({
+        keyVersionName: KEY_VERSION,
+        kid: "bff-kms-2026-09-1",
+        client: fakeKms(privateKey).client,
+      });
+      const b = signerMod.createKmsAssertionSigner({
+        keyVersionName: KEY_VERSION,
+        kid: "bff-kms-2026-09-1",
+        client: fakeKms(privateKey).client,
+      });
+      assert.deepEqual(
+        await a.publicJwk(),
+        await b.publicJwk(),
+        "same key set across instances",
+      );
+      const sigA = await a.sign(input);
+      assert.ok(
+        signerMod.verifyJoseSignature(await b.publicJwk(), input, sigA),
+        "instance B verifies instance A's signature",
+      );
+    },
+  );
+
+  await section(
+    "user assertion via KMS: BFF_ASSERTION_SIGNER=kms mints a jose-verifiable ES256 token with the KMS kid, identical claim profile; JWKS serves the KMS public key with no `d`; jwk mode unchanged",
+    async () => {
+      const saved: Record<string, string | undefined> = {};
+      for (const k of [
+        "BFF_ASSERTION_SIGNER",
+        "BFF_ASSERTION_KMS_KEY_VERSION",
+        "BFF_ASSERTION_KID",
+        "BFF_ASSERTION_PRIVATE_KEY_JWK",
+        "BFF_ASSERTION_ISSUER",
+        "INVESTOR_API_AUDIENCE",
+        "BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK",
+      ])
+        saved[k] = process.env[k];
+      try {
+        const { privateKey } = nodeCrypto.generateKeyPairSync("ec", {
+          namedCurve: "P-256",
+        });
+        const kms = fakeKms(privateKey);
+        ua.setKmsClientFactoryForTests(async () => kms.client);
+        process.env["BFF_ASSERTION_SIGNER"] = "kms";
+        process.env["BFF_ASSERTION_KMS_KEY_VERSION"] = KEY_VERSION;
+        process.env["BFF_ASSERTION_KID"] = "bff-kms-2026-09-1";
+        delete process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"];
+        delete process.env["BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"];
+        process.env["BFF_ASSERTION_ISSUER"] = "urn:refinity:bff:dev";
+        process.env["INVESTOR_API_AUDIENCE"] = "urn:refinity:investor-api:dev";
+        resetServerEnvCacheForTests();
+        ua.resetSigningKeyCache();
+        const authTime = Math.floor(Date.now() / 1000) - 30;
+        const minted = await ua.mintUserAssertion({
+          userId: "usr_alpha_invited_01",
+          sid: "session_alpha_00000001",
+          authTime,
+          amr: ["email_link"],
+        });
+        const jwks = await ua.getPublicJwks();
+        assert.equal(jwks.keys.length, 1);
+        assert.equal(jwks.keys[0]!.kid, "bff-kms-2026-09-1");
+        assert.ok(
+          !("d" in jwks.keys[0]!),
+          "JWKS never publishes private material",
+        );
+        const key = await jose.importJWK(jwks.keys[0]!, "ES256");
+        const { payload, protectedHeader } = await jose.jwtVerify(
+          minted.token,
+          key,
+          {
+            issuer: "urn:refinity:bff:dev",
+            audience: "urn:refinity:investor-api:dev",
+            clockTolerance: 30,
+          },
+        );
+        assert.deepEqual(
+          protectedHeader,
+          { alg: "ES256", kid: "bff-kms-2026-09-1", typ: "JWT" },
+          "protected header exactly alg/kid/typ",
+        );
+        assert.deepEqual(
+          Object.keys(payload).sort(),
+          [
+            "amr",
+            "aud",
+            "auth_time",
+            "exp",
+            "iat",
+            "iss",
+            "jti",
+            "nbf",
+            "sid",
+            "sub",
+          ],
+          "closed claim set",
+        );
+        assert.equal(
+          payload["auth_time"],
+          authTime,
+          "genuine auth_time preserved",
+        );
+        assert.equal(
+          (payload.exp ?? 0) - (payload.iat ?? 0),
+          ua.USER_ASSERTION_TTL_SECONDS,
+        );
+        assert.ok(
+          (payload.exp ?? 0) - (payload.iat ?? 0) <=
+            ua.USER_ASSERTION_MAX_TTL_SECONDS,
+        );
+        assert.ok(kms.calls.asymmetricSign >= 1, "the signature came from KMS");
+        // A second mint gets a fresh jti under the same kid.
+        const again = await ua.mintUserAssertion({
+          userId: "usr_alpha_invited_01",
+          sid: "session_alpha_00000001",
+          authTime,
+        });
+        assert.notEqual(again.jti, minted.jti);
+        // Missing KMS configuration fails closed at boot (schema) and at mint.
+        delete process.env["BFF_ASSERTION_KID"];
+        resetServerEnvCacheForTests();
+        ua.resetSigningKeyCache();
+        assert.throws(() => getServerEnvSigner(), /kms requires/);
+      } finally {
+        ua.setKmsClientFactoryForTests(null);
+        for (const [k, v] of Object.entries(saved)) {
+          if (v === undefined) delete process.env[k];
+          else process.env[k] = v;
+        }
+        resetServerEnvCacheForTests();
+        ua.resetSigningKeyCache();
+      }
+      // Source guards: the KMS SDK is loaded lazily, the JWKS route stays public
+      // and unauthenticated, and no private material is ever serialised.
+      const uaSrc = readFileSync(
+        join(REPO_ROOT, "apps/web/src/lib/investor-api/user-assertion.ts"),
+        "utf8",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      assert.ok(
+        /await import\("@google-cloud\/kms"\)/.test(uaSrc),
+        "KMS SDK is a lazy dynamic import",
+      );
+      assert.ok(
+        !/^import .*@google-cloud\/kms/m.test(uaSrc),
+        "no static KMS import in the assertion module",
+      );
+      const jwksRoute = readFileSync(
+        join(REPO_ROOT, "apps/web/app/.well-known/jwks.json/route.ts"),
+        "utf8",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      assert.ok(
+        !/getAuthContext|cookies|bffRead|Authorization/.test(jwksRoute) &&
+          /getPublicJwks\(\)/.test(jwksRoute),
+        "JWKS route is public: no session, no Google token, no BFF session",
+      );
+      const signerSrc = readFileSync(
+        join(REPO_ROOT, "apps/web/src/lib/investor-api/assertion-signer.ts"),
+        "utf8",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      assert.ok(
+        !/console\.|JSON\.stringify\(privateJwk|export\(\{[^}]*format:\s*"jwk"[^}]*\}\)\.d/.test(
+          signerSrc,
+        ),
+        "signer never logs or exports private material",
+      );
+    },
+  );
+}
+
 // ─── Done ───────────────────────────────────────────────────────────────────
 
 rmSync(TMP_STORE, { recursive: true, force: true });

@@ -106,7 +106,7 @@ const clientSchema = z.object({
     .default("dev"),
 });
 
-const serverSchema = clientSchema.extend({
+const serverSchemaBase = clientSchema.extend({
   SESSION_SECRET: z.string().min(32),
   IP_HASH_SECRET: z.string().min(32),
   ELIGIBILITY_JWT_SECRET: z.string().min(32),
@@ -164,7 +164,9 @@ const serverSchema = clientSchema.extend({
    * Release surface. Gated verbs are refused with 403 until Managed paper —
    * enforced in bffMutate, not merely documented in the allowlist.
    */
-  REFI_RELEASE_STAGE: z.enum(["signal", "managed_paper"]).default("signal"),
+  REFI_RELEASE_STAGE: z
+    .enum(["signal", "automated_alpha", "managed_paper"])
+    .default("signal"),
   /**
    * Investor API upstream (C1b-2). Two runtime targets per Daniel's package,
    * configured separately; loopback unless REFI_INVESTOR_API_ALLOW_REMOTE=1
@@ -177,14 +179,30 @@ const serverSchema = clientSchema.extend({
   REFI_INVESTOR_API_ALLOW_REMOTE: z.enum(["0", "1"]).default("0"),
   /**
    * How the BFF obtains the Google service credential for Daniel's services.
-   * "unconfigured" (default) fails closed: native Cloud Run invocation vs WIF
-   * is pending Daniel's answer. "simulator-fixture" sends the deterministic
-   * simulator's fixture bearer and is valid ONLY against the loopback
-   * simulator.
+   *   "unconfigured"      (default) fails closed — nothing is sent.
+   *   "simulator-fixture" the deterministic simulator's fixture bearer; valid
+   *                       ONLY against the loopback simulator.
+   *   "native-cloud-run"  Daniel 2026-09-09 topology decision: the runtime
+   *                       service account's Google ID token from the Cloud Run
+   *                       metadata server, one audience-bound provider per
+   *                       target (lib/investor-api/google-id-token.ts). No WIF,
+   *                       no key file, no impersonation. Selecting it turns on
+   *                       the connected-deployment invariants below.
    */
   REFI_INVESTOR_API_CREDENTIAL_MODE: z
-    .enum(["unconfigured", "simulator-fixture"])
+    .enum(["unconfigured", "simulator-fixture", "native-cloud-run"])
     .default("unconfigured"),
+  /**
+   * Google ID-token audiences for the two targets. These are Cloud Run CUSTOM
+   * audiences configured by Daniel — never the service URLs. Defaults are his
+   * fixed Dev values; a connected deployment may override per tier.
+   */
+  REFI_IDENTITY_CCID_GOOGLE_AUDIENCE: z
+    .url()
+    .default("https://identity-ccid.dev.refi.internal"),
+  REFI_INVESTOR_API_GOOGLE_AUDIENCE: z
+    .url()
+    .default("https://investor-api.dev.refi.internal"),
   /** "mint" = real ES256 assertion from the session (user-assertion.ts); "simulator-fixture" for the simulator only. */
   REFI_INVESTOR_API_ASSERTION_MODE: z
     .enum(["mint", "simulator-fixture"])
@@ -221,6 +239,62 @@ const serverSchema = clientSchema.extend({
    * (`https://0.0.0.0:3000` in standalone mode). See lib/bff/origin.ts.
    */
   REFI_TRUST_PROXY_HOST: z.enum(["0", "1"]).default("0"),
+});
+
+const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
+  // ── Connected-deployment invariants (Daniel 2026-09-09, step 1) ───────────
+  // Selecting the native Google credential means "this is a connected BFF".
+  // Every downgrade path is then a boot failure, not a silent fallback: no
+  // simulator credential or assertion, no ephemeral signing key, no mock KYC
+  // control, no demo world, no MSW/mock data adapter, and never on the demo
+  // tier. REFI_INVESTOR_API_ALLOW_REMOTE stays a separate reviewed switch
+  // that is OFF until Daniel's step 4 returns the bound addendum.
+  if (env.REFI_INVESTOR_API_CREDENTIAL_MODE !== "native-cloud-run") return;
+  const fail = (path: string, message: string) => {
+    ctx.addIssue({ code: "custom", path: [path], message });
+  };
+  if (env.REFI_INVESTOR_API_MODE !== "client") {
+    fail(
+      "REFI_INVESTOR_API_MODE",
+      'must be "client" when the native Google credential is selected',
+    );
+  }
+  if (env.REFI_INVESTOR_API_ASSERTION_MODE !== "mint") {
+    fail(
+      "REFI_INVESTOR_API_ASSERTION_MODE",
+      'must be "mint" on a connected deployment — no simulator assertion',
+    );
+  }
+  if (env.BFF_ASSERTION_ALLOW_EPHEMERAL_KEY !== "0") {
+    fail(
+      "BFF_ASSERTION_ALLOW_EPHEMERAL_KEY",
+      "must be 0 on a connected deployment — a persistent signing key is required",
+    );
+  }
+  if (env.REFI_KYC_MOCK_CONTROLS !== "0") {
+    fail(
+      "REFI_KYC_MOCK_CONTROLS",
+      "must be 0 on a connected deployment — mock KYC controls never run there",
+    );
+  }
+  if (env.REFI_DATA_ADAPTER !== "live") {
+    fail(
+      "REFI_DATA_ADAPTER",
+      'must be "live" on a connected deployment — no MSW/mock identity fallback',
+    );
+  }
+  if (env.REFI_ENV === "demo") {
+    fail("REFI_ENV", "the demo tier is never a connected deployment");
+  }
+  if (
+    env.REFI_IDENTITY_CCID_GOOGLE_AUDIENCE ===
+    env.REFI_INVESTOR_API_GOOGLE_AUDIENCE
+  ) {
+    fail(
+      "REFI_INVESTOR_API_GOOGLE_AUDIENCE",
+      "identity-ccid and investor-api audiences must be distinct",
+    );
+  }
 });
 
 function formatError(error: z.ZodError): string {
@@ -338,6 +412,10 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
       process.env["REFI_INVESTOR_API_ALLOW_REMOTE"] || undefined,
     REFI_INVESTOR_API_CREDENTIAL_MODE:
       process.env["REFI_INVESTOR_API_CREDENTIAL_MODE"] || undefined,
+    REFI_IDENTITY_CCID_GOOGLE_AUDIENCE:
+      process.env["REFI_IDENTITY_CCID_GOOGLE_AUDIENCE"] || undefined,
+    REFI_INVESTOR_API_GOOGLE_AUDIENCE:
+      process.env["REFI_INVESTOR_API_GOOGLE_AUDIENCE"] || undefined,
     REFI_INVESTOR_API_ASSERTION_MODE:
       process.env["REFI_INVESTOR_API_ASSERTION_MODE"] || undefined,
     REFI_INVESTOR_API_MODE: process.env["REFI_INVESTOR_API_MODE"] || undefined,

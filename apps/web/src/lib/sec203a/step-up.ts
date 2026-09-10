@@ -191,6 +191,9 @@ export const MANAGED_STEP_UP_MATRIX: Record<
   reduce_only: "conditional",
   // Required only when the join activates Managed automation.
   join_template: "conditional",
+  // v1.1.0-alpha.2: changing an existing allocation is economically the same
+  // class as joining — conditional, investor-api decides.
+  update_allocation: "conditional",
   // Tightenings and neutral actions.
   pause_autopilot: "not-required",
   leave_template: "not-required",

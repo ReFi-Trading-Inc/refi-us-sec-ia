@@ -33,12 +33,13 @@
  *
  * ─── What identity-ccid sends, and what we must do with it ─────────────────
  *
- * Daniel 2026-08-19 confirms the handoff carries `auth_time` (the underlying
- * user authentication time) and a non-empty `amr` array. `acr` may be added
- * later; `amr` is the required v1 method claim. Method values ship with the
- * contract, "initially covering email verification code and email magic link"
- * — not spelled here, because guessing them would produce a set that quietly
- * disagrees with `v1.0.0-dev.1`.
+ * Daniel 2026-08-19 confirmed the handoff carries `auth_time` (the underlying
+ * user authentication time). In v1.1.0-alpha.2 (his 2026-09-09 list) `amr` is
+ * OPTIONAL — when present it is a non-empty array of unique non-empty strings
+ * and must be preserved unchanged; when absent nothing is invented. `acr` is
+ * rejected. Method values ship with the contract, "initially covering email
+ * verification code and email magic link" — not spelled here, because
+ * guessing them would produce a set that quietly disagrees with the package.
  *
  * The obligation on this module, in his words: preserve `auth_time` and `amr`
  * in the server-side session and copy them into each user assertion; do NOT
@@ -101,9 +102,10 @@ export interface AuthContext {
    * identity-ccid assertion — NOT the time this session was minted or last
    * refreshed.
    *
-   * This is the input to step-up (D-015): investor-api enforces a maximum
-   * auth_time age of 10 minutes and answers STEP_UP_REQUIRED otherwise.
-   * Daniel: "Merely minting a new BFF assertion from an old session does not
+   * This is the input to step-up (D-015). Daniel 2026-09-09: a fixed
+   * "STEP_UP_REQUIRED after ten minutes" is NOT a current alpha.2 operation
+   * guarantee — each operation's own conflict/step-up profile applies. What
+   * IS fixed: "Merely minting a new BFF assertion from an old session does not
    * satisfy step-up." So a session refresh must NEVER advance this value; only
    * a fresh identity-ccid authentication may.
    */

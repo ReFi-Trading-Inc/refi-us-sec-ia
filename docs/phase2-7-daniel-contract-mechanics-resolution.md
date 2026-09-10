@@ -274,6 +274,13 @@ new BFF assertion from an old session does not satisfy step-up.**
 
 ## 6. Signal-only action surface (closes D-018, partially D-010)
 
+> **Superseded in part (2026-09-09).** The frozen v1.1.0-alpha.2 package adds
+> `update_allocation` to `AccountActionRequest.action` (join_template |
+> update_allocation | leave_template), and Daniel's 2026-09-09 integration
+> list adopts it for the invited automated Alpha. `INVESTOR_ADMIN_VERBS` now
+> carries six verbs; the Signal-only pair below is unchanged for the Signal
+> stage. Historical text retained as written.
+
 ### Daniel's direction
 
 For `v1.0.0-dev.1`, enabled:

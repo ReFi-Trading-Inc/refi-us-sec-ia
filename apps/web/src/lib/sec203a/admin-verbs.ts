@@ -75,6 +75,7 @@ export const INVESTOR_ADMIN_VERBS = [
   "pause_autopilot",
   "resume_autopilot",
   "join_template",
+  "update_allocation", // v1.1.0-alpha.2 AccountActionRequest.action
   "leave_template",
   "reduce_only",
 ] as const;
@@ -135,6 +136,18 @@ export const SIGNAL_RELEASE_ADMIN_VERBS = [
   "leave_template",
 ] as const satisfies readonly InvestorAdminVerb[];
 
+/**
+ * The `/actions` verbs the invited automated Alpha may emit — exactly the
+ * v1.1.0-alpha.2 `AccountActionRequest.action` enum. Subscription plus
+ * allocation is the investor's economic instruction; the backend owns every
+ * resulting intent, risk check, order, fill and reconciliation.
+ */
+export const AUTOMATED_ALPHA_ADMIN_VERBS = [
+  "join_template",
+  "update_allocation",
+  "leave_template",
+] as const satisfies readonly InvestorAdminVerb[];
+
 export type SignalReleaseAdminVerb =
   (typeof SIGNAL_RELEASE_ADMIN_VERBS)[number];
 
@@ -154,8 +167,20 @@ export function isSignalReleaseAdminVerb(
   );
 }
 
-/** The release surface a deployment exposes. Server-resolved, never client. */
-export type ReleaseStage = "signal" | "managed_paper";
+/**
+ * The release surface a deployment exposes. Server-resolved, never client.
+ *
+ *   signal          — advice only; no economic action (the September 2026 stage)
+ *   automated_alpha — invited automated Alpha (v1.1.0-alpha.2): an explicit
+ *                     allowlist of contracted operations, default deny
+ *   managed_paper   — legacy Managed-paper surface that admits every action;
+ *                     deliberately NOT repurposed for the automated Alpha
+ */
+export type ReleaseStage = "signal" | "automated_alpha" | "managed_paper";
+
+/** Reason code when an action is refused at the automated Alpha stage. */
+export const NOT_PERMITTED_AT_RELEASE_STAGE =
+  "not_permitted_at_release_stage" as const;
 
 /** Reason code returned when a verb is refused for the current release. */
 export const GATED_UNTIL_MANAGED_PAPER = "gated_until_managed_paper" as const;
@@ -271,6 +296,10 @@ export const INVESTOR_ACTION_TO_ADMIN_VERB: Partial<
 > = {
   pauseManaged: "pause_autopilot",
   resumeManaged: "resume_autopilot",
+  // v1.1.0-alpha.2: the three contracted account actions.
+  joinTemplate: "join_template",
+  updateAllocation: "update_allocation",
+  leaveTemplate: "leave_template",
 };
 
 export function adminVerbFor(
@@ -292,8 +321,7 @@ export function adminVerbFor(
  * constructing an outbound `/actions` call. Never substitute one for the other.
  */
 export type InvestorActionReceiptVerb =
-  | InvestorAdminVerb
-  | ReceiptOnlyAdminVerb;
+  InvestorAdminVerb | ReceiptOnlyAdminVerb;
 
 export const INVESTOR_ACTION_TO_RECEIPT_VERB: Partial<
   Record<InvestorActionName, InvestorActionReceiptVerb>

@@ -10,10 +10,12 @@
  *      remote-promotion switch is set (the connected Dev services are
  *      `provisioned_not_enabled` and no connection addendum has promoted
  *      them).
- *   2. HOW the Google service credential is obtained. Not implemented: the
- *      native-Cloud-Run-invocation vs WIF question is Daniel's to answer
- *      (clarification Q2). Only the deterministic simulator's fixture bearer
- *      is available, and only when the env says so explicitly.
+ *   2. HOW the Google service credential is obtained. Daniel decided the
+ *      topology on 2026-09-09: the BFF runs as its own Cloud Run runtime
+ *      service account and sends that account's Google ID token, one
+ *      audience-bound provider per target (`google-id-token.ts`). No WIF, no
+ *      key file, no impersonation. The deterministic simulator's fixture
+ *      bearer remains available ONLY when the env selects it explicitly.
  *   3. HOW the per-attempt user assertion is minted — the real ES256 mint
  *      (`user-assertion.ts`) from the authenticated session's `sub`, `sid`,
  *      `auth_time`, `amr`, or the simulator fixture string.
@@ -30,6 +32,10 @@ import {
 import type { AuthContext } from "../bff/auth";
 import { getServerEnv } from "../config/env";
 import { mintUserAssertion } from "./user-assertion";
+import {
+  createNativeCredentialProviders,
+  type NativeCredentialProviders,
+} from "./google-id-token";
 import {
   createDemoInvestorApiClient,
   subscribeDemoEvents,
@@ -68,13 +74,31 @@ export class UpstreamNotConfiguredError extends Error {
 export class GoogleCredentialUnavailableError extends Error {
   constructor() {
     super(
-      "No Google service credential path is implemented for the Investor API. " +
-        "Whether the BFF uses native Cloud Run invocation or an external " +
-        "OIDC → WIF exchange is pending Daniel's answer; until then only " +
-        "REFI_INVESTOR_API_CREDENTIAL_MODE=simulator-fixture is valid.",
+      "No Google service credential is configured for the Investor API " +
+        "(REFI_INVESTOR_API_CREDENTIAL_MODE=unconfigured). A connected " +
+        "deployment sets native-cloud-run; only the loopback simulator may " +
+        "use simulator-fixture. Nothing is sent.",
     );
     this.name = "GoogleCredentialUnavailableError";
   }
+}
+
+// One pair of audience-bound providers per process. Each is bound to exactly
+// one custom audience from server env; the identity-ccid token can never be
+// presented to investor-api or vice versa.
+let nativeProviders: NativeCredentialProviders | null = null;
+function nativeCredentialProviders(
+  env: ReturnType<typeof getServerEnv>,
+): NativeCredentialProviders {
+  nativeProviders ??= createNativeCredentialProviders({
+    identityCcidAudience: env.REFI_IDENTITY_CCID_GOOGLE_AUDIENCE,
+    investorApiAudience: env.REFI_INVESTOR_API_GOOGLE_AUDIENCE,
+  });
+  return nativeProviders;
+}
+/** Test hook: forget the process-wide providers (and their token caches). */
+export function resetNativeCredentialProvidersForTests(): void {
+  nativeProviders = null;
 }
 
 export class SessionAssertionInputError extends Error {
@@ -136,10 +160,29 @@ function createFrozenClient(
 ): InvestorApiClient {
   const allowRemote = env.REFI_INVESTOR_API_ALLOW_REMOTE === "1";
 
-  const getBearer =
-    env.REFI_INVESTOR_API_CREDENTIAL_MODE === "simulator-fixture"
-      ? () => Promise.resolve(SIMULATOR_FIXTURE_BEARER)
-      : () => Promise.reject(new GoogleCredentialUnavailableError());
+  // Per-TARGET bearer providers. In native mode the two providers are
+  // distinct objects with distinct audiences; in simulator mode both send the
+  // fixture string; unconfigured fails closed for both.
+  let identityBearer: () => Promise<string>;
+  let investorBearer: () => Promise<string>;
+  switch (env.REFI_INVESTOR_API_CREDENTIAL_MODE) {
+    case "native-cloud-run": {
+      const providers = nativeCredentialProviders(env);
+      identityBearer = () => providers.identityCcid.getToken();
+      investorBearer = () => providers.investorApi.getToken();
+      break;
+    }
+    case "simulator-fixture":
+      identityBearer = () => Promise.resolve(SIMULATOR_FIXTURE_BEARER);
+      investorBearer = () => Promise.resolve(SIMULATOR_FIXTURE_BEARER);
+      break;
+    case "unconfigured":
+      identityBearer = () =>
+        Promise.reject(new GoogleCredentialUnavailableError());
+      investorBearer = () =>
+        Promise.reject(new GoogleCredentialUnavailableError());
+      break;
+  }
 
   const mintAssertion =
     env.REFI_INVESTOR_API_ASSERTION_MODE === "simulator-fixture"
@@ -164,13 +207,13 @@ function createFrozenClient(
       env.REFI_IDENTITY_CCID_BASE_URL,
       "identity-ccid",
       allowRemote,
-      getBearer,
+      identityBearer,
     ),
     investorApi: targetFor(
       env.REFI_INVESTOR_API_BASE_URL,
       "investor-api",
       allowRemote,
-      getBearer,
+      investorBearer,
     ),
     mintAssertion,
   });

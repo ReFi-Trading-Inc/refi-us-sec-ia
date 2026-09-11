@@ -36,8 +36,8 @@ tests; it never means connected-accepted.
 | Daniel B1 addendum             | DANIEL DEPENDENCY                 | bound Dev connection addendum (URLs, audiences, JWKS/kid, revisions, admitted SA, acceptance conditions) referencing the alpha.3 digest                                                            |
 | closed Alpha admission binding | DANIEL DEPENDENCY                 | backend-issued invitations (B3) and `closed_alpha_campaign_scope` (value null in `capabilities.json`); frontend gate + fixture tests exist                                                         |
 | Alpaca KYC/CIP policy decision | CODE COMPLETE (decision recorded) | founder decision 2026-09-10 in `decision-kyc-model.md`; a policy status, not an integration status                                                                                                 |
-| Alpaca onboarding boundary     | DANIEL DEPENDENCY                 | alpha.3 exposes no account-opening, applicant, KYC/CIP application or application-status operation; journey step marked EXTERNAL BOUNDARY TBD; packet question 1                                   |
-| Alpaca KYC/CIP integration     | DANIEL DEPENDENCY                 | no runtime state, projection or wording introduced; depends on the boundary above and on the attestation `kyc` evidence question (packet question 4)                                               |
+| Alpaca onboarding boundary     | DANIEL DEPENDENCY                 | alpha.3 exposes no account-opening, applicant, KYC/CIP application or application-status operation; journey step marked EXTERNAL BOUNDARY TBD; packet questions 1–2 (A1)                           |
+| Alpaca KYC/CIP integration     | DANIEL DEPENDENCY                 | no runtime state, projection or wording introduced; depends on the boundary above and on the attestation `kyc` evidence question (packet question 8 (K1))                                          |
 | Alpaca PAPER account           | EXTERNAL ACTIVATION REQUIRED      | a real Alpaca paper account + key pair for each test identity (Alpaca-side, outside ReFi); `alpaca_fixture_credential_pair` pending_external                                                       |
 | brokerage connection           | CODE COMPLETE                     | FIXTURE-PROVED: create/list/get/rotate/disconnect adapters on `main`; expects an existing account/credential relationship; connected acceptance still required (`connected_alpaca_verified=false`) |
 | account sync                   | CONNECTED ACCEPTANCE REQUIRED     | sync adapter + freshness handling on `main`; unproved against remote                                                                                                                               |
@@ -59,12 +59,12 @@ No calendar estimate is stated; each phase is gated by the named dependencies.
 
 ### Code readiness — what remains to write
 
-1. Nothing for the Alpaca account/KYC step until Daniel answers question 1: no
+1. Nothing for the Alpaca account/KYC step until Daniel answers questions 1–2: no
    projection, state model or wording is written against an unbound boundary.
-2. After questions 1/4: the attestation `kyc` evidence rule (`not_required` vs a
+2. After questions 1–2 / 8: the attestation `kyc` evidence rule (`not_required` vs a
    bound `passed`), retiring `KYC_EVIDENCE_MOCK`/`_MISSING` as the standing
    outcome.
-3. After question 1: whatever `lib/kyc/` change the bound boundary requires, per
+3. After questions 1–2: whatever `lib/kyc/` change the bound boundary requires, per
    `lib-kyc-classification.md` (audit only today; hardening candidate F-1
    recorded, not applied).
 4. Appendix A packet values once provisioning exists (mechanical).
@@ -80,15 +80,16 @@ credentials. None started; separate activation approval required.
 
 ### Daniel readiness — what must be supplied
 
-B1/Step 4 bound addendum; B3 test identities/invitations; the Alpaca block (questions 1–5: boundary, status, applicant data,
-attestation `kyc` evidence, PAPER); `brokerage_mutation`
+B1/Step 4 bound addendum; B3 test identities/invitations; the Alpaca block (questions 1–10: boundary, onboarding
+ownership, applicant data, status, readiness, ordering, attestation `kyc`
+evidence, addendum, B3 accounts); `brokerage_mutation`
 error-profile answer; vocabularies for `reason_codes`, `required_steps`,
 `Account.status`, `management_scope_status`, `reconciliation_hold_status`;
 `closed_alpha_campaign_scope` value; exact remote services and audiences.
 
 ### Alpaca readiness — what must be proven
 
-The account/KYC step itself is boundary-TBD (question 1). Independently: a real
+The account/KYC step itself is boundary-TBD (questions 1–2, A1). Independently: a real
 Alpaca **PAPER** account/credential relationship per test identity; credential
 validation + sync through Daniel's integration (`connected_alpaca_verified` →
 true).

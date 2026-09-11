@@ -39,36 +39,38 @@ When ready for connected acceptance: email/campaign-bound invitations for the
 agreed test identities, secure delivery path, and the permitted account-level
 execution scope.
 
-## Alpaca account onboarding and KYC/CIP (priority, 2026-09-10)
+## Alpaca account onboarding / KYC boundary (priority; founder wording 2026-09-10)
 
-Founder decision: for the initial US Alpha, Alpaca owns brokerage KYC/CIP.
-ReFi will not integrate a separate KYC vendor.
+Founder decision: Alpaca owns KYC/CIP for the initial Alpha. ReFi is not
+integrating a separate KYC provider.
 
-Current alpha.3 appears to begin at an existing Alpaca brokerage connection
-(`createBrokerageConnection` with the investor's API key pair) and exposes no
-account-opening, applicant/PII, KYC/CIP-application or application-status
-operation; `getKycStatus` is the constant `NOT_REQUIRED` /
-`CLOSED_US_INVITE_ALPHA`. We have introduced no onboarding state in the frontend
-and will not until you answer:
+Current alpha.3 exposes brokerage connection using an existing Alpaca
+account/credential relationship, but exposes no account-application,
+applicant-PII, KYC/CIP-application, or application-status operation.
 
-1. **Boundary (A1).** For the initial Alpha, which applies: (a) the investor opens an
-   Alpaca PAPER account separately and ReFi only connects credentials; (b) ReFi
-   links an existing Alpaca PAPER account by another means; (c) your backend
-   exposes an Alpaca Broker API onboarding projection; (d) another backend-owned
-   flow?
-2. **Status.** If (c)/(d): which service and object carry Alpaca account / KYC
-   status, which value means "ready for first brokerage connection", and will a
-   contract version expose it?
-3. **Applicant data.** If any applicant information passes through ReFi or your
-   backend: which fields, which endpoint, which service stores them?
-4. **Attestation `kyc` block (K1).** alpha.3 allows `kyc.status ∈ {passed,
-not_required}`; `not_required` is valid only as the decision owner's real
-   policy. Under Alpaca-owned CIP, should the initial-Alpha attestation carry
-   `not_required` (with what `level` / `evidence_ref`), or a `passed` derived
-   from a status you provide? Until answered our chain stops at
-   `KYC_EVIDENCE_MISSING`; nothing fabricates `passed`.
-5. **PAPER.** Confirm `account_environment=paper` only for the cohort and no
-   live-key path.
+Please confirm (exact operation/object/status names where possible):
+
+1. For initial Alpha, will users use pre-created/existing Alpaca PAPER accounts
+   and then connect them to ReFi?
+2. Or will your backend expose an Alpaca Broker API onboarding flow?
+3. If backend-owned onboarding is intended, what service and operation create
+   the brokerage account?
+4. What operation receives applicant information?
+5. What backend object exposes brokerage application/KYC status?
+6. What exact condition means the account is ready for ReFi brokerage
+   connection?
+7. Does brokerage connection occur before or after Alpaca approval?
+8. What KYC/CIP evidence, if any, should the frontend include in
+   `createComplianceProfileAttestation` (the alpha.3 operation name for
+   "submitComplianceAttestation")? (K1 — until answered our chain stops at
+   `KYC_EVIDENCE_MISSING`; nothing fabricates `passed`.)
+9. Does this require an alpha.3 addendum or new frontend projection?
+10. Will B3 test identities receive pre-created Alpaca PAPER accounts?
+
+Status until answered: **ALPACA ACCOUNT OPENING: DANIEL DEPENDENCY** ·
+**ALPACA KYC/CIP INTEGRATION: DANIEL DEPENDENCY** · **ATTESTATION KYC
+EVIDENCE: DANIEL DEPENDENCY** · **BROKERAGE CONNECTION: CODE COMPLETE,
+FIXTURE-PROVED**. Question 1/2 = "A1"; question 8 = "K1" in our other documents.
 
 ## `brokerage_mutation` error profile
 

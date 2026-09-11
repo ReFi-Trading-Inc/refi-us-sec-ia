@@ -33,6 +33,10 @@ import {
   establishConnectedSession,
   IdentityExchangeUnavailableError,
 } from "../../../../../../src/lib/auth/connected-session";
+import {
+  ConnectedSessionRecoverableError,
+  recoverConnectedSession,
+} from "../../../../../../src/lib/auth/connected-login";
 import { AuthProviderUnavailableError } from "../../../../../../src/lib/auth/stytch";
 import { createRateLimiter } from "../../../../../_lib/rateLimit";
 
@@ -102,18 +106,25 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     );
   }
   try {
-    const completed = await completeEmailLogin({
+    // Recovery first (alpha.3 step 5): if this login already sent its
+    // exchange request and the answer was lost, re-send the identical stored
+    // request instead of re-authenticating with the provider (the pending
+    // login is already consumed; the token/code in this body is ignored).
+    let session = await recoverConnectedSession({
       loginId: binding.loginId,
       state: binding.state,
-      ...("token" in parsed.data ? { token: parsed.data.token } : {}),
-      ...("code" in parsed.data ? { code: parsed.data.code } : {}),
       correlationId,
     });
-    // The login cookie is single-use regardless of what happens next.
-    const session = await establishConnectedSession({
-      completed,
-      correlationId,
-    });
+    if (!session) {
+      const completed = await completeEmailLogin({
+        loginId: binding.loginId,
+        state: binding.state,
+        ...("token" in parsed.data ? { token: parsed.data.token } : {}),
+        ...("code" in parsed.data ? { code: parsed.data.code } : {}),
+        correlationId,
+      });
+      session = await establishConnectedSession({ completed, correlationId });
+    }
     const res = NextResponse.json(
       { data: { ok: true, continuePath: session.continuePath }, correlationId },
       { headers: { "cache-control": "private, no-store" } },
@@ -145,6 +156,19 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
           { status: 401 },
         ),
         secure,
+      );
+    }
+    if (err instanceof ConnectedSessionRecoverableError) {
+      // The exchange answer is unknown: keep the login cookie so the same
+      // browser can recover with the identical request while it is valid.
+      return NextResponse.json(
+        {
+          error: "Sign-in could not be confirmed. Please try again.",
+          code: "exchange_unavailable",
+          recoverable: true,
+          correlationId,
+        },
+        { status: 503, headers: { "cache-control": "private, no-store" } },
       );
     }
     if (

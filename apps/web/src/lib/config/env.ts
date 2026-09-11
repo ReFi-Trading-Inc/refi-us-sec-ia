@@ -286,6 +286,37 @@ const serverSchemaBase = clientSchema.extend({
    * the Stytch dashboard and sent as `redirect_uri` to the identity exchange.
    */
   REFI_AUTH_CALLBACK_URL: z.url().optional(),
+  /**
+   * Frontend identity bridge (Daniel step 2; mandate §7–§9, §15). Mints the
+   * upstream identity assertion identity-ccid verifies at the exchange. Its
+   * key is LOGICALLY AND STRUCTURALLY SEPARATE from the Investor API
+   * assertion key: own signer selection, own KMS key version, own kid, own
+   * JWKS route (/.well-known/identity-bridge-jwks.json), own issuer.
+   */
+  BRIDGE_ASSERTION_SIGNER: z.enum(["jwk", "kms"]).default("jwk"),
+  /** Bridge P-256 private JWK (jwk signer). Never a committed default, never ephemeral. */
+  BRIDGE_ASSERTION_PRIVATE_KEY_JWK: z.string().min(1).optional(),
+  /** KMS key version for the `identity-bridge` key (kms signer). */
+  BRIDGE_ASSERTION_KMS_KEY_VERSION: z.string().min(1).optional(),
+  /** Published `kid` for the bridge KMS key version (kms signer). */
+  BRIDGE_ASSERTION_KID: z.string().min(1).optional(),
+  /** Retiring bridge public JWK, served alongside the current one during rotation. */
+  BRIDGE_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK: z.string().min(1).optional(),
+  /** `iss` of the bridge assertion: the frontend's https origin (Daniel binds it in step 4). */
+  BRIDGE_ASSERTION_ISSUER: z.string().min(1).optional(),
+  /** `aud` of the bridge assertion, as identity-ccid expects it (Daniel step 4). */
+  IDENTITY_CCID_UPSTREAM_AUDIENCE: z.string().min(1).max(256).optional(),
+  /** Backend identity-result JWKS URL (Daniel: identity-ccid /.well-known/jwks.json). */
+  IDENTITY_CCID_JWKS_URL: z.url().optional(),
+  /** Expected `iss` / `aud` of Daniel's identity_result JWT (fixed pairs, alpha.2). */
+  IDENTITY_RESULT_ISSUER: z
+    .string()
+    .min(1)
+    .default("urn:refinity:identity-ccid:dev"),
+  IDENTITY_RESULT_AUDIENCE: z
+    .string()
+    .min(1)
+    .default("urn:refinity:frontend-bff:dev"),
 });
 
 const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
@@ -333,6 +364,78 @@ const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
       "BFF_ASSERTION_SIGNER",
       "kms requires BFF_ASSERTION_KMS_KEY_VERSION and BFF_ASSERTION_KID",
     );
+  }
+  // Bridge KMS configuration is all-or-nothing on every tier, and the bridge
+  // may never share signing material or kid with the Investor API signer.
+  if (
+    env.BRIDGE_ASSERTION_SIGNER === "kms" &&
+    (!env.BRIDGE_ASSERTION_KMS_KEY_VERSION || !env.BRIDGE_ASSERTION_KID)
+  ) {
+    fail(
+      "BRIDGE_ASSERTION_SIGNER",
+      "kms requires BRIDGE_ASSERTION_KMS_KEY_VERSION and BRIDGE_ASSERTION_KID",
+    );
+  }
+  if (
+    env.BRIDGE_ASSERTION_KMS_KEY_VERSION &&
+    env.BRIDGE_ASSERTION_KMS_KEY_VERSION === env.BFF_ASSERTION_KMS_KEY_VERSION
+  ) {
+    fail(
+      "BRIDGE_ASSERTION_KMS_KEY_VERSION",
+      "the identity bridge and the Investor API assertion signer must use different KMS keys",
+    );
+  }
+  if (
+    env.BRIDGE_ASSERTION_PRIVATE_KEY_JWK &&
+    env.BRIDGE_ASSERTION_PRIVATE_KEY_JWK === env.BFF_ASSERTION_PRIVATE_KEY_JWK
+  ) {
+    fail(
+      "BRIDGE_ASSERTION_PRIVATE_KEY_JWK",
+      "the identity bridge and the Investor API assertion signer must use different private keys",
+    );
+  }
+  if (
+    env.BRIDGE_ASSERTION_KID &&
+    env.BRIDGE_ASSERTION_KID === env.BFF_ASSERTION_KID
+  ) {
+    fail(
+      "BRIDGE_ASSERTION_KID",
+      "the identity bridge kid must differ from the Investor API assertion kid",
+    );
+  }
+  if (
+    env.BRIDGE_ASSERTION_ISSUER &&
+    env.BRIDGE_ASSERTION_ISSUER === env.BFF_ASSERTION_ISSUER
+  ) {
+    fail(
+      "BRIDGE_ASSERTION_ISSUER",
+      "the identity bridge issuer must differ from the Investor API assertion issuer",
+    );
+  }
+  if (env.REFI_AUTH_PROVIDER === "stytch") {
+    // A real login path needs the whole bridge → exchange chain bound.
+    for (const k of [
+      "BRIDGE_ASSERTION_ISSUER",
+      "IDENTITY_CCID_UPSTREAM_AUDIENCE",
+      "IDENTITY_CCID_JWKS_URL",
+    ] as const) {
+      if (!env[k]) fail(k, "required when REFI_AUTH_PROVIDER=stytch");
+    }
+    if (
+      env.BRIDGE_ASSERTION_SIGNER === "jwk" &&
+      !env.BRIDGE_ASSERTION_PRIVATE_KEY_JWK
+    ) {
+      fail(
+        "BRIDGE_ASSERTION_PRIVATE_KEY_JWK",
+        "the identity bridge has no ephemeral key: configure a JWK or BRIDGE_ASSERTION_SIGNER=kms",
+      );
+    }
+    if (
+      env.BRIDGE_ASSERTION_ISSUER &&
+      !/^https:\/\/[^\s#?]+$/.test(env.BRIDGE_ASSERTION_ISSUER)
+    ) {
+      fail("BRIDGE_ASSERTION_ISSUER", "must be an https issuer");
+    }
   }
   if (env.REFI_INVESTOR_API_CREDENTIAL_MODE !== "native-cloud-run") return;
   // A connected deployment signs with a persistent key: KMS, or a JWK from
@@ -563,6 +666,23 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     BFF_ASSERTION_KID: process.env["BFF_ASSERTION_KID"] || undefined,
     BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK:
       process.env["BFF_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"] || undefined,
+    BRIDGE_ASSERTION_SIGNER:
+      process.env["BRIDGE_ASSERTION_SIGNER"] || undefined,
+    BRIDGE_ASSERTION_PRIVATE_KEY_JWK:
+      process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"] || undefined,
+    BRIDGE_ASSERTION_KMS_KEY_VERSION:
+      process.env["BRIDGE_ASSERTION_KMS_KEY_VERSION"] || undefined,
+    BRIDGE_ASSERTION_KID: process.env["BRIDGE_ASSERTION_KID"] || undefined,
+    BRIDGE_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK:
+      process.env["BRIDGE_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"] || undefined,
+    BRIDGE_ASSERTION_ISSUER:
+      process.env["BRIDGE_ASSERTION_ISSUER"] || undefined,
+    IDENTITY_CCID_UPSTREAM_AUDIENCE:
+      process.env["IDENTITY_CCID_UPSTREAM_AUDIENCE"] || undefined,
+    IDENTITY_CCID_JWKS_URL: process.env["IDENTITY_CCID_JWKS_URL"] || undefined,
+    IDENTITY_RESULT_ISSUER: process.env["IDENTITY_RESULT_ISSUER"] || undefined,
+    IDENTITY_RESULT_AUDIENCE:
+      process.env["IDENTITY_RESULT_AUDIENCE"] || undefined,
   });
 
   if (!parsed.success) {

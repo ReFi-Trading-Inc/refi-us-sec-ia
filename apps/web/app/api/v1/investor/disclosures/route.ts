@@ -12,6 +12,7 @@
  * success and never with a fabricated document.
  */
 import { bffRead } from "@lib/bff/handler";
+import { CONTRACT_VERSION } from "@lib/investor-api/upstream-state";
 import {
   ContractVersionMismatchError,
   InvestorApiError,
@@ -32,7 +33,7 @@ export interface DisclosuresReadView {
   disclosures: EffectiveDisclosure[];
   hasMore: boolean;
   upstream:
-    | { state: "ok"; contractVersion: "v1.1.0-alpha.2" }
+    | { state: "ok"; contractVersion: typeof CONTRACT_VERSION }
     | {
         state:
           | "not_configured"
@@ -61,7 +62,7 @@ export const GET = bffRead({
       return {
         disclosures: items,
         hasMore,
-        upstream: { state: "ok", contractVersion: "v1.1.0-alpha.2" },
+        upstream: { state: "ok", contractVersion: CONTRACT_VERSION },
       };
     } catch (err) {
       return { disclosures: [], hasMore: false, upstream: classify(err) };

@@ -1,8 +1,8 @@
 {
-  "_status": "NOT READY — do not send. null = not yet known; never a runtime placeholder. Updated 2026-09-09.",
-  "_source": "september-12-launch/frontend_nextsteps.md Appendix A (Daniel 2026-09-09)",
-  "contract_version": "v1.1.0-alpha.2",
-  "package_content_sha256": "c1b53c906653ca8860bf66cfc0df8fa862ff34d6cbf77298ac83cb55f006cb09",
+  "_status": "NOT READY — do not send. null = not yet known; never a runtime placeholder. Updated 2026-09-10 for v1.1.0-alpha.3 (NOTE: Daniel's INTEGRATION.md Appendix A sample still shows the alpha.2 digest next to contract_version alpha.3; CURRENT.json/bundle.json are authoritative — use the alpha.3 digest).",
+  "_source": "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/INTEGRATION.md Appendix A (Daniel, issued 2026-09-09)",
+  "contract_version": "v1.1.0-alpha.3",
+  "package_content_sha256": "5eca1200f6af807093ea0986f835235e2da478b69478e621fd54954ba1d77608",
   "runtime_auth_mode": "native_cloud_run",
   "frontend_project_id": null,
   "frontend_region": null,
@@ -25,8 +25,8 @@
   "escalation_channel": null,
   "_blocked_on": {
     "frontend_project_id, frontend_region, frontend_service_name, frontend_ready_revision, frontend_source_revision, frontend_runtime_service_account_email, frontend_runtime_service_account_unique_id": "decision-gcp-project.md (founder) → PR A deploy",
-    "frontend_bff_current_signing_kid": "PR B signer + KMS key in the chosen project",
-    "upstream_identity_*, allowed_redirect_uris": "decision-identity-provider.md (founder) → Sprint B bridge",
+    "frontend_bff_current_signing_kid": "#96 signer + KMS key in refi-us-connected-investor (founder provisioning)",
+    "upstream_identity_*, allowed_redirect_uris": "Stytch project + BRIDGE_* values (founder); bridge JWKS is /.well-known/identity-bridge-jwks.json (#100); upstream_identity_jwks_url = that URL",
     "integration_contact, security_contact, escalation_channel": "Zeshan to name"
   },
   "_never_included": [

@@ -84,7 +84,9 @@ export class LoginRefusedError extends Error {
     | "state_mismatch"
     | "already_consumed"
     | "method_mismatch"
-    | "provider_rejected";
+    | "provider_rejected"
+    | "bridge_input"
+    | "identity_result_rejected";
   constructor(reason: LoginRefusedError["reason"]) {
     super(`login refused: ${reason}`);
     this.name = "LoginRefusedError";

@@ -1,0 +1,68 @@
+{
+  "artifacts": [
+    {
+      "path": "INTEGRATION.md",
+      "sha256": "7d98e862d15ee72eb0e373f77033e06dbb81a8c71c2432315e4ce9186b1e15ce"
+    },
+    {
+      "path": "MIGRATION.md",
+      "sha256": "eff62fa26545633fa300178d8623e6ff1b8c455e53744a0ed319c7cd5e152fe5"
+    },
+    {
+      "path": "README.md",
+      "sha256": "c9cbeae7f844312783310cdcf5b2ad658e1cde1d0cd5e0c0a907ea011adbde65"
+    },
+    {
+      "path": "capabilities.json",
+      "sha256": "89d9e1c38bc7048c987e217e33fb88f8b5234165f37ea0351a23fb7ec0dbcb09"
+    },
+    {
+      "path": "connection.dev.json",
+      "sha256": "a5e77eba3eb3832d4fd0e011e1518d32e22a4a56f2924564351c2f6dccd30210"
+    },
+    {
+      "path": "contract.json",
+      "sha256": "e826a7cc37fd773901570532ce2db6cb403c3d9b8dcf5095af6c8656caf3b85e"
+    },
+    {
+      "path": "examples.json",
+      "sha256": "3d59c0f843f6aae9998875db6da1c8b2f80d2c60865d69dba901152099c32476"
+    },
+    {
+      "path": "openapi.json",
+      "sha256": "97fa1d4d80ea593900ec64649a9456148c39cde697b3b01fc2ddfc19009f2b70"
+    },
+    {
+      "path": "schemas.json",
+      "sha256": "bf80f0ad8cb4ea6ce20603f9359a5df2c83f74fe35c0529b6b99aa57543ee7fd"
+    },
+    {
+      "path": "tools/conformance.py",
+      "sha256": "6b7ddf4deff8c55ab094303797874d0d8760dee142e7670c1201d5cdffaf34a9"
+    }
+  ],
+  "connected_alpha_verified": false,
+  "contract_implemented": true,
+  "contract_version": "v1.1.0-alpha.3",
+  "generator": {
+    "path": "scripts/contracts/build_investor_alpha3_handoff.py",
+    "version": "2"
+  },
+  "package_content_sha256": "5eca1200f6af807093ea0986f835235e2da478b69478e621fd54954ba1d77608",
+  "package_id": "v1.1.0-alpha.3-frontend-handoff",
+  "readiness_states": {
+    "backend_connected_release_ready": false,
+    "backend_services_provisioned": true,
+    "connected_alpaca_verified": false,
+    "connected_alpha_verified": false,
+    "external_trust_bound": false,
+    "frontend_contract_ready": true
+  },
+  "schema_version": "2.0",
+  "source": {
+    "path": "contracts/frontend/investor-api-v1.1.0-alpha.3.json",
+    "revision": "3f5df829b1b74d1c95aa41ba4b9bc306d6b6242b25737373082b95d52d8e1cdb",
+    "revision_kind": "contract_content_sha256",
+    "sha256": "3f5df829b1b74d1c95aa41ba4b9bc306d6b6242b25737373082b95d52d8e1cdb"
+  }
+}

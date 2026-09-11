@@ -1,4 +1,9 @@
 /** Errors raised by the Investor API client. None carries a token or credential. */
+import type { components } from "../generated/investor-api.gen";
+
+/** The backend's acknowledgment challenge (alpha.3 `Error.continuation`). */
+export type AcknowledgmentContinuation =
+  components["schemas"]["AcknowledgmentContinuation"];
 
 /** A wire object did not match the vendored contract — treat as a version mismatch. */
 export class ContractVersionMismatchError extends Error {
@@ -20,18 +25,26 @@ export class ContractVersionMismatchError extends Error {
   }
 }
 
-/** The backend answered with its `{error:{code,message,correlation_id}}` envelope. */
+/**
+ * The backend answered with its `{error:{code,message,correlation_id}}`
+ * envelope. `continuation` is the VALIDATED optional acknowledgment
+ * challenge (`ACKNOWLEDGMENT_REQUIRED`, alpha.3 MIGRATION.md §5): retained
+ * exactly as received so the BFF/UI confirmation flow can bind the retry to
+ * it; never inferred from the message, never synthesised.
+ */
 export class InvestorApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly correlationId: string | null;
   readonly retryAfterSeconds: number | null;
+  readonly continuation: AcknowledgmentContinuation | null;
   constructor(input: {
     status: number;
     code: string;
     message: string;
     correlationId: string | null;
     retryAfterSeconds?: number | null;
+    continuation?: AcknowledgmentContinuation | null;
   }) {
     super(`${String(input.status)} ${input.code}: ${input.message}`);
     this.name = "InvestorApiError";
@@ -39,6 +52,7 @@ export class InvestorApiError extends Error {
     this.code = input.code;
     this.correlationId = input.correlationId;
     this.retryAfterSeconds = input.retryAfterSeconds ?? null;
+    this.continuation = input.continuation ?? null;
   }
 }
 

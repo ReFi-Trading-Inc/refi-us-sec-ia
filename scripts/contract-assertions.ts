@@ -5741,15 +5741,23 @@ await section(
           );
         }
       }
-      // Still nothing in apps/web submits an attestation.
-      for (const file of [...walk("apps/web/app"), ...walk("apps/web/src")]) {
-        assert.ok(
-          !/call\(\s*["']createComplianceProfileAttestation["']/.test(
-            read(file),
-          ),
-          `${file} must not submit an attestation`,
-        );
-      }
+      // Exactly ONE module in apps/web submits an attestation: the step-6
+      // submission chain (2026-09-10), which only reaches the call after the
+      // backend-verified consent step and a pinned-authority build. Nothing
+      // else — no route, no client module, no KYC module — calls it.
+      const SUBMISSION_MODULE =
+        "apps/web/src/lib/compliance/attestation-submission.ts";
+      const submitters = [
+        ...walk("apps/web/app"),
+        ...walk("apps/web/src"),
+      ].filter((file) =>
+        /call\(\s*["']createComplianceProfileAttestation["']/.test(read(file)),
+      );
+      assert.deepEqual(
+        submitters,
+        [SUBMISSION_MODULE],
+        "only the designated submission module may submit an attestation",
+      );
     },
   );
 
@@ -6036,7 +6044,7 @@ await section(
       ]);
       const schemas = JSON.parse(
         read(
-          "packages/api-clients/contracts/investor-api/v1.1.0-alpha.2/schemas.json",
+          "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/schemas.json",
         ),
       ) as {
         $defs: Record<
@@ -6099,6 +6107,11 @@ await section(
     "signal reads: no attestation submission and no mutation appears as a side effect of this slice",
     async () => {
       for (const f of [...walk("apps/web/app"), ...walk("apps/web/src")]) {
+        // The designated step-6 submission chain is the one permitted caller
+        // (asserted exactly in the attestation-mapping section above).
+        if (f === "apps/web/src/lib/compliance/attestation-submission.ts") {
+          continue;
+        }
         const src = stripComments(read(f));
         assert.ok(
           !/call\(\s*["']createComplianceProfileAttestation["']/.test(src),
@@ -6410,17 +6423,44 @@ await section(
   );
 
   await section(
-    "demo slice adds no brokerage-credential, allocation, account-action, or order route",
+    "demo slice adds no brokerage-credential, allocation, account-action, or order route; the automated-Alpha surface is exactly the six contracted mutation routes (2026-09-10) and still no order/execution/intent route",
     async () => {
       const manifest = JSON.parse(
         read("compliance/API_ROUTE_MANIFEST.json"),
-      ) as { routes: Array<{ route: string }> };
+      ) as { routes: Array<{ route: string; auth: Record<string, string> }> };
+      // The ONLY allocation / maintenance routes that may exist: each maps to
+      // one contracted v1.1.0-alpha.2 operation, is bff-mutate (same-origin,
+      // session, release-stage policy — 403 at signal), and is proved in the
+      // "Automated-Alpha economic gating" section. Anything else here fails.
+      const AUTOMATED_ALPHA_ROUTES = [
+        "/api/v1/investor/allocation/join",
+        "/api/v1/investor/allocation/leave",
+        "/api/v1/investor/allocation/preview",
+        "/api/v1/investor/allocation/update",
+        "/api/v1/investor/broker/connection/[id]/rotate",
+        "/api/v1/investor/broker/connection/[id]/sync",
+      ];
+      const adjacent = manifest.routes.filter((r) =>
+        /brokerage-connections|credentials|allocation|\/actions|orders|execut|intent|rotate|sync/.test(
+          r.route,
+        ),
+      );
+      assert.deepEqual(
+        adjacent.map((r) => r.route).sort(),
+        AUTOMATED_ALPHA_ROUTES,
+        "execution-adjacent routes are exactly the contracted automated-Alpha set",
+      );
+      for (const r of adjacent) {
+        assert.deepEqual(
+          r.auth,
+          { POST: "bff-mutate" },
+          `${r.route} is a gated mutation`,
+        );
+      }
       for (const r of manifest.routes) {
         assert.ok(
-          !/brokerage-connections|credentials|allocation|\/actions|orders|execut|intent/.test(
-            r.route,
-          ),
-          `unexpected execution-adjacent route ${r.route}`,
+          !/orders|execut|intent|cancel|liquidat|transfer/.test(r.route),
+          `unexpected execution route ${r.route}`,
         );
       }
     },
@@ -8442,6 +8482,7 @@ await section(
         }
         assert.deepEqual([...cs.CONNECTED_ENTITIES].sort(), [
           "bridge-assertion-jti",
+          "exchange-attempt",
           "identity-result-jti",
           "login-consumed",
           "login-state",
@@ -9096,10 +9137,30 @@ await section(
     "REFI_CONNECTED_STORE_NAMESPACE",
     "REFI_CONNECTED_STORE_BACKING",
     "REFI_ENV",
+    "BRIDGE_ASSERTION_PRIVATE_KEY_JWK",
+    "BRIDGE_ASSERTION_ISSUER",
+    "IDENTITY_CCID_UPSTREAM_AUDIENCE",
+    "IDENTITY_CCID_JWKS_URL",
   ];
   const savedEnv: Record<string, string | undefined> = {};
   for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
   process.env["REFI_AUTH_PROVIDER"] = "stytch";
+  // The bridge → exchange chain must be configured whenever the provider is
+  // on (env invariant); this section never reaches the exchange because no
+  // upstream is configured, so completion fails closed with 503.
+  {
+    const { generateKeyPairSync } = await import("node:crypto");
+    const { privateKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+    process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"] = JSON.stringify({
+      ...(privateKey.export({ format: "jwk" }) as Record<string, string>),
+      kid: "bridge-stytch-section",
+    });
+  }
+  process.env["BRIDGE_ASSERTION_ISSUER"] = "https://bff-dev.refi.trading";
+  process.env["IDENTITY_CCID_UPSTREAM_AUDIENCE"] =
+    "https://identity-ccid.dev.refi.internal";
+  process.env["IDENTITY_CCID_JWKS_URL"] =
+    "https://identity-ccid-74kl57biwa-uw.a.run.app/.well-known/jwks.json";
   process.env["STYTCH_PROJECT_ID"] =
     "project-test-00000000-0000-0000-0000-000000000000";
   process.env["STYTCH_SECRET"] = "secret-test-" + "x".repeat(24);
@@ -9863,6 +9924,3490 @@ await section(
     else process.env["REFI_TRUST_PROXY_HOST"] = savedProxy;
     resetServerEnvCacheForTests();
   }
+}
+
+// ─── Identity bridge + Daniel's exchange + connected session (US Connected Identity Alpha path): separate key, closed claims, verified result, jti once, durable session ──
+
+{
+  const { resetServerEnvCacheForTests, getServerEnv: getServerEnvBridge } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const cs = await import("../apps/web/src/lib/connected-store/index.ts");
+  const sessions =
+    await import("../apps/web/src/lib/connected-store/session.ts");
+  const replay = await import("../apps/web/src/lib/connected-store/replay.ts");
+  const bridge = await import("../apps/web/src/lib/auth/identity-bridge.ts");
+  const exchange =
+    await import("../apps/web/src/lib/auth/identity-exchange.ts");
+  const attempts =
+    await import("../apps/web/src/lib/connected-store/exchange-attempt.ts");
+  const apiClientsB =
+    await import("../packages/api-clients/src/investor-api/index.ts");
+  const chain = await import("../apps/web/src/lib/auth/connected-login.ts");
+  const sessionSeam =
+    await import("../apps/web/src/lib/auth/connected-session.ts");
+  const stytchMod = await import("../apps/web/src/lib/auth/stytch.ts");
+  const flow = await import("../apps/web/src/lib/auth/login-flow.ts");
+  const ua = await import("../apps/web/src/lib/investor-api/user-assertion.ts");
+  const { getAuthContext: getAuthContextBridge } =
+    await import("../apps/web/src/lib/bff/auth.ts");
+  const bridgeJwksRoute =
+    await import("../apps/web/app/.well-known/identity-bridge-jwks.json/route.ts");
+  const startRoute =
+    await import("../apps/web/app/api/v1/auth/login/start/route.ts");
+  const completeRoute =
+    await import("../apps/web/app/api/v1/auth/login/complete/route.ts");
+  const nodeCryptoB = await import("node:crypto");
+  const { createRequire: createRequireBridge } = await import("node:module");
+  const requireWebBridge = createRequireBridge(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const joseB = (await import(
+    requireWebBridge.resolve("jose")
+  )) as typeof import("jose");
+  const { NextRequest: NextRequestB } = (await import(
+    requireWebBridge.resolve("next/server")
+  )) as typeof import("next/server");
+
+  // Keys: bridge, investor-api (BFF) and Daniel's backend — three distinct pairs.
+  const genJwk = (kid: string) => {
+    const { privateKey } = nodeCryptoB.generateKeyPairSync("ec", {
+      namedCurve: "P-256",
+    });
+    const jwk = privateKey.export({ format: "jwk" }) as Record<string, string>;
+    return { ...jwk, kid, alg: "ES256", use: "sig" };
+  };
+  const bridgeJwk = genJwk("bridge-k1");
+  const bffJwk = genJwk("bff-k1");
+  const backendJwk = genJwk("ccid-k1");
+  const backendPublic = (() => {
+    const { d: _d, ...pub } = backendJwk;
+    return { keys: [pub] };
+  })();
+  const backendPrivateKey = await joseB.importJWK(backendJwk, "ES256");
+
+  const ENV_KEYS = [
+    "REFI_AUTH_PROVIDER",
+    "STYTCH_PROJECT_ID",
+    "STYTCH_SECRET",
+    "STYTCH_ENV",
+    "REFI_AUTH_CALLBACK_URL",
+    "REFI_CONNECTED_STORE_NAMESPACE",
+    "REFI_CONNECTED_STORE_BACKING",
+    "REFI_ENV",
+    "BRIDGE_ASSERTION_SIGNER",
+    "BRIDGE_ASSERTION_PRIVATE_KEY_JWK",
+    "BRIDGE_ASSERTION_KMS_KEY_VERSION",
+    "BRIDGE_ASSERTION_KID",
+    "BRIDGE_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK",
+    "BRIDGE_ASSERTION_ISSUER",
+    "IDENTITY_CCID_UPSTREAM_AUDIENCE",
+    "IDENTITY_CCID_JWKS_URL",
+    "IDENTITY_RESULT_ISSUER",
+    "IDENTITY_RESULT_AUDIENCE",
+    "BFF_ASSERTION_SIGNER",
+    "BFF_ASSERTION_PRIVATE_KEY_JWK",
+    "BFF_ASSERTION_KMS_KEY_VERSION",
+    "BFF_ASSERTION_KID",
+    "BFF_ASSERTION_ISSUER",
+    "REFI_IDENTITY_CCID_BASE_URL",
+    "REFI_INVESTOR_API_ALLOW_REMOTE",
+    "REFI_TRUST_PROXY_HOST",
+  ];
+  const savedEnv: Record<string, string | undefined> = {};
+  for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
+  const baseEnv = () => {
+    for (const k of ENV_KEYS) delete process.env[k];
+    process.env["REFI_AUTH_PROVIDER"] = "stytch";
+    process.env["STYTCH_PROJECT_ID"] =
+      "project-test-00000000-0000-0000-0000-000000000000";
+    process.env["STYTCH_SECRET"] = "secret-test-" + "x".repeat(24);
+    process.env["STYTCH_ENV"] = "test";
+    process.env["REFI_AUTH_CALLBACK_URL"] =
+      "https://bff-dev.refi.trading/us/auth/callback";
+    process.env["REFI_CONNECTED_STORE_NAMESPACE"] = "us-connected-test";
+    process.env["REFI_CONNECTED_STORE_BACKING"] = "prototype";
+    process.env["BRIDGE_ASSERTION_SIGNER"] = "jwk";
+    process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"] = JSON.stringify(bridgeJwk);
+    process.env["BRIDGE_ASSERTION_ISSUER"] = "https://bff-dev.refi.trading";
+    process.env["IDENTITY_CCID_UPSTREAM_AUDIENCE"] =
+      "https://identity-ccid.dev.refi.internal";
+    process.env["IDENTITY_CCID_JWKS_URL"] =
+      "https://identity-ccid-74kl57biwa-uw.a.run.app/.well-known/jwks.json";
+    process.env["BFF_ASSERTION_SIGNER"] = "jwk";
+    process.env["BFF_ASSERTION_PRIVATE_KEY_JWK"] = JSON.stringify(bffJwk);
+    process.env["BFF_ASSERTION_ISSUER"] = "urn:refinity:bff:dev";
+    process.env["REFI_TRUST_PROXY_HOST"] = "1";
+    resetServerEnvCacheForTests();
+    bridge.resetBridgeSignerCache();
+    ua.resetSigningKeyCache();
+  };
+  const envError = (): string => {
+    resetServerEnvCacheForTests();
+    try {
+      getServerEnvBridge();
+      return "";
+    } catch (e) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  };
+
+  // Shared backing across "instances": same Map, fresh store factories.
+  const backing = new Map<string, Map<string, unknown>>();
+  const instance =
+    (): Parameters<typeof cs.setConnectedStoreFactoryForTests>[0] =>
+    <T>(collection: string) => {
+      const col = () => {
+        let m = backing.get(collection);
+        if (!m) {
+          m = new Map();
+          backing.set(collection, m);
+        }
+        return m as Map<string, T>;
+      };
+      return {
+        async get(k: string) {
+          return col().get(k) ?? null;
+        },
+        async put(k: string, v: T) {
+          col().set(k, v);
+        },
+        async putIfAbsent(k: string, v: T) {
+          if (col().has(k)) return false;
+          col().set(k, v);
+          return true;
+        },
+        async list(prefix?: string) {
+          return [...col().entries()]
+            .filter(([k]) => !prefix || k.startsWith(prefix))
+            .map(([key, value]) => ({ key, value }));
+        },
+        async delete(k: string) {
+          col().delete(k);
+        },
+      };
+    };
+  const sessionsInStore = () =>
+    backing.get("us-connected-test--connected-session")?.size ?? 0;
+
+  // Daniel's exchange, as a fixture: verifies the bridge assertion the way
+  // identity-ccid would (bridge JWKS, iss/aud, exp/nbf, closed claims, single
+  // use) and answers with an identity_result signed by the backend key.
+  const seenBridgeJtis = new Set<string>();
+  const exchangeCalls: Array<Record<string, unknown>> = [];
+  let resultOverride:
+    ((claims: Record<string, unknown>) => Record<string, unknown>) | null =
+    null;
+  let resultSigner: {
+    key: CryptoKey | Uint8Array;
+    alg: string;
+    kid: string;
+  } | null = null;
+  let exchangeFailure: Error | null = null;
+  /** Backend receives and processes the request, then the answer is lost. */
+  let lostAfterSend = false;
+  let headerExtra: Record<string, unknown> | null = null;
+  const answersByBridgeJti = new Map<string, { body: string; token: string }>();
+  const fakeExchange: import("../apps/web/src/lib/investor-api/demo-client.ts").InvestorApiReadClient =
+    {
+      async call(opId, options) {
+        assert.equal(opId, "exchangeIdentity");
+        if (exchangeFailure) throw exchangeFailure;
+        const body = (options as { body: Record<string, unknown> }).body;
+        exchangeCalls.push(body);
+        const bridgeJwks = await bridge.getBridgePublicJwks();
+        const { payload, protectedHeader } = await joseB.jwtVerify(
+          body["identity_assertion"] as string,
+          joseB.createLocalJWKSet(bridgeJwks as import("jose").JSONWebKeySet),
+          {
+            algorithms: ["ES256"],
+            issuer: "https://bff-dev.refi.trading",
+            audience: "https://identity-ccid.dev.refi.internal",
+            clockTolerance: 30,
+          },
+        );
+        assert.equal(protectedHeader.typ, "JWT");
+        const prior = answersByBridgeJti.get(payload.jti as string);
+        if (prior) {
+          if (prior.body !== JSON.stringify(body)) {
+            throw new apiClientsB.InvestorApiError({
+              status: 422,
+              code: "VALIDATION_ERROR",
+              message: "binding fields changed for a presented assertion",
+              correlationId: "ccid_x",
+            });
+          }
+          if (lostAfterSend) {
+            lostAfterSend = false;
+            throw new apiClientsB.InvestorApiTransportError("lost", 1);
+          }
+          return {
+            status: 200,
+            correlationId: "ccid_x",
+            headers: new Headers(),
+            data: {
+              data: {
+                identity_result: prior.token,
+                token_type: "JWT",
+                expires_at: new Date(Date.now() + 300_000).toISOString(),
+              },
+            },
+          } as never;
+        }
+        seenBridgeJtis.add(payload.jti as string);
+        const now = Math.floor(Date.now() / 1000);
+        let claims: Record<string, unknown> = {
+          iss: "urn:refinity:identity-ccid:dev",
+          aud: "urn:refinity:frontend-bff:dev",
+          sub: `user-${nodeCryptoB.randomBytes(12).toString("hex")}`,
+          iat: now,
+          nbf: now,
+          exp: now + 300,
+          jti: `idr_${nodeCryptoB.randomBytes(16).toString("hex")}`,
+          sid: payload.sid,
+          auth_time: payload.auth_time,
+          email: payload.email,
+          email_verified: true,
+          amr: payload.amr,
+        };
+        if (resultOverride) claims = resultOverride(claims);
+        const signer = resultSigner ?? {
+          key: backendPrivateKey,
+          alg: "ES256",
+          kid: "ccid-k1",
+        };
+        const token = await new joseB.SignJWT(claims)
+          .setProtectedHeader({
+            alg: signer.alg,
+            kid: signer.kid,
+            typ: "JWT",
+            ...(headerExtra ?? {}),
+          })
+          .sign(signer.key);
+        answersByBridgeJti.set(payload.jti as string, {
+          body: JSON.stringify(body),
+          token,
+        });
+        if (lostAfterSend) {
+          lostAfterSend = false;
+          throw new apiClientsB.InvestorApiTransportError("lost", 1);
+        }
+        return {
+          status: 200,
+          correlationId: "ccid_x",
+          headers: new Headers(),
+          data: {
+            data: {
+              identity_result: token,
+              token_type: "JWT",
+              expires_at: new Date((now + 300) * 1000).toISOString(),
+            },
+          },
+        } as never;
+      },
+    };
+
+  const fakeStytchB = () => {
+    const tokens = new Map<string, string>();
+    let authAt = "2026-09-10T03:00:00Z";
+    const userFor = (email: string) => ({
+      user_id: `user-test-${Buffer.from(email).toString("hex").slice(0, 24)}`,
+      email,
+    });
+    const authenticated = (email: string, type: string) => {
+      const u = userFor(email);
+      return {
+        request_id: "req",
+        status_code: 200,
+        user_id: u.user_id,
+        method_id: "m",
+        user: {
+          user_id: u.user_id,
+          emails: [
+            { email_id: `email-${u.user_id}`, email: u.email, verified: true },
+          ],
+        },
+        session: {
+          session_id: `session-${u.user_id}`,
+          user_id: u.user_id,
+          started_at: authAt,
+          authentication_factors: [
+            {
+              type,
+              delivery_method: "email",
+              last_authenticated_at: authAt,
+              email_factor: {
+                email_id: `email-${u.user_id}`,
+                email_address: u.email,
+              },
+            },
+          ],
+        },
+      };
+    };
+    const client: import("../apps/web/src/lib/auth/stytch.ts").StytchClientLike =
+      {
+        magicLinks: {
+          email: {
+            async loginOrCreate(req) {
+              const u = userFor(req.email);
+              const t = `tok_${nodeCryptoB.randomBytes(16).toString("hex")}`;
+              tokens.set(t, req.email);
+              return {
+                request_id: "r",
+                user_id: u.user_id,
+                email_id: `email-${u.user_id}`,
+              };
+            },
+          },
+          async authenticate(req) {
+            const email = tokens.get(req.token);
+            if (!email) throw new Error("invalid token");
+            tokens.delete(req.token);
+            return authenticated(email, "magic_link");
+          },
+        },
+        otps: {
+          email: {
+            async loginOrCreate(req) {
+              const u = userFor(req.email);
+              return {
+                request_id: "r",
+                user_id: u.user_id,
+                email_id: `email-${u.user_id}`,
+              };
+            },
+          },
+          async authenticate(req) {
+            const email = [...tokens.values()].at(-1) ?? "otp@example.com";
+            if (req.code !== "123456") throw new Error("bad code");
+            return authenticated(email, "otp");
+          },
+        },
+      };
+    return {
+      client,
+      lastToken: () => [...tokens.keys()].at(-1) ?? "",
+      authAt: () => Math.floor(Date.parse(authAt) / 1000),
+    };
+  };
+
+  const ORIGIN = "https://bff-dev.refi.trading";
+  let ipN = 120;
+  const nextIp = () => `203.0.113.${String(ipN++)}`;
+  const reqB = (
+    path: string,
+    body: unknown,
+    opts: { cookie?: string; ip?: string } = {},
+  ) => {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+      "x-forwarded-proto": "https",
+      host: "bff-dev.refi.trading",
+      origin: ORIGIN,
+      "x-real-ip": opts.ip ?? nextIp(),
+    };
+    if (opts.cookie) headers["cookie"] = opts.cookie;
+    return new NextRequestB(`${ORIGIN}${path}`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    });
+  };
+  const cookiesOf = (res: Response, name: string) =>
+    (res.headers.get("set-cookie") ?? "")
+      .split(/,\s*(?=[^ ;,]+=)/)
+      .map((c) => (c.split(";")[0] ?? "").trim())
+      .filter((c) => c.startsWith(`${name}=`))
+      .map((c) => c.slice(name.length + 1));
+
+  // A CompletedLogin fixture straight from the login-flow (no routes).
+  const provider = fakeStytchB();
+  const completedLogin = async (email: string, ip = nextIp()) => {
+    const started = await flow.startEmailLogin({
+      email,
+      method: "email_link",
+      clientIp: ip,
+      correlationId: "c_start",
+    });
+    return flow.completeEmailLogin({
+      loginId: started.loginId,
+      state: started.state,
+      token: provider.lastToken(),
+      correlationId: "c_complete",
+    });
+  };
+  const decode = (jwt: string) => {
+    const [h, p] = jwt.split(".");
+    return {
+      header: JSON.parse(
+        Buffer.from(h ?? "", "base64url").toString(),
+      ) as Record<string, unknown>,
+      claims: JSON.parse(
+        Buffer.from(p ?? "", "base64url").toString(),
+      ) as Record<string, unknown>,
+    };
+  };
+
+  baseEnv();
+  cs.setConnectedStoreFactoryForTests(instance());
+  stytchMod.setStytchClientForTests(provider.client);
+  exchange.setIdentityExchangeClientForTests(fakeExchange);
+  exchange.setIdentityResultKeySetForTests(
+    backendPublic as import("jose").JSONWebKeySet,
+  );
+
+  try {
+    await section(
+      "identity bridge: closed ES256 profile — exact header/claims, ≤300 s, opaque sub (never email/provider id), genuine auth_time, verifies against the BRIDGE JWKS and not the Investor API JWKS",
+      async () => {
+        const completed = await completedLogin("bridge-alice@example.com");
+        const sid = sessions.newSessionId();
+        const minted = await bridge.mintBridgeAssertion({
+          identity: completed.identity,
+          sub: completed.sub,
+          sid,
+        });
+        const { header, claims } = decode(minted.token);
+        assert.deepEqual(Object.keys(header).sort(), ["alg", "kid", "typ"]);
+        assert.equal(header.alg, "ES256");
+        assert.equal(header.typ, "JWT");
+        assert.equal(header.kid, "bridge-k1");
+        assert.deepEqual(
+          Object.keys(claims).sort(),
+          [...bridge.BRIDGE_REQUIRED_CLAIMS, "amr"].sort(),
+          "exactly the closed claim set",
+        );
+        assert.equal(claims.iss, "https://bff-dev.refi.trading");
+        assert.equal(claims.aud, "https://identity-ccid.dev.refi.internal");
+        assert.equal(claims.sub, completed.sub);
+        assert.ok(
+          /^usr_[0-9a-f]{32}$/.test(claims.sub as string),
+          "sub is the durable opaque subject",
+        );
+        assert.notEqual(claims.sub, completed.identity.providerUserId);
+        assert.ok(!(claims.sub as string).includes("@"));
+        assert.equal(claims.email, "bridge-alice@example.com");
+        assert.equal(claims.email_verified, true);
+        assert.equal(
+          claims.auth_time,
+          provider.authAt(),
+          "auth_time is the provider's, not now",
+        );
+        assert.equal(claims.sid, sid);
+        assert.equal(claims.jti, minted.jti);
+        assert.deepEqual(claims.amr, ["email_link"]);
+        assert.equal(
+          (claims.exp as number) - (claims.iat as number),
+          bridge.BRIDGE_ASSERTION_TTL_SECONDS,
+        );
+        assert.ok((claims.exp as number) - (claims.iat as number) <= 300);
+        assert.equal(claims.nbf, claims.iat);
+        const bridgeJwks = await bridge.getBridgePublicJwks();
+        await joseB.jwtVerify(
+          minted.token,
+          joseB.createLocalJWKSet(bridgeJwks as import("jose").JSONWebKeySet),
+          {
+            algorithms: ["ES256"],
+            issuer: "https://bff-dev.refi.trading",
+            audience: "https://identity-ccid.dev.refi.internal",
+          },
+        );
+        const investorJwks = await ua.getPublicJwks();
+        await assert.rejects(
+          joseB.jwtVerify(
+            minted.token,
+            joseB.createLocalJWKSet(
+              investorJwks as import("jose").JSONWebKeySet,
+            ),
+            { algorithms: ["ES256"] },
+          ),
+          "the Investor API key set must NOT verify a bridge assertion",
+        );
+        assert.ok(
+          !bridgeJwks.keys.some((k) => "d" in k),
+          "no private material",
+        );
+        assert.ok(!bridgeJwks.keys.some((k) => k.kid === "bff-k1"));
+        assert.ok(!investorJwks.keys.some((k) => k.kid === "bridge-k1"));
+      },
+    );
+
+    await section(
+      "identity bridge: key separation — identical signing identity for both boundaries is rejected by the env schema AND by the bridge signer (jwk, kms key version, kid, issuer); no ephemeral fallback",
+      async () => {
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"] =
+          JSON.stringify(bffJwk);
+        assert.match(
+          envError(),
+          /BRIDGE_ASSERTION_PRIVATE_KEY_JWK[\s\S]*different private keys/,
+        );
+        // Same key material, different serialisation: the schema cannot see it, the signer must.
+        process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"] = JSON.stringify({
+          ...bffJwk,
+          kid: "bridge-k1",
+        });
+        assert.equal(envError(), "");
+        bridge.resetBridgeSignerCache();
+        await assert.rejects(
+          bridge.getBridgeSigner(),
+          bridge.BridgeConfigurationError,
+        );
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_SIGNER"] = "kms";
+        process.env["BRIDGE_ASSERTION_KMS_KEY_VERSION"] =
+          "projects/p/locations/l/keyRings/r/cryptoKeys/investor-api-assertion/cryptoKeyVersions/1";
+        process.env["BRIDGE_ASSERTION_KID"] = "kms-1";
+        process.env["BFF_ASSERTION_SIGNER"] = "kms";
+        process.env["BFF_ASSERTION_KMS_KEY_VERSION"] =
+          process.env["BRIDGE_ASSERTION_KMS_KEY_VERSION"];
+        process.env["BFF_ASSERTION_KID"] = "kms-bff-1";
+        assert.match(
+          envError(),
+          /BRIDGE_ASSERTION_KMS_KEY_VERSION[\s\S]*different KMS keys/,
+        );
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_KID"] = "shared-kid";
+        process.env["BFF_ASSERTION_KID"] = "shared-kid";
+        assert.match(envError(), /BRIDGE_ASSERTION_KID[\s\S]*must differ/);
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_ISSUER"] = "urn:refinity:bff:dev";
+        assert.match(envError(), /BRIDGE_ASSERTION_ISSUER/);
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_SIGNER"] = "kms";
+        assert.match(
+          envError(),
+          /kms requires BRIDGE_ASSERTION_KMS_KEY_VERSION and BRIDGE_ASSERTION_KID/,
+        );
+        baseEnv();
+        delete process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"];
+        assert.match(
+          envError(),
+          /BRIDGE_ASSERTION_PRIVATE_KEY_JWK[\s\S]*no ephemeral key/,
+        );
+        // Provider off → bridge config is not demanded (routes are dark anyway)…
+        process.env["REFI_AUTH_PROVIDER"] = "unconfigured";
+        assert.equal(envError(), "");
+        // …but the signer itself still refuses to invent a key.
+        bridge.resetBridgeSignerCache();
+        await assert.rejects(
+          bridge.getBridgeSigner(),
+          /BRIDGE_ASSERTION_PRIVATE_KEY_JWK is not configured/,
+        );
+        baseEnv();
+        for (const k of [
+          "BRIDGE_ASSERTION_ISSUER",
+          "IDENTITY_CCID_UPSTREAM_AUDIENCE",
+          "IDENTITY_CCID_JWKS_URL",
+        ]) {
+          baseEnv();
+          delete process.env[k];
+          assert.match(
+            envError(),
+            new RegExp(`${k}[\\s\\S]*required when REFI_AUTH_PROVIDER=stytch`),
+          );
+        }
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_ISSUER"] = "http://bff-dev.refi.trading";
+        assert.match(envError(), /must be an https issuer/);
+        baseEnv();
+      },
+    );
+
+    await section(
+      "identity bridge: input refusals — non-opaque sub, unverified email, missing/future auth_time, empty amr, bad sid; separate KMS client seam is honoured",
+      async () => {
+        const completed = await completedLogin("bridge-bob@example.com");
+        const sid = sessions.newSessionId();
+        const base = { identity: completed.identity, sub: completed.sub, sid };
+        await assert.rejects(
+          bridge.mintBridgeAssertion({ ...base, sub: "bob@example.com" }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({ ...base, sub: "short" }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({ ...base, sid: "x" }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({
+            ...base,
+            identity: { ...completed.identity, emailVerified: false as never },
+          }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({
+            ...base,
+            identity: { ...completed.identity, authTime: 0 },
+          }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({
+            ...base,
+            identity: {
+              ...completed.identity,
+              authTime: Math.floor(Date.now() / 1000) + 3600,
+            },
+          }),
+          bridge.BridgeInputError,
+        );
+        await assert.rejects(
+          bridge.mintBridgeAssertion({
+            ...base,
+            identity: { ...completed.identity, amr: [] as never },
+          }),
+          bridge.BridgeInputError,
+        );
+        // KMS seam: the bridge asks ITS factory, with ITS key version, never the Investor API's.
+        baseEnv();
+        process.env["BRIDGE_ASSERTION_SIGNER"] = "kms";
+        process.env["BRIDGE_ASSERTION_KMS_KEY_VERSION"] =
+          "projects/p/locations/l/keyRings/r/cryptoKeys/identity-bridge/cryptoKeyVersions/1";
+        process.env["BRIDGE_ASSERTION_KID"] = "bridge-kms-1";
+        resetServerEnvCacheForTests();
+        const seen: string[] = [];
+        bridge.setBridgeKmsClientFactoryForTests(async () => ({
+          async getPublicKey(req) {
+            seen.push(`pub:${req.name}`);
+            const { d: _d, ...pub } = bridgeJwk;
+            const pem = nodeCryptoB
+              .createPublicKey({ key: pub, format: "jwk" })
+              .export({ type: "spki", format: "pem" }) as string;
+            return [{ pem }];
+          },
+          async asymmetricSign(req) {
+            seen.push(`sign:${req.name}`);
+            const key = nodeCryptoB.createPrivateKey({
+              key: bridgeJwk,
+              format: "jwk",
+            });
+            // Sign the digest directly with deterministic DER output via node (sha256 of the digest is NOT what KMS does; use the raw sign primitive on the prehashed digest).
+            const sig = nodeCryptoB.sign(null, req.digest.sha256, {
+              key,
+              dsaEncoding: "der",
+            });
+            return [{ signature: new Uint8Array(sig) }];
+          },
+        }));
+        try {
+          const signer = await bridge.getBridgeSigner();
+          assert.equal(signer.kind, "kms");
+          assert.equal(signer.kid, "bridge-kms-1");
+          const jwk = await signer.publicJwk();
+          assert.equal(jwk.kid, "bridge-kms-1");
+          assert.ok(
+            seen.every((s) => s.includes("identity-bridge")),
+            "only the bridge key version is ever named",
+          );
+        } finally {
+          bridge.setBridgeKmsClientFactoryForTests(null);
+          baseEnv();
+        }
+      },
+    );
+
+    await section(
+      "bridge JWKS route: /.well-known/identity-bridge-jwks.json serves ONLY bridge public keys (+ retiring key), application/jwk-set+json, 5-minute cache; /.well-known/jwks.json is untouched; misconfiguration → 503 without detail",
+      async () => {
+        baseEnv();
+        const { d: _d, ...prevPub } = genJwk("bridge-k0");
+        process.env["BRIDGE_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"] =
+          JSON.stringify(prevPub);
+        resetServerEnvCacheForTests();
+        const res = await bridgeJwksRoute.GET();
+        assert.equal(res.status, 200);
+        assert.equal(
+          res.headers.get("content-type"),
+          "application/jwk-set+json",
+        );
+        assert.equal(
+          res.headers.get("cache-control"),
+          "public, max-age=300, must-revalidate",
+        );
+        const body = (await res.json()) as {
+          keys: Array<Record<string, unknown>>;
+        };
+        assert.deepEqual(
+          body.keys.map((k) => k.kid),
+          ["bridge-k1", "bridge-k0"],
+        );
+        assert.ok(body.keys.every((k) => !("d" in k)));
+        const inv = (await ua.getPublicJwks()) as {
+          keys: Array<Record<string, unknown>>;
+        };
+        assert.deepEqual(
+          inv.keys.map((k) => k.kid),
+          ["bff-k1"],
+        );
+        process.env["BRIDGE_ASSERTION_PREVIOUS_PUBLIC_KEY_JWK"] =
+          JSON.stringify(genJwk("bridge-k0"));
+        resetServerEnvCacheForTests();
+        bridge.resetBridgeSignerCache();
+        const leak = await bridgeJwksRoute.GET();
+        assert.equal(
+          leak.status,
+          503,
+          "a previous key with a private component is refused, never published",
+        );
+        assert.deepEqual(await leak.json(), { error: "jwks_unavailable" });
+        baseEnv();
+        delete process.env["BRIDGE_ASSERTION_PRIVATE_KEY_JWK"];
+        process.env["REFI_AUTH_PROVIDER"] = "unconfigured";
+        resetServerEnvCacheForTests();
+        bridge.resetBridgeSignerCache();
+        const dark = await bridgeJwksRoute.GET();
+        assert.equal(dark.status, 503);
+        assert.equal(dark.headers.get("cache-control"), "no-store");
+        baseEnv();
+      },
+    );
+
+    await section(
+      "exchange (step 5): request built ONLY from the frozen client's IdentityExchangeRequest fields and the durable pending-login bindings; backend result verified; durable session created with the backend sub, the bridge sid, genuine auth_time; cookie is a reference",
+      async () => {
+        exchangeCalls.length = 0;
+        const before = sessionsInStore();
+        const completed = await completedLogin("exchange-carol@example.com");
+        const established = await sessionSeam.establishConnectedSession({
+          completed,
+          correlationId: "c_est",
+        });
+        assert.equal(exchangeCalls.length, 1);
+        const body = exchangeCalls[0] as Record<string, unknown>;
+        assert.deepEqual(
+          Object.keys(body).sort(),
+          [
+            "challenge",
+            "identity_assertion",
+            "network_context",
+            "nonce",
+            "redirect_uri",
+            "state",
+          ],
+          "no invented fields; acquisition/invitation_token omitted",
+        );
+        assert.equal(body.state, completed.login.state);
+        assert.equal(body.challenge, completed.login.challenge);
+        assert.equal(body.nonce, completed.login.nonce);
+        assert.equal(
+          body.redirect_uri,
+          "https://bff-dev.refi.trading/us/auth/callback",
+        );
+        assert.equal(body.network_context, completed.login.networkContext);
+        assert.equal(established.continuePath, "/us/app/home");
+        assert.equal(established.cookies.length, 1);
+        const c = established.cookies[0]!;
+        assert.equal(c.name, "us_session_v1");
+        assert.ok(
+          c.options.httpOnly &&
+            c.options.secure &&
+            c.options.sameSite === "lax" &&
+            c.options.path === "/",
+        );
+        assert.equal(sessionsInStore(), before + 1);
+        const { claims: cookieClaims } = decode(c.value);
+        assert.equal(cookieClaims.src, "connected");
+        const record = await sessions.getActiveConnectedSession(
+          cookieClaims.sid as string,
+        );
+        assert.ok(record, "durable session exists");
+        assert.ok(
+          /^user-[0-9a-f]{24}$/.test(record.sub),
+          "session sub is the BACKEND opaque user id",
+        );
+        assert.equal(cookieClaims.sub, record.sub);
+        assert.equal(record.authTime, provider.authAt());
+        assert.deepEqual(record.amr, ["email_link"]);
+        assert.equal(
+          decode(body.identity_assertion as string).claims.sid,
+          record.sid,
+          "bridge sid became the session sid",
+        );
+        assert.ok(
+          await replay.isJtiConsumed(
+            "identity-result-jti",
+            record.identityResultJti,
+          ),
+        );
+        assert.ok(
+          await replay.isJtiConsumed(
+            "bridge-assertion-jti",
+            decode(body.identity_assertion as string).claims.jti as string,
+          ),
+        );
+        // The cookie resolves through the durable record on a FRESH instance.
+        cs.setConnectedStoreFactoryForTests(instance());
+        const ctx = await getAuthContextBridge(
+          new NextRequestB(
+            "https://bff-dev.refi.trading/api/v1/investor/status",
+            { headers: { cookie: `us_session_v1=${c.value}` } },
+          ),
+        );
+        assert.ok(ctx);
+        assert.equal(ctx.authId, record.sub);
+        assert.equal(ctx.sid, record.sid);
+        assert.equal(ctx.authTime, provider.authAt());
+        assert.deepEqual(ctx.amr, ["email_link"]);
+        assert.equal(ctx.source, "backend");
+        assert.equal(
+          ctx.accountId,
+          undefined,
+          "no prototype account link on a connected session",
+        );
+        // Revoked durably → dead everywhere at once; the cookie itself is unchanged.
+        await sessions.revokeConnectedSession(record.sid, "test");
+        cs.setConnectedStoreFactoryForTests(instance());
+        assert.equal(
+          await getAuthContextBridge(
+            new NextRequestB("https://bff-dev.refi.trading/x", {
+              headers: { cookie: `us_session_v1=${c.value}` },
+            }),
+          ),
+          null,
+        );
+      },
+    );
+
+    await section(
+      "identity result (closed): wrong iss/aud/alg/kid, expired, invalid lifetime, future iat, fractional NumericDate, extra claim, extra protected-header field, duplicate/empty/malformed amr, unverified or mismatched email, mismatched sid, mismatched auth_time, malformed sub/sid/jti, missing claims — all refused with NO session; a replayed jti is refused across instances and after restart",
+      async () => {
+        const secret = new TextEncoder().encode("k".repeat(48));
+        type Case = [
+          string,
+          (c: Record<string, unknown>) => Record<string, unknown>,
+          typeof resultSigner,
+          Record<string, unknown> | null,
+        ];
+        const cases: Case[] = [
+          [
+            "iss",
+            (c) => ({ ...c, iss: "urn:refinity:identity-ccid:prod" }),
+            null,
+            null,
+          ],
+          [
+            "aud",
+            (c) => ({ ...c, aud: "urn:refinity:frontend-bff:prod" }),
+            null,
+            null,
+          ],
+          [
+            "expired",
+            (c) => ({
+              ...c,
+              iat: (c.iat as number) - 600,
+              nbf: (c.iat as number) - 600,
+              exp: (c.iat as number) - 300,
+            }),
+            null,
+            null,
+          ],
+          [
+            "lifetime > 300",
+            (c) => ({ ...c, exp: (c.iat as number) + 301 }),
+            null,
+            null,
+          ],
+          [
+            "exp before iat",
+            (c) => ({ ...c, exp: (c.iat as number) - 1 }),
+            null,
+            null,
+          ],
+          [
+            "future iat",
+            (c) => ({
+              ...c,
+              iat: (c.iat as number) + 120,
+              nbf: (c.iat as number) + 120,
+              exp: (c.iat as number) + 400,
+            }),
+            null,
+            null,
+          ],
+          [
+            "fractional iat",
+            (c) => ({ ...c, iat: (c.iat as number) + 0.5 }),
+            null,
+            null,
+          ],
+          [
+            "fractional exp",
+            (c) => ({ ...c, exp: (c.exp as number) - 0.25 }),
+            null,
+            null,
+          ],
+          [
+            "fractional auth_time",
+            (c) => ({ ...c, auth_time: (c.auth_time as number) + 0.5 }),
+            null,
+            null,
+          ],
+          ["extra claim acr", (c) => ({ ...c, acr: "urn:x" }), null, null],
+          [
+            "extra claim account_id",
+            (c) => ({ ...c, account_id: "acct_x_00000001" }),
+            null,
+            null,
+          ],
+          ["extra header field", (c) => c, null, { cty: "JWT" }],
+          ["extra header field x5t", (c) => c, null, { x5t: "abc" }],
+          [
+            "hs256",
+            (c) => c,
+            { key: secret, alg: "HS256", kid: "ccid-k1" },
+            null,
+          ],
+          [
+            "unknown kid",
+            (c) => c,
+            { key: backendPrivateKey, alg: "ES256", kid: "ccid-k9" },
+            null,
+          ],
+          [
+            "email_verified",
+            (c) => ({ ...c, email_verified: false }),
+            null,
+            null,
+          ],
+          [
+            "email mismatch",
+            (c) => ({ ...c, email: "someone-else@example.com" }),
+            null,
+            null,
+          ],
+          [
+            "sub is an email",
+            (c) => ({ ...c, sub: "dave@example.com" }),
+            null,
+            null,
+          ],
+          ["sid malformed", (c) => ({ ...c, sid: "s" }), null, null],
+          [
+            "sid mismatch",
+            (c) => ({ ...c, sid: "sid_" + "9".repeat(32) }),
+            null,
+            null,
+          ],
+          [
+            "auth_time mismatch",
+            (c) => ({ ...c, auth_time: (c.auth_time as number) - 1 }),
+            null,
+            null,
+          ],
+          ["jti", (c) => ({ ...c, jti: "!" }), null, null],
+          [
+            "missing auth_time",
+            (c) => {
+              const { auth_time: _a, ...r } = c;
+              return r;
+            },
+            null,
+            null,
+          ],
+          [
+            "missing sid",
+            (c) => {
+              const { sid: _s, ...r } = c;
+              return r;
+            },
+            null,
+            null,
+          ],
+          ["amr empty", (c) => ({ ...c, amr: [] }), null, null],
+          [
+            "amr duplicate",
+            (c) => ({ ...c, amr: ["email_link", "email_link"] }),
+            null,
+            null,
+          ],
+          ["amr not strings", (c) => ({ ...c, amr: [1] }), null, null],
+        ];
+        let n = 0;
+        for (const [name, override, signer, hdr] of cases) {
+          const before = sessionsInStore();
+          resultOverride = override;
+          resultSigner = signer;
+          headerExtra = hdr;
+          try {
+            const completed = await completedLogin(
+              `neg-${String(n++)}-dave@example.com`,
+            );
+            await assert.rejects(
+              sessionSeam.establishConnectedSession({
+                completed,
+                correlationId: "c_neg",
+              }),
+              (e: unknown) =>
+                e instanceof flow.LoginRefusedError &&
+                e.reason === "identity_result_rejected",
+              `identity result with bad ${name} must be refused`,
+            );
+            const attempt = await attempts.getExchangeAttempt(
+              completed.login.loginId,
+            );
+            assert.equal(
+              attempt?.status,
+              "failed",
+              `${name}: attempt is failed, not recoverable`,
+            );
+          } finally {
+            resultOverride = null;
+            resultSigner = null;
+            headerExtra = null;
+          }
+          assert.equal(
+            sessionsInStore(),
+            before,
+            `no session after bad ${name}`,
+          );
+        }
+        // A well-formed result with amr omitted is VALID (amr is optional).
+        resultOverride = (c) => {
+          const { amr: _m, ...r } = c;
+          return r;
+        };
+        const okNoAmr = await sessionSeam.establishConnectedSession({
+          completed: await completedLogin("noamr-eve@example.com"),
+          correlationId: "c_noamr",
+        });
+        resultOverride = null;
+        assert.ok(okNoAmr.cookies[0]?.value);
+        // Replay: the same result JTI presented twice → second session refused,
+        // on another instance and after a restart (shared backing).
+        resultOverride = (c) => ({
+          ...c,
+          jti: "idr_replay_fixed_0000000000000001",
+        });
+        const completedA = await completedLogin("replay-erin@example.com");
+        const first = await sessionSeam.establishConnectedSession({
+          completed: completedA,
+          correlationId: "c_r1",
+        });
+        assert.ok(first.cookies[0]?.value);
+        cs.setConnectedStoreFactoryForTests(instance()); // another instance / after restart
+        const completedB = await completedLogin("replay-erin@example.com");
+        const before = sessionsInStore();
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed: completedB,
+            correlationId: "c_r2",
+          }),
+          (e: unknown) =>
+            e instanceof flow.LoginRefusedError &&
+            e.reason === "identity_result_rejected",
+        );
+        assert.equal(
+          sessionsInStore(),
+          before,
+          "same identity-result JTI never yields a second session",
+        );
+        resultOverride = null;
+        const now = Math.floor(Date.now() / 1000);
+        const dup = await new joseB.SignJWT({
+          iss: "urn:refinity:identity-ccid:dev",
+          aud: "urn:refinity:frontend-bff:dev",
+          sub: "user-000000000000000000000001",
+          iat: now,
+          nbf: now,
+          exp: now + 60,
+          jti: "idr_replay_fixed_0000000000000001",
+          sid: "sid_00000000000000000000000000000001",
+          auth_time: now - 5,
+          email: "replay-erin@example.com",
+          email_verified: true,
+        })
+          .setProtectedHeader({ alg: "ES256", kid: "ccid-k1", typ: "JWT" })
+          .sign(backendPrivateKey);
+        await assert.rejects(
+          exchange.verifyIdentityResult({
+            token: dup,
+            binding: {
+              email: "replay-erin@example.com",
+              authTime: now - 5,
+              sid: "sid_00000000000000000000000000000001",
+            },
+            correlationId: "c_dup",
+          }),
+          /jti replay/,
+        );
+      },
+    );
+
+    await section(
+      "exchange recovery (alpha.3 step 5): a lost/ambiguous answer keeps the login recoverable; the IDENTICAL stored request is re-sent (no re-mint); changed state/challenge/nonce/redirect/network_context are refused; a recovered result yields exactly one session; recovery works on a second instance and after restart; an expired assertion cannot be recovered; unavailability paths stay non-recoverable",
+      async () => {
+        const attemptCollection = () =>
+          backing.get("us-connected-test--connected-exchange-attempt") as
+            | Map<
+                string,
+                import("../apps/web/src/lib/connected-store/exchange-attempt.ts").ExchangeAttemptRecord
+              >
+            | undefined;
+        exchangeCalls.length = 0;
+        const completed = await completedLogin("recover-frank@example.com");
+        const beforeSessions = sessionsInStore();
+        lostAfterSend = true;
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed,
+            correlationId: "c_lost",
+          }),
+          (e: unknown) =>
+            e instanceof chain.ConnectedSessionRecoverableError &&
+            e instanceof sessionSeam.IdentityExchangeUnavailableError &&
+            e.recoverable === true,
+        );
+        assert.equal(
+          sessionsInStore(),
+          beforeSessions,
+          "no session from a lost answer",
+        );
+        const attempt = await attempts.getExchangeAttempt(
+          completed.login.loginId,
+        );
+        assert.equal(attempt?.status, "sent");
+        assert.equal(attempt?.attempts, 1);
+        assert.ok(
+          !(await replay.isJtiConsumed(
+            "bridge-assertion-jti",
+            attempt!.bridgeJti,
+          )),
+          "the bridge assertion is NOT consumed before a successful exchange",
+        );
+        for (const field of [
+          "state",
+          "challenge",
+          "nonce",
+          "redirectUri",
+          "networkContext",
+        ] as const) {
+          const altered = {
+            ...completed,
+            login: {
+              ...completed.login,
+              [field]:
+                field === "redirectUri"
+                  ? "https://bff-dev.refi.trading/us/auth/other"
+                  : "A".repeat(43),
+            },
+          };
+          const sent = exchangeCalls.length;
+          await assert.rejects(
+            sessionSeam.establishConnectedSession({
+              completed: altered,
+              correlationId: "c_alt",
+            }),
+            (e: unknown) =>
+              e instanceof flow.LoginRefusedError &&
+              e.reason === "state_mismatch",
+            `changed ${field} must be refused`,
+          );
+          assert.equal(
+            exchangeCalls.length,
+            sent,
+            `changed ${field}: nothing re-sent`,
+          );
+        }
+        await assert.rejects(
+          chain.recoverConnectedSession({
+            loginId: completed.login.loginId,
+            state: "B".repeat(43),
+            correlationId: "c_alt2",
+          }),
+          (e: unknown) =>
+            e instanceof flow.LoginRefusedError &&
+            e.reason === "state_mismatch",
+        );
+        cs.setConnectedStoreFactoryForTests(instance());
+        const recovered = await chain.recoverConnectedSession({
+          loginId: completed.login.loginId,
+          state: completed.login.state,
+          correlationId: "c_rec",
+        });
+        assert.ok(recovered?.cookies[0]?.value, "recovered session cookie");
+        assert.equal(exchangeCalls.length, 2);
+        assert.deepEqual(
+          exchangeCalls[0],
+          exchangeCalls[1],
+          "byte-identical request re-sent; no re-mint",
+        );
+        assert.equal(
+          sessionsInStore(),
+          beforeSessions + 1,
+          "exactly one session",
+        );
+        const done = await attempts.getExchangeAttempt(completed.login.loginId);
+        assert.equal(done?.status, "completed");
+        assert.equal(done?.attempts, 2);
+        assert.ok(
+          await replay.isJtiConsumed("bridge-assertion-jti", done!.bridgeJti),
+          "consumed after success",
+        );
+        const { claims } = decode(recovered!.cookies[0]!.value);
+        assert.equal(
+          claims.sid,
+          attempt?.sid,
+          "session sid is the bridge sid the result retained",
+        );
+        cs.setConnectedStoreFactoryForTests(instance());
+        const again = await chain.recoverConnectedSession({
+          loginId: completed.login.loginId,
+          state: completed.login.state,
+          correlationId: "c_rec2",
+        });
+        assert.equal(decode(again!.cookies[0]!.value).claims.sid, claims.sid);
+        assert.equal(
+          sessionsInStore(),
+          beforeSessions + 1,
+          "still exactly one session",
+        );
+        assert.equal(
+          exchangeCalls.length,
+          2,
+          "nothing re-sent after completion",
+        );
+        const same = await sessionSeam.establishConnectedSession({
+          completed,
+          correlationId: "c_same",
+        });
+        assert.equal(decode(same.cookies[0]!.value).claims.sid, claims.sid);
+        assert.equal(sessionsInStore(), beforeSessions + 1);
+        exchangeFailure = new apiClientsB.InvestorApiTransportError(
+          "connect",
+          1,
+        );
+        const c2 = await completedLogin("recover-gina@example.com");
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed: c2,
+            correlationId: "c_l2",
+          }),
+          chain.ConnectedSessionRecoverableError,
+        );
+        exchangeFailure = null;
+        const r2 = await chain.recoverConnectedSession({
+          loginId: c2.login.loginId,
+          state: c2.login.state,
+          correlationId: "c_l2r",
+        });
+        assert.ok(r2?.cookies[0]?.value);
+        const c3 = await completedLogin("recover-hana@example.com");
+        lostAfterSend = true;
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed: c3,
+            correlationId: "c_l3",
+          }),
+          chain.ConnectedSessionRecoverableError,
+        );
+        const rec3 = attemptCollection()?.get(c3.login.loginId);
+        assert.ok(rec3);
+        attemptCollection()!.set(c3.login.loginId, {
+          ...rec3!,
+          bridgeExp: Math.floor(Date.now() / 1000) - 1,
+        });
+        await assert.rejects(
+          chain.recoverConnectedSession({
+            loginId: c3.login.loginId,
+            state: c3.login.state,
+            correlationId: "c_l3r",
+          }),
+          (e: unknown) =>
+            e instanceof flow.LoginRefusedError && e.reason === "expired",
+        );
+        assert.equal(
+          (await attempts.getExchangeAttempt(c3.login.loginId))?.status,
+          "failed",
+        );
+        exchangeFailure = new apiClientsB.InvestorApiError({
+          status: 422,
+          code: "VALIDATION_ERROR",
+          message: "x",
+          correlationId: "c",
+        });
+        const c4 = await completedLogin("refused-iris@example.com");
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed: c4,
+            correlationId: "c_l4",
+          }),
+          (e: unknown) =>
+            e instanceof flow.LoginRefusedError &&
+            e.reason === "identity_result_rejected",
+        );
+        exchangeFailure = null;
+        assert.equal(
+          (await attempts.getExchangeAttempt(c4.login.loginId))?.status,
+          "failed",
+        );
+        assert.equal(
+          await chain
+            .recoverConnectedSession({
+              loginId: c4.login.loginId,
+              state: c4.login.state,
+              correlationId: "c_l4r",
+            })
+            .catch((e: unknown) => (e as Error).message),
+          "login refused: already_consumed",
+        );
+        exchange.setIdentityExchangeClientForTests(null);
+        await assert.rejects(
+          sessionSeam.establishConnectedSession({
+            completed: await completedLogin("nocfg-jane@example.com"),
+            correlationId: "c_n",
+          }),
+          (e: unknown) =>
+            e instanceof sessionSeam.IdentityExchangeUnavailableError &&
+            !(e instanceof chain.ConnectedSessionRecoverableError),
+        );
+        exchange.setIdentityExchangeClientForTests(fakeExchange);
+        exchange.setIdentityResultKeySetForTests(null);
+        await assert.rejects(
+          exchange.verifyIdentityResult({
+            token: "a.b.c",
+            binding: {
+              email: "x@example.com",
+              authTime: 1,
+              sid: "sid_" + "0".repeat(32),
+            },
+            correlationId: "c_rm",
+          }),
+          /remote backend JWKS is not accepted|not JSON|compact JWS/,
+        );
+        exchange.setIdentityResultKeySetForTests(
+          backendPublic as import("jose").JSONWebKeySet,
+        );
+      },
+    );
+
+    await section(
+      "end to end through the routes: start → callback token → complete → session cookie set, login cookie cleared, getAuthContext resolves the durable session; a second completion with the same link is refused",
+      async () => {
+        const ip = nextIp();
+        const start = await startRoute.POST(
+          reqB(
+            "/api/v1/auth/login/start",
+            { email: "e2e-iris@example.com", method: "email_link" },
+            { ip },
+          ),
+        );
+        assert.equal(start.status, 200);
+        const loginCookie = cookiesOf(start, "us_login_v1")[0]!;
+        const token = provider.lastToken();
+        const done = await completeRoute.POST(
+          reqB(
+            "/api/v1/auth/login/complete",
+            { token },
+            { cookie: `us_login_v1=${loginCookie}`, ip },
+          ),
+        );
+        const doneText = await done.text();
+        assert.equal(done.status, 200, doneText);
+        const payload = JSON.parse(doneText) as {
+          data: { ok: boolean; continuePath: string };
+        };
+        assert.equal(payload.data.ok, true);
+        assert.equal(payload.data.continuePath, "/us/app/home");
+        const sessionCookie = cookiesOf(done, "us_session_v1")[0];
+        assert.ok(
+          sessionCookie,
+          `session cookie set: ${done.headers.get("set-cookie") ?? "<none>"}`,
+        );
+        assert.equal(
+          cookiesOf(done, "us_login_v1")[0],
+          "",
+          "login cookie cleared",
+        );
+        const ctx = await getAuthContextBridge(
+          new NextRequestB(
+            "https://bff-dev.refi.trading/api/v1/investor/status",
+            { headers: { cookie: `us_session_v1=${sessionCookie}` } },
+          ),
+        );
+        assert.ok(
+          ctx &&
+            ctx.sid &&
+            ctx.authTime === provider.authAt() &&
+            ctx.source === "backend",
+        );
+        const beforeAgain = sessionsInStore();
+        const again = await completeRoute.POST(
+          reqB(
+            "/api/v1/auth/login/complete",
+            { token },
+            { cookie: `us_login_v1=${loginCookie}`, ip },
+          ),
+        );
+        assert.equal(
+          again.status,
+          200,
+          "same login cookie recovers the SAME session",
+        );
+        assert.equal(
+          decode(cookiesOf(again, "us_session_v1")[0] ?? "").claims.sid,
+          decode(sessionCookie).claims.sid,
+        );
+        assert.equal(sessionsInStore(), beforeAgain, "never a second session");
+        const ip2 = nextIp();
+        const start2 = await startRoute.POST(
+          reqB(
+            "/api/v1/auth/login/start",
+            { email: "e2e-kate@example.com", method: "email_link" },
+            { ip: ip2 },
+          ),
+        );
+        const loginCookie2 = cookiesOf(start2, "us_login_v1")[0]!;
+        const token2 = provider.lastToken();
+        lostAfterSend = true;
+        const lost = await completeRoute.POST(
+          reqB(
+            "/api/v1/auth/login/complete",
+            { token: token2 },
+            { cookie: `us_login_v1=${loginCookie2}`, ip: ip2 },
+          ),
+        );
+        assert.equal(lost.status, 503);
+        const lostBody = (await lost.json()) as {
+          code?: string;
+          recoverable?: boolean;
+        };
+        assert.equal(lostBody.code, "exchange_unavailable");
+        assert.equal(lostBody.recoverable, true);
+        assert.ok(
+          !/us_login_v1=;/.test(lost.headers.get("set-cookie") ?? ""),
+          "login cookie kept for recovery",
+        );
+        assert.equal(cookiesOf(lost, "us_session_v1").length, 0);
+        const sentBefore = exchangeCalls.length;
+        const rec = await completeRoute.POST(
+          reqB(
+            "/api/v1/auth/login/complete",
+            { token: "x".repeat(32) },
+            { cookie: `us_login_v1=${loginCookie2}`, ip: ip2 },
+          ),
+        );
+        assert.equal(rec.status, 200, "recovered through the route");
+        assert.ok(cookiesOf(rec, "us_session_v1")[0]);
+        assert.equal(exchangeCalls.length, sentBefore + 1);
+        assert.deepEqual(
+          exchangeCalls[sentBefore],
+          exchangeCalls[sentBefore - 1],
+          "identical request",
+        );
+        // A tampered cookie (sub swapped) never resolves.
+        const [h, , s] = sessionCookie.split(".");
+        const { claims } = decode(sessionCookie);
+        const forged = `${h}.${Buffer.from(JSON.stringify({ ...claims, sub: "user-attacker00000000000000" })).toString("base64url")}.${s}`;
+        assert.equal(
+          await getAuthContextBridge(
+            new NextRequestB("https://bff-dev.refi.trading/x", {
+              headers: { cookie: `us_session_v1=${forged}` },
+            }),
+          ),
+          null,
+        );
+        // A validly signed cookie naming a sid that does not exist durably never resolves.
+        const ghost = await new joseB.SignJWT({
+          sid: "sid_00000000000000000000000000000009",
+          auth_time: 1,
+          src: "connected",
+        })
+          .setProtectedHeader({ alg: "HS256" })
+          .setSubject("user-000000000000000000000009")
+          .setExpirationTime("1h")
+          .sign(
+            new TextEncoder().encode(getServerEnvBridge().SESSION_JWT_SECRET),
+          );
+        assert.equal(
+          await getAuthContextBridge(
+            new NextRequestB("https://bff-dev.refi.trading/x", {
+              headers: { cookie: `us_session_v1=${ghost}` },
+            }),
+          ),
+          null,
+        );
+      },
+    );
+
+    await section(
+      "source guards: the bridge never imports the Investor API signer state; the exchange sends only the stored attempt request, consumes the result jti before any session and the bridge jti only AFTER success; verification checks structure before signature; the chain order is bridge → attempt → send → verify → session; auth-context reads auth_time from the durable record",
+      async () => {
+        const strip = (f: string) =>
+          readFileSync(join(REPO_ROOT, f), "utf8").replace(
+            /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+            "",
+          );
+        const b = strip("apps/web/src/lib/auth/identity-bridge.ts");
+        assert.ok(
+          !/user-assertion/.test(b),
+          "bridge does not import the Investor API assertion module",
+        );
+        assert.ok(
+          !/ALLOW_EPHEMERAL|generateKeyPair/.test(b),
+          "no ephemeral bridge key",
+        );
+        const r = strip(
+          "apps/web/app/.well-known/identity-bridge-jwks.json/route.ts",
+        );
+        assert.ok(
+          /getBridgePublicJwks/.test(r) &&
+            !/user-assertion|getPublicJwks\b/.test(r),
+        );
+        const x = strip("apps/web/src/lib/auth/identity-exchange.ts");
+        assert.ok(
+          !/consumeJtiOnce\("bridge-assertion-jti"/.test(x),
+          "the exchange never consumes the bridge jti (recovery must stay possible)",
+        );
+        assert.ok(/consumeJtiOnce\("identity-result-jti"/.test(x));
+        assert.ok(
+          /body: \{ \.\.\.attempt\.request \}/.test(x),
+          "the stored attempt request is sent exactly",
+        );
+        assert.ok(
+          !/mintBridgeAssertion/.test(x),
+          "the exchange never re-mints",
+        );
+        assert.ok(
+          !/acquisition|invitation_token/.test(
+            x.replace(/[^\n]*omitted[^\n]*/g, ""),
+          ),
+          "no invented request fields",
+        );
+        assert.ok(
+          /createRemoteJWKSet\(new URL\(url\)/.test(x) &&
+            !/payload\.jku|header\.jku|jwks_uri/.test(x),
+          "JWKS URL is pinned",
+        );
+        const v = x.slice(
+          x.indexOf("export async function verifyIdentityResult"),
+        );
+        const vOrder = [
+          "unexpected claim",
+          "jwtVerify(",
+          "integerClaim(payload",
+          "amr duplicates",
+          "auth_time mismatch",
+          "sid mismatch",
+          'consumeJtiOnce("identity-result-jti"',
+        ].map((k) => v.indexOf(k));
+        assert.ok(
+          vOrder.every(
+            (i, n) => i >= 0 && (n === 0 || i > (vOrder[n - 1] as number)),
+          ),
+          "structure → signature → shapes → binding → jti",
+        );
+        assert.ok(
+          !/Math\.floor\(v\)|Math\.floor\(payload/.test(v),
+          "no NumericDate is floored into validity",
+        );
+        const c = strip("apps/web/src/lib/auth/connected-login.ts");
+        const fin = c.slice(
+          c.indexOf("async function finish"),
+          c.indexOf("async function cookieFor"),
+        );
+        const fOrder = [
+          "sendIdentityExchange(",
+          "verifyIdentityResult(",
+          'consumeJtiOnce("bridge-assertion-jti"',
+          "createConnectedSession(",
+        ].map((k) => fin.indexOf(k));
+        assert.ok(
+          fOrder.every(
+            (i, n) => i >= 0 && (n === 0 || i > (fOrder[n - 1] as number)),
+          ),
+          "send → verify → consume bridge jti → session",
+        );
+        const est = c.slice(c.indexOf("establishConnectedSessionViaExchange"));
+        assert.ok(
+          est.indexOf("mintBridgeAssertion(") <
+            est.indexOf("openExchangeAttempt("),
+        );
+        assert.ok(
+          /sid: result\.sid/.test(fin),
+          "the session persists the result's sid",
+        );
+        const a = strip("apps/web/src/lib/bff/auth.ts");
+        assert.ok(
+          /getActiveConnectedSession\(sid\)/.test(a) &&
+            /authTime: record\.authTime/.test(a) &&
+            /record\.sub !== sub\) return null/.test(a),
+        );
+        assert.ok(/source: "backend"/.test(a));
+      },
+    );
+  } finally {
+    exchange.setIdentityExchangeClientForTests(null);
+    exchange.setIdentityResultKeySetForTests(null);
+    sessionSeam.setConnectedSessionEstablisher(null);
+    stytchMod.setStytchClientForTests(null);
+    bridge.setBridgeKmsClientFactoryForTests(null);
+    bridge.resetBridgeSignerCache();
+    cs.setConnectedStoreFactoryForTests(null);
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
+    resetServerEnvCacheForTests();
+    ua.resetSigningKeyCache();
+  }
+}
+
+// ─── Attestation submission (Daniel step 6): distinct durable states, consent verified against the backend, mock KYC never evidence, only a backend 201 acknowledges ──
+
+{
+  const { createInvestorApiClient: createClientAtt } =
+    await import("../packages/api-clients/src/investor-api/index.ts");
+  const submission =
+    await import("../apps/web/src/lib/compliance/attestation-submission.ts");
+  const entity =
+    await import("../apps/web/src/lib/prototype-store/entities/attestation-submission.ts");
+  const mapping =
+    await import("../apps/web/src/lib/compliance/attestation-mapping.ts");
+  const provenance = await import("../apps/web/src/lib/kyc/provenance.ts");
+  const { assessInvestorProfile: assessAtt } =
+    await import("../apps/web/src/lib/sec203a/investor-profile-engine.ts");
+  const { answersSnapshotHash: snapshotHashAtt } =
+    await import("../apps/web/src/lib/prototype-store/entities/investor-profile-v2.ts");
+  const {
+    resetServerEnvCacheForTests: resetEnvAtt,
+    getServerEnv: getServerEnvAtt,
+  } = await import("../apps/web/src/lib/config/env.ts");
+  const attRoute =
+    await import("../apps/web/app/api/v1/investor/profile/v2/attestation/route.ts");
+  const { createRequire: createRequireAtt } = await import("node:module");
+  const requireWebAtt = createRequireAtt(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const joseAtt = (await import(
+    requireWebAtt.resolve("jose")
+  )) as typeof import("jose");
+  const { NextRequest: NextRequestAtt } = (await import(
+    requireWebAtt.resolve("next/server")
+  )) as typeof import("next/server");
+
+  const ACCOUNT = "acct_att_000001";
+  const HASH = "3".repeat(64);
+  const disclosure = {
+    content_hash: HASH,
+    content_ref:
+      "https://example.invalid/disclosures/automated-portfolio-alpha-1",
+    disclosure_key: "automated_portfolio_alpha",
+    disclosure_version: 1,
+    effective_at: "2026-09-01T00:00:00Z",
+    locale: "en-US",
+    status: "EFFECTIVE",
+  };
+  const receiptFor = (hash: string, status = "ACTIVE") => ({
+    account_id: ACCOUNT,
+    consent_key: "automated_portfolio_alpha",
+    consent_receipt_id: "consent_att_00000001",
+    disclosure_hash: hash,
+    disclosure_key: "automated_portfolio_alpha",
+    disclosure_version: 1,
+    expires_at: "2026-12-01T00:00:00Z",
+    recorded_at: "2026-09-01T00:00:00Z",
+    status,
+  });
+  const headersAtt = {
+    "Content-Type": "application/json",
+    "Cache-Control": "private, no-store",
+    "X-Correlation-Id": "corr_att",
+  };
+  type SeenAtt = {
+    url: string;
+    method: string;
+    headers: Headers;
+    body: unknown;
+  };
+  function fakeUpstreamAtt(opts: {
+    receipts?: unknown[];
+    attestationStatus?: number;
+    attestationError?: { status: number; code: string };
+    backendStatus?: "ACCEPTED" | "SUPERSEDED" | "EXPIRED";
+    attestationBody?: (req: Record<string, unknown>) => unknown;
+    failAttestationTransport?: boolean;
+  }) {
+    const seen: SeenAtt[] = [];
+    const fetchImpl = async (
+      url: URL | RequestInfo,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const u = url.toString();
+      const method = init?.method ?? "GET";
+      const body =
+        typeof init?.body === "string"
+          ? (JSON.parse(init.body) as unknown)
+          : undefined;
+      seen.push({ url: u, method, headers: new Headers(init?.headers), body });
+      const page = (items: unknown[]) =>
+        new Response(
+          JSON.stringify({
+            data: { items, page: { has_more: false, next_cursor: null } },
+          }),
+          { status: 200, headers: headersAtt },
+        );
+      if (u.includes("/api/v1/investor/disclosures") && method === "GET")
+        return page([disclosure]);
+      if (u.includes("/api/v1/investor/consents") && method === "GET")
+        return page(opts.receipts ?? [receiptFor(HASH)]);
+      if (
+        u.endsWith(
+          `/api/v1/investor/accounts/${ACCOUNT}/compliance-profile-attestations`,
+        ) &&
+        method === "POST"
+      ) {
+        if (opts.failAttestationTransport) throw new TypeError("fetch failed");
+        const req = body as Record<string, unknown>;
+        if (opts.attestationError) {
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: opts.attestationError.code,
+                message: "x",
+                correlation_id: "corr_att",
+              },
+            }),
+            {
+              status: opts.attestationError.status,
+              headers: {
+                ...headersAtt,
+                ...(opts.attestationError.status === 429
+                  ? { "Retry-After": "7" }
+                  : {}),
+              },
+            },
+          );
+        }
+        const status = opts.attestationStatus ?? 201;
+        if (status >= 400) {
+          return new Response(
+            JSON.stringify({
+              error: {
+                code: "COMPLIANCE_ATTESTATION_REPLAYED",
+                message: "replayed",
+                correlation_id: "corr_att",
+              },
+            }),
+            { status, headers: headersAtt },
+          );
+        }
+        const data = opts.attestationBody
+          ? opts.attestationBody(req)
+          : {
+              ...req,
+              account_id: ACCOUNT,
+              payload_sha256: "b".repeat(64),
+              status: opts.backendStatus ?? "ACCEPTED",
+              received_at: "2026-09-10T00:00:00Z",
+              authorization: {
+                expires_at: null,
+                last_evaluated_at: "2026-09-10T00:00:00Z",
+                policy_version: "closed-us-alpha-1",
+                reason_codes: [],
+                state_version: 1,
+                status: "PENDING",
+              },
+            };
+        return new Response(JSON.stringify({ data }), {
+          status,
+          headers: headersAtt,
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "RESOURCE_NOT_FOUND",
+            message: "x",
+            correlation_id: "corr_att",
+          },
+        }),
+        { status: 404, headers: headersAtt },
+      );
+    };
+    const client = createClientAtt({
+      identityCcid: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("id-b"),
+      },
+      investorApi: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("inv-b"),
+      },
+      mintAssertion: () => Promise.resolve("assertion"),
+      fetch: fetchImpl as typeof fetch,
+    });
+    return {
+      client,
+      seen,
+      posts: () => seen.filter((s) => s.method === "POST"),
+    };
+  }
+
+  const AT = "2026-09-04T12:00:00.000Z";
+  const answers = {
+    questionnaireVersion: 2 as const,
+    accountType: "individual" as const,
+    goal: "long_term_wealth" as const,
+    horizon: "gt_10y" as const,
+    withdrawalPattern: "gradual" as const,
+    incomeBand: "100_200k" as const,
+    incomeStability: "very_predictable" as const,
+    netWorthBand: "500k_1m" as const,
+    liquidNetWorthBand: "250_500k" as const,
+    accountShareOfLiquidAssets: "10_25pct" as const,
+    emergencyReserveBand: "gt_6mo" as const,
+    debtSignal: "none" as const,
+    liquidityLikelihood: "very_unlikely" as const,
+    knowledgeLevel: "experienced" as const,
+    experienceYears: "5_10y" as const,
+    productExperience: ["stocks", "funds"] as ("stocks" | "funds")[],
+    drawdownBehavior: "stay" as const,
+    lossThreshold: "pct_20" as const,
+    growthProtectionPreference: 4 as const,
+    riskTradeoffChoice: "plan_b" as const,
+    restrictions: ["none"] as "none"[],
+    expectedFinancialChange: "no" as const,
+    productIntent: ["disciplined_long_term"] as "disciplined_long_term"[],
+    reconciledFlags: [] as never[],
+  };
+  const assessment = assessAtt(answers, { assessedAt: AT });
+  const NORMALIZED_PASSED = {
+    status: "passed" as const,
+    provider: "test-only-kyc-adapter",
+    level: "frontend-lifecycle",
+    evidence_ref: "kyc-session:test_0001",
+  };
+  // TEST-ONLY trusted provenance: proves chain mechanics. No runtime module
+  // may call establishTrustedKycProvenance (asserted elsewhere and below).
+  const TRUSTED = provenance.establishTrustedKycProvenance({
+    adapterId: "test-only-kyc-adapter",
+    evidenceRef: "kyc-session:test_0001",
+    normalized: NORMALIZED_PASSED,
+  });
+  const MOCK = provenance.mockKycProvenance(
+    {
+      referenceId: "mock_0001",
+      state: "passed",
+      startedAt: AT,
+      updatedAt: AT,
+      history: [
+        { state: "in_progress", at: AT },
+        { state: "passed", at: AT },
+      ],
+    },
+    "mock",
+  );
+  const evidenceFor = (
+    profileVersion: number,
+    kyc:
+      | import("../apps/web/src/lib/kyc/provenance.ts").KycEvidenceProvenance
+      | null,
+  ): import("../apps/web/src/lib/compliance/attestation-mapping.ts").AttestationEvidenceInput => ({
+    accountId: ACCOUNT,
+    answersVersion: {
+      profileVersion,
+      answers,
+      answerSnapshotHash: snapshotHashAtt(answers),
+    },
+    assessment,
+    kyc,
+    recomputeAnswerSnapshotHash: snapshotHashAtt,
+  });
+  let seq = 100;
+  const nextSeq = () => seq++;
+  const statesOf = (r: { history: Array<{ state: string }> }) =>
+    r.history.map((h) => h.state);
+
+  await section(
+    "attestation chain: disclosure delivered → consent accepted → constructed → submitted (recorded BEFORE the call, deterministic Idempotency-Key) → acknowledged on 201; body is exactly the built request; only the backend id is copied back",
+    async () => {
+      const { client, seen, posts } = fakeUpstreamAtt({});
+      const v = nextSeq();
+      const out = await submission.submitComplianceProfileAttestation(client, {
+        accountId: ACCOUNT,
+        evidence: evidenceFor(v, TRUSTED),
+        correlationId: "c_att_1",
+      });
+      assert.equal(out.kind, "acknowledged");
+      if (out.kind !== "acknowledged") return;
+      assert.deepEqual(statesOf(out.record), [
+        "disclosure_delivered",
+        "consent_accepted",
+        "attestation_constructed",
+        "submitted",
+        "acknowledged",
+      ]);
+      assert.ok(
+        out.record.history.every(
+          (h) =>
+            h.correlationId === "c_att_1" && !Number.isNaN(Date.parse(h.at)),
+        ),
+      );
+      const built = mapping.buildComplianceProfileAttestationRequest(
+        evidenceFor(v, TRUSTED),
+      );
+      assert.ok(built.ok);
+      if (!built.ok) return;
+      assert.equal(out.record.attestationId, built.request.attestation_id);
+      assert.equal(out.record.evidenceSha256, built.request.evidence_sha256);
+      const post = posts()[0]!;
+      assert.deepEqual(
+        post.body,
+        built.request,
+        "wire body is the pinned-authority request, nothing added",
+      );
+      assert.equal(
+        post.headers.get("Idempotency-Key"),
+        submission.attestationIdempotencyKey(built.request),
+      );
+      assert.match(
+        post.headers.get("Idempotency-Key") ?? "",
+        /^att-[0-9a-f]{48}$/,
+      );
+      assert.equal(
+        out.record.idempotencyKey,
+        post.headers.get("Idempotency-Key"),
+      );
+      assert.equal(post.headers.get("X-Refinity-User-Assertion"), "assertion");
+      assert.equal(
+        out.record.backendAttestationId,
+        built.request.attestation_id,
+      );
+      assert.ok(
+        !("authorization" in out.record),
+        "backend authorization projection is never copied into frontend state",
+      );
+      assert.deepEqual(
+        seen.map((s) => s.method),
+        ["GET", "GET", "POST"],
+      );
+      // Idempotent: the same decision again re-sends nothing.
+      const again = await submission.submitComplianceProfileAttestation(
+        client,
+        {
+          accountId: ACCOUNT,
+          evidence: evidenceFor(v, TRUSTED),
+          correlationId: "c_att_1b",
+        },
+      );
+      assert.equal(again.kind, "already_acknowledged");
+      assert.equal(posts().length, 1);
+      // KYC block in the body is the normalized wire block, never provenance.
+      assert.deepEqual((post.body as { kyc: unknown }).kyc, NORMALIZED_PASSED);
+      assert.ok(!JSON.stringify(post.body).includes("production_provider"));
+    },
+  );
+
+  await section(
+    "attestation chain: consent is verified against the backend — missing, WITHDRAWN or hash-mismatched receipts stop at disclosure_delivered with NO submission; once consent appears the SAME record continues",
+    async () => {
+      for (const receipts of [
+        [],
+        [receiptFor(HASH, "WITHDRAWN")],
+        [receiptFor("4".repeat(64))],
+      ]) {
+        const { client, posts } = fakeUpstreamAtt({ receipts });
+        const v = nextSeq();
+        const out = await submission.submitComplianceProfileAttestation(
+          client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_2",
+          },
+        );
+        assert.equal(out.kind, "consent_required");
+        if (out.kind !== "consent_required") return;
+        assert.deepEqual(out.missing, [
+          {
+            disclosure_key: "automated_portfolio_alpha",
+            disclosure_version: 1,
+          },
+        ]);
+        assert.equal(out.record.state, "disclosure_delivered");
+        assert.equal(posts().length, 0, "nothing submitted without consent");
+        const { client: later, posts: laterPosts } = fakeUpstreamAtt({});
+        const cont = await submission.submitComplianceProfileAttestation(
+          later,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_2b",
+          },
+        );
+        assert.equal(cont.kind, "acknowledged");
+        if (cont.kind !== "acknowledged") return;
+        assert.equal(
+          cont.record.attestationId,
+          out.record.attestationId,
+          "same record continues",
+        );
+        assert.deepEqual(statesOf(cont.record), [
+          "disclosure_delivered",
+          "consent_accepted",
+          "attestation_constructed",
+          "submitted",
+          "acknowledged",
+        ]);
+        assert.equal(laterPosts().length, 1);
+      }
+    },
+  );
+
+  await section(
+    "attestation chain: mock KYC (the only provider today) and missing KYC stop at `blocked` after consent, naming KYC_EVIDENCE_MOCK / KYC_EVIDENCE_MISSING; nothing is submitted; the record is terminal and a retry re-enters nothing",
+    async () => {
+      for (const [kyc, reason] of [
+        [MOCK, "KYC_EVIDENCE_MOCK"],
+        [null, "KYC_EVIDENCE_MISSING"],
+      ] as const) {
+        const { client, posts } = fakeUpstreamAtt({});
+        const v = nextSeq();
+        const out = await submission.submitComplianceProfileAttestation(
+          client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, kyc),
+            correlationId: "c_att_3",
+          },
+        );
+        assert.equal(out.kind, "blocked");
+        if (out.kind !== "blocked") return;
+        assert.deepEqual(out.reasons, [reason]);
+        assert.deepEqual(statesOf(out.record), [
+          "disclosure_delivered",
+          "consent_accepted",
+          "blocked",
+        ]);
+        assert.equal(posts().length, 0);
+        // A structurally "production_provider" claim without the trusted marker is refused too.
+        const claimed = {
+          ...MOCK,
+          source: "production_provider" as const,
+          adapterId: "vendor-x",
+        };
+        const c2 = await submission.submitComplianceProfileAttestation(client, {
+          accountId: ACCOUNT,
+          evidence: evidenceFor(nextSeq(), claimed),
+          correlationId: "c_att_3b",
+        });
+        assert.equal(c2.kind, "blocked");
+        if (c2.kind === "blocked")
+          assert.deepEqual(c2.reasons, ["KYC_PROVENANCE_UNTRUSTED"]);
+        // Retry of the blocked record: terminal, no new transition, still nothing sent.
+        const retry = await submission.submitComplianceProfileAttestation(
+          client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_3c",
+          },
+        );
+        assert.equal(retry.kind, "terminal");
+        if (retry.kind === "terminal")
+          assert.equal(retry.record.history.length, 3);
+        assert.equal(posts().length, 0);
+      }
+    },
+  );
+
+  await section(
+    "attestation answers are partitioned: 201 carries the backend's CANONICAL status (ACCEPTED, SUPERSEDED) and the authorization projection is never converted into frontend authority; 4xx envelopes are terminal `rejected` with the contract code; 429 / 503 / lost answers keep the record `submitted` (no auto-retry) and an identical explicit recovery reuses the SAME Idempotency-Key, also after restart; an older decision's late answer never replaces a newer acknowledged decision",
+    async () => {
+      for (const bs of ["ACCEPTED", "SUPERSEDED"] as const) {
+        const { client } = fakeUpstreamAtt({ backendStatus: bs });
+        const out = await submission.submitComplianceProfileAttestation(
+          client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(nextSeq(), TRUSTED),
+            correlationId: "c_bs",
+          },
+        );
+        assert.equal(out.kind, "acknowledged");
+        if (out.kind !== "acknowledged") return;
+        assert.equal(out.backendStatus, bs);
+        assert.equal(out.record.backendStatus, bs);
+        assert.equal(out.record.backendPayloadSha256, "b".repeat(64));
+        assert.equal(out.record.backendReceivedAt, "2026-09-10T00:00:00Z");
+        assert.ok(
+          !("authorization" in out.record),
+          "authorization projection never stored",
+        );
+        assert.ok(
+          !JSON.stringify(out.record).includes("PENDING") &&
+            !JSON.stringify(out.record).includes("AUTHORIZED"),
+        );
+      }
+      for (const [status, code] of [
+        [409, "COMPLIANCE_ATTESTATION_REPLAYED"],
+        [422, "VALIDATION_ERROR"],
+        [404, "RESOURCE_NOT_FOUND"],
+        [409, "ATTESTATION_SEQUENCE_CONFLICT"],
+      ] as const) {
+        const { client, posts } = fakeUpstreamAtt({
+          attestationError: { status, code },
+        });
+        const v = nextSeq();
+        const out = await submission.submitComplianceProfileAttestation(
+          client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_4",
+          },
+        );
+        assert.equal(out.kind, "rejected", `${String(status)} ${code}`);
+        if (out.kind !== "rejected") return;
+        assert.equal(out.code, code);
+        assert.equal(out.record.state, "rejected");
+        assert.equal(out.record.backendAttestationId, undefined);
+        assert.equal(posts().length, 1);
+        const after = await submission.submitComplianceProfileAttestation(
+          fakeUpstreamAtt({}).client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_4b",
+          },
+        );
+        assert.equal(after.kind, "terminal");
+      }
+      const retryables: Array<
+        [
+          Parameters<typeof fakeUpstreamAtt>[0],
+          "backend" | "transport",
+          number | null,
+          string | null,
+        ]
+      > = [
+        [
+          { attestationError: { status: 429, code: "RATE_LIMITED" } },
+          "backend",
+          429,
+          "RATE_LIMITED",
+        ],
+        [
+          { attestationError: { status: 503, code: "SERVICE_UNAVAILABLE" } },
+          "backend",
+          503,
+          "SERVICE_UNAVAILABLE",
+        ],
+        [{ failAttestationTransport: true }, "transport", null, null],
+      ];
+      for (const [opts, cause, status, code] of retryables) {
+        const v = nextSeq();
+        const broken = fakeUpstreamAtt(opts);
+        const out = await submission.submitComplianceProfileAttestation(
+          broken.client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_4c",
+          },
+        );
+        assert.equal(out.kind, "retryable", `${cause} ${String(status)}`);
+        if (out.kind !== "retryable") return;
+        assert.equal(out.cause, cause);
+        assert.equal(out.status, status);
+        assert.equal(out.code, code);
+        if (status === 429) assert.equal(out.retryAfterSeconds, 7);
+        assert.equal(out.record.state, "submitted", "record stays submitted");
+        assert.equal(out.record.lastRetryable?.kind, cause);
+        assert.equal(
+          out.record.history.filter((h) => h.state === "submitted").length,
+          2,
+          "retryable answer is recorded on the submitted record",
+        );
+        assert.equal(broken.posts().length, 1, "no auto-retry");
+        const key1 = out.record.idempotencyKey;
+        assert.ok(key1);
+        const built = mapping.buildComplianceProfileAttestationRequest(
+          evidenceFor(v, TRUSTED),
+        );
+        assert.ok(built.ok);
+        if (!built.ok) return;
+        const rec = await entity.getAttestationSubmission(
+          ACCOUNT,
+          built.request.attestation_id,
+        );
+        assert.equal(
+          rec?.idempotencyKey,
+          key1,
+          "key survives on disk (restart)",
+        );
+        const ok = fakeUpstreamAtt({});
+        const recovered = await submission.submitComplianceProfileAttestation(
+          ok.client,
+          {
+            accountId: ACCOUNT,
+            evidence: evidenceFor(v, TRUSTED),
+            correlationId: "c_att_4d",
+          },
+        );
+        assert.equal(recovered.kind, "acknowledged");
+        assert.equal(
+          ok.posts()[0]?.headers.get("Idempotency-Key"),
+          key1,
+          "identical key on recovery",
+        );
+        assert.deepEqual(
+          ok.posts()[0]?.body,
+          broken.posts()[0]?.body,
+          "identical body on recovery",
+        );
+        assert.equal(ok.posts().length, 1);
+      }
+      const newer = nextSeq() + 1000;
+      const older = newer - 1;
+      const n1 = await submission.submitComplianceProfileAttestation(
+        fakeUpstreamAtt({}).client,
+        {
+          accountId: ACCOUNT,
+          evidence: evidenceFor(newer, TRUSTED),
+          correlationId: "c_new",
+        },
+      );
+      assert.equal(n1.kind, "acknowledged");
+      if (n1.kind === "acknowledged") assert.equal(n1.latestForAccount, true);
+      const o1 = await submission.submitComplianceProfileAttestation(
+        fakeUpstreamAtt({ backendStatus: "SUPERSEDED" }).client,
+        {
+          accountId: ACCOUNT,
+          evidence: evidenceFor(older, TRUSTED),
+          correlationId: "c_old",
+        },
+      );
+      assert.equal(o1.kind, "acknowledged");
+      if (o1.kind === "acknowledged") {
+        assert.equal(
+          o1.latestForAccount,
+          false,
+          "older answer does not move the pointer",
+        );
+        assert.equal(o1.record.state, "acknowledged");
+      }
+      const latest = await entity.getLatestAcknowledgedDecision(ACCOUNT);
+      assert.equal(latest?.decisionSequence, newer);
+    },
+  );
+
+  await section(
+    "attestation record: transitions are strictly ordered — skipping, reversing or leaving a terminal state throws; history is append-only",
+    async () => {
+      const id = "att_" + "f".repeat(32);
+      const opened = await entity.openAttestationSubmission({
+        accountId: ACCOUNT,
+        attestationId: id,
+        correlationId: "c",
+      });
+      assert.equal(opened.state, "disclosure_delivered");
+      await assert.rejects(
+        entity.advanceAttestationSubmission({
+          accountId: ACCOUNT,
+          attestationId: id,
+          to: "submitted",
+          correlationId: "c",
+        }),
+        entity.AttestationTransitionError,
+      );
+      await assert.rejects(
+        entity.advanceAttestationSubmission({
+          accountId: ACCOUNT,
+          attestationId: id,
+          to: "acknowledged",
+          correlationId: "c",
+        }),
+        entity.AttestationTransitionError,
+      );
+      const blocked = await entity.advanceAttestationSubmission({
+        accountId: ACCOUNT,
+        attestationId: id,
+        to: "blocked",
+        correlationId: "c",
+        detail: { reasons: ["X"] },
+      });
+      assert.equal(blocked.state, "blocked");
+      for (const to of [
+        "consent_accepted",
+        "submitted",
+        "acknowledged",
+        "rejected",
+        "disclosure_delivered",
+      ] as const) {
+        await assert.rejects(
+          entity.advanceAttestationSubmission({
+            accountId: ACCOUNT,
+            attestationId: id,
+            to,
+            correlationId: "c",
+          }),
+          entity.AttestationTransitionError,
+        );
+      }
+      const reread = await entity.getAttestationSubmission(ACCOUNT, id);
+      assert.deepEqual(statesOf(reread!), ["disclosure_delivered", "blocked"]);
+      assert.deepEqual(
+        await entity.openAttestationSubmission({
+          accountId: ACCOUNT,
+          attestationId: id,
+          correlationId: "c2",
+        }),
+        reread,
+        "open is idempotent",
+      );
+      assert.ok(
+        (await entity.listAttestationSubmissions(ACCOUNT)).some(
+          (r) => r.attestationId === id,
+        ),
+      );
+    },
+  );
+
+  await section(
+    "attestation route: POST carries no body, requires same-origin + session, fails closed 503 when no upstream is configured, and is receipted; GET lists this account's records; no runtime module establishes trusted KYC provenance",
+    async () => {
+      const secret = getServerEnvAtt().SESSION_JWT_SECRET;
+      const token = await new joseAtt.SignJWT({ sub: "user-att-route-1" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setExpirationTime("1h")
+        .sign(new TextEncoder().encode(secret));
+      const req = (opts: { origin?: string; cookie?: boolean } = {}) =>
+        new NextRequestAtt(
+          "http://localhost:3000/api/v1/investor/profile/v2/attestation",
+          {
+            method: "POST",
+            headers: {
+              ...(opts.origin === undefined
+                ? { origin: "http://localhost:3000" }
+                : opts.origin
+                  ? { origin: opts.origin }
+                  : {}),
+              ...(opts.cookie === false
+                ? {}
+                : { cookie: `us_session_v1=${token}` }),
+              "content-type": "application/json",
+            },
+            body: "{}",
+          },
+        );
+      assert.equal(
+        (await attRoute.POST(req({ origin: "https://evil.example" }))).status,
+        403,
+      );
+      assert.equal((await attRoute.POST(req({ cookie: false }))).status, 401);
+      const savedBase = process.env["REFI_INVESTOR_API_BASE_URL"];
+      const savedStage = process.env["REFI_RELEASE_STAGE"];
+      delete process.env["REFI_INVESTOR_API_BASE_URL"];
+      // Signal stage: the action is not permitted at all (403, before any
+      // body or upstream); automated Alpha: permitted, then fails closed.
+      process.env["REFI_RELEASE_STAGE"] = "signal";
+      resetEnvAtt();
+      try {
+        assert.equal((await attRoute.POST(req())).status, 403);
+        process.env["REFI_RELEASE_STAGE"] = "automated_alpha";
+        resetEnvAtt();
+        const res = await attRoute.POST(req());
+        const body = (await res.json()) as {
+          data?: { reason?: string };
+          receipt?: { action?: string };
+        };
+        assert.equal(res.status, 503);
+        assert.equal(body.data?.reason, "upstream_unavailable");
+        assert.equal(body.receipt?.action, "submitComplianceAttestation");
+      } finally {
+        if (savedBase === undefined)
+          delete process.env["REFI_INVESTOR_API_BASE_URL"];
+        else process.env["REFI_INVESTOR_API_BASE_URL"] = savedBase;
+        if (savedStage === undefined) delete process.env["REFI_RELEASE_STAGE"];
+        else process.env["REFI_RELEASE_STAGE"] = savedStage;
+        resetEnvAtt();
+      }
+      const get = await attRoute.GET(
+        new NextRequestAtt(
+          "http://localhost:3000/api/v1/investor/profile/v2/attestation",
+          {
+            headers: { cookie: `us_session_v1=${token}` },
+          },
+        ),
+      );
+      assert.equal(get.status, 200);
+      const strip = (f: string) =>
+        readFileSync(join(REPO_ROOT, f), "utf8").replace(
+          /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+          "",
+        );
+      for (const f of [
+        "apps/web/src/lib/compliance/attestation-submission.ts",
+        "apps/web/app/api/v1/investor/profile/v2/attestation/route.ts",
+        "apps/web/src/lib/prototype-store/entities/attestation-submission.ts",
+      ]) {
+        assert.ok(
+          !/establishTrustedKycProvenance\s*\(/.test(strip(f)),
+          `${f} must not establish trusted KYC provenance`,
+        );
+      }
+      const r = strip(
+        "apps/web/app/api/v1/investor/profile/v2/attestation/route.ts",
+      );
+      assert.ok(!/parse:/.test(r), "the route accepts no body");
+      assert.ok(
+        /mockKycProvenance\(/.test(r) &&
+          /submitComplianceProfileAttestation\(/.test(r),
+      );
+      const s = strip(
+        "apps/web/src/lib/compliance/attestation-submission.ts",
+      ).slice(
+        strip("apps/web/src/lib/compliance/attestation-submission.ts").indexOf(
+          "export async function submitComplianceProfileAttestation",
+        ),
+      );
+      const order = [
+        "listEffectiveDisclosures(",
+        "listActiveConsents(",
+        "buildComplianceProfileAttestationRequest(",
+        'to: "submitted"',
+        'call("createComplianceProfileAttestation"',
+        'to: "acknowledged"',
+      ].map((x) => s.indexOf(x));
+      assert.ok(
+        order.every(
+          (i, n) => i >= 0 && (n === 0 || i > (order[n - 1] as number)),
+        ),
+        "chain order is fixed in source",
+      );
+    },
+  );
+}
+
+// ─── Automated-Alpha economic gating (mandate: subscription requires AccountAuthorization; DENIED never relabelled; account scope authoritative; backend owns execution) ──
+
+{
+  const { createInvestorApiClient: createClientBk } =
+    await import("../packages/api-clients/src/investor-api/index.ts");
+  const actions =
+    await import("../apps/web/src/lib/investor-api/account-actions.ts");
+  const maint =
+    await import("../apps/web/src/lib/investor-api/brokerage-maintenance.ts");
+  const {
+    resetServerEnvCacheForTests: resetEnvBk,
+    getServerEnv: getServerEnvBk,
+  } = await import("../apps/web/src/lib/config/env.ts");
+  const routes = {
+    preview:
+      await import("../apps/web/app/api/v1/investor/allocation/preview/route.ts"),
+    join: await import("../apps/web/app/api/v1/investor/allocation/join/route.ts"),
+    update:
+      await import("../apps/web/app/api/v1/investor/allocation/update/route.ts"),
+    leave:
+      await import("../apps/web/app/api/v1/investor/allocation/leave/route.ts"),
+    rotate:
+      await import("../apps/web/app/api/v1/investor/broker/connection/[id]/rotate/route.ts"),
+    sync: await import("../apps/web/app/api/v1/investor/broker/connection/[id]/sync/route.ts"),
+  };
+  const { createRequire: createRequireBk } = await import("node:module");
+  const requireWebBk = createRequireBk(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const joseBk = (await import(
+    requireWebBk.resolve("jose")
+  )) as typeof import("jose");
+  const { NextRequest: NextRequestBk } = (await import(
+    requireWebBk.resolve("next/server")
+  )) as typeof import("next/server");
+  const examplesBk = JSON.parse(
+    readFileSync(
+      join(
+        REPO_ROOT,
+        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/examples.json",
+      ),
+      "utf8",
+    ),
+  ) as { responses: Record<string, { data: Record<string, unknown> }> };
+
+  const OWNED = "acct_alpha_owned_01";
+  const OTHER = "acct_alpha_other_02";
+  const CONN = "brokerconn_alpha_0001";
+  const FOREIGN_CONN = "brokerconn_other_0009";
+  const headersBk = {
+    "Content-Type": "application/json",
+    "Cache-Control": "private, no-store",
+    "X-Correlation-Id": "corr_bk",
+  };
+  type SeenBk = {
+    url: string;
+    method: string;
+    headers: Headers;
+    body: unknown;
+  };
+  function upstreamBk(
+    opts: {
+      authorization?: string;
+      actionError?: { status: number; code: string };
+      previewError?: { status: number; code: string };
+    } = {},
+  ) {
+    const seen: SeenBk[] = [];
+    const page = (items: unknown[]) =>
+      new Response(
+        JSON.stringify({
+          data: { items, page: { has_more: false, next_cursor: null } },
+        }),
+        { status: 200, headers: headersBk },
+      );
+    const err = (e: { status: number; code: string }) =>
+      new Response(
+        JSON.stringify({
+          error: { code: e.code, message: "x", correlation_id: "corr_bk" },
+        }),
+        { status: e.status, headers: headersBk },
+      );
+    const fetchImpl = async (
+      url: URL | RequestInfo,
+      init?: RequestInit,
+    ): Promise<Response> => {
+      const u = url.toString();
+      const method = init?.method ?? "GET";
+      const body =
+        typeof init?.body === "string"
+          ? (JSON.parse(init.body) as unknown)
+          : undefined;
+      seen.push({ url: u, method, headers: new Headers(init?.headers), body });
+      const path = new URL(u).pathname;
+      if (path === "/api/v1/investor/accounts" && method === "GET") {
+        return page(
+          [
+            {
+              ...examplesBk.responses["AccountSummary"]?.data,
+              account_id: OWNED,
+            },
+          ].filter((a) => a.account_id),
+        );
+      }
+      if (
+        path === `/api/v1/investor/accounts/${OWNED}/authorization` &&
+        method === "GET"
+      ) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesBk.responses["AccountAuthorizationEnvelope"]!.data,
+              status: opts.authorization ?? "AUTHORIZED",
+            },
+          }),
+          { status: 200, headers: headersBk },
+        );
+      }
+      if (
+        path === `/api/v1/investor/accounts/${OWNED}/brokerage-connections` &&
+        method === "GET"
+      ) {
+        const c = examplesBk.responses["BrokerageConnectionEnvelope"]!.data;
+        return page([
+          { ...c, account_id: OWNED, connection_id: CONN },
+          {
+            ...c,
+            account_id: OWNED,
+            connection_id: "brokerconn_alpha_dead",
+            connection_status: "DISCONNECTED",
+          },
+        ]);
+      }
+      if (
+        path === `/api/v1/investor/accounts/${OWNED}/allocation-previews` &&
+        method === "POST"
+      ) {
+        if (opts.previewError) return err(opts.previewError);
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesBk.responses["AllocationPreviewEnvelope"]!.data,
+              account_id: OWNED,
+            },
+          }),
+          { status: 201, headers: headersBk },
+        );
+      }
+      if (
+        path === `/api/v1/investor/accounts/${OWNED}/actions` &&
+        method === "POST"
+      ) {
+        if (opts.actionError) return err(opts.actionError);
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesBk.responses["ActionReceiptEnvelope"]!.data,
+              account_id: OWNED,
+            },
+          }),
+          { status: 202, headers: headersBk },
+        );
+      }
+      if (
+        path ===
+          `/api/v1/investor/accounts/${OWNED}/brokerage-connections/${CONN}/credentials/rotate` &&
+        method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesBk.responses["BrokerageConnectionEnvelope"]!.data,
+              account_id: OWNED,
+              connection_id: CONN,
+              credential_status: "ROTATING",
+            },
+          }),
+          { status: 202, headers: headersBk },
+        );
+      }
+      if (
+        path ===
+          `/api/v1/investor/accounts/${OWNED}/brokerage-connections/${CONN}/sync` &&
+        method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesBk.responses["BrokerageSyncReceiptEnvelope"]!.data,
+              connection_id: CONN,
+            },
+          }),
+          { status: 202, headers: headersBk },
+        );
+      }
+      return err({ status: 404, code: "RESOURCE_NOT_FOUND" });
+    };
+    const client = createClientBk({
+      identityCcid: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("id-b"),
+      },
+      investorApi: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("inv-b"),
+      },
+      mintAssertion: () => Promise.resolve("assertion"),
+      fetch: fetchImpl as typeof fetch,
+    });
+    return {
+      client,
+      seen,
+      posts: () => seen.filter((s) => s.method === "POST"),
+      ops: () => seen.map((s) => `${s.method} ${new URL(s.url).pathname}`),
+    };
+  }
+  const econ = (action: "join_template" | "update_allocation") => ({
+    action,
+    templateId: "template_us_sp500_following_v1",
+    allocationPercent: "0.25",
+    allocationPreviewId: "preview_alpha_0001",
+  });
+
+  await section(
+    "economic gating: join_template and update_allocation read AccountAuthorization first and are refused on PENDING / DENIED / SUSPENDED with the backend status word verbatim — createAccountAction is never called, nothing is relabelled",
+    async () => {
+      for (const status of ["PENDING", "DENIED", "SUSPENDED"]) {
+        for (const action of ["join_template", "update_allocation"] as const) {
+          const { client, ops } = upstreamBk({ authorization: status });
+          const out = await actions.submitAccountAction(
+            client,
+            OWNED,
+            econ(action),
+          );
+          assert.equal(out.kind, "not_authorized");
+          if (out.kind !== "not_authorized") return;
+          assert.equal(out.authorization, status, "status word verbatim");
+          assert.equal(out.action, action);
+          assert.deepEqual(
+            ops(),
+            [`GET /api/v1/investor/accounts/${OWNED}/authorization`],
+            "authorization read, action never sent",
+          );
+        }
+      }
+    },
+  );
+
+  await section(
+    "economic gating: AUTHORIZED forwards join/update exactly once with the exact contracted body (action + parameters only) under a deterministic Idempotency-Key; a different percent is a different key; the same submission is the same key",
+    async () => {
+      for (const action of ["join_template", "update_allocation"] as const) {
+        const { client, ops, posts } = upstreamBk({});
+        const out = await actions.submitAccountAction(
+          client,
+          OWNED,
+          econ(action),
+        );
+        assert.equal(out.kind, "accepted");
+        if (out.kind !== "accepted") return;
+        assert.equal(out.upstreamStatus, 202);
+        assert.equal(out.receipt.status, "ACCEPTED");
+        assert.deepEqual(ops(), [
+          `GET /api/v1/investor/accounts/${OWNED}/authorization`,
+          `POST /api/v1/investor/accounts/${OWNED}/actions`,
+        ]);
+        const post = posts()[0]!;
+        assert.deepEqual(post.body, {
+          action,
+          parameters: {
+            template_id: "template_us_sp500_following_v1",
+            allocation_percent: "0.25",
+            allocation_preview_id: "preview_alpha_0001",
+          },
+        });
+        const k = post.headers.get("Idempotency-Key");
+        assert.equal(k, actions.actionIdempotencyKey(OWNED, econ(action)));
+        assert.notEqual(
+          k,
+          actions.actionIdempotencyKey(OWNED, {
+            ...econ(action),
+            allocationPercent: "0.30",
+          }),
+        );
+        assert.notEqual(k, actions.actionIdempotencyKey(OTHER, econ(action)));
+        assert.equal(
+          post.headers.get("X-Refinity-User-Assertion"),
+          "assertion",
+        );
+      }
+    },
+  );
+
+  await section(
+    "economic gating: leave_template is disengagement — sent without reading AccountAuthorization, with template_id only; createAllocationPreview is non-economic — no authorization read, exact body, 201 preview passed through unchanged",
+    async () => {
+      const { client, ops, posts } = upstreamBk({ authorization: "DENIED" });
+      const out = await actions.submitAccountAction(client, OWNED, {
+        action: "leave_template",
+        templateId: "template_us_sp500_following_v1",
+      });
+      assert.equal(out.kind, "accepted");
+      assert.deepEqual(ops(), [
+        `POST /api/v1/investor/accounts/${OWNED}/actions`,
+      ]);
+      assert.deepEqual(posts()[0]?.body, {
+        action: "leave_template",
+        parameters: { template_id: "template_us_sp500_following_v1" },
+      });
+      const p = upstreamBk({ authorization: "DENIED" });
+      const preview = await actions.previewAllocation(p.client, OWNED, {
+        templateId: "template_us_sp500_following_v1",
+        allocationPercent: "0.25",
+      });
+      assert.equal(preview.upstreamStatus, 201);
+      assert.deepEqual(p.ops(), [
+        `POST /api/v1/investor/accounts/${OWNED}/allocation-previews`,
+      ]);
+      assert.deepEqual(p.posts()[0]?.body, {
+        template_id: "template_us_sp500_following_v1",
+        allocation_percent: "0.25",
+      });
+      assert.deepEqual(preview.preview, {
+        ...examplesBk.responses["AllocationPreviewEnvelope"]!.data,
+        account_id: OWNED,
+      });
+      assert.equal(
+        p.posts()[0]?.headers.get("Idempotency-Key"),
+        actions.previewIdempotencyKey(OWNED, {
+          templateId: "template_us_sp500_following_v1",
+          allocationPercent: "0.25",
+        }),
+      );
+    },
+  );
+
+  await section(
+    "economic gating: backend refusals keep their contract code (ALLOCATION_PREVIEW_STALE, COMPLIANCE_ATTESTATION_REQUIRED, EXECUTION_DISABLED, ACCOUNT_BASELINE_ADOPTION_REQUIRED) and are never retried; no local code stands in for a backend decision",
+    async () => {
+      for (const [status, code] of [
+        [409, "ALLOCATION_PREVIEW_STALE"],
+        [422, "COMPLIANCE_ATTESTATION_REQUIRED"],
+        [409, "EXECUTION_DISABLED"],
+        [422, "ACCOUNT_BASELINE_ADOPTION_REQUIRED"],
+      ] as const) {
+        const { client, posts } = upstreamBk({ actionError: { status, code } });
+        await assert.rejects(
+          actions.submitAccountAction(client, OWNED, econ("join_template")),
+          (e: unknown) =>
+            e instanceof Error &&
+            e.name === "InvestorApiError" &&
+            (e as { code: string }).code === code &&
+            (e as { status: number }).status === status,
+        );
+        assert.equal(posts().length, 1, "mutation not retried");
+      }
+    },
+  );
+
+  await section(
+    "connection scope: rotate and sync refuse a connection id that is not this account's (foreign, terminal, malformed) BEFORE any mutation path is built; an owned connection is forwarded once with the exact path; rotation key derives from the key ID only",
+    async () => {
+      for (const [id, reason] of [
+        [FOREIGN_CONN, "not_owned"],
+        ["brokerconn_alpha_dead", "terminal"],
+        ["x", "malformed"],
+        [`${CONN}/../${FOREIGN_CONN}`, "malformed"],
+      ] as const) {
+        const { client, posts } = upstreamBk({});
+        const r = await maint.rotateBrokerageCredentials(client, OWNED, id, {
+          apiKeyId: "PK" + "A".repeat(18),
+          apiSecretKey: "s".repeat(40),
+        });
+        assert.deepEqual(r, { kind: "connection_out_of_scope", reason });
+        const s = await maint.syncBrokerageConnection(client, OWNED, id);
+        assert.deepEqual(s, { kind: "connection_out_of_scope", reason });
+        assert.equal(posts().length, 0);
+      }
+      const { client, posts, seen } = upstreamBk({});
+      const rot = await maint.rotateBrokerageCredentials(client, OWNED, CONN, {
+        apiKeyId: "PK" + "A".repeat(18),
+        apiSecretKey: "s".repeat(40),
+      });
+      assert.equal(rot.kind, "accepted");
+      if (rot.kind === "accepted")
+        assert.equal(rot.result.credentialStatus, "ROTATING");
+      const post = posts()[0]!;
+      assert.ok(
+        post.url.endsWith(
+          `/accounts/${OWNED}/brokerage-connections/${CONN}/credentials/rotate`,
+        ),
+      );
+      assert.deepEqual(post.body, {
+        credentials: {
+          api_key: "PK" + "A".repeat(18),
+          api_secret: "s".repeat(40),
+        },
+      });
+      assert.equal(
+        post.headers.get("Idempotency-Key"),
+        maint.rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18)),
+      );
+      assert.equal(
+        maint.rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18)),
+        maint.rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18)),
+      );
+      assert.ok(
+        !maint
+          .rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18))
+          .includes("s".repeat(10)),
+      );
+      const sync = await maint.syncBrokerageConnection(
+        client,
+        OWNED,
+        CONN,
+        () => 1_700_000_000_000,
+      );
+      assert.equal(sync.kind, "accepted");
+      const sp = posts()[1]!;
+      assert.ok(sp.url.endsWith(`/brokerage-connections/${CONN}/sync`));
+      assert.equal(sp.body, undefined, "sync has no body");
+      assert.equal(
+        sp.headers.get("Idempotency-Key"),
+        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_000_000),
+      );
+      assert.equal(
+        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_000_000),
+        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_030_000),
+        "same minute replays",
+      );
+      assert.notEqual(
+        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_000_000),
+        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_120_000),
+      );
+      assert.ok(
+        seen.every((s) => !s.url.includes(OTHER)),
+        "the other account is never addressed",
+      );
+    },
+  );
+
+  await section(
+    "routes: all six automated-Alpha mutation routes are same-origin + session + release-stage gated (403 at signal), accept no account_id from the browser (strict bodies), and fail closed 503 with a receipt when no upstream is configured",
+    async () => {
+      const secret = getServerEnvBk().SESSION_JWT_SECRET;
+      const token = await new joseBk.SignJWT({ sub: "user-bk-route-1" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setExpirationTime("1h")
+        .sign(new TextEncoder().encode(secret));
+      const req = (
+        path: string,
+        body: unknown,
+        opts: { origin?: string | null; cookie?: boolean } = {},
+      ) =>
+        new NextRequestBk(`http://localhost:3000${path}`, {
+          method: "POST",
+          headers: {
+            ...(opts.origin === null
+              ? {}
+              : { origin: opts.origin ?? "http://localhost:3000" }),
+            ...(opts.cookie === false
+              ? {}
+              : { cookie: `us_session_v1=${token}` }),
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+      const cases: Array<[keyof typeof routes, string, unknown]> = [
+        [
+          "preview",
+          "/api/v1/investor/allocation/preview",
+          {
+            templateId: "template_us_sp500_following_v1",
+            allocationPercent: "0.25",
+          },
+        ],
+        [
+          "join",
+          "/api/v1/investor/allocation/join",
+          {
+            templateId: "template_us_sp500_following_v1",
+            allocationPercent: "0.25",
+            allocationPreviewId: "preview_alpha_0001",
+          },
+        ],
+        [
+          "update",
+          "/api/v1/investor/allocation/update",
+          {
+            templateId: "template_us_sp500_following_v1",
+            allocationPercent: "0.25",
+            allocationPreviewId: "preview_alpha_0001",
+          },
+        ],
+        [
+          "leave",
+          "/api/v1/investor/allocation/leave",
+          { templateId: "template_us_sp500_following_v1" },
+        ],
+        [
+          "rotate",
+          `/api/v1/investor/broker/connection/${CONN}/rotate`,
+          {
+            environment: "paper",
+            apiKeyId: "PK" + "A".repeat(18),
+            apiSecretKey: "s".repeat(40),
+          },
+        ],
+        ["sync", `/api/v1/investor/broker/connection/${CONN}/sync`, {}],
+      ];
+      const savedBase = process.env["REFI_INVESTOR_API_BASE_URL"];
+      const savedStage = process.env["REFI_RELEASE_STAGE"];
+      delete process.env["REFI_INVESTOR_API_BASE_URL"];
+      try {
+        process.env["REFI_RELEASE_STAGE"] = "signal";
+        resetEnvBk();
+        for (const [name, path, body] of cases) {
+          assert.equal(
+            (await routes[name].POST(req(path, body))).status,
+            403,
+            `${name} refused at signal`,
+          );
+        }
+        process.env["REFI_RELEASE_STAGE"] = "automated_alpha";
+        resetEnvBk();
+        for (const [name, path, body] of cases) {
+          assert.equal(
+            (
+              await routes[name].POST(
+                req(path, body, { origin: "https://evil.example" }),
+              )
+            ).status,
+            403,
+            `${name} cross-origin`,
+          );
+          assert.equal(
+            (await routes[name].POST(req(path, body, { cookie: false })))
+              .status,
+            401,
+            `${name} no session`,
+          );
+          if (name !== "sync") {
+            const smuggled = await routes[name].POST(
+              req(path, { ...(body as object), account_id: OTHER }),
+            );
+            assert.equal(
+              smuggled.status,
+              400,
+              `${name} refuses a browser-supplied account_id`,
+            );
+          }
+          const res = await routes[name].POST(req(path, body));
+          const parsed = (await res.json()) as {
+            data?: { reason?: string; upstream?: unknown };
+            receipt?: { action?: string };
+          };
+          assert.equal(res.status, 503, `${name}: ${JSON.stringify(parsed)}`);
+          assert.ok(parsed.receipt?.action, `${name} receipted`);
+        }
+        // Live keys never parse on rotate; the secret never appears in any response.
+        const live = await routes.rotate.POST(
+          req(`/api/v1/investor/broker/connection/${CONN}/rotate`, {
+            environment: "paper",
+            apiKeyId: "AK" + "A".repeat(18),
+            apiSecretKey: "s".repeat(40),
+          }),
+        );
+        assert.equal(live.status, 400);
+        assert.ok(!(await live.text()).includes("s".repeat(40)));
+      } finally {
+        if (savedBase === undefined)
+          delete process.env["REFI_INVESTOR_API_BASE_URL"];
+        else process.env["REFI_INVESTOR_API_BASE_URL"] = savedBase;
+        if (savedStage === undefined) delete process.env["REFI_RELEASE_STAGE"];
+        else process.env["REFI_RELEASE_STAGE"] = savedStage;
+        resetEnvBk();
+      }
+      const strip = (f: string) =>
+        readFileSync(join(REPO_ROOT, f), "utf8").replace(
+          /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+          "",
+        );
+      const a = strip("apps/web/src/lib/investor-api/account-actions.ts");
+      assert.ok(
+        !/order|cancel|intent|liquidat|transfer/i.test(
+          a.replace(/no order, cancel, intent, transfer or liquidation/i, ""),
+        ),
+        "no execution verbs exist in the adapter",
+      );
+      assert.ok(
+        a.indexOf('call("getAccountAuthorization"') <
+          a.indexOf('call("createAccountAction"'),
+        "authorization is read before the action is sent",
+      );
+      const m = strip("apps/web/src/lib/investor-api/brokerage-maintenance.ts");
+      assert.ok(
+        m.indexOf("assertConnectionInScope(client, accountId, connectionId)") <
+          m.indexOf('call("rotateBrokerageCredentials"'),
+      );
+      for (const f of ["rotate", "sync"] as const) {
+        const r = strip(
+          `apps/web/app/api/v1/investor/broker/connection/[id]/${f}/route.ts`,
+        );
+        assert.ok(!/console\./.test(r), `${f} route never logs`);
+        assert.ok(
+          !/data:\s*\{[^}]*(apiSecretKey|api_secret)/.test(r),
+          `${f} route never echoes the secret in a response`,
+        );
+      }
+    },
+  );
+}
+
+// ─── Two-user cross-user isolation (mandate: US Multi-User Acceptance groundwork; fixture-level, no credentials): account scope, actions, connections, attestation records, sessions, subjects ──
+
+{
+  const { createInvestorApiClient: createClientTu } =
+    await import("../packages/api-clients/src/investor-api/index.ts");
+  const scopeMod =
+    await import("../apps/web/src/lib/investor-api/account-scope.ts");
+  const actionsTu =
+    await import("../apps/web/src/lib/investor-api/account-actions.ts");
+  const maintTu =
+    await import("../apps/web/src/lib/investor-api/brokerage-maintenance.ts");
+  const attEntity =
+    await import("../apps/web/src/lib/prototype-store/entities/attestation-submission.ts");
+  const csTu = await import("../apps/web/src/lib/connected-store/index.ts");
+  const sessionsTu =
+    await import("../apps/web/src/lib/connected-store/session.ts");
+  const subjects =
+    await import("../apps/web/src/lib/connected-store/subject-map.ts");
+  const cookieMod = await import("../apps/web/src/lib/auth/session-cookie.ts");
+  const { getAuthContext: getAuthContextTu } =
+    await import("../apps/web/src/lib/bff/auth.ts");
+  const { resetServerEnvCacheForTests: resetEnvTu } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const { createRequire: createRequireTu } = await import("node:module");
+  const requireWebTu = createRequireTu(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const { NextRequest: NextRequestTu } = (await import(
+    requireWebTu.resolve("next/server")
+  )) as typeof import("next/server");
+  const examplesTu = JSON.parse(
+    readFileSync(
+      join(
+        REPO_ROOT,
+        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/examples.json",
+      ),
+      "utf8",
+    ),
+  ) as { responses: Record<string, { data: Record<string, unknown> }> };
+
+  const USERS = {
+    A: {
+      sub: "user-a-000000000000000000001",
+      account: "acct_two_user_a_01",
+      conn: "brokerconn_two_a_01",
+      assertion: "assertion-for-A",
+    },
+    B: {
+      sub: "user-b-000000000000000000002",
+      account: "acct_two_user_b_02",
+      conn: "brokerconn_two_b_02",
+      assertion: "assertion-for-B",
+    },
+  } as const;
+  type User = keyof typeof USERS;
+  const headersTu = {
+    "Content-Type": "application/json",
+    "Cache-Control": "private, no-store",
+    "X-Correlation-Id": "corr_tu",
+  };
+  const seenTu: Array<{ user: User | "?"; method: string; path: string }> = [];
+  // ONE upstream serving both users: it answers by the user assertion on the
+  // request, exactly as investor-api scopes by the asserted `sub`.
+  const fetchTu = async (
+    url: URL | RequestInfo,
+    init?: RequestInit,
+  ): Promise<Response> => {
+    const path = new URL(url.toString()).pathname;
+    const method = init?.method ?? "GET";
+    const assertion = new Headers(init?.headers).get(
+      "X-Refinity-User-Assertion",
+    );
+    const user: User | "?" =
+      assertion === USERS.A.assertion
+        ? "A"
+        : assertion === USERS.B.assertion
+          ? "B"
+          : "?";
+    seenTu.push({ user, method, path });
+    const page = (items: unknown[]) =>
+      new Response(
+        JSON.stringify({
+          data: { items, page: { has_more: false, next_cursor: null } },
+        }),
+        { status: 200, headers: headersTu },
+      );
+    const notFound = () =>
+      new Response(
+        JSON.stringify({
+          error: {
+            code: "RESOURCE_NOT_FOUND",
+            message: "x",
+            correlation_id: "corr_tu",
+          },
+        }),
+        { status: 404, headers: headersTu },
+      );
+    if (user === "?")
+      return new Response(
+        JSON.stringify({
+          error: {
+            code: "AUTHENTICATION_FAILED",
+            message: "x",
+            correlation_id: "corr_tu",
+          },
+        }),
+        { status: 401, headers: headersTu },
+      );
+    const me = USERS[user];
+    const account = {
+      ...examplesTu.responses["AccountEnvelope"]!.data,
+      account_id: me.account,
+    };
+    if (path === "/api/v1/investor/accounts" && method === "GET")
+      return page([account]);
+    const m = /^\/api\/v1\/investor\/accounts\/([^/]+)(\/.*)?$/.exec(path);
+    if (m) {
+      const [, accountId, rest = ""] = m;
+      if (accountId !== me.account) return notFound(); // backend-side isolation
+      if (rest === "/authorization")
+        return new Response(
+          JSON.stringify({
+            data: examplesTu.responses["AccountAuthorizationEnvelope"]!.data,
+          }),
+          { status: 200, headers: headersTu },
+        );
+      if (rest === "/brokerage-connections" && method === "GET") {
+        return page([
+          {
+            ...examplesTu.responses["BrokerageConnectionEnvelope"]!.data,
+            account_id: me.account,
+            connection_id: me.conn,
+          },
+        ]);
+      }
+      if (rest === "/actions" && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesTu.responses["ActionReceiptEnvelope"]!.data,
+              account_id: me.account,
+            },
+          }),
+          { status: 202, headers: headersTu },
+        );
+      }
+      if (
+        rest === `/brokerage-connections/${me.conn}/sync` &&
+        method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              ...examplesTu.responses["BrokerageSyncReceiptEnvelope"]!.data,
+              connection_id: me.conn,
+            },
+          }),
+          { status: 202, headers: headersTu },
+        );
+      }
+    }
+    return notFound();
+  };
+  const clientFor = (user: User) =>
+    createClientTu({
+      identityCcid: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("id-b"),
+      },
+      investorApi: {
+        baseUrl: "http://127.0.0.1:1",
+        getBearer: () => Promise.resolve("inv-b"),
+      },
+      mintAssertion: () => Promise.resolve(USERS[user].assertion),
+      fetch: fetchTu as typeof fetch,
+    });
+  const pathsFor = (user: User) =>
+    seenTu.filter((s) => s.user === user).map((s) => s.path);
+
+  await section(
+    "two users: account scope resolves to the caller's OWN account under the caller's assertion — a claimed account id belonging to the other user is ignored, never honoured; the other user's account is never addressed",
+    async () => {
+      seenTu.length = 0;
+      for (const [me, other] of [
+        ["A", "B"],
+        ["B", "A"],
+      ] as const) {
+        const own = await scopeMod.resolveAccountScope(clientFor(me), {
+          accountId: USERS[other].account,
+        });
+        assert.equal(
+          own,
+          USERS[me].account,
+          `${me}: a claim naming ${other}'s account is not honoured`,
+        );
+        const noClaim = await scopeMod.resolveAccountScope(clientFor(me), {});
+        assert.equal(noClaim, USERS[me].account);
+      }
+      assert.ok(
+        seenTu.every((s) => s.path === "/api/v1/investor/accounts"),
+        "scope resolution touches only listAccounts",
+      );
+      assert.ok(
+        !seenTu.some((s) => s.user === "A" && s.path.includes(USERS.B.account)),
+      );
+      assert.ok(
+        !seenTu.some((s) => s.user === "B" && s.path.includes(USERS.A.account)),
+      );
+    },
+  );
+
+  await section(
+    "two users: an economic action under A's assertion against B's account is refused by the backend (404) and nothing falls back; A's own account succeeds; B's connection id is out of scope for A (no upstream mutation), A's own sync succeeds",
+    async () => {
+      seenTu.length = 0;
+      const input = {
+        action: "join_template" as const,
+        templateId: "template_us_sp500_following_v1",
+        allocationPercent: "0.25",
+        allocationPreviewId: "preview_alpha_0001",
+      };
+      await assert.rejects(
+        actionsTu.submitAccountAction(clientFor("A"), USERS.B.account, input),
+        (e: unknown) =>
+          e instanceof Error &&
+          e.name === "InvestorApiError" &&
+          (e as { status: number }).status === 404,
+      );
+      assert.ok(
+        !pathsFor("A").some((p) => p.endsWith("/actions")),
+        "no action reached B's account",
+      );
+      const ok = await actionsTu.submitAccountAction(
+        clientFor("A"),
+        USERS.A.account,
+        input,
+      );
+      assert.equal(ok.kind, "accepted");
+      if (ok.kind === "accepted")
+        assert.equal(ok.receipt.account_id, USERS.A.account);
+      const cross = await maintTu.syncBrokerageConnection(
+        clientFor("A"),
+        USERS.A.account,
+        USERS.B.conn,
+      );
+      assert.deepEqual(cross, {
+        kind: "connection_out_of_scope",
+        reason: "not_owned",
+      });
+      assert.ok(
+        !pathsFor("A").some((p) => p.includes(USERS.B.conn)),
+        "B's connection never appears in A's upstream paths",
+      );
+      const own = await maintTu.syncBrokerageConnection(
+        clientFor("A"),
+        USERS.A.account,
+        USERS.A.conn,
+      );
+      assert.equal(own.kind, "accepted");
+      // Nothing under B's assertion happened at all in this section.
+      assert.deepEqual(pathsFor("B"), []);
+    },
+  );
+
+  await section(
+    "two users: attestation submission records are listed per account only; sessions resolve only their own subject (a cookie for A carrying B's sid is null); opaque subjects never collide or cross-resolve",
+    async () => {
+      const idA = "att_" + "a".repeat(32);
+      const idB = "att_" + "b".repeat(32);
+      await attEntity.openAttestationSubmission({
+        accountId: USERS.A.account,
+        attestationId: idA,
+        correlationId: "c",
+      });
+      await attEntity.openAttestationSubmission({
+        accountId: USERS.B.account,
+        attestationId: idB,
+        correlationId: "c",
+      });
+      const listA = (
+        await attEntity.listAttestationSubmissions(USERS.A.account)
+      ).map((r) => r.attestationId);
+      const listB = (
+        await attEntity.listAttestationSubmissions(USERS.B.account)
+      ).map((r) => r.attestationId);
+      assert.ok(listA.includes(idA) && !listA.includes(idB));
+      assert.ok(listB.includes(idB) && !listB.includes(idA));
+      assert.equal(
+        await attEntity.getAttestationSubmission(USERS.A.account, idB),
+        null,
+        "A cannot read B's record by id",
+      );
+
+      // Durable sessions + cookies (shared in-memory backing for the test).
+      const backing = new Map<string, Map<string, unknown>>();
+      csTu.setConnectedStoreFactoryForTests(<T>(collection: string) => {
+        const col = () => {
+          let m = backing.get(collection);
+          if (!m) {
+            m = new Map();
+            backing.set(collection, m);
+          }
+          return m as Map<string, T>;
+        };
+        return {
+          async get(k: string) {
+            return col().get(k) ?? null;
+          },
+          async put(k: string, v: T) {
+            col().set(k, v);
+          },
+          async putIfAbsent(k: string, v: T) {
+            if (col().has(k)) return false;
+            col().set(k, v);
+            return true;
+          },
+          async list(prefix?: string) {
+            return [...col().entries()]
+              .filter(([k]) => !prefix || k.startsWith(prefix))
+              .map(([key, value]) => ({ key, value }));
+          },
+          async delete(k: string) {
+            col().delete(k);
+          },
+        };
+      });
+      const savedNs = process.env["REFI_CONNECTED_STORE_NAMESPACE"];
+      process.env["REFI_CONNECTED_STORE_NAMESPACE"] = "us-connected-test";
+      resetEnvTu();
+      try {
+        const sA = await sessionsTu.createConnectedSession({
+          sub: USERS.A.sub,
+          authTime: 1_789_000_000,
+          amr: ["email_link"],
+          identityResultJti: "idr_tu_a_00000000000000000001",
+          correlationId: "c",
+        });
+        const sB = await sessionsTu.createConnectedSession({
+          sub: USERS.B.sub,
+          authTime: 1_789_000_100,
+          amr: ["email_otp"],
+          identityResultJti: "idr_tu_b_00000000000000000002",
+          correlationId: "c",
+        });
+        const cA = await cookieMod.mintConnectedSessionCookie(sA, {
+          secure: true,
+        });
+        const cB = await cookieMod.mintConnectedSessionCookie(sB, {
+          secure: true,
+        });
+        const ctxFor = async (cookie: string) =>
+          getAuthContextTu(
+            new NextRequestTu(
+              "https://bff-dev.refi.trading/api/v1/investor/status",
+              { headers: { cookie: `us_session_v1=${cookie}` } },
+            ),
+          );
+        const a = await ctxFor(cA.value);
+        const b = await ctxFor(cB.value);
+        assert.equal(a?.authId, USERS.A.sub);
+        assert.equal(a?.sid, sA.sid);
+        assert.equal(a?.authTime, 1_789_000_000);
+        assert.equal(b?.authId, USERS.B.sub);
+        assert.equal(b?.sid, sB.sid);
+        assert.equal(b?.authTime, 1_789_000_100);
+        assert.equal(
+          a?.accountId,
+          undefined,
+          "no account claim rides a connected session",
+        );
+        // A's sub with B's sid: signed by us in a hypothetical bug — still null (record.sub ≠ cookie sub).
+        const mixed = await cookieMod.mintConnectedSessionCookie(
+          { ...sB, sub: USERS.A.sub },
+          { secure: true },
+        );
+        assert.equal(await ctxFor(mixed.value), null);
+        // Revoking A never affects B.
+        await sessionsTu.revokeConnectedSession(sA.sid, "test");
+        assert.equal(await ctxFor(cA.value), null);
+        assert.equal((await ctxFor(cB.value))?.authId, USERS.B.sub);
+        // Opaque subjects: distinct provider users → distinct subs; reverse lookups never cross.
+        const mA = await subjects.getOrCreateOpaqueSubject({
+          provider: "stytch",
+          providerUserId: "user-test-two-user-aaaaaaaa",
+          correlationId: "c",
+        });
+        const mB = await subjects.getOrCreateOpaqueSubject({
+          provider: "stytch",
+          providerUserId: "user-test-two-user-bbbbbbbb",
+          correlationId: "c",
+        });
+        assert.notEqual(mA.record.sub, mB.record.sub);
+        assert.equal(
+          (await subjects.lookupSubject(mA.record.sub))?.providerUserId,
+          "user-test-two-user-aaaaaaaa",
+        );
+        assert.equal(
+          (await subjects.lookupSubject(mB.record.sub))?.providerUserId,
+          "user-test-two-user-bbbbbbbb",
+        );
+      } finally {
+        csTu.setConnectedStoreFactoryForTests(null);
+        if (savedNs === undefined)
+          delete process.env["REFI_CONNECTED_STORE_NAMESPACE"];
+        else process.env["REFI_CONNECTED_STORE_NAMESPACE"] = savedNs;
+        resetEnvTu();
+      }
+    },
+  );
 }
 
 // ─── Done ───────────────────────────────────────────────────────────────────

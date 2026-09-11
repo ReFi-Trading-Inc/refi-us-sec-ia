@@ -116,6 +116,39 @@ Before any redeploy/rollback that would replace the affected build:
 4. **Game on-call (`refi-man-vs-machine`):** for handoff-token forgery / key
    compromise.
 
+### 4a. Customer-notification decision criteria
+
+Added 2026-09-10 (see `security/socure-review/incident-response.md` §3).
+Counsel makes the final determination of any legal notification duty; these
+criteria decide when the owner escalates a customer-notification decision to
+counsel and prepares a draft notice, so the decision is made on facts rather
+than defaulting to silence.
+
+1. **Confirmed unauthorized access to or disclosure of RESTRICTED data**
+   (authentication secrets protecting customer accounts, SSN/national ID, KYC
+   applicant PII, identity documents, biometrics) of an identifiable customer
+   or applicant → escalate to counsel within 24 hours of confirmation; prepare
+   a notice.
+2. **Confirmed cross-account exposure** of CONFIDENTIAL records (§2.1) →
+   escalate; notice to the affected investors unless counsel determines
+   otherwise.
+3. **Suspected but unconfirmed exposure** → no customer notice yet; counsel
+   informed; evidence collection continues with a 72-hour checkpoint to
+   confirm or close.
+4. **Secret leak with no evidence of access** (rotated before any observed
+   use, §2.4) → no customer notice by default; documented in the postmortem.
+5. **Vendor-side incident** (identity, KYC, cloud, or hosting provider)
+   affecting ReFi data → evaluated under 1–3 once the vendor's report is
+   received; ReFi does not wait for the vendor's own customer notice.
+6. **Regulatory triggers** (state breach-notification statutes, Reg S-P as
+   applicable) are evaluated by counsel in every case above; the owner
+   supplies the evidence package from §3.
+
+Notice content: what happened, what data, when, what ReFi did, what the
+customer should do, how to reach ReFi. No speculation; no other customer's
+data. Data classes are defined in
+`security/socure-review/data-classification-policy.md`.
+
 ---
 
 ## 5. Post-incident

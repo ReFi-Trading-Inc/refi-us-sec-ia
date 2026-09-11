@@ -1,3 +1,5 @@
+> **SUPERSEDED 2026-09-10 (later the same day).** The founder selected **Socure** as ReFi's own KYC provider for the initial US Alpha (`decision-kyc-provider-socure.md`). The Alpaca-owned KYC/CIP model below is retained as history; the Alpaca account-opening boundary questions to Daniel remain open independently of KYC.
+
 # KYC/CIP model for the initial US Alpha — founder decision 2026-09-10
 
 **Decision (founder, 2026-09-10): Option 1 — Alpaca-owned brokerage KYC/CIP.**

@@ -43,6 +43,15 @@ Deferred (decided-as-deferred, not open questions): investor `liquidate_all` and
 
 ## Decisions
 
+### D-KYC-02 — KYC provider for the initial US Alpha: Socure (ReFi-owned KYC)
+
+- **Status:** DECIDED (founder, 2026-09-10; supersedes D-KYC-01 for the initial Alpha)
+- **Resolution:** ReFi owns KYC. Provider **Socure**; integration **Build Your Own UI**; workflow **KYC + Fraud + Watchlist > DocV Step Up**; scope **US Alpha**. Stytch owns authentication; Socure owns identity/fraud/watchlist/document/liveness evidence; ReFi owns the KYC state machine, compliance decision, review workflow, admission, evidence retention and downstream gating; Daniel's backend keeps account ownership, AccountAuthorization, risk, execution, fills, reconciliation. Socure ACCEPT is a prerequisite, never admission.
+- **Consequence:** implementation prepared against fixtures (PRs A–E); live acceptance blocked on Socure account verification (API key, SDK key, workflow name, webhook credential). The Alpaca account-opening boundary questions to Daniel remain open independently.
+- **Priority:** Critical
+- **Owner:** Zeshan (decision) · engineering (implementation) · Socure (account)
+- **Doc:** docs/releases/2026-09-signal/connected-dev/decision-kyc-provider-socure.md
+
 ### D-KYC-01 — Initial US Alpha KYC/CIP model: Alpaca-owned brokerage KYC/CIP
 
 - **Status:** DECIDED (founder, 2026-09-10; Option 1)

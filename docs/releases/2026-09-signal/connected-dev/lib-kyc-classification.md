@@ -45,3 +45,15 @@ so mock evidence can never satisfy the attestation/admission gate in any mode.
 - **F-3:** the demo tier's mock KYC behaviour (persona flow, `demo-tier.spec.ts`,
   `kyc.spec.ts`) stays inside the demo boundary; nothing in it can satisfy a
   connected gate (env invariant + provenance refusal + release policy).
+
+## Update 2026-09-10 (later): Socure adapter added behind the same boundary
+
+The classification above remains accurate for the pre-existing files. Added
+(PRs B–E): `lib/kyc/socure/*` (**C** connected runtime dependency — the
+selected production adapter), `lib/kyc/evidence.ts`, `lib/kyc/identity-input.ts`,
+`lib/kyc/attestation-evidence.ts` (**C**; the single permitted caller of
+`establishTrustedKycProvenance`, previously class **B**), the `kyc-evaluation`
+entity, and the routes `kyc/evaluation`, `kyc/step-up`, `kyc/step-up/complete`,
+`/api/webhooks/kyc/provider`. F-1 is resolved differently from the earlier
+proposal: connected deployments forbid `mock` but permit a complete `socure`
+configuration; `unconfigured` still reports unavailable, never pending.

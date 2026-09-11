@@ -29,13 +29,17 @@ Secrets (Secret Manager → env at deploy): `SOCURE_API_KEY`, `SOCURE_WEBHOOK_BE
 
 ## IAM (least privilege; no owner/editor; no broker or economic scope)
 
-| Principal                   | Role                                                                                     | Scope                                                                                        | Why                                                                                 |
-| --------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `socure-sandbox-runtime` SA | `roles/datastore.user`                                                                   | project (Firestore has no per-collection IAM; the project contains only this service's data) | read/write the KYC collections incl. transactions                                   |
-| `socure-sandbox-runtime` SA | `roles/secretmanager.secretAccessor`                                                     | **per secret** (resource-level binding on each of the six secrets)                           | read secrets at deploy/runtime                                                      |
-| `socure-sandbox-runtime` SA | `roles/logging.logWriter`                                                                | project                                                                                      | Cloud Logging                                                                       |
-| Cloud Run service           | `roles/run.invoker` → `allUsers`                                                         | service                                                                                      | public HTTPS ingress for the webhook and the UI; application auth is session/Bearer |
-| Founder (human)             | `roles/run.admin`, `roles/iam.serviceAccountUser` on the SA, `roles/secretmanager.admin` | project                                                                                      | deploy and rotate; MFA on the account                                               |
+| Principal                   | Role                                                                                     | Scope                                                                                        | Why                                                                                             |
+| --------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `socure-sandbox-build` SA   | `roles/logging.logWriter`                                                                | project                                                                                      | build logs (CLOUD_LOGGING_ONLY)                                                                 |
+| `socure-sandbox-build` SA   | `roles/artifactregistry.writer`                                                          | repository `us-central1/refi` only                                                           | push the image                                                                                  |
+| `socure-sandbox-build` SA   | `roles/storage.objectViewer`                                                             | bucket `refi-socure-sandbox_cloudbuild` only                                                 | read the staged source tarball                                                                  |
+| human operator (founder)    | `roles/owner`                                                                            | project                                                                                      | explicit deploy step (`gcloud run services replace`); no service account holds deploy authority |
+| `socure-sandbox-runtime` SA | `roles/datastore.user`                                                                   | project (Firestore has no per-collection IAM; the project contains only this service's data) | read/write the KYC collections incl. transactions                                               |
+| `socure-sandbox-runtime` SA | `roles/secretmanager.secretAccessor`                                                     | **per secret** (resource-level binding on each of the six secrets)                           | read secrets at deploy/runtime                                                                  |
+| `socure-sandbox-runtime` SA | `roles/logging.logWriter`                                                                | project                                                                                      | Cloud Logging                                                                                   |
+| Cloud Run service           | `roles/run.invoker` → `allUsers`                                                         | service                                                                                      | public HTTPS ingress for the webhook and the UI; application auth is session/Bearer             |
+| Founder (human)             | `roles/run.admin`, `roles/iam.serviceAccountUser` on the SA, `roles/secretmanager.admin` | project                                                                                      | deploy and rotate; MFA on the account                                                           |
 
 No Alpaca, no Investor API, no KMS, no Pub/Sub, no storage buckets.
 
@@ -51,3 +55,9 @@ Removable after acceptance: the Cloud Run service, the image, the Firestore docu
 ## What this does NOT change
 
 No product code. The store abstraction already supports these entities durably (`REFI_BACKING__<ENTITY>=durable` → Firestore driver with transactional `putIfAbsent` and the same collection names). Not yet durable-capable (prototype-only, per-instance on Cloud Run): `action-receipts` (audit receipts) and `auth-session-links` (account link). The KYC evaluation, step-up and webhook routes need neither for correctness; receipts would be per-instance during acceptance. If the founder wants receipts durable for the packet, registering `action-receipts` in the backing matrix is a one-line product change to request separately — not done here.
+
+## Phase 1 applied — 2026-09-11
+
+Evidence: `docs/security/socure-review/sandbox-phase1-evidence-2026-09-11.md`. Service URL
+`https://refi-socure-sandbox-692706086295.us-central1.run.app`, image tag `5e945e2`, provider dark. Socure secret
+containers exist with **0 versions**. Phase 2 has NOT been started.

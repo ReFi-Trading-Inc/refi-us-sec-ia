@@ -1,4 +1,14 @@
-# PR F (#114) / PR G (#115) rebase plan — executed only after Daniel answers
+# PR F (#114) / PR G (#115) plan — REVISED after Daniel's 2026-09-11 response
+
+**Daniel answered (see `daniel-response-2026-09-11.md`).** The interim six-state cohort allowlist is rejected in favour of a backend-owned membership object, and the backend will persist the canonical admission itself. F/G therefore cannot be rebased and merged as written. Revised path:
+
+1. Founder decision F1: (a) re-scope F/G into a non-authoritative admission-readiness projection kept until the backend exposes its admission state, or (b) close F/G and re-implement against the addendum. Either way, G's atomic `KVStore.update` remains reusable.
+2. Wait for the contract addendum: membership object (positive states, expiry, revocation), backend admission projection (state, reasons, rule version, evidence history), and the confirmation that `createComplianceProfileAttestation` with provider = Socure + evidence ref is the KYC evidence path.
+3. Bind the cohort prerequisite to the membership object; delete `ALPHA_COHORT_POSITIVE_STATES`.
+4. Replace the ReFi admission record's authority with the backend projection; keep at most a read-side mirror and the trigger points (KYC result, consent, profile) that submit evidence.
+5. Rebase → protected CI → founder review → merge, F then G (or the re-implemented replacement).
+
+Original plan (superseded, retained for history):
 
 Held heads: F `133f6a5`, G `8e5eaee`. Do not rebase or merge before both answers exist.
 

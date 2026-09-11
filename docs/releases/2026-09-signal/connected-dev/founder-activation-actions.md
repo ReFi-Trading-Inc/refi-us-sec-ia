@@ -25,19 +25,21 @@ been executed. Phase remains **US Investor Integration Foundation**.
 4. Place project id and secret in Secret Manager; set `REFI_AUTH_PROVIDER=stytch`, `STYTCH_ENV`.
 5. Provide `upstream_identity_provider_id`, issuer (`BRIDGE_ASSERTION_ISSUER`), audience (`IDENTITY_CCID_UPSTREAM_AUDIENCE`), bridge JWKS URL (`/.well-known/identity-bridge-jwks.json`) for Appendix A.
 
-## KYC/CIP model — decided 2026-09-10: Alpaca-owned brokerage KYC/CIP
+## KYC — decided 2026-09-10: ReFi-owned KYC via Socure (supersedes the Alpaca-owned note)
 
-**Initial Alpha KYC model: Alpaca-owned brokerage KYC/CIP.** The founder
-selected Option 1 (see `decision-kyc-model.md`). ReFi does not integrate
-Persona, Socure, Veriff, Alloy or any other separate identity-verification
-provider for the initial Alpha; no vendor SDK, secret or environment variable
-is to be added. The frontend mock adapter remains a non-evidence development
-control only. Historical note: until 2026-09-10 this section recorded a
-separate provider decision as an unresolved founder blocker; that blocker is
-removed. What replaces it is a **Daniel binding** (how Alpaca account/KYC
-status reaches the BFF — see `daniel-dependency-packet.md`) and an **Alpaca
-PAPER onboarding path** proven through Daniel's integration. Nothing here
-requires founder action beyond confirming the decision with counsel.
+**KYC provider: Socure · Integration: Build Your Own UI · Workflow: KYC + Fraud + Watchlist > DocV Step Up · Scope: US Alpha.**
+Implementation is complete against fixtures (PRs B–E); live acceptance is
+blocked on the Socure account. Founder actions (in order):
+
+1. Socure Launch sandbox account (support@socure.com); select the Direct API + SDK path for the KYC + Fraud + Watchlist > DocV Step-Up solution (the path is locked per solution).
+2. Record the **sandbox API key** in Secret Manager → `SOCURE_API_KEY`; `SOCURE_API_BASE_URL=https://riskos.sandbox.socure.com`; `SOCURE_ENV=sandbox`; `SOCURE_WORKFLOW_NAME=<workflow>`; `REFI_KYC_PROVIDER=socure` (all-or-nothing; boot fails otherwise).
+3. **SDK key** → `NEXT_PUBLIC_SOCURE_SDK_KEY` (public by design; enables the CSP allowance for `websdk.socure.com`); install `@socure-inc/device-risk-sdk` and initialise it (activation code slice).
+4. Register the webhook `https://<bff host>/api/webhooks/kyc/provider` in Developer Workbench > Webhooks with a Bearer credential (founder decision: Bearer only); mirror it into `SOCURE_WEBHOOK_BEARER_TOKEN`; subscribe to `evaluation_completed` (and `evaluation_paused`, `workflow_execution_failed` for audit); decide whether to enforce the documented sender-IP allowlist (`SOCURE_WEBHOOK_ENFORCE_SENDER_IP=1`).
+5. Sandbox acceptance runs (synthetic test data only): ACCEPT, REJECT, REVIEW → DocV → webhook ACCEPT/REJECT, duplicate webhook, 429; record results as evidence.
+6. Production keys only after the security questionnaire and a separate activation approval; `SOCURE_ENV=production` requires the production host and `SOCURE_WEBHOOK_BEARER_TOKEN`.
+
+Historical note: earlier on 2026-09-10 this section recorded an Alpaca-owned
+KYC/CIP model; that decision is superseded (`decision-kyc-model.md` banner).
 
 ## Daniel — before remote traffic
 

@@ -43,6 +43,8 @@ export interface KycEvidenceRecord {
   schemaVersion: typeof KYC_EVIDENCE_SCHEMA_VERSION;
   /** Adapter kind label (e.g. "socure", "mock"); never a claim of trust by itself. */
   provider: string;
+  /** Opaque ReFi journey reference (`refi-kyc-…`) the evidence belongs to. */
+  referenceId: string | null;
   /** Provider evaluation id (e.g. `eval_id`). Opaque; safe to log. */
   providerEvaluationId: string | null;
   /** OUR customer-defined request id echoed by the provider (`id` / webhook `data.id`). */
@@ -54,6 +56,10 @@ export interface KycEvidenceRecord {
   providerDecision: KycProviderDecision | null;
   /** Whether the latest decision is final (webhook / closed) or interim (paused for step-up). */
   providerDecisionFinal: boolean;
+  /** Provider evaluation status as delivered (e.g. evaluation_paused / evaluation_completed / CLOSED). Coarse; never a score. */
+  providerEvaluationStatus: string | null;
+  /** True once a document step-up was required for this evaluation. */
+  docvRequired: boolean;
   /** ReFi-owned mapped lifecycle state. */
   refiState: KycLifecycleState;
   identityVerification: KycComponentStatus;
@@ -77,12 +83,15 @@ export function emptyEvidence(
   return {
     schemaVersion: KYC_EVIDENCE_SCHEMA_VERSION,
     provider,
+    referenceId: null,
     providerEvaluationId: null,
     providerRequestId: null,
     providerWorkflow: null,
     providerWorkflowVersion: null,
     providerDecision: null,
     providerDecisionFinal: false,
+    providerEvaluationStatus: null,
+    docvRequired: false,
     refiState,
     identityVerification: "not_evaluated",
     fraud: "not_evaluated",

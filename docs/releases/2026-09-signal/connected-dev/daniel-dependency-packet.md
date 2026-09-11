@@ -5,10 +5,10 @@ Contract in force on `main`: `v1.1.0-alpha.3`, `package_content_sha256`
 Only backend-owned or contract-owned items are listed. Nothing here blocks
 local implementation; every item blocks genuine connected acceptance.
 
-**KYC/CIP boundary — founder decision 2026-09-10.** For the initial Alpha the
-founder selected **Alpaca-owned brokerage KYC/CIP**. ReFi will not integrate
-Persona, Socure, Veriff, Alloy or any other separate identity-verification
-provider. Stytch owns authentication only; ReFi owns eligibility, advisory
+**KYC — founder decision 2026-09-10 (later revision).** ReFi owns KYC for the
+initial Alpha with **Socure** (Build Your Own UI; KYC + Fraud + Watchlist >
+DocV Step Up). The earlier Alpaca-owned-CIP note is superseded; the Alpaca
+account-opening questions below are about brokerage onboarding only. Stytch owns authentication only; ReFi owns eligibility, advisory
 profile, disclosures, consent and internal closed-Alpha admission; Alpaca owns
 brokerage KYC/CIP and account approval; your backend owns account ownership,
 credential custody, account truth, `AccountAuthorization`, risk, execution,
@@ -39,10 +39,14 @@ When ready for connected acceptance: email/campaign-bound invitations for the
 agreed test identities, secure delivery path, and the permitted account-level
 execution scope.
 
+## Target architecture proposal (2026-09-11) — supersedes the open-ended questions below
+
+Founder direction: propose the target architecture and ask Daniel only to CONFIRM / ADDENDUM / DEFER each item — see `daniel-target-architecture-proposal.md`. The questions below are retained as the detailed backlog.
+
 ## Alpaca account onboarding / KYC boundary (priority; founder wording 2026-09-10)
 
-Founder decision: Alpaca owns KYC/CIP for the initial Alpha. ReFi is not
-integrating a separate KYC provider.
+Founder decision (revised 2026-09-10): ReFi owns KYC via Socure. The questions
+below concern the **brokerage account-opening boundary** only.
 
 Current alpha.3 exposes brokerage connection using an existing Alpaca
 account/credential relationship, but exposes no account-application,
@@ -60,16 +64,19 @@ Please confirm (exact operation/object/status names where possible):
 6. What exact condition means the account is ready for ReFi brokerage
    connection?
 7. Does brokerage connection occur before or after Alpaca approval?
-8. What KYC/CIP evidence, if any, should the frontend include in
-   `createComplianceProfileAttestation` (the alpha.3 operation name for
-   "submitComplianceAttestation")? (K1 — until answered our chain stops at
-   `KYC_EVIDENCE_MISSING`; nothing fabricates `passed`.)
+8. **KYC evidence (K1, revised).** ReFi will include in
+   `createComplianceProfileAttestation` a `kyc` block derived only from a
+   FINAL Socure decision: `status` = `passed` | `failed`, `provider` =
+   `socure-kyc-adapter`, `level` = the Socure workflow name, `evidence_ref` =
+   an opaque ReFi session reference (`kyc-session:refi-kyc-…`). Please confirm
+   this satisfies your trusted-provenance expectation, or state the exact
+   `provider` / `level` / `evidence_ref` vocabulary you want.
 9. Does this require an alpha.3 addendum or new frontend projection?
 10. Will B3 test identities receive pre-created Alpaca PAPER accounts?
 
 Status until answered: **ALPACA ACCOUNT OPENING: DANIEL DEPENDENCY** ·
-**ALPACA KYC/CIP INTEGRATION: DANIEL DEPENDENCY** · **ATTESTATION KYC
-EVIDENCE: DANIEL DEPENDENCY** · **BROKERAGE CONNECTION: CODE COMPLETE,
+**ATTESTATION KYC EVIDENCE VOCABULARY: DANIEL CONFIRMATION** (ReFi-owned
+Socure evidence implemented) · **BROKERAGE CONNECTION: CODE COMPLETE,
 FIXTURE-PROVED**. Question 1/2 = "A1"; question 8 = "K1" in our other documents.
 
 ## `brokerage_mutation` error profile

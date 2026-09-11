@@ -13,7 +13,7 @@ Executed from `main` at `5e945e2` (#118 merge `31c0b9b`, #122 merge `5e945e2`). 
 | Artifact Registry    | `us-central1/refi` (docker)                                                                                                                                               |
 | Firestore            | `(default)`, FIRESTORE_NATIVE, `nam5`                                                                                                                                     |
 | Runtime SA           | `socure-sandbox-runtime@…` — `roles/datastore.user`, `roles/logging.logWriter`                                                                                            |
-| Build SA             | `socure-sandbox-build@…` — `roles/cloudbuild.builds.builder` (added during apply; see deviations)                                                                         |
+| Build SA             | `socure-sandbox-build@…` — see identity table below (narrowed 2026-09-11)                                                                                                 |
 | Secrets (Socure)     | `socure-api-key-sandbox` **0 versions**, `socure-webhook-bearer-sandbox` **0 versions**                                                                                   |
 | Secrets (ReFi-owned) | `sandbox-session-secret`, `sandbox-ip-hash-secret`, `sandbox-eligibility-jwt-secret`, `sandbox-session-jwt-secret` — 1 generated version each, accessor = runtime SA only |
 | Cloud Build          | build `7244734e-e63d-4618-bfd7-351454d8730d`, SUCCESS, 3m18s                                                                                                              |
@@ -41,14 +41,30 @@ Executed from `main` at `5e945e2` (#118 merge `31c0b9b`, #122 merge `5e945e2`). 
 | `GET /api/v1/investor/kyc/step-up`           | 401    | session auth first                 |
 | `GET /investor/kyc`                          | 404    | no KYC page without a provider     |
 
+## Identities and exact IAM scope
+
+| Identity                                | Role                                 | Scope                                   | Purpose                                                                                                   |
+| --------------------------------------- | ------------------------------------ | --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `socure-sandbox-runtime@…` (runtime SA) | `roles/datastore.user`               | project                                 | KYC persistence incl. Firestore transactions                                                              |
+| `socure-sandbox-runtime@…`              | `roles/logging.logWriter`            | project                                 | application logs                                                                                          |
+| `socure-sandbox-runtime@…`              | `roles/secretmanager.secretAccessor` | per secret, all six sandbox secrets     | read secrets at deploy/runtime                                                                            |
+| `socure-sandbox-build@…` (build SA)     | `roles/logging.logWriter`            | project                                 | build logs                                                                                                |
+| `socure-sandbox-build@…`                | `roles/artifactregistry.writer`      | repository `us-central1/refi`           | push image                                                                                                |
+| `socure-sandbox-build@…`                | `roles/storage.objectViewer`         | bucket `refi-socure-sandbox_cloudbuild` | read staged source                                                                                        |
+| founder (`@refi.trading`)               | `roles/owner`                        | project                                 | human deployment identity; runs `gcloud builds submit` (actAs build SA) and `gcloud run services replace` |
+
+Original build-SA role at first apply: `roles/cloudbuild.builds.builder` (project). Removed 2026-09-11 and
+replaced with the three rows above; build `8095016e-8a80-4298-8467-fdf7ab4b668c` (image tag `b9cb8bd`) succeeded
+under the narrowed roles at first attempt, so no further permission was required. The build SA holds no Cloud
+Run, Secret Manager, Firestore, IAM or project-wide editor authority. Build and runtime identities are separate.
+
 ## Deviations from the dry-run plan
 
 1. Artifact Registry create failed once with `IAM_PERMISSION_DENIED` immediately after API enablement; retried
    after ~60 s and succeeded (propagation).
 2. `roles/logging.logWriter` binding hit a concurrent-policy conflict; retried and verified.
 3. Cloud Build could not read its own source bucket with the default compute identity (new-project default).
-   Added dedicated `socure-sandbox-build` SA with `roles/cloudbuild.builds.builder` and passed
-   `--service-account`. Script and README updated to match (this PR).
+   Added dedicated `socure-sandbox-build` SA, initially with `roles/cloudbuild.builds.builder`, then narrowed per founder review (identity table above). Script and README reproduce the narrowed identity (this PR).
 
 ## Not done (per directive)
 

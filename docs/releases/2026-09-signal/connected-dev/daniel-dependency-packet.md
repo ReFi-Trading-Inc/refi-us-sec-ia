@@ -39,6 +39,10 @@ When ready for connected acceptance: email/campaign-bound invitations for the
 agreed test identities, secure delivery path, and the permitted account-level
 execution scope.
 
+## Target architecture proposal (2026-09-11) — supersedes the open-ended questions below
+
+Founder direction: propose the target architecture and ask Daniel only to CONFIRM / ADDENDUM / DEFER each item — see `daniel-target-architecture-proposal.md`. The questions below are retained as the detailed backlog.
+
 ## Alpaca account onboarding / KYC boundary (priority; founder wording 2026-09-10)
 
 Founder decision (revised 2026-09-10): ReFi owns KYC via Socure. The questions

@@ -2,7 +2,7 @@
 
 Scope: activate the merged Socure foundation against the **Socure Sandbox** with **synthetic identities only**, and collect acceptance evidence. Automatic Alpha admission stays disabled (PR F/G held). Nothing here authorises production keys, real PII, real documents, connected GCP provisioning, Stytch/Daniel/Alpaca activation or live capital. Every step is a founder-approved, separately authorised action; this document is the procedure, not the approval.
 
-Preconditions: `main` at or after `abb73d9`; deployment target = the connected BFF (Cloud Run) or, for a first dry run, a local `.env.local` never committed. Product: KYC + Fraud + Watchlist > DocV Step Up · Build Your Own UI · Sandbox only.
+Preconditions: `main` at or after `2051e80`; deployment target = the dedicated **Socure Sandbox Cloud Run service with Firestore backing** (`infra/gcp/socure-sandbox/`, project `refi-socure-sandbox`) — founder decision 2026-09-11: never the per-instance prototype store, never a local machine, never the connected investor environment (#98). Product: KYC + Fraud + Watchlist > DocV Step Up · Build Your Own UI · Sandbox only.
 
 ## A. Credentials (from zero)
 
@@ -22,7 +22,7 @@ Preconditions: `main` at or after `abb73d9`; deployment target = the connected B
 
 ## C. Synthetic acceptance runs (see `docs/security/socure-review/socure-acceptance-matrix.md`)
 
-Use an approved authenticated test user (Stytch fixture session or approved test identity) and **synthetic** identity data only (no real SSN, DOB, address, documents).
+Use the approved synthetic test session: mint the standard session cookie for a synthetic `authId` with this environment's `SESSION_JWT_SECRET` exactly as `apps/web/e2e/session.ts` does (no Stytch, no dev fallback, no demo persona) and **synthetic** identity data only (no real SSN, DOB, address, documents).
 
 11. **ACCEPT** — submit the identity form; expect `result: "evaluated"`, state `passed`; record `eval_id`, request id, workflow; verify the evidence record (`kyc-evaluations`) has `providerDecision=accept`, `providerDecisionFinal=true`, `decisionProvenance=provider_evaluation`, no PII/score fields; verify the attestation evidence module yields trusted `passed` (route `profile/v2/attestation` GET shows the chain no longer blocked on `KYC_EVIDENCE_MISSING`).
 12. **REVIEW → DocV** — submit a synthetic identity the Sandbox routes to REVIEW; expect `stepUpRequired: true`, state `additional_info_required`, `GET /kyc/step-up` returns a token for this user only; launch capture (Sandbox test documents only); on completion expect `under_review`.
@@ -36,6 +36,22 @@ Use an approved authenticated test user (Stytch fixture session or approved test
 20. **No operational failure becomes a rejection** — confirm every error case above left the record `in_progress` (never `failed`).
 21. **Logs** — review Cloud Run / Vercel logs for the run window: no SSN, DOB, address, API key, Bearer credential, document or selfie payload (search terms in the acceptance matrix).
 22. Collect evidence per the matrix into the acceptance packet (no synthetic SSNs, no images).
+
+## C2. Restart acceptance (Firestore durability — required, not optional)
+
+1. Create a synthetic Sandbox evaluation (Scenario A or B) and note the request id / `eval_id`.
+2. Confirm the record exists in Firestore (`kyc-evaluations`, `kyc-evaluation-index`).
+3. Redeploy or restart the Cloud Run service (new revision, or scale to zero and back).
+4. Confirm `GET /api/v1/investor/kyc/verification` still resolves the same session/state for the test user.
+5. Deliver the final webhook → state `passed` / `failed`; note `event_id`.
+6. Restart again.
+7. Replay the same webhook → 200 `duplicate_event`.
+8. Verify no duplicate state or history (record history length unchanged; one `kyc-webhook-events` document).
+9. Verify the terminal decision is unchanged and a Bearer-less replay is still 401 after the restart.
+
+## C3. Multi-instance acceptance (correctness must not depend on one instance)
+
+With `max-instances=2`: run Scenario B so the Evaluation request (instance A) and the webhook delivery (instance B, force by delivering during concurrent load or after a scale event) hit different instances; verify the webhook correlates to the same Firestore-backed record (`data.id` request id + `eval_id`) and the state transition is exactly once. Fire two concurrent replays of one webhook → one `applied`, one `duplicate_event`.
 
 ## D. Rollback
 

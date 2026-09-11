@@ -1,0 +1,28 @@
+# Cloud Build: staging-tier image for the Socure Sandbox acceptance service (PROPOSAL; not run).
+#   gcloud builds submit --config infra/gcp/socure-sandbox/cloudbuild.sandbox.yaml --project refi-socure-sandbox .
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - apps/web/Dockerfile
+      - --build-arg
+      - NEXT_PUBLIC_REFI_ENV=staging
+      - --build-arg
+      - NEXT_PUBLIC_REFI_DATA_ADAPTER=live
+      - --build-arg
+      - NEXT_PUBLIC_API_BASE_URL=https://refi-socure-sandbox-REPLACE-uc.a.run.app
+      - -t
+      - ${_IMAGE}:${SHORT_SHA}
+      - -t
+      - ${_IMAGE}:latest
+      - .
+images:
+  - ${_IMAGE}:${SHORT_SHA}
+  - ${_IMAGE}:latest
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/refi-socure-sandbox/refi/refi-socure-sandbox
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1800s

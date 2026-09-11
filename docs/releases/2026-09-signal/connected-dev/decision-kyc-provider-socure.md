@@ -19,8 +19,11 @@ request, key, webhook credential, PII or document has been used.
 | Daniel's backend | canonical account ownership, `AccountAuthorization`, risk, execution, orders, fills, reconciliation                                                     | KYC                                    |
 
 Journey: Stytch authentication → ReFi KYC workflow → Socure KYC/Fraud/Watchlist
-→ DocV step-up when required → ReFi compliance decision → closed-Alpha admission
-→ brokerage connection → AccountAuthorization → Signal → Managed Paper.
+→ DocV step-up when required → Socure final decision → **automatic Alpha
+admission on ACCEPT** once all non-KYC prerequisites are complete
+(`decision-alpha-admission-automatic.md`; human compliance review is
+exception-based) → brokerage connection → AccountAuthorization → Signal →
+Managed Paper.
 Socure `ACCEPT` is a prerequisite, never admission, brokerage approval,
 AccountAuthorization, Signal subscription or execution (every downstream gate is
 preserved; contract assertions pin the attestation and admission boundaries).
@@ -56,7 +59,7 @@ OpenAPI specs and help-center pages, 2026-09-10). Nothing was invented beyond th
 ## Manual review model (mandate §17)
 
 - Socure `REVIEW` with a DocV step-up: **handled by Socure DocV**; ReFi shows "Additional identity verification required" and launches capture; the final decision arrives by webhook.
-- Final `ACCEPT`: proceeds (to eligibility/admission gates, not to admission itself).
+- Final `ACCEPT`: **automatically admits** when the other admission prerequisites hold (superseding the earlier "not to admission itself" wording); otherwise the evaluator waits for them to converge.
 - Final `REJECT`: stops; investor sees "We could not verify your identity" with a support path; a new evaluation requires a new ReFi submission.
 - `REVIEW` without a step-up, webhook `REVIEW`, `workflow_execution_failed`, or a conflicting final decision after a terminal state: **internal ReFi compliance case** (`under_review` / `conflict` flag on the record). No automated path resolves these; no tooling for the internal case is built yet (not required by the current architecture).
 

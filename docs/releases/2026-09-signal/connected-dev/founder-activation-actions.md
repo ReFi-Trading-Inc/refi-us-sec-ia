@@ -35,7 +35,7 @@ blocked on the Socure account. Founder actions (in order):
 2. Record the **sandbox API key** in Secret Manager → `SOCURE_API_KEY`; `SOCURE_API_BASE_URL=https://riskos.sandbox.socure.com`; `SOCURE_ENV=sandbox`; `SOCURE_WORKFLOW_NAME=<workflow>`; `REFI_KYC_PROVIDER=socure` (all-or-nothing; boot fails otherwise).
 3. **SDK key** → `NEXT_PUBLIC_SOCURE_SDK_KEY` (public by design; enables the CSP allowance for `websdk.socure.com`); install `@socure-inc/device-risk-sdk` and initialise it (activation code slice).
 4. Register the webhook `https://<bff host>/api/webhooks/kyc/provider` in Developer Workbench > Webhooks with a Bearer credential (founder decision: Bearer only); mirror it into `SOCURE_WEBHOOK_BEARER_TOKEN`; subscribe to `evaluation_completed` (and `evaluation_paused`, `workflow_execution_failed` for audit); decide whether to enforce the documented sender-IP allowlist (`SOCURE_WEBHOOK_ENFORCE_SENDER_IP=1`).
-5. Sandbox acceptance runs (synthetic test data only): ACCEPT, REJECT, REVIEW → DocV → webhook ACCEPT/REJECT, duplicate webhook, 429; record results as evidence.
+5. Sandbox acceptance runs (synthetic test data only): ACCEPT, REJECT, REVIEW → DocV → webhook ACCEPT/REJECT, duplicate webhook, 429; verify automatic admission (`GET /api/v1/investor/admission` → `admitted`) for the complete-prerequisite case; record results as evidence.
 6. Production keys only after the security questionnaire and a separate activation approval; `SOCURE_ENV=production` requires the production host and `SOCURE_WEBHOOK_BEARER_TOKEN`.
 
 Historical note: earlier on 2026-09-10 this section recorded an Alpaca-owned

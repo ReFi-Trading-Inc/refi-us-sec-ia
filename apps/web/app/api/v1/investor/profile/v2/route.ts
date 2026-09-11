@@ -17,6 +17,7 @@
  */
 import { z } from "zod";
 import { bffRead, bffMutate } from "@lib/bff/handler";
+import { reevaluateAlphaAdmission } from "@lib/compliance/admission-hook";
 import {
   ACCOUNT_SHARE_BANDS,
   ACCOUNT_TYPES,
@@ -283,6 +284,8 @@ export const POST = bffMutate<SubmitBody>({
       correlationId: ctx.correlationId,
     });
 
+    // The advisory profile is an admission prerequisite: re-evaluate from current state.
+    await reevaluateAlphaAdmission(ctx.auth, ctx.correlationId, "profile");
     return {
       data: {
         profileVersion: answersVersion.profileVersion,

@@ -17,6 +17,7 @@
  * controlled `not_evaluating` result, never a fabricated verification.
  */
 import { bffMutate } from "@lib/bff/handler";
+import { reevaluateAlphaAdmission } from "@lib/compliance/admission-hook";
 import {
   getKycProvider,
   identityInputSchema,
@@ -88,6 +89,15 @@ export const POST = bffMutate<IdentityInput>({
       correlationId: ctx.correlationId,
     });
     const ref = `kyc-session:${outcome.session.referenceId}`;
+    if (outcome.kind === "evaluated" || outcome.kind === "reused") {
+      // Same server-side post-KYC admission evaluation as the webhook path.
+      await reevaluateAlphaAdmission(
+        ctx.auth,
+        ctx.correlationId,
+        "kyc_evaluation",
+        provider,
+      );
+    }
     switch (outcome.kind) {
       case "evaluated":
       case "reused":

@@ -125,6 +125,16 @@
       }
     },
     {
+      "source": "apps/web/app/api/v1/investor/admission/route.ts",
+      "route": "/api/v1/investor/admission",
+      "methods": ["GET"],
+      "purpose": "The caller's Alpha admission state (rule refi.alpha.admission.v1), evaluated on read from current authoritative prerequisite state \u2014 backend cohort/onboarding, eligibility, disclosures, consents; ReFi advisory profile; trusted final KYC evidence; compliance hold. Read-only for the browser; admission never implies AccountAuthorization, brokerage approval, Signal or Managed Paper.",
+      "owner": "investor-bff",
+      "auth": {
+        "GET": "bff-read"
+      }
+    },
+    {
       "source": "apps/web/app/api/v1/investor/allocation/join/route.ts",
       "route": "/api/v1/investor/allocation/join",
       "methods": ["POST"],

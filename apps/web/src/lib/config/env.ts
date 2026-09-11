@@ -252,11 +252,12 @@ const serverSchemaBase = clientSchema.extend({
   SOCURE_WORKFLOW_NAME: z.string().min(1).max(200).optional(),
   SOCURE_ENV: z.enum(["sandbox", "production"]).default("sandbox"),
   /**
-   * Webhook authenticity secret. Socure's exact signing mechanism is a
-   * SOCURE ACCOUNT CONFIGURATION DEPENDENCY (not in the integration guide);
-   * the verifier interface fails closed when this is unset in production.
+   * Webhook authentication: the Bearer credential configured for the
+   * endpoint in the RiskOS™ dashboard (credential comparison, not payload
+   * signing — RiskOS™ documents no HMAC scheme). Founder decision 2026-09-10:
+   * Bearer only. Unset → every delivery is refused; required in production.
    */
-  SOCURE_WEBHOOK_SECRET: z.string().min(16).optional(),
+  SOCURE_WEBHOOK_BEARER_TOKEN: z.string().min(16).optional(),
   /**
    * Enables the mock adapter's server-side test control route. Must never be
    * set on a deployed production tier; the route answers 404 otherwise.
@@ -389,10 +390,10 @@ const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
         fail("SOCURE_API_BASE_URL", "must be a socure.com host");
       }
     }
-    if (env.SOCURE_ENV === "production" && !env.SOCURE_WEBHOOK_SECRET) {
+    if (env.SOCURE_ENV === "production" && !env.SOCURE_WEBHOOK_BEARER_TOKEN) {
       fail(
-        "SOCURE_WEBHOOK_SECRET",
-        "required when SOCURE_ENV=production — webhook authenticity verification must not be skipped",
+        "SOCURE_WEBHOOK_BEARER_TOKEN",
+        "required when SOCURE_ENV=production — webhook Bearer authentication must not be skipped",
       );
     }
     if (env.REFI_ENV === "demo") {
@@ -554,11 +555,11 @@ const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
   if (
     env.REFI_KYC_PROVIDER === "socure" &&
     env.SOCURE_ENV === "production" &&
-    !env.SOCURE_WEBHOOK_SECRET
+    !env.SOCURE_WEBHOOK_BEARER_TOKEN
   ) {
     fail(
-      "SOCURE_WEBHOOK_SECRET",
-      "connected production requires webhook authenticity verification",
+      "SOCURE_WEBHOOK_BEARER_TOKEN",
+      "connected production requires webhook Bearer authentication",
     );
   }
   if (env.REFI_DATA_ADAPTER !== "live") {
@@ -740,7 +741,8 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     SOCURE_API_KEY: process.env["SOCURE_API_KEY"] || undefined,
     SOCURE_WORKFLOW_NAME: process.env["SOCURE_WORKFLOW_NAME"] || undefined,
     SOCURE_ENV: process.env["SOCURE_ENV"] || undefined,
-    SOCURE_WEBHOOK_SECRET: process.env["SOCURE_WEBHOOK_SECRET"] || undefined,
+    SOCURE_WEBHOOK_BEARER_TOKEN:
+      process.env["SOCURE_WEBHOOK_BEARER_TOKEN"] || undefined,
     DEMO_HANDOFF_PRIVATE_KEY_JWK:
       process.env["DEMO_HANDOFF_PRIVATE_KEY_JWK"] || undefined,
     REFI_TRUST_PROXY_HOST: process.env["REFI_TRUST_PROXY_HOST"] || undefined,

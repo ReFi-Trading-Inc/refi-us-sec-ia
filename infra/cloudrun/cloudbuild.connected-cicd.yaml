@@ -32,12 +32,14 @@ steps:
         "us-west1-docker.pkg.dev/refinity-dev/refi-frontend/web:${COMMIT_SHA}-${BUILD_ID}",
       ]
   - id: verify-and-promote
-    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli@sha256:2f2d80f4be75ffb2dc99d2048bd67248b830d1e52eb6a09ac1fa4b05e6e53a91
     entrypoint: /bin/sh
     args:
       - -ec
       - 'exec "$$(gcloud info --format="value(basic.python_location)")" infra/cloudrun/connected-release.py'
     env:
+      # Bundled Python otherwise looks for absent /etc/ssl/cert.pem.
+      - SSL_CERT_FILE=/usr/lib/google-cloud-sdk/lib/third_party/certifi/cacert.pem
       - "CB_BUILD_ID=${BUILD_ID}"
       - "CB_SOURCE_SHA=${COMMIT_SHA}"
       - "CB_BRANCH=${BRANCH_NAME}"

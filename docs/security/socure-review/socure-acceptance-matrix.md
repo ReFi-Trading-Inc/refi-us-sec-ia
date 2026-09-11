@@ -1,0 +1,19 @@
+# Socure Sandbox acceptance matrix and evidence schema
+
+Status: NOT RUN (credentials pending). Automatic Alpha admission is not evaluated in any scenario while PR F/G are held.
+
+## Evidence to retain per scenario
+
+ReFi request id (`refi-kyc-req-…`) · Socure `eval_id` · workflow name/version · provider decision · ReFi mapped state · timestamps (submitted, decided/received) · DocV required (yes/no) · webhook `event_id` (where applicable) · "admission not evaluated (F/G held)" · log-redaction check result (search: SSN pattern `\d{3}-\d{2}-\d{4}`, DOB, street address, `SOCURE_API_KEY` value, Bearer credential value, `docvTransactionToken`, base64 image data) · screenshot only if it contains no Restricted data · PASS/FAIL. **Never** store synthetic SSNs, document images or selfies in the packet.
+
+| Scenario                     | Trigger                                        | Expected ReFi outcome                                                                                                                      | Evidence                                                |
+| ---------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| A Immediate ACCEPT           | synthetic accept identity                      | `passed` (KYC_VERIFIED); evidence record final, provenance `provider_evaluation`; trusted attestation evidence available; **no admission** | request id, eval_id, state, timestamps, redaction check |
+| B REVIEW → DocV → ACCEPT     | synthetic review identity                      | `additional_info_required` → step-up token for owner only → capture → `under_review` → webhook `evaluation_completed` ACCEPT → `passed`    | + event_id, DocV required = yes                         |
+| C REJECT                     | synthetic reject identity                      | `failed` (KYC_REJECTED); support path shown; nothing economic                                                                              | request id, eval_id, state                              |
+| D 429                        | rate-limit trigger                             | `provider_error`, `retryable: true`, state `in_progress`; not a rejection                                                                  | response, state                                         |
+| E 5xx / timeout              | not forceable against Sandbox — fixture-proven | `provider_error` retryable, state `in_progress`                                                                                            | assertion reference                                     |
+| F Invalid webhook credential | missing / wrong Bearer                         | 401; no audit record; state unchanged                                                                                                      | HTTP status                                             |
+| G Duplicate webhook          | re-send same `event_id`                        | 200 `duplicate_event`; no state/history change                                                                                             | outcome, history length                                 |
+| H Conflicting terminal event | REJECT delivered after final ACCEPT            | 200 `conflict_flagged`; state unchanged; record `conflict` set (investigation)                                                             | outcome, record                                         |
+| I Unknown evaluation         | well-formed event, unknown `eval_id`           | 200 `unknown_evaluation`; nothing created                                                                                                  | outcome                                                 |

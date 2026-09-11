@@ -10,6 +10,7 @@ REGION="${REGION:-us-central1}"
 BILLING_ACCOUNT="${BILLING_ACCOUNT:?set BILLING_ACCOUNT=<id>}"
 SA_NAME="socure-sandbox-runtime"
 SA="${SA_NAME}@${PROJECT}.iam.gserviceaccount.com"
+BUILD_SA="socure-sandbox-build@${PROJECT}.iam.gserviceaccount.com"
 run() { echo "+ $*"; if [ "${APPLY:-0}" = "1" ]; then "$@"; fi; }
 
 # 1. Project + billing + APIs
@@ -42,13 +43,16 @@ for s in sandbox-session-secret sandbox-ip-hash-secret sandbox-eligibility-jwt-s
 done
 echo "Phase 2 (founder, outside chat): Socure API key from the RiskOS dashboard; webhook Bearer = UUIDv4 via uuidgen; add as secret versions; then switch service.yaml to REFI_KYC_PROVIDER=socure with the two secret refs, workflow name and public SDK key."
 
-# 5. Build the image (staging tier constants at build time)
+# 5. Build the image (staging tier constants at build time). New projects give the default Cloud Build identity
+#    no permissions, so a dedicated build SA carries roles/cloudbuild.builds.builder (source read, AR push, logs).
+run gcloud iam service-accounts create socure-sandbox-build --display-name "Socure sandbox image build" --project "$PROJECT"
+run gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$BUILD_SA" --role roles/cloudbuild.builds.builder
 # Placeholders resolved here, not by hand: the image tag is the git short SHA and the public base URL is the
 # deterministic Cloud Run URL (https://<service>-<project-number>.<region>.run.app), known once the project exists.
 SHORT_SHA="$(git rev-parse --short=7 HEAD)"
 if [ "${APPLY:-0}" = "1" ]; then PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format 'value(projectNumber)')"; else PROJECT_NUMBER="PROJECT_NUMBER"; fi
 SERVICE_URL="https://refi-socure-sandbox-${PROJECT_NUMBER}.${REGION}.run.app"
-run gcloud builds submit --config infra/gcp/socure-sandbox/cloudbuild.sandbox.yaml --project "$PROJECT" --substitutions "SHORT_SHA=${SHORT_SHA},_PUBLIC_BASE_URL=${SERVICE_URL}" .
+run gcloud builds submit --config infra/gcp/socure-sandbox/cloudbuild.sandbox.yaml --project "$PROJECT" --service-account "projects/$PROJECT/serviceAccounts/$BUILD_SA" --substitutions "SHORT_SHA=${SHORT_SHA},_PUBLIC_BASE_URL=${SERVICE_URL}" .
 
 # 6. Deploy the service from a rendered copy of the manifest (image tag = SHORT_SHA)
 RENDERED="$(mktemp -t socure-sandbox-service.XXXXXX).yaml"

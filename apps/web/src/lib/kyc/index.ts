@@ -64,3 +64,4 @@ export * from "./provider";
 export * from "./provenance";
 export * from "./evidence";
 export * from "./identity-input";
+export { kycEvidenceForAttestation } from "./attestation-evidence";

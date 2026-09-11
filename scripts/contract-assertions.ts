@@ -7296,6 +7296,207 @@ await section(
   );
 }
 
+// ─── Attestation evidence from the production KYC adapter (PR E) ───────────
+{
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const ae = await import("../apps/web/src/lib/kyc/attestation-evidence.ts");
+  const prov = await import("../apps/web/src/lib/kyc/provenance.ts");
+  const fx = await import("../apps/web/src/lib/kyc/socure/fixtures.ts");
+  const client = await import("../apps/web/src/lib/kyc/socure/client.ts");
+  const { SocureKycProvider } =
+    await import("../apps/web/src/lib/kyc/socure/adapter.ts");
+  const { MockKycProvider } =
+    await import("../apps/web/src/lib/kyc/mock-provider.ts");
+  const entity =
+    await import("../apps/web/src/lib/prototype-store/entities/kyc-evaluation.ts");
+  const KEYS = [
+    "REFI_KYC_PROVIDER",
+    "REFI_KYC_MOCK_CONTROLS",
+    "SOCURE_API_BASE_URL",
+    "SOCURE_API_KEY",
+    "SOCURE_WORKFLOW_NAME",
+    "SOCURE_ENV",
+    "SOCURE_WEBHOOK_SECRET",
+  ];
+  const saved: Record<string, string | undefined> = {};
+  for (const k of KEYS) saved[k] = process.env[k];
+  const withEnv = async (
+    over: Record<string, string | undefined>,
+    fn: () => Promise<void>,
+  ) => {
+    for (const [k, v] of Object.entries(over)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    resetServerEnvCacheForTests();
+    try {
+      await fn();
+    } finally {
+      for (const k of KEYS) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+      resetServerEnvCacheForTests();
+    }
+  };
+  const SOCURE_OK = {
+    REFI_KYC_PROVIDER: "socure",
+    REFI_KYC_MOCK_CONTROLS: "0",
+    SOCURE_API_BASE_URL: "https://riskos.sandbox.socure.com",
+    SOCURE_API_KEY: "fixture-api-key-not-real-0123456789",
+    SOCURE_WORKFLOW_NAME: "kyc-fraud-watchlist-docv-fixture",
+    SOCURE_ENV: "sandbox",
+  };
+  const CONSENT_AT = "2026-09-10T00:00:00.000Z";
+  const subject = { authId: "auth-socure-att" };
+
+  await section(
+    "attestation evidence: final provider ACCEPT/REJECT → trusted passed/failed with adapter label, workflow level and opaque session ref; review/pending/error → null; mock → mock provenance; never PII/score/tags",
+    async () => {
+      await withEnv({ ...SOCURE_OK }, async () => {
+        for (const id of [
+          fx.FIXTURE_EVAL_ID_REVIEW,
+          fx.FIXTURE_EVAL_ID_ACCEPT,
+          fx.FIXTURE_EVAL_ID_REJECT,
+        ]) {
+          const owner = await entity.findAuthIdByProviderEvaluation(id);
+          if (owner) await entity.resetKycEvaluationForTests(owner);
+          await entity.clearEvaluationIndexForTests(id);
+        }
+        await entity.resetKycEvaluationForTests(subject.authId);
+        let p = new SocureKycProvider(
+          () => new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV),
+        );
+        assert.equal(
+          await ae.kycEvidenceForAttestation(p, subject),
+          null,
+          "no evaluation → null",
+        );
+        await p.evaluate({
+          subject,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "att-1",
+          correlationId: "att",
+        });
+        assert.equal(
+          await ae.kycEvidenceForAttestation(p, subject),
+          null,
+          "REVIEW (step-up pending) → null, never pending-as-passed",
+        );
+        const reqId = (await entity.getKycEvaluation(subject.authId))!.evidence
+          .providerRequestId!;
+        await p.applyWebhook(
+          fx.webhookEvent({
+            eventId: "550e8400-e29b-41d4-a716-446655440200",
+            requestId: reqId,
+          }),
+          "att-w",
+        );
+        const ev = await ae.kycEvidenceForAttestation(p, subject);
+        assert.ok(
+          ev && prov.isTrustedKycEvidence(ev),
+          "final webhook ACCEPT → trusted evidence",
+        );
+        assert.equal(ev!.normalized.status, "passed");
+        assert.equal(ev!.normalized.provider, "socure-kyc-adapter");
+        assert.equal(ev!.normalized.level, SOCURE_OK.SOCURE_WORKFLOW_NAME);
+        assert.match(ev!.normalized.evidence_ref, /^kyc-session:refi-kyc-/);
+        assert.equal(ev!.source, "production_provider");
+        const text = JSON.stringify(ev);
+        for (const v of [
+          fx.FIXTURE_INDIVIDUAL.given_name,
+          fx.FIXTURE_INDIVIDUAL.email!,
+          "fixture_reason_not_for_users",
+          "fixture_tag_not_for_users",
+          "score",
+        ]) {
+          assert.ok(
+            !text.includes(v),
+            `attestation evidence must not carry ${v}`,
+          );
+        }
+        // REJECT → failed
+        await entity.resetKycEvaluationForTests(subject.authId);
+        await entity.clearEvaluationIndexForTests(fx.FIXTURE_EVAL_ID_REJECT);
+        p = new SocureKycProvider(
+          () => new client.FakeSocureClient(fx.SCRIPT_REJECT),
+        );
+        await p.evaluate({
+          subject,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "att-2",
+          correlationId: "att",
+        });
+        const rej = await ae.kycEvidenceForAttestation(p, subject);
+        assert.ok(
+          rej &&
+            prov.isTrustedKycEvidence(rej) &&
+            rej.normalized.status === "failed",
+        );
+        // provider error → null
+        await entity.resetKycEvaluationForTests(subject.authId);
+        p = new SocureKycProvider(
+          () => new client.FakeSocureClient(fx.SCRIPT_503),
+        );
+        await p.evaluate({
+          subject,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "att-3",
+          correlationId: "att",
+        });
+        assert.equal(
+          await ae.kycEvidenceForAttestation(p, subject),
+          null,
+          "provider error → no evidence",
+        );
+        await entity.resetKycEvaluationForTests(subject.authId);
+      });
+      // mock → mock provenance (refused downstream)
+      await withEnv(
+        { REFI_KYC_PROVIDER: "mock", REFI_KYC_MOCK_CONTROLS: "1" },
+        async () => {
+          const m = new MockKycProvider();
+          await m.reset(subject);
+          const mev = await ae.kycEvidenceForAttestation(m, subject);
+          assert.equal(mev?.source, "mock");
+          assert.equal(prov.isTrustedKycEvidence(mev), false);
+        },
+      );
+      // Pure rule: a record that claims final without provider provenance is never trusted.
+      const { emptyEvidence } =
+        await import("../apps/web/src/lib/kyc/evidence.ts");
+      const forged = {
+        ...emptyEvidence("socure", "passed"),
+        referenceId: "refi-kyc-x",
+        providerEvaluationId: "e",
+        providerDecisionFinal: true,
+        decisionProvenance: "refi_manual_review" as const,
+      };
+      assert.equal(
+        ae.trustedEvidenceFromRecord("socure", forged),
+        null,
+        "manual/other provenance does not become trusted provider evidence here",
+      );
+      const src = readFileSync(
+        join(
+          REPO_ROOT,
+          "apps/web/app/api/v1/investor/profile/v2/attestation/route.ts",
+        ),
+        "utf8",
+      );
+      assert.ok(
+        /kycEvidenceForAttestation\(provider, \{ authId \}\)/.test(src) &&
+          !/mockKycProvenance/.test(src),
+        "the route delegates to the single evidence module",
+      );
+    },
+  );
+}
+
 // ─── Investor Profile v2 is the ONE canonical public questionnaire ──────────
 {
   const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
@@ -7538,14 +7739,26 @@ await section(
                 ? [`${dir}/${d.name}`]
                 : [],
         );
+      const PERMITTED_CALLER = "apps/web/src/lib/kyc/attestation-evidence.ts";
       const runtime = [...walk("apps/web/app"), ...walk("apps/web/src")].filter(
         (x) => x !== f,
       );
       for (const file of runtime) {
         const code = read(file).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+        if (file === PERMITTED_CALLER) {
+          assert.ok(
+            /establishTrustedKycProvenance\s*\(/.test(code) &&
+              /providerDecisionFinal/.test(code) &&
+              /provider_evaluation/.test(code) &&
+              /provider_webhook/.test(code) &&
+              !/socure/i.test(code),
+            "the single permitted caller establishes trust only from a FINAL provider decision and names no vendor",
+          );
+          continue;
+        }
         assert.ok(
           !/establishTrustedKycProvenance\s*\(/.test(code),
-          `${file}: no runtime module may establish trusted KYC provenance (no real provider exists)`,
+          `${file}: only ${PERMITTED_CALLER} may establish trusted KYC provenance`,
         );
         if (/kyc\/provenance|compliance\/attestation-mapping/.test(code)) {
           assert.ok(
@@ -14121,8 +14334,10 @@ await section(
       );
       assert.ok(!/parse:/.test(r), "the route accepts no body");
       assert.ok(
-        /mockKycProvenance\(/.test(r) &&
-          /submitComplianceProfileAttestation\(/.test(r),
+        /kycEvidenceForAttestation\(provider, \{ authId \}\)/.test(r) &&
+          !/mockKycProvenance\(/.test(r) &&
+          !/establishTrustedKycProvenance/.test(r),
+        "the route obtains KYC evidence only through the single evidence module (mock → mock provenance; final provider decision → trusted; otherwise null)",
       );
       const s = strip(
         "apps/web/src/lib/compliance/attestation-submission.ts",

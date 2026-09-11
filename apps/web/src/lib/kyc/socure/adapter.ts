@@ -27,6 +27,7 @@ import {
 } from "../../prototype-store/entities/kyc-evaluation";
 import { getServerEnv } from "../../config/env";
 import type { NormalizedIdentityInput } from "../identity-input";
+import type { KycEvidenceRecord } from "../evidence";
 import {
   TERMINAL_KYC_STATES,
   type KycIdentityEvaluationOutcome,
@@ -418,6 +419,12 @@ export class SocureKycProvider implements KycProviderAdapter {
           errorKind: out.error?.kind ?? "provider_unavailable",
         };
     }
+  }
+
+  /** Provider-neutral evidence for the attestation; null before any evaluation. */
+  async evidenceRecord(subject: KycSubject): Promise<KycEvidenceRecord | null> {
+    const r = await getKycEvaluation(subject.authId);
+    return r ? r.evidence : null;
   }
 
   /** Neutral step-up capability (interface): the DocV transaction token for THIS user only. */

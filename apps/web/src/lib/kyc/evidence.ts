@@ -43,6 +43,8 @@ export interface KycEvidenceRecord {
   schemaVersion: typeof KYC_EVIDENCE_SCHEMA_VERSION;
   /** Adapter kind label (e.g. "socure", "mock"); never a claim of trust by itself. */
   provider: string;
+  /** Opaque ReFi journey reference (`refi-kyc-…`) the evidence belongs to. */
+  referenceId: string | null;
   /** Provider evaluation id (e.g. `eval_id`). Opaque; safe to log. */
   providerEvaluationId: string | null;
   /** OUR customer-defined request id echoed by the provider (`id` / webhook `data.id`). */
@@ -77,6 +79,7 @@ export function emptyEvidence(
   return {
     schemaVersion: KYC_EVIDENCE_SCHEMA_VERSION,
     provider,
+    referenceId: null,
     providerEvaluationId: null,
     providerRequestId: null,
     providerWorkflow: null,

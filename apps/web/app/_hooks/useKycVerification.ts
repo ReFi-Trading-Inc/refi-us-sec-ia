@@ -32,7 +32,8 @@ export interface KycVerificationSession {
 
 export interface KycVerificationView {
   available: boolean;
-  adapter: "mock" | null;
+  /** Adapter kind label; only "mock" ever changes UI (test controls). */
+  adapter: string | null;
   session: KycVerificationSession | null;
   reason?: "provider_unconfigured";
 }

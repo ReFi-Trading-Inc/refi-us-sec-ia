@@ -5295,12 +5295,49 @@ await section(
   const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
 
   await section(
-    "kyc: the frontend boundary is provider-neutral — no vendor name anywhere",
+    "kyc: the frontend boundary is provider-neutral — routes, hooks, pages and copy name no vendor; the neutral modules carry only the adapter-kind label and resolver",
     async () => {
+      // Founder decision 2026-09-10: the selected adapter lives in
+      // lib/kyc/socure/; the neutral boundary may reference it ONLY as the
+      // adapter-kind label (provider.ts) and in the resolver (index.ts).
+      const LABEL_ONLY = new Set([
+        "apps/web/src/lib/kyc/provider.ts",
+        "apps/web/src/lib/kyc/index.ts",
+      ]);
+      const allowedLine =
+        /^\s*(\*|\/\/|\/\*\*)|KYC_ADAPTER_KINDS = \[|import \{ SocureKycProvider \} from "\.\/socure\/adapter"|case "socure":|let socure: SocureKycProvider|socure \?\?= new SocureKycProvider\(\)|return socure;|setSocureProviderForTests\(p: SocureKycProvider \| null\)|socure = p;/;
       for (const f of kycFiles) {
+        const src = read(f);
+        if (!LABEL_ONLY.has(f)) {
+          assert.ok(!VENDOR_NAMES.test(src), `${f} must not name a KYC vendor`);
+          continue;
+        }
+        for (const line of src.split("\n")) {
+          if (VENDOR_NAMES.test(line)) {
+            assert.ok(
+              allowedLine.test(line),
+              `${f}: vendor name outside the adapter-kind label/resolver: ${line.trim()}`,
+            );
+          }
+        }
+      }
+      // No vendor type crosses into the boundary: only the adapter class is imported.
+      const idx = read("apps/web/src/lib/kyc/index.ts");
+      assert.ok(
+        !/from "\.\/socure\/(schemas|mapping|client|errors|fixtures)"/.test(
+          idx,
+        ),
+        "index.ts imports only the adapter class from the vendor directory",
+      );
+      for (const f of [
+        "apps/web/app/api/v1/investor/kyc/verification/route.ts",
+        "apps/web/app/api/v1/investor/kyc/verification/start/route.ts",
+        "apps/web/app/api/v1/investor/onboarding/route.ts",
+        "apps/web/src/lib/compliance/attestation-mapping.ts",
+      ]) {
         assert.ok(
-          !VENDOR_NAMES.test(read(f)),
-          `${f} must not name a KYC vendor`,
+          !/lib\/kyc\/socure|kyc\/socure\//.test(read(f)),
+          `${f} must not import from the vendor adapter directory`,
         );
       }
     },
@@ -5537,6 +5574,868 @@ await section(
       assert.ok(
         !existsSync(join(REPO_ROOT, "packages/api-clients/src/hooks/kyc.ts")),
         "legacy hooks/kyc.ts removed",
+      );
+    },
+  );
+}
+
+// ─── Socure adapter (founder decision 2026-09-10: ReFi-owned KYC, provider Socure) ──
+{
+  const { resetServerEnvCacheForTests, getServerEnv } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const schemas = await import("../apps/web/src/lib/kyc/socure/schemas.ts");
+  const mapping = await import("../apps/web/src/lib/kyc/socure/mapping.ts");
+  const errors = await import("../apps/web/src/lib/kyc/socure/errors.ts");
+  const fx = await import("../apps/web/src/lib/kyc/socure/fixtures.ts");
+  const client = await import("../apps/web/src/lib/kyc/socure/client.ts");
+  const { SocureKycProvider, SOCURE_CONTINUE_PATH } =
+    await import("../apps/web/src/lib/kyc/socure/adapter.ts");
+  const entity =
+    await import("../apps/web/src/lib/prototype-store/entities/kyc-evaluation.ts");
+  const evidence = await import("../apps/web/src/lib/kyc/evidence.ts");
+  const kycIndex = await import("../apps/web/src/lib/kyc/index.ts");
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  const PII_VALUES = [
+    fx.FIXTURE_INDIVIDUAL.given_name,
+    fx.FIXTURE_INDIVIDUAL.family_name,
+    fx.FIXTURE_INDIVIDUAL.date_of_birth!,
+    fx.FIXTURE_INDIVIDUAL.email!,
+    fx.FIXTURE_INDIVIDUAL.phone_number!,
+    fx.FIXTURE_INDIVIDUAL.address.line_1!,
+    fx.FIXTURE_INDIVIDUAL.di_session_token,
+  ];
+  const noPii = (value: unknown, label: string) => {
+    const text = JSON.stringify(value);
+    for (const v of PII_VALUES) {
+      assert.ok(
+        !text.includes(v),
+        `${label} must not contain applicant PII (${v.slice(0, 4)}…)`,
+      );
+    }
+    for (const k of evidence.KYC_EVIDENCE_FORBIDDEN_KEYS) {
+      assert.ok(
+        !new RegExp(`"${k}"\\s*:`).test(text),
+        `${label} must not carry key ${k}`,
+      );
+    }
+  };
+  const SAVED_KEYS = [
+    "REFI_KYC_PROVIDER",
+    "REFI_KYC_MOCK_CONTROLS",
+    "REFI_ENV",
+    "NEXT_PUBLIC_REFI_ENV",
+    "SOCURE_API_BASE_URL",
+    "SOCURE_API_KEY",
+    "SOCURE_WORKFLOW_NAME",
+    "SOCURE_ENV",
+    "SOCURE_WEBHOOK_SECRET",
+    "REFI_INVESTOR_API_CREDENTIAL_MODE",
+  ];
+  const saved: Record<string, string | undefined> = {};
+  for (const k of SAVED_KEYS) saved[k] = process.env[k];
+  const withEnv = async (
+    over: Record<string, string | undefined>,
+    fn: () => Promise<void>,
+  ) => {
+    for (const [k, v] of Object.entries(over)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    resetServerEnvCacheForTests();
+    try {
+      await fn();
+    } finally {
+      for (const k of SAVED_KEYS) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+      resetServerEnvCacheForTests();
+    }
+  };
+  const SOCURE_OK = {
+    REFI_KYC_PROVIDER: "socure",
+    REFI_KYC_MOCK_CONTROLS: "0",
+    SOCURE_API_BASE_URL: "https://riskos.sandbox.socure.com",
+    SOCURE_API_KEY: "fixture-api-key-not-real-0123456789",
+    SOCURE_WORKFLOW_NAME: "kyc-fraud-watchlist-docv-fixture",
+    SOCURE_ENV: "sandbox",
+    SOCURE_WEBHOOK_SECRET: undefined,
+  };
+  const subjectA = { authId: "auth-socure-a" };
+  const subjectB = { authId: "auth-socure-b" };
+  const freshProvider = (fake: InstanceType<typeof client.FakeSocureClient>) =>
+    new SocureKycProvider(() => fake);
+
+  await section(
+    "socure: request schema follows the guide (required given/family/country + one of DOB/phone/address); PII never persists",
+    async () => {
+      assert.equal(
+        schemas.socureIndividualSchema.safeParse(fx.FIXTURE_INDIVIDUAL).success,
+        true,
+      );
+      const {
+        date_of_birth: _d,
+        phone_number: _p,
+        address,
+        ...rest
+      } = fx.FIXTURE_INDIVIDUAL;
+      assert.equal(
+        schemas.socureIndividualSchema.safeParse({
+          ...rest,
+          address: { country: "US" },
+        }).success,
+        false,
+        "at least one of DOB / phone / address line is required",
+      );
+      assert.equal(
+        schemas.socureIndividualSchema.safeParse({
+          ...fx.FIXTURE_INDIVIDUAL,
+          address: { ...address, country: "GB" },
+        }).success,
+        false,
+        "US only",
+      );
+      assert.equal(
+        schemas.socureIndividualSchema.safeParse({
+          ...fx.FIXTURE_INDIVIDUAL,
+          api_key: "x",
+        }).success,
+        false,
+        "strict: unknown applicant keys are refused",
+      );
+      assert.equal(
+        schemas.socureEvaluationRequestSchema.safeParse({
+          workflow: "w",
+          data: { individual: fx.FIXTURE_INDIVIDUAL },
+          base_url: "x",
+        }).success,
+        false,
+      );
+    },
+  );
+
+  await section(
+    "socure: response/webhook schemas validate the documented shapes; malformed answers are refused, extra provider fields tolerated but never copied",
+    async () => {
+      for (const b of [
+        fx.RESPONSE_ACCEPT,
+        fx.RESPONSE_REJECT,
+        fx.RESPONSE_REVIEW_DOCV_PAUSED,
+        fx.RESPONSE_REVIEW_NO_DOCV,
+      ]) {
+        assert.equal(
+          schemas.socureEvaluationResponseSchema.safeParse(b).success,
+          true,
+        );
+      }
+      assert.equal(
+        schemas.socureEvaluationResponseSchema.safeParse(fx.RESPONSE_MALFORMED)
+          .success,
+        false,
+      );
+      assert.equal(
+        schemas.socureEvaluationResponseSchema.safeParse({
+          ...fx.RESPONSE_ACCEPT,
+          extra: { nested: true },
+        }).success,
+        true,
+      );
+      assert.equal(
+        mapping.extractDocvTransactionToken(
+          schemas.socureEvaluationResponseSchema.parse(
+            fx.RESPONSE_REVIEW_DOCV_PAUSED,
+          ),
+        ),
+        fx.FIXTURE_DOCV_TOKEN,
+      );
+      assert.equal(
+        mapping.extractDocvTransactionToken(
+          schemas.socureEvaluationResponseSchema.parse(
+            fx.RESPONSE_REVIEW_NO_DOCV,
+          ),
+        ),
+        null,
+      );
+      for (const w of [
+        fx.WEBHOOK_ACCEPT,
+        fx.WEBHOOK_REJECT,
+        fx.WEBHOOK_UNKNOWN_EVAL,
+      ]) {
+        assert.equal(
+          schemas.socureEvaluationCompletedEventSchema.safeParse(w).success,
+          true,
+        );
+      }
+      assert.equal(
+        schemas.socureEvaluationCompletedEventSchema.safeParse(
+          fx.WEBHOOK_OTHER_EVENT,
+        ).success,
+        false,
+      );
+      assert.equal(
+        schemas.socureWebhookEventSchema.safeParse(fx.WEBHOOK_OTHER_EVENT)
+          .success,
+        true,
+      );
+      assert.equal(
+        schemas.socureEvaluationCompletedEventSchema.safeParse({
+          event_type: "evaluation_completed",
+          data: { id: "x", eval_id: "y" },
+        }).success,
+        false,
+        "decision required",
+      );
+    },
+  );
+
+  await section(
+    "socure: decision mapping — ACCEPT→passed, REJECT→failed, REVIEW+paused+token→additional_info_required (DocV), REVIEW otherwise→under_review; webhook REVIEW never verifies",
+    async () => {
+      const m = (b: unknown) =>
+        mapping.mapSocureEvaluation(
+          schemas.socureEvaluationResponseSchema.parse(b),
+        );
+      assert.deepEqual(m(fx.RESPONSE_ACCEPT), {
+        refiState: "passed",
+        providerDecision: "accept",
+        final: true,
+        docvTransactionToken: null,
+        reviewReason: null,
+      });
+      assert.deepEqual(m(fx.RESPONSE_REJECT), {
+        refiState: "failed",
+        providerDecision: "reject",
+        final: true,
+        docvTransactionToken: null,
+        reviewReason: null,
+      });
+      assert.deepEqual(m(fx.RESPONSE_REVIEW_DOCV_PAUSED), {
+        refiState: "additional_info_required",
+        providerDecision: "review",
+        final: false,
+        docvTransactionToken: fx.FIXTURE_DOCV_TOKEN,
+        reviewReason: "docv_step_up",
+      });
+      assert.deepEqual(m(fx.RESPONSE_REVIEW_NO_DOCV), {
+        refiState: "under_review",
+        providerDecision: "review",
+        final: false,
+        docvTransactionToken: null,
+        reviewReason: "provider_review",
+      });
+      const w = (b: unknown) =>
+        mapping.mapSocureWebhookDecision(
+          schemas.socureEvaluationCompletedEventSchema.parse(b),
+        );
+      assert.deepEqual(w(fx.WEBHOOK_ACCEPT), {
+        refiState: "passed",
+        providerDecision: "accept",
+        final: true,
+      });
+      assert.deepEqual(w(fx.WEBHOOK_REJECT), {
+        refiState: "failed",
+        providerDecision: "reject",
+        final: true,
+      });
+      assert.deepEqual(
+        w({
+          ...fx.WEBHOOK_ACCEPT,
+          data: { ...fx.WEBHOOK_ACCEPT.data, decision: "REVIEW" },
+        }),
+        { refiState: "under_review", providerDecision: "review", final: false },
+      );
+      // Component statuses are derived only from documented aggregates.
+      const c = mapping.deriveComponentStatuses({
+        providerDecision: "review",
+        final: false,
+        docvOccurred: true,
+      });
+      assert.equal(c.documentVerification, "pending");
+      assert.equal(c.liveness, "pending");
+      assert.equal(c.identityVerification, "review");
+      const c2 = mapping.deriveComponentStatuses({
+        providerDecision: "accept",
+        final: true,
+        docvOccurred: false,
+      });
+      assert.equal(c2.documentVerification, "not_evaluated");
+      assert.equal(c2.fraud, "pass");
+    },
+  );
+
+  await section(
+    "socure: error classification — provider failure is never a rejection; 429/5xx/timeout retryable; 401/403 config; 400/404/422 invalid request; messages carry no body",
+    async () => {
+      assert.equal(errors.classifySocureHttpStatus(401).kind, "auth_config");
+      assert.equal(errors.classifySocureHttpStatus(403).kind, "auth_config");
+      assert.equal(
+        errors.classifySocureHttpStatus(429, 30).kind,
+        "rate_limited",
+      );
+      assert.equal(
+        errors.classifySocureHttpStatus(429, 30).retryAfterSeconds,
+        30,
+      );
+      assert.equal(
+        errors.classifySocureHttpStatus(400).kind,
+        "invalid_request",
+      );
+      assert.equal(
+        errors.classifySocureHttpStatus(422).kind,
+        "invalid_request",
+      );
+      assert.equal(
+        errors.classifySocureHttpStatus(503).kind,
+        "provider_unavailable",
+      );
+      assert.equal(errors.classifySocureHttpStatus(500).retryable, true);
+      assert.equal(errors.classifySocureHttpStatus(401).retryable, false);
+      assert.equal(
+        new errors.SocureProviderError("timeout", null).retryable,
+        true,
+      );
+      assert.ok(
+        !errors.SOCURE_ERROR_KINDS.includes("rejected" as never) &&
+          !errors.SOCURE_ERROR_KINDS.includes("review_required" as never),
+        "decisions are not errors",
+      );
+      for (const k of errors.SOCURE_ERROR_KINDS) {
+        const e = new errors.SocureProviderError(k, 500);
+        assert.ok(!/eval_id|given_name|national_id|Bearer/.test(e.message));
+      }
+    },
+  );
+
+  await section(
+    "socure: configuration — all-or-nothing, sandbox/production hosts distinguishable, demo forbidden, native mode forbids mock and permits unconfigured or complete socure; no fallback",
+    async () => {
+      await withEnv({ ...SOCURE_OK }, async () =>
+        assert.doesNotThrow(() => getServerEnv()),
+      );
+      await withEnv({ ...SOCURE_OK, SOCURE_API_KEY: undefined }, async () =>
+        assert.throws(
+          () => getServerEnv(),
+          /Invalid server environment/,
+          "key required",
+        ),
+      );
+      await withEnv(
+        { ...SOCURE_OK, SOCURE_WORKFLOW_NAME: undefined },
+        async () =>
+          assert.throws(
+            () => getServerEnv(),
+            /Invalid server environment/,
+            "workflow required",
+          ),
+      );
+      await withEnv(
+        { ...SOCURE_OK, SOCURE_API_BASE_URL: "https://riskos.socure.com" },
+        async () =>
+          assert.throws(
+            () => getServerEnv(),
+            /Invalid server environment/,
+            "sandbox env must use sandbox host",
+          ),
+      );
+      await withEnv(
+        {
+          ...SOCURE_OK,
+          SOCURE_ENV: "production",
+          SOCURE_WEBHOOK_SECRET: "fixture-webhook-secret-0123456789",
+        },
+        async () =>
+          assert.throws(
+            () => getServerEnv(),
+            /Invalid server environment/,
+            "production must not use sandbox host",
+          ),
+      );
+      await withEnv(
+        {
+          ...SOCURE_OK,
+          SOCURE_ENV: "production",
+          SOCURE_API_BASE_URL: "https://riskos.socure.com",
+        },
+        async () =>
+          assert.throws(
+            () => getServerEnv(),
+            /Invalid server environment/,
+            "production requires webhook secret",
+          ),
+      );
+      await withEnv(
+        {
+          ...SOCURE_OK,
+          SOCURE_ENV: "production",
+          SOCURE_API_BASE_URL: "https://riskos.socure.com",
+          SOCURE_WEBHOOK_SECRET: "fixture-webhook-secret-0123456789",
+        },
+        async () => assert.doesNotThrow(() => getServerEnv()),
+      );
+      await withEnv(
+        { ...SOCURE_OK, SOCURE_API_BASE_URL: "https://evil.example.invalid" },
+        async () =>
+          assert.throws(
+            () => getServerEnv(),
+            /Invalid server environment/,
+            "socure.com hosts only",
+          ),
+      );
+      await withEnv(
+        { ...SOCURE_OK, REFI_ENV: "demo", NEXT_PUBLIC_REFI_ENV: "demo" },
+        async () =>
+          assert.throws(
+            () => getServerEnv(),
+            /Invalid server environment/,
+            "never on demo",
+          ),
+      );
+      // No fallback: unconfigured socure never resolves to the mock.
+      await withEnv(
+        { REFI_KYC_PROVIDER: "unconfigured", SOCURE_API_KEY: undefined },
+        async () => {
+          assert.throws(
+            () => kycIndex.getKycProvider(),
+            kycIndex.KycProviderUnavailableError,
+          );
+          assert.throws(
+            () => client.getSocureClient(),
+            client.SocureUnavailableError,
+          );
+        },
+      );
+      await withEnv({ ...SOCURE_OK }, async () => {
+        assert.equal(kycIndex.getKycProvider().kind, "socure");
+        assert.equal(
+          kycIndex.getMockKycControls(),
+          null,
+          "mock controls never exist under socure",
+        );
+      });
+      const src = read("apps/web/src/lib/kyc/index.ts");
+      assert.ok(
+        !/socure[\s\S]{0,200}MockKycProvider\(\)/.test(
+          src.split('case "socure":')[1] ?? "",
+        ),
+        "socure branch never constructs the mock",
+      );
+      const envSrc = read("apps/web/src/lib/config/env.ts");
+      assert.ok(
+        /REFI_KYC_PROVIDER === "mock"[\s\S]{0,300}must not be "mock" on a connected deployment/.test(
+          envSrc,
+        ),
+        "native mode forbids the mock adapter",
+      );
+      assert.ok(
+        !/NEXT_PUBLIC_SOCURE_API_KEY/.test(envSrc) &&
+          !/NEXT_PUBLIC_SOCURE_API_KEY/.test(read("apps/web/.env.example")),
+        "the API key is never a public env",
+      );
+    },
+  );
+
+  await section(
+    "socure: fake-client evaluation — ACCEPT/REJECT/REVIEW persist provider-neutral evidence (eval_id, workflow, decision, provenance) and never PII; provider errors leave the journey retryable",
+    async () => {
+      await withEnv({ ...SOCURE_OK }, async () => {
+        for (const a of [subjectA, subjectB])
+          await entity.resetKycEvaluationForTests(a.authId);
+        // ACCEPT
+        let fake = new client.FakeSocureClient(fx.SCRIPT_ACCEPT);
+        let p = freshProvider(fake);
+        const start = await p.start(subjectA, "corr-1");
+        assert.equal(start.accepted, true);
+        assert.equal(
+          start.accepted && start.continuePath,
+          SOCURE_CONTINUE_PATH,
+          "continuation is ReFi's own form",
+        );
+        const acc = await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          submissionKey: "sub-1",
+          correlationId: "corr-1",
+        });
+        assert.equal(acc.ok, true);
+        assert.equal(acc.session.state, "passed");
+        assert.equal(fake.requests.length, 1);
+        assert.equal(
+          fake.requests[0]!.request.workflow,
+          SOCURE_OK.SOCURE_WORKFLOW_NAME,
+        );
+        assert.equal(
+          fake.requests[0]!.request.data.individual.di_session_token,
+          fx.FIXTURE_INDIVIDUAL.di_session_token,
+        );
+        const recA = (await entity.getKycEvaluation(subjectA.authId))!;
+        assert.equal(
+          recA.evidence.providerEvaluationId,
+          fx.FIXTURE_EVAL_ID_ACCEPT,
+        );
+        assert.equal(recA.evidence.providerDecision, "accept");
+        assert.equal(recA.evidence.providerDecisionFinal, true);
+        assert.equal(recA.evidence.decisionProvenance, "provider_evaluation");
+        assert.equal(recA.evidence.provider, "socure");
+        assert.equal(
+          recA.evidence.schemaVersion,
+          evidence.KYC_EVIDENCE_SCHEMA_VERSION,
+        );
+        assert.ok(recA.referenceId.startsWith("refi-kyc-"));
+        noPii(recA, "evaluation record (ACCEPT)");
+        assert.equal(
+          await entity.findAuthIdByProviderEvaluation(
+            fx.FIXTURE_EVAL_ID_ACCEPT,
+          ),
+          subjectA.authId,
+        );
+        // passed is terminal: a new submission is refused, no provider call
+        const again = await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          submissionKey: "sub-2",
+          correlationId: "corr-2",
+        });
+        assert.equal(again.ok, false);
+        assert.equal(!again.ok && again.reason, "already_terminal");
+        assert.equal(fake.requests.length, 1);
+        // REJECT (tags never stored)
+        fake = new client.FakeSocureClient(fx.SCRIPT_REJECT);
+        p = freshProvider(fake);
+        const rej = await p.evaluate({
+          subject: subjectB,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          submissionKey: "sub-b1",
+          correlationId: "corr-b",
+        });
+        assert.equal(rej.ok && rej.session.state, "failed");
+        const recB = (await entity.getKycEvaluation(subjectB.authId))!;
+        assert.ok(
+          !JSON.stringify(recB).includes("fixture_tag_not_for_users"),
+          "provider tags are never persisted",
+        );
+        noPii(recB, "evaluation record (REJECT)");
+        // failed is retryable with a NEW evaluation → REVIEW with DocV
+        fake = new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV);
+        p = freshProvider(fake);
+        const rev = await p.evaluate({
+          subject: subjectB,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          submissionKey: "sub-b2",
+          correlationId: "corr-b2",
+        });
+        assert.equal(rev.ok && rev.session.state, "additional_info_required");
+        assert.equal(rev.ok && rev.docvTransactionToken, fx.FIXTURE_DOCV_TOKEN);
+        const recB2 = (await entity.getKycEvaluation(subjectB.authId))!;
+        assert.equal(
+          recB2.evidence.providerEvaluationId,
+          fx.FIXTURE_EVAL_ID_REVIEW,
+        );
+        assert.equal(recB2.evidence.reviewReason, "docv_step_up");
+        assert.equal(recB2.evidence.documentVerification, "pending");
+        assert.equal(await p.docvTokenFor(subjectB), fx.FIXTURE_DOCV_TOKEN);
+        assert.equal(
+          await p.docvTokenFor(subjectA),
+          null,
+          "no token for a user without an active step-up",
+        );
+        // Provider errors: 429, 503, timeout, malformed → journey stays in_progress & retryable; not failed
+        for (const a of [subjectA])
+          await entity.resetKycEvaluationForTests(a.authId);
+        for (const [script, kind, retryable] of [
+          [fx.SCRIPT_429, "rate_limited", true],
+          [fx.SCRIPT_503, "provider_unavailable", true],
+          [fx.SCRIPT_TIMEOUT, "timeout", true],
+          [fx.SCRIPT_MALFORMED, "malformed_response", false],
+          [fx.SCRIPT_401, "auth_config", false],
+          [fx.SCRIPT_400, "invalid_request", false],
+        ] as const) {
+          fake = new client.FakeSocureClient(script);
+          p = freshProvider(fake);
+          const out = await p.evaluate({
+            subject: subjectA,
+            individual: fx.FIXTURE_INDIVIDUAL,
+            submissionKey: `sub-err-${kind}`,
+            correlationId: "corr-e",
+          });
+          assert.equal(out.ok, false);
+          assert.equal(!out.ok && out.reason, "provider_error");
+          assert.equal(!out.ok && out.error?.kind, kind);
+          assert.equal(!out.ok && out.error?.retryable, retryable);
+          assert.equal(
+            out.session.state,
+            "in_progress",
+            `${kind}: never a rejection`,
+          );
+          noPii(out, `outcome (${kind})`);
+        }
+        const recErr = (await entity.getKycEvaluation(subjectA.authId))!;
+        assert.equal(recErr.evidence.providerEvaluationId, null);
+        assert.equal(recErr.lastProviderError?.kind, "invalid_request");
+        noPii(recErr, "evaluation record (errors)");
+      });
+    },
+  );
+
+  await section(
+    "socure: retry safety — same submission key never creates a second provider evaluation; an open (non-final) evaluation is reused; in-flight submission is visible",
+    async () => {
+      await withEnv({ ...SOCURE_OK }, async () => {
+        for (const a of [subjectA, subjectB])
+          await entity.resetKycEvaluationForTests(a.authId);
+        const fake = new client.FakeSocureClient(
+          fx.SCRIPT_REVIEW_DOCV,
+          fx.SCRIPT_ACCEPT,
+        );
+        const p = freshProvider(fake);
+        const first = await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          submissionKey: "dbl",
+          correlationId: "c1",
+        });
+        assert.equal(first.ok && first.reused, false);
+        const second = await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          submissionKey: "dbl",
+          correlationId: "c2",
+        });
+        assert.equal(
+          second.ok && second.reused,
+          true,
+          "double click reuses the answered submission",
+        );
+        const third = await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          submissionKey: "other",
+          correlationId: "c3",
+        });
+        assert.equal(
+          third.ok && third.reused,
+          true,
+          "an open evaluation (DocV pending) is never duplicated by a new key",
+        );
+        assert.equal(
+          fake.requests.length,
+          1,
+          "exactly one provider evaluation",
+        );
+        // In-flight visibility: simulate a crashed submission
+        const rec = (await entity.getKycEvaluation(subjectA.authId))!;
+        await entity.putKycEvaluation({
+          ...rec,
+          submission: {
+            key: "inflight",
+            phase: "submitting",
+            at: rec.updatedAt,
+          },
+        });
+        const inflight = await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          submissionKey: "inflight",
+          correlationId: "c4",
+        });
+        assert.equal(!inflight.ok && inflight.reason, "submission_in_flight");
+        assert.equal(fake.requests.length, 1);
+      });
+    },
+  );
+
+  await section(
+    "socure: webhook idempotency — duplicate event once; same final result safe; conflict flagged; unknown eval creates nothing; no reassignment; no regression of terminal states; REJECT never silently becomes VERIFIED",
+    async () => {
+      await withEnv({ ...SOCURE_OK }, async () => {
+        for (const a of [subjectA, subjectB])
+          await entity.resetKycEvaluationForTests(a.authId);
+        const fake = new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV);
+        const p = freshProvider(fake);
+        await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          submissionKey: "w1",
+          correlationId: "w",
+        });
+        // browser reports capture → under_review (not final)
+        const captured = await p.markDocvCaptured(subjectA, "w-cap");
+        assert.equal(captured?.state, "under_review");
+        // unknown evaluation → nothing created
+        const unknown = await p.applyWebhook(fx.WEBHOOK_UNKNOWN_EVAL, "w-u");
+        assert.equal(unknown.handled && unknown.outcome, "unknown_evaluation");
+        assert.equal(
+          await entity.getKycEvaluation("99999999-9999-9999-9999-999999999999"),
+          null,
+        );
+        // other event types ignored; malformed refused
+        assert.deepEqual(await p.applyWebhook(fx.WEBHOOK_OTHER_EVENT, "w-o"), {
+          handled: false,
+          reason: "ignored_event_type",
+        });
+        assert.deepEqual(await p.applyWebhook({ nope: true }, "w-m"), {
+          handled: false,
+          reason: "malformed",
+        });
+        // final ACCEPT applies once
+        const a1 = await p.applyWebhook(fx.WEBHOOK_ACCEPT, "w-a1");
+        assert.equal(a1.handled && a1.outcome, "applied");
+        let rec = (await entity.getKycEvaluation(subjectA.authId))!;
+        assert.equal(rec.state, "passed");
+        assert.equal(rec.evidence.providerDecisionFinal, true);
+        assert.equal(rec.evidence.decisionProvenance, "provider_webhook");
+        assert.equal(rec.evidence.documentVerification, "pass");
+        assert.ok(
+          rec.evidence.providerReferenceIds.includes(
+            fx.FIXTURE_WEBHOOK_EVENT_ID,
+          ),
+        );
+        assert.ok(rec.docv?.captureCompletedAt);
+        noPii(rec, "record after webhook");
+        // duplicate event id → no change
+        const a2 = await p.applyWebhook(fx.WEBHOOK_ACCEPT, "w-a2");
+        assert.equal(a2.handled && a2.outcome, "duplicate_event");
+        assert.equal(
+          (await entity.getKycEvaluation(subjectA.authId))!.history.length,
+          rec.history.length,
+        );
+        // same eval, same final result, new event id → idempotent
+        const same = await p.applyWebhook(
+          {
+            ...fx.WEBHOOK_ACCEPT,
+            data: {
+              ...fx.WEBHOOK_ACCEPT.data,
+              id: "550e8400-e29b-41d4-a716-4466554400aa",
+            },
+          },
+          "w-s",
+        );
+        assert.equal(same.handled && same.outcome, "idempotent_same_result");
+        assert.equal(
+          (await entity.getKycEvaluation(subjectA.authId))!.state,
+          "passed",
+        );
+        // stale REVIEW after final ACCEPT → ignored
+        const stale = await p.applyWebhook(
+          {
+            ...fx.WEBHOOK_ACCEPT,
+            data: {
+              ...fx.WEBHOOK_ACCEPT.data,
+              id: "550e8400-e29b-41d4-a716-4466554400bb",
+              decision: "REVIEW",
+            },
+          },
+          "w-st",
+        );
+        assert.equal(stale.handled && stale.outcome, "stale_ignored");
+        assert.equal(
+          (await entity.getKycEvaluation(subjectA.authId))!.state,
+          "passed",
+        );
+        // conflicting final REJECT after ACCEPT → flagged, state unchanged
+        const conflict = await p.applyWebhook(
+          {
+            ...fx.WEBHOOK_REJECT,
+            data: {
+              ...fx.WEBHOOK_REJECT.data,
+              id: "550e8400-e29b-41d4-a716-4466554400cc",
+            },
+          },
+          "w-c",
+        );
+        assert.equal(conflict.handled && conflict.outcome, "conflict_flagged");
+        rec = (await entity.getKycEvaluation(subjectA.authId))!;
+        assert.equal(rec.state, "passed");
+        assert.equal(rec.conflict?.providerDecision, "reject");
+        // cannot reassign: user B's record cannot claim A's eval_id
+        const recB = entity.freshKycEvaluation(subjectB.authId, "socure");
+        await assert.rejects(
+          entity.putKycEvaluation({
+            ...recB,
+            evidence: {
+              ...recB.evidence,
+              providerEvaluationId: fx.FIXTURE_EVAL_ID_REVIEW,
+            },
+          }),
+          /another user/,
+        );
+        // REJECT never silently becomes VERIFIED: B fails, then an ACCEPT webhook for B's eval → conflict
+        await entity.resetKycEvaluationForTests(subjectB.authId);
+        const fakeB = new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV);
+        const pB = freshProvider(fakeB);
+        // reuse REVIEW eval id fixture for B requires A's index cleared first
+        await entity.resetKycEvaluationForTests(subjectA.authId);
+        await pB.evaluate({
+          subject: subjectB,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          submissionKey: "b1",
+          correlationId: "b",
+        });
+        const bRej = await pB.applyWebhook(
+          {
+            ...fx.WEBHOOK_REJECT,
+            data: {
+              ...fx.WEBHOOK_REJECT.data,
+              id: "550e8400-e29b-41d4-a716-4466554400dd",
+            },
+          },
+          "b-r",
+        );
+        assert.equal(bRej.handled && bRej.outcome, "applied");
+        assert.equal(
+          (await entity.getKycEvaluation(subjectB.authId))!.state,
+          "failed",
+        );
+        const bAcc = await pB.applyWebhook(
+          {
+            ...fx.WEBHOOK_ACCEPT,
+            data: {
+              ...fx.WEBHOOK_ACCEPT.data,
+              id: "550e8400-e29b-41d4-a716-4466554400ee",
+            },
+          },
+          "b-a",
+        );
+        assert.equal(bAcc.handled && bAcc.outcome, "conflict_flagged");
+        assert.equal(
+          (await entity.getKycEvaluation(subjectB.authId))!.state,
+          "failed",
+          "a final REJECT is not overwritten by a late ACCEPT",
+        );
+        // webhook event records exist for audit
+        assert.equal(
+          (await entity.getWebhookEvent(fx.FIXTURE_WEBHOOK_EVENT_ID))?.outcome,
+          "applied",
+        );
+        for (const a of [subjectA, subjectB])
+          await entity.resetKycEvaluationForTests(a.authId);
+      });
+    },
+  );
+
+  await section(
+    "socure: the real HTTP client is never constructed in tests and never logs; the API key lives only in the Authorization header builder",
+    async () => {
+      const src = read("apps/web/src/lib/kyc/socure/client.ts");
+      assert.ok(!/console\./.test(src), "no logging in the client");
+      assert.equal((src.match(/SOCURE_API_KEY/g) ?? []).length <= 4, true);
+      assert.ok(/Authorization: `Bearer \$\{apiKey\}`/.test(src));
+      for (const f of ["adapter.ts", "mapping.ts", "schemas.ts", "errors.ts"]) {
+        assert.ok(
+          !/console\./.test(read(`apps/web/src/lib/kyc/socure/${f}`)),
+          `${f}: no logging`,
+        );
+      }
+      assert.ok(
+        !/SOCURE_API_KEY|api_key/.test(
+          read("apps/web/src/lib/kyc/socure/adapter.ts"),
+        ),
+        "adapter never touches the key",
+      );
+      // No genuine traffic path in the test run: the client factory is injected.
+      assert.ok(
+        /clientFactory: \(\) => SocureClientLike = getSocureClient/.test(
+          read("apps/web/src/lib/kyc/socure/adapter.ts"),
+        ),
       );
     },
   );

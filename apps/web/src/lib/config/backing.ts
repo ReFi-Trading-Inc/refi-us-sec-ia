@@ -25,6 +25,8 @@ export const ENTITY_MATRIX = {
   "alpha-handoff-jti": ["prototype", "durable"],
   "attestation-submission": ["prototype", "durable"],
   "acknowledgment-challenge": ["prototype", "durable"],
+  "kyc-evaluation": ["prototype", "durable"],
+  "kyc-webhook-event": ["prototype", "durable"],
 } as const satisfies Record<string, readonly BackingMode[]>;
 
 export type EntityId = keyof typeof ENTITY_MATRIX;

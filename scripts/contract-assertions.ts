@@ -885,6 +885,7 @@ await section(
         "saveSignal",
         "startKycVerification",
         "submitComplianceAttestation",
+        "submitKycEvaluation",
         "submitSupportRequest",
         "syncBrokerConnection",
         "updateAccountPrefs",
@@ -6613,6 +6614,268 @@ await section(
         /clientFactory: \(\) => SocureClientLike = getSocureClient/.test(
           read("apps/web/src/lib/kyc/socure/adapter.ts"),
         ),
+      );
+    },
+  );
+}
+
+// ─── KYC evaluation route (PR C: Build Your Own UI, DI token, no client control) ──
+{
+  const ident = await import("../apps/web/src/lib/kyc/identity-input.ts");
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  const GOOD = {
+    submissionKey: crypto.randomUUID(),
+    diSessionToken: "di-session-fixture",
+    givenName: " Jane ",
+    familyName: "Doe",
+    dateOfBirth: "1990-01-01",
+    email: "investor@example.invalid",
+    phoneNumber: "(555) 555-0100",
+    nationalId: "123-45-6789",
+    address: {
+      line1: "1 Fixture Way",
+      locality: "Springfield",
+      region: "IL",
+      postalCode: "62701",
+      country: "US",
+    },
+    consentToVerification: true,
+  };
+
+  await section(
+    "kyc evaluation input: strict browser payload — provider controls are refused, DI token and consent required, PII normalised in memory only",
+    async () => {
+      const ok = ident.identityInputSchema.safeParse(GOOD);
+      assert.equal(
+        ok.success,
+        true,
+        JSON.stringify(ok.success ? null : ok.error.issues),
+      );
+      const n = ident.normalizeIdentityInput(
+        ok.success ? ok.data : (null as never),
+      );
+      assert.equal(n.givenName, "Jane", "trimmed");
+      assert.equal(n.phoneNumber, "+15555550100", "E.164");
+      assert.equal(n.nationalId, "123456789", "digits only");
+      for (const k of ident.FORBIDDEN_CLIENT_CONTROL_KEYS) {
+        assert.equal(
+          ident.identityInputSchema.safeParse({ ...GOOD, [k]: "x" }).success,
+          false,
+          `client-supplied ${k} must be refused`,
+        );
+      }
+      for (const [label, bad] of [
+        ["missing DI token", { ...GOOD, diSessionToken: undefined }],
+        ["empty DI token", { ...GOOD, diSessionToken: "" }],
+        ["consent false", { ...GOOD, consentToVerification: false }],
+        [
+          "under 18",
+          { ...GOOD, dateOfBirth: new Date().toISOString().slice(0, 10) },
+        ],
+        ["non-US", { ...GOOD, address: { ...GOOD.address, country: "CA" } }],
+        ["bad SSN", { ...GOOD, nationalId: "12-345-678" }],
+        ["bad submission key", { ...GOOD, submissionKey: "not-a-uuid" }],
+      ] as const) {
+        assert.equal(
+          ident.identityInputSchema.safeParse(bad).success,
+          false,
+          label,
+        );
+      }
+      const masked = ident.maskIdentityInput(
+        ok.success ? ok.data : (null as never),
+      );
+      assert.deepEqual(
+        Object.values(masked).every((v) => v === "present" || v === "absent"),
+        true,
+      );
+      assert.ok(
+        !JSON.stringify(masked).includes("Jane"),
+        "mask never reveals values",
+      );
+    },
+  );
+
+  await section(
+    "kyc evaluation route: bffMutate, strict parse, no vendor import, server-side config only, response is neutral state, receipts carry no PII",
+    async () => {
+      const src = read("apps/web/app/api/v1/investor/kyc/evaluation/route.ts");
+      assert.ok(
+        /bffMutate<IdentityInput>\(\{/.test(src),
+        "uses the receipted mutation wrapper",
+      );
+      assert.ok(/action: "submitKycEvaluation"/.test(src));
+      assert.ok(
+        /parse: \(body\) => identityInputSchema\.parse\(body\)/.test(src),
+        "strict schema parse",
+      );
+      assert.ok(
+        !/socure|SOCURE_|api_key|apiKey|workflow|SOCURE_API_BASE_URL/i.test(
+          src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""),
+        ),
+        "route names no vendor and reads no provider control",
+      );
+      assert.ok(!/console\./.test(src), "no logging");
+      assert.ok(
+        /references: \[ref\]/.test(src) &&
+          /kyc-session:\$\{outcome\.session\.referenceId\}/.test(src),
+        "receipt references carry only the opaque session ref",
+      );
+      assert.ok(
+        !/givenName|nationalId|dateOfBirth/.test(src.split("apply:")[1] ?? ""),
+        "the apply body never touches identity fields",
+      );
+      assert.ok(
+        /result: "not_evaluating"/.test(src) && /status: 503/.test(src),
+        "unconfigured → controlled 503, no fabricated verification",
+      );
+      assert.ok(
+        /adapter_does_not_evaluate_in_app/.test(src) && /status: 409/.test(src),
+        "mock → 409 not_evaluating",
+      );
+      assert.ok(
+        /outcome\.retryable \? 503 : 502/.test(src),
+        "provider failure is a blocked, retryable answer — never a rejection",
+      );
+      const { InvestorActions } =
+        await import("../apps/web/src/lib/sec203a/actions.ts");
+      assert.ok(
+        (InvestorActions as readonly string[]).includes("submitKycEvaluation"),
+      );
+      const rp = await import("../apps/web/src/lib/sec203a/release-policy.ts");
+      assert.ok(
+        (rp.AUTOMATED_ALPHA_ALLOWED_ACTIONS as readonly string[]).includes(
+          "submitKycEvaluation",
+        ),
+      );
+      const manifest = JSON.parse(
+        read("compliance/API_ROUTE_MANIFEST.json"),
+      ) as { routes: Array<{ route: string; auth: Record<string, string> }> };
+      const entry = manifest.routes.find(
+        (r) => r.route === "/api/v1/investor/kyc/evaluation",
+      );
+      assert.ok(
+        entry && entry.auth["POST"] === "bff-mutate",
+        "manifest classifies the route as bff-mutate",
+      );
+    },
+  );
+
+  await section(
+    "kyc evaluation browser seam: pinned DI SDK behind a typed adapter — initialise once, token only after init, no key → unavailable, no fake token; form posts once to the same-origin BFF; no provider host or server key in the browser",
+    async () => {
+      const pkg = JSON.parse(read("apps/web/package.json")) as {
+        dependencies: Record<string, string>;
+      };
+      assert.equal(
+        pkg.dependencies["@socure-inc/device-risk-sdk"],
+        "2.11.0",
+        "SDK pinned exactly",
+      );
+      const di = await import("../apps/web/app/_lib/kyc/socure-di.ts");
+      let inits = 0;
+      const fake = {
+        initialize: (c: { sdkKey: string }) => {
+          inits += 1;
+          assert.equal(c.sdkKey, "public-sdk-key-fixture");
+        },
+        getSessionToken: () => Promise.resolve("di-token-fixture"),
+      };
+      di.setSocureDiSdkForTests(fake);
+      assert.equal(
+        await di.socureDiSessionToken(),
+        null,
+        "no token before initialisation",
+      );
+      assert.equal(await di.ensureSocureDiInitialized(undefined), "no_key");
+      assert.equal(inits, 0, "no key → the SDK is never initialised");
+      assert.equal(
+        await di.ensureSocureDiInitialized("public-sdk-key-fixture"),
+        "initialized",
+      );
+      assert.equal(
+        await di.ensureSocureDiInitialized("public-sdk-key-fixture"),
+        "already",
+      );
+      assert.equal(
+        await di.ensureSocureDiInitialized("public-sdk-key-fixture"),
+        "already",
+      );
+      assert.equal(inits, 1, "initialise exactly once per page lifetime");
+      assert.equal(di.socureDiInitCount(), 1);
+      assert.equal(
+        await di.ensureSocureDiInitialized("another-key"),
+        "key_mismatch",
+      );
+      assert.equal(await di.socureDiSessionToken(), "di-token-fixture");
+      di.setSocureDiSdkForTests({
+        initialize: () => {},
+        getSessionToken: () => Promise.reject(new Error("x")),
+      });
+      await di.ensureSocureDiInitialized("public-sdk-key-fixture");
+      assert.equal(
+        await di.socureDiSessionToken(),
+        null,
+        "SDK failure → null, never a fabricated token",
+      );
+      di.setSocureDiSdkForTests(null);
+      const wrapper = read("apps/web/app/_lib/kyc/socure-di.ts");
+      assert.ok(
+        /await import\("@socure-inc\/device-risk-sdk"\)/.test(wrapper),
+        "SDK loaded lazily",
+      );
+      assert.ok(
+        /disableNavigationContextTracking: true/.test(wrapper),
+        "no navigation tracking outside the funnel",
+      );
+      assert.ok(
+        !/SOCURE_API_KEY|riskos\./.test(wrapper),
+        "no server key / evaluation host in the browser adapter",
+      );
+      const seam = read("apps/web/app/_lib/kyc/di-session.ts");
+      assert.ok(
+        /NEXT_PUBLIC_SOCURE_SDK_KEY/.test(seam) && !/SOCURE_API_KEY/.test(seam),
+      );
+      for (const f of [
+        "apps/web/app/us/onboarding/kyc/_components/KycIdentityForm.tsx",
+        "apps/web/app/us/onboarding/kyc/page.tsx",
+        "apps/web/app/_hooks/useKycVerification.ts",
+      ]) {
+        assert.ok(
+          !/device-risk-sdk|SigmaDeviceManager/.test(read(f)),
+          `${f}: SDK API stays behind the adapter`,
+        );
+      }
+      const form = read(
+        "apps/web/app/us/onboarding/kyc/_components/KycIdentityForm.tsx",
+      );
+      assert.ok(
+        /useMemo\(\(\) => crypto\.randomUUID\(\), \[\]\)/.test(form),
+        "one idempotency key per mounted form",
+      );
+      assert.ok(
+        /void prepareDiSession\(\);/.test(form) &&
+          /getDiSessionToken\(\)/.test(form) &&
+          /if \(!di\.ok\)/.test(form),
+        "init on mount; submit requires a DI token",
+      );
+      assert.ok(
+        !/fetch\(\s*["']https?:/.test(form) && !/socure/i.test(form),
+        "form never contacts a provider host",
+      );
+      assert.ok(
+        /localStorage|sessionStorage/.test(form) === false,
+        "no client-side persistence of identity values",
+      );
+      const hook = read("apps/web/app/_hooks/useKycVerification.ts");
+      assert.ok(
+        /\/evaluation`/.test(hook) && !/https?:\/\//.test(hook),
+        "hook posts to the same-origin route only",
+      );
+      const page = read("apps/web/app/us/onboarding/kyc/page.tsx");
+      assert.ok(
+        /collectsIdentity/.test(page) && !/socure/i.test(page),
+        "page gates the form on a neutral capability flag",
       );
     },
   );

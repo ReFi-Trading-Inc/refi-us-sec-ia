@@ -51,6 +51,11 @@ export const InvestorActions = [
   // result is submitted later via createComplianceProfileAttestation
   // (refreshProfile-era sequencing), not by this action.
   "startKycVerification",
+  // BFF-only (founder decision 2026-09-10: ReFi-owned KYC, Build Your Own
+  // UI): submit the identity data collected by ReFi's own form to the
+  // configured provider adapter. Receipted; never reaches the trading
+  // backend; the response is provider-neutral product state only.
+  "submitKycEvaluation",
   // BFF-only TEST CONTROL for the mock adapter. Enabled solely by
   // REFI_KYC_MOCK_CONTROLS=1; answers 404 everywhere else.
   "advanceMockKycVerification",

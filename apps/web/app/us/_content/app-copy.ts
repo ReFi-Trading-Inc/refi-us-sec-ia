@@ -306,6 +306,35 @@ export const kycCopy = {
   },
   continueCta: "Continue",
   supportLink: "Contact support",
+  form: {
+    heading: "Confirm your identity",
+    intro:
+      "Enter your legal details exactly as they appear on your government ID. We use them once to verify your identity and do not keep them on file.",
+    givenName: "Legal first name",
+    familyName: "Legal last name",
+    dateOfBirth: "Date of birth",
+    email: "Email",
+    phoneNumber: "Mobile phone",
+    nationalId: "Social Security number",
+    nationalIdHint:
+      "Used only for identity verification. Never stored by ReFi.",
+    line1: "Street address",
+    line2: "Apartment, suite (optional)",
+    locality: "City",
+    region: "State",
+    postalCode: "ZIP code",
+    consent:
+      "I consent to ReFi verifying my identity using the details above, including checks against fraud and watchlist databases.",
+    submit: "Verify my identity",
+    submitting: "Verifying…",
+    diUnavailable:
+      "Identity verification isn't ready in this environment yet. No information has been sent.",
+    providerError:
+      "We couldn't reach our verification partner. Nothing was decided about your identity — please try again shortly.",
+    stepUp:
+      "Additional identity verification is required. You'll be asked to photograph a government ID and take a selfie.",
+    invalid: "Please check the highlighted fields.",
+  },
 } as const;
 
 export const compliancePreviewCopy = {

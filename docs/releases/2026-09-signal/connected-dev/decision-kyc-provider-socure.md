@@ -59,7 +59,7 @@ OpenAPI specs and help-center pages, 2026-09-10). Nothing was invented beyond th
 ## Manual review model (mandate §17)
 
 - Socure `REVIEW` with a DocV step-up: **handled by Socure DocV**; ReFi shows "Additional identity verification required" and launches capture; the final decision arrives by webhook.
-- Final `ACCEPT`: **automatically admits** when the other admission prerequisites hold (superseding the earlier "not to admission itself" wording); otherwise the evaluator waits for them to converge.
+- Final `ACCEPT`: **automatically admits** (ReFi product admission) when the other admission prerequisites hold; otherwise the evaluator waits for them to converge. **The compliance attestation transmits trusted ReFi KYC/compliance evidence to the backend. Whether Daniel requires a separate canonical admission state remains a contract dependency.**
 - Final `REJECT`: stops; investor sees "We could not verify your identity" with a support path; a new evaluation requires a new ReFi submission.
 - `REVIEW` without a step-up, webhook `REVIEW`, `workflow_execution_failed`, or a conflicting final decision after a terminal state: **internal ReFi compliance case** (`under_review` / `conflict` flag on the record). No automated path resolves these; no tooling for the internal case is built yet (not required by the current architecture).
 

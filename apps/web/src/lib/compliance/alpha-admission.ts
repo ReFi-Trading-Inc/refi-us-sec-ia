@@ -60,8 +60,12 @@ export interface AlphaAdmissionPrerequisites {
   authenticatedIdentity: boolean;
   /** Backend account mapping exists for this identity. */
   accountId: string | null;
-  /** Backend onboarding state (cohort/invitation authority is the backend's). */
-  cohort: { ok: boolean; onboardingState: string | null };
+  /** Backend onboarding state (cohort/invitation authority is the backend's) and the positive signal that satisfied the gate. */
+  cohort: {
+    ok: boolean;
+    onboardingState: string | null;
+    signal: string | null;
+  };
   eligibility: { ok: boolean; decisionId: string | null };
   profile: { ok: boolean; version: number };
   disclosures: { delivered: boolean; count: number };
@@ -109,8 +113,34 @@ export function evaluateAlphaAdmission(
   return { state: "admitted", reason: "KYC_ACCEPT_AND_PREREQUISITES_COMPLETE" };
 }
 
-/** Backend onboarding states that mean "not (yet) in the closed-Alpha cohort". */
-const NOT_IN_COHORT = new Set(["WAITLISTED", "INELIGIBLE", "SUSPENDED"]);
+/**
+ * POSITIVE closed-Alpha cohort signal (fail-closed). alpha.3 exposes no
+ * dedicated "alpha eligible" field; the backend `OnboardingStatus.state`
+ * enum is the only contract-backed signal. Per INTEGRATION.md a user reaches
+ * any of the states below only after a backend-issued invitation was
+ * accepted at identity exchange, so these — and ONLY these — are accepted as
+ * cohort evidence. Everything else (WAITLISTED, INELIGIBLE, SUSPENDED, an
+ * unknown/future/malformed/missing value) is NOT in the cohort. The
+ * allowlist is pinned against the vendored contract enum by a contract
+ * assertion, so a new enum value fails closed until reviewed.
+ * BACKEND CONTRACT DEPENDENCY: a dedicated positive cohort field (Daniel).
+ */
+export const ALPHA_COHORT_POSITIVE_STATES = [
+  "INVITED",
+  "IDENTITY_VERIFIED",
+  "PROFILE_REQUIRED",
+  "DISCLOSURE_REQUIRED",
+  "CONSENT_REQUIRED",
+  "READY",
+] as const;
+const COHORT_OK = new Set<string>(ALPHA_COHORT_POSITIVE_STATES);
+
+/** The positive signal, or null when the backend state is not explicit cohort evidence. */
+export function cohortSignalFrom(onboardingState: unknown): string | null {
+  return typeof onboardingState === "string" && COHORT_OK.has(onboardingState)
+    ? `onboarding_state:${onboardingState}`
+    : null;
+}
 
 /**
  * Gather CURRENT prerequisite state from the authorities: backend (cohort,
@@ -123,10 +153,16 @@ export async function gatherAlphaAdmissionPrerequisites(args: {
   provider: KycProviderAdapter | null;
 }): Promise<AlphaAdmissionPrerequisites> {
   const { auth, client, provider } = args;
-  const onboarding = await client.call("getOnboardingStatus");
-  const onboardingState = onboarding.data.data.state;
+  let onboardingState: string | null = null;
+  try {
+    const onboarding = await client.call("getOnboardingStatus");
+    onboardingState = onboarding.data.data.state;
+  } catch {
+    onboardingState = null; // missing/unavailable → no cohort evidence (fail closed)
+  }
   const accountId = auth.accountId ?? null;
-  const cohortOk = accountId !== null && !NOT_IN_COHORT.has(onboardingState);
+  const signal = cohortSignalFrom(onboardingState);
+  const cohortOk = accountId !== null && signal !== null;
 
   let eligibility: AlphaAdmissionPrerequisites["eligibility"] = {
     ok: false,
@@ -222,7 +258,7 @@ export async function gatherAlphaAdmissionPrerequisites(args: {
   return {
     authenticatedIdentity: auth.authId.length > 0,
     accountId,
-    cohort: { ok: cohortOk, onboardingState },
+    cohort: { ok: cohortOk, onboardingState, signal },
     eligibility,
     profile,
     disclosures,
@@ -233,11 +269,16 @@ export async function gatherAlphaAdmissionPrerequisites(args: {
 }
 
 /**
- * Orchestrator used by every prerequisite-changing route and by the
- * admission read: gather → evaluate → record (idempotent). Returns the
- * authoritative record. Never throws on a missing prerequisite.
+ * THE shared entry point: gather → evaluate → atomic record. Invoked at
+ * every server-side boundary where admitted state matters (post-KYC
+ * immediate ACCEPT, final KYC webhook ACCEPT, profile update, consent,
+ * onboarding/admission reads, brokerage connection). Because it always
+ * derives from current authoritative state, a missed earlier evaluation
+ * (e.g. backend unavailable during the webhook) self-heals on the next
+ * boundary — no support intervention. Never throws on a missing
+ * prerequisite.
  */
-export async function runAlphaAdmissionEvaluation(args: {
+export async function ensureAlphaAdmissionEvaluated(args: {
   auth: Pick<AuthContext, "authId" | "accountId">;
   client: InvestorApiReadClient;
   provider: KycProviderAdapter | null;
@@ -256,5 +297,8 @@ export async function runAlphaAdmissionEvaluation(args: {
     trigger: args.trigger,
   });
 }
+
+/** @deprecated alias kept for callers; use ensureAlphaAdmissionEvaluated. */
+export const runAlphaAdmissionEvaluation = ensureAlphaAdmissionEvaluated;
 
 export { getAlphaAdmission };

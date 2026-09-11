@@ -155,6 +155,11 @@ resource "google_cloud_run_v2_service" "frontend" {
   location            = local.region
   deletion_protection = true
   ingress             = "INGRESS_TRAFFIC_ALL"
+  # Cloud Run materializes this service-level block even at zero. Record it
+  # explicitly so refresh does not propose a perpetual no-effect removal.
+  scaling {
+    min_instance_count = 0
+  }
   labels = {
     environment = "dev"
     owner       = "refi-frontend"

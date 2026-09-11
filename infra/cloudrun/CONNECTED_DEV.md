@@ -26,6 +26,10 @@ See [the shared working agreement](../../docs/integration-collaboration.md).
 - Cloud Run scales to zero, at most three instances. One unscheduled runtime
   probe Job verifies the same image/identity without any broker calls.
 
+`REFI_ENV=staging` is the frontend's fail-closed security tier (no developer
+login fallback), not a move to a staging GCP project. The Google environment
+remains `refinity-dev`; the public data adapter is live, not MSW/demo.
+
 Application hosting, builds, images, durable state, secrets, signing and logs are
 Google-hosted. GitHub remains source control. Stytch and Socure remain the selected
 external providers; moving hosting does not replace their integrations.
@@ -113,10 +117,33 @@ The initial standalone probe import failed because Next.js bundles dependencies.
 The corrected built-in-Node/Google-REST probe passed as an execution override in
 `refi-frontend-runtime-check-mhkkj`: atomic named-database create, default
 Datastore API denial, actual KMS signatures and both audience-bound Google
-tokens. Packaging/re-execution of that correction is in progress; only the final
-image checks below close hosting verification. Local typechecks, all contract
+tokens. The final packaged checks below supersede the probe failures and close
+this bounded hosting verification. Local typechecks, all contract
 assertions, investor-boundary checks, focused settings tests and Terraform
 validation pass. These are hosting proofs, not real login/KYC or broker evidence.
+
+Final hosted image and verification (September 11, 2026, about 23:05 UTC):
+
+- Source: `6e5f1be41e1c2445dfa87153c70c5bac7734452b`.
+- Cloud Build: `28a8cfe8-857b-4e1d-87aa-a8ba627f5af6`, SUCCESS.
+- Digest: `sha256:62359b2e009361ea1763da141fe7b2e3c1d61c15c307ea3d23a8f52c16e62500`.
+- Ready revision: `refi-frontend-integration-00002-44h`, 100% traffic.
+- Write/atomicity execution: `refi-frontend-runtime-check-vctzn`, PASS.
+- Independent persisted-read execution: `refi-frontend-runtime-check-qkqsk`, PASS.
+  Both use the packaged probe, actual runtime identity, real named database,
+  actual KMS signatures and Google metadata tokens. The default-database denial
+  uses its correct Datastore API, not a Firestore-mode mismatch as false proof.
+- Final HTTP checks: root/health and both JWKS 200; session/dashboard 401 without
+  authentication; demo 404. Initial same-config login POST was 404/unconfigured.
+- Terraform refresh/plan: **no changes**, including explicit service-level
+  scale-to-zero defaults. No broader IAM or trading-gate changes.
+- GitHub reported no Vercel deployments for this integration commit. Both
+  project-root variants carry the exact branch-only exclusion.
+
+`release.tfvars` pins the verified image. Later documentation/scaling-declaration
+commits do not imply a different application image. FI-001's branch/base is
+established and FI-008's isolated hosting portion is proved; FI-008's backend
+binding and FI-009 user-connected acceptance remain open.
 
 References: [named Firestore databases and scoped IAM](https://docs.cloud.google.com/firestore/native/docs/manage-databases),
 [Cloud Run HTTPS addresses](https://docs.cloud.google.com/run/docs/triggering/https-request),

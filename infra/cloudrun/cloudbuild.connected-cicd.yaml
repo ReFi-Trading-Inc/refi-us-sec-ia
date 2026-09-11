@@ -1,0 +1,48 @@
+# Push trigger: exactly integration/refinity-dev; never main or a PR trigger.
+steps:
+  - id: deployment-tests
+    name: python:3.12-slim
+    entrypoint: python
+    args:
+      [
+        "-m",
+        unittest,
+        discover,
+        "-s",
+        infra/cloudrun,
+        "-p",
+        "test_connected_release.py",
+      ]
+  - id: build-and-test
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - infra/cloudrun/Dockerfile.connected
+      - --build-arg
+      - APP_ORIGIN=https://refi-frontend-integration-182665799543.us-west1.run.app
+      - -t
+      - us-west1-docker.pkg.dev/refinity-dev/refi-frontend/web:${COMMIT_SHA}-${BUILD_ID}
+      - .
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      [
+        push,
+        "us-west1-docker.pkg.dev/refinity-dev/refi-frontend/web:${COMMIT_SHA}-${BUILD_ID}",
+      ]
+  - id: verify-and-promote
+    name: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
+    entrypoint: python3
+    args: [infra/cloudrun/connected-release.py]
+    env:
+      - "CB_BUILD_ID=${BUILD_ID}"
+      - "CB_SOURCE_SHA=${COMMIT_SHA}"
+      - "CB_BRANCH=${BRANCH_NAME}"
+images:
+  - us-west1-docker.pkg.dev/refinity-dev/refi-frontend/web:${COMMIT_SHA}-${BUILD_ID}
+serviceAccount: projects/refinity-dev/serviceAccounts/refi-frontend-build@refinity-dev.iam.gserviceaccount.com
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+timeout: 2400s

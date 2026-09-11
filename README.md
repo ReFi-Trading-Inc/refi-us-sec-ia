@@ -271,7 +271,9 @@ or build settings. Focused tests do not waive the required checks on a merge.
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs typecheck/lint,
 generation, boundary/route/copy checks, unit/conformance tests, secret/dependency
 scans, production-artifact E2E lanes and a build. It is not a configured connected
-GCP deployment pipeline. Do not infer a passing current run from old test counts,
+GCP deployment pipeline. The separate [Cloud Build integration-branch pipeline](infra/cloudrun/CONNECTED_DEV.md#automatic-branch-deployment)
+builds, checks and deploys only `integration/refinity-dev` to the isolated Dev
+service; it does not change main checks or Vercel. Do not infer a passing current run from old test counts,
 this README or simulator results. No suites were rerun for this documentation update.
 
 ## Repository layout

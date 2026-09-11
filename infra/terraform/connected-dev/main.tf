@@ -48,7 +48,7 @@ resource "google_service_account" "runtime" {
 
 resource "google_service_account" "build" {
   account_id   = "refi-frontend-build"
-  display_name = "Refi Trading frontend image builder (no runtime secrets)"
+  display_name = "Refi Trading isolated frontend build and deployment"
 }
 
 resource "google_artifact_registry_repository" "images" {
@@ -245,6 +245,10 @@ resource "google_cloud_run_v2_service" "frontend" {
     }
   }
   depends_on = [google_secret_manager_secret_iam_member.runtime]
+  # CI owns releases; Terraform owns runtime configuration and IAM.
+  lifecycle {
+    ignore_changes = [template[0].containers[0].image, traffic]
+  }
 }
 
 # Only the isolated frontend entry is public. Application authentication remains
@@ -271,6 +275,9 @@ resource "google_cloud_run_v2_job" "runtime_probe" {
   name                = "refi-frontend-runtime-check"
   location            = local.region
   deletion_protection = false
+  lifecycle {
+    ignore_changes = [template[0].template[0].containers[0].image]
+  }
   template {
     template {
       service_account = google_service_account.runtime.email

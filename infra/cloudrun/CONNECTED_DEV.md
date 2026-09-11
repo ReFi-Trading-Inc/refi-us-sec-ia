@@ -13,7 +13,7 @@ See [the shared working agreement](../../docs/integration-collaboration.md).
 - Runtime: `refi-frontend-runtime@refinity-dev.iam.gserviceaccount.com`.
 - Cloud Build builder: `refi-frontend-build@refinity-dev.iam.gserviceaccount.com`.
 - Images: `us-west1-docker.pkg.dev/refinity-dev/refi-frontend/web`, immutable tags
-  per full source commit; deployments pin the resulting digest.
+  per source commit plus build ID for CI retries; deployments pin the digest.
 - Firestore: named **native** database `refi-frontend-integration`; never convert
   or use the project's existing Datastore-mode `(default)` database. An IAM
   condition limits runtime access to the new database.
@@ -41,7 +41,72 @@ gates or production/staging environments are modified. The selected final JWKS
 URL `https://bff-dev.refi.trading/.well-known/jwks.json` is unchanged; this run.app
 address is isolated preparation, not a DNS cutover or silently substituted trust.
 
-## Reproducible deployment
+## Automatic branch deployment
+
+Cloud Build connection `refi-frontend-github` is authorized for
+`ReFi-Trading-Inc/refi-us-sec-ia`; its OAuth secret stays in Secret Manager,
+outside Terraform state. Temporary setup Secret Manager Admin was removed after
+authorization completed. The GitHub App is not a personal SSH key and does not
+change main protection or existing GitHub Actions.
+
+Terraform defines trigger `refi-frontend-integration` in `us-west1`, matching
+**only `^integration/refinity-dev$` pushes**, using
+[`cloudbuild.connected-cicd.yaml`](cloudbuild.connected-cicd.yaml). Documentation
+and Terraform-only changes do not trigger application builds. Terraform changes
+still require an operator-reviewed plan/apply. There is no new main/PR trigger.
+
+Each code push runs release-script unit tests, generated-client build, focused
+durable-store checks, contract assertions, investor boundary checks, and the
+Next.js production build/typecheck. It pushes an immutable SHA/build-ID image,
+then [`connected-release.py`](connected-release.py):
+
+1. Acquires a generation-guarded lock in `gs://refinity-dev-frontend-releases`.
+   Newer deployment-attempt timestamps prevent an older build rolling back a
+   newer one. Builds can run concurrently; only deployment is serialized.
+2. Creates a digest-pinned `candidate` revision with **no serving traffic**.
+   Verifies health, distinct public JWKS and anonymous session/dashboard refusal.
+3. Updates only the isolated probe Job and verifies real native identity,
+   KMS and named-Firestore write/atomicity plus separate-execution persistence.
+4. Promotes the verified revision, checks the normal service URL and records
+   source/build/digest/revision/previous traffic in `current.json` and a versioned
+   per-build receipt. Failed promotion checks restore previous serving traffic.
+
+The builder can update only the existing frontend service/probe Job, act as the
+frontend runtime, and write its images/logs/release receipts. It has no Terraform
+state/IAM administration, backend deployment, broker-secret or game/demo access.
+Deploying code **does** confer the frontend runtime's capabilities: treat write
+access to this integration branch as Dev deployment authority. These hosting
+checks do not certify real user login, KYC, admission or trading acceptance.
+
+Operational commands:
+
+```bash
+# Inspect runs (ordinary pushes start them automatically).
+gcloud builds list --project refinity-dev --region us-west1 --limit=10
+# Retry current integration HEAD after an infrastructure/transient failure.
+gcloud builds triggers run refi-frontend-integration \
+  --branch=integration/refinity-dev --project refinity-dev --region us-west1
+# Actual verified release, not the historical bootstrap image:
+gcloud storage cat gs://refinity-dev-frontend-releases/current.json
+```
+
+Rollback: pause the trigger, wait for/cancel active deployments, then use the
+recorded `previous_traffic` revision(s) with `gcloud run services update-traffic
+refi-frontend-integration --to-revisions=REVISION=100 --project refinity-dev
+--region us-west1`. Verify health and both JWKS before resuming. Revert the bad
+source on this branch before re-enabling automation. **Do not change
+`release.tfvars` expecting a rollback**: it is now only a bootstrap reference;
+Terraform ignores image/traffic fields owned by CI. Never delete databases,
+secrets or keys to roll back.
+
+Cancellation can leave `deployment-lock.json`. Inspect its owning build ID and
+confirm that build has stopped before removing exactly that object using its
+generation precondition. Never break a live lock or erase the watermark/release
+history; retry a new build afterward. Candidate/probe failures leave normal
+service traffic on the prior release; the probe Job may retain the candidate
+image and is updated again by the next release.
+
+## Infrastructure operations and historical bootstrap
 
 Use an authenticated operator (`gcloud auth login`), Terraform and the current
 frontend branch. No downloaded service-account key or persistent access token.
@@ -61,18 +126,18 @@ frontend branch. No downloaded service-account key or persistent access token.
    with `gcloud builds describe ID --project refinity-dev --region us-west1`.
    Do not deploy a failed build. The image includes the public origin at build
    time; no server secrets are provided to the build.
-6. Record the successful build's full image digest in
-   `infra/terraform/connected-dev/release.tfvars` as `image = "...@sha256:..."`.
-   Record source/build/revision evidence here, then repeat plan/review/apply.
+6. First service bootstrap only: put the successful digest in `release.tfvars`
+   as `image = "...@sha256:..."`, then repeat plan/review/apply. For this existing
+   deployment, image/traffic updates are now CI-owned: use the branch pipeline
+   above, not this historical bootstrap procedure.
 7. Check `/api/health`, both public JWKS routes and refusal of unauthenticated
    account/demo/login routes. Run `bash infra/cloudrun/connected-dev.sh check`:
    separate Job executions prove persisted state, atomic create, denial against
    the default database, both actual KMS signers and separate Google audiences.
    Only isolated probe documents are written; no user or trading data is touched.
 
-Rollback: put the previously verified digest in `release.tfvars`, inspect the
-plan and apply. Do not delete Firestore/secrets/keys. Public JWKS must remain
-compatible with the active key bindings across any rollback.
+Public JWKS must remain compatible with active key bindings across any rollback.
+Only infrastructure configuration is applied by Terraform after bootstrap.
 
 ## Explicitly pending before user-connected acceptance
 
@@ -90,16 +155,8 @@ The initial hosting configuration is **not an admitted Alpha release**:
   KYC/profile stores; their owner must complete those paths before acceptance.
 - FI-002..007 contract/adapter and admission work is still open. Hosting does not
   claim login, profile, brokerage, subscription, or trade lifecycle acceptance.
-- Builds/deployments are operator-invoked from the integration branch for now.
-  No push trigger has been attached to main or Zeshan's branches. A Google-hosted
-  GitHub build trigger needs the approved Cloud Build GitHub App connection;
-  keep GitHub credentials out of Terraform and build substitutions.
-  The September 11 connection attempt could not start OAuth: Cloud Build's
-  service agent lacks `secretmanager.secrets.create`/`setIamPolicy` for storing
-  its GitHub authorization. No connection or trigger was created and no
-  project-wide secret administration was granted. Configure scoped authorization
-  storage/app installation before adding a trigger for exactly
-  `^integration/refinity-dev$`; manual Cloud Build already works.
+- Automatic deployment is defined above; its live validation is recorded below.
+  It is separate from the remaining application/backend integration work.
 
 ## Verification record
 
@@ -140,7 +197,7 @@ Final hosted image and verification (September 11, 2026, about 23:05 UTC):
 - GitHub reported no Vercel deployments for this integration commit. Both
   project-root variants carry the exact branch-only exclusion.
 
-`release.tfvars` pins the verified image. Later documentation/scaling-declaration
+`release.tfvars` pins this historical bootstrap image. Later documentation/scaling-declaration
 commits do not imply a different application image. FI-001's branch/base is
 established and FI-008's isolated hosting portion is proved; FI-008's backend
 binding and FI-009 user-connected acceptance remain open.

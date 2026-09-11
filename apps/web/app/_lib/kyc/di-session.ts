@@ -1,51 +1,38 @@
 /**
- * Device-intelligence session token seam (browser).
+ * Device-intelligence session token seam (browser, provider-neutral).
  *
- * The configured provider's browser SDK (installed and initialised with the
- * PUBLIC SDK key at activation time) exposes a session-token function; the
- * onboarding form calls `getDiSessionToken()` immediately before submitting
- * identity data to the same-origin BFF, which forwards it server-side. The
- * browser never calls the provider's evaluation API and never holds the
- * server API key.
+ * The identity form calls `prepareDiSession()` once when it mounts (scoping
+ * device-intelligence collection to the onboarding/KYC funnel) and
+ * `getDiSessionToken()` immediately before submitting identity data to the
+ * same-origin BFF, which forwards the token server-side as
+ * `di_session_token`. The browser never calls the provider's evaluation API
+ * and never holds the server API key.
  *
- * Until the SDK package is installed and the public key configured, this
- * seam reports `unavailable` and the form cannot submit — there is no
- * fallback token and no fake token.
+ * Provider specifics live in `./socure-di.ts`. Without a configured public
+ * SDK key this seam reports `unavailable` — no fake token, no fallback.
  */
-declare global {
-  interface Window {
-    SigmaDeviceManager?: { getSessionToken: () => Promise<string> };
-  }
-}
+import { ensureSocureDiInitialized, socureDiSessionToken } from "./socure-di";
 
 export type DiSessionTokenResult =
   | { ok: true; token: string }
   | { ok: false; reason: "sdk_unavailable" | "sdk_error" };
 
+function publicSdkKey(): string | undefined {
+  return process.env["NEXT_PUBLIC_SOCURE_SDK_KEY"] || undefined;
+}
+
+/** Initialise device intelligence for this funnel (idempotent). */
+export async function prepareDiSession(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  const r = await ensureSocureDiInitialized(publicSdkKey());
+  return r === "initialized" || r === "already";
+}
+
 export async function getDiSessionToken(): Promise<DiSessionTokenResult> {
   if (typeof window === "undefined")
     return { ok: false, reason: "sdk_unavailable" };
-  const manager = window.SigmaDeviceManager;
-  if (!manager || typeof manager.getSessionToken !== "function") {
-    return { ok: false, reason: "sdk_unavailable" };
-  }
-  try {
-    const token = await manager.getSessionToken();
-    if (typeof token !== "string" || token.length === 0) {
-      return { ok: false, reason: "sdk_error" };
-    }
-    return { ok: true, token };
-  } catch {
-    return { ok: false, reason: "sdk_error" };
-  }
-}
-
-/** Test seam: install a fake manager (never used in production builds). */
-export function installFakeDiManagerForTests(token: string | null): void {
-  if (typeof window === "undefined") return;
-  if (token === null) {
-    delete window.SigmaDeviceManager;
-    return;
-  }
-  window.SigmaDeviceManager = { getSessionToken: () => Promise.resolve(token) };
+  const ready = await prepareDiSession();
+  if (!ready) return { ok: false, reason: "sdk_unavailable" };
+  const token = await socureDiSessionToken();
+  return token ? { ok: true, token } : { ok: false, reason: "sdk_error" };
 }

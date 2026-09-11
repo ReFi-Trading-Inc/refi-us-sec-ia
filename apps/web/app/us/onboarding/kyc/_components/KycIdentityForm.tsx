@@ -8,9 +8,12 @@
  *
  * Values live only in component state; nothing is persisted client-side.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, StatusBanner } from "@ui/components";
-import { getDiSessionToken } from "../../../../_lib/kyc/di-session";
+import {
+  getDiSessionToken,
+  prepareDiSession,
+} from "../../../../_lib/kyc/di-session";
 import {
   useSubmitKycEvaluation,
   type KycIdentityFormInput,
@@ -91,6 +94,10 @@ export function KycIdentityForm() {
     consent: false,
   });
   const [diProblem, setDiProblem] = useState<string | null>(null);
+  // Device intelligence is scoped to this funnel: initialise once on mount.
+  useEffect(() => {
+    void prepareDiSession();
+  }, []);
   const [invalid, setInvalid] = useState(false);
 
   const set =

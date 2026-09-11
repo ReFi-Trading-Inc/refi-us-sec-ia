@@ -1,0 +1,86 @@
+# Cloud Run service — Socure Sandbox acceptance (PROPOSAL; not applied).
+# Apply only after founder approval: gcloud run services replace service.yaml --project refi-socure-sandbox --region us-central1
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: socure-sandbox-web
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "2" # two instances on purpose: correctness comes from Firestore, not single-instance semantics
+    spec:
+      serviceAccountName: socure-sandbox-runtime@refi-socure-sandbox.iam.gserviceaccount.com
+      containerConcurrency: 80
+      timeoutSeconds: 60
+      containers:
+        - image: us-central1-docker.pkg.dev/refi-socure-sandbox/refi/socure-sandbox-web:REPLACE_TAG
+          ports:
+            - containerPort: 3000
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          env:
+            # Non-secret configuration (see env.sandbox.example for the full list)
+            - { name: REFI_ENV, value: staging }
+            - { name: NEXT_PUBLIC_REFI_ENV, value: staging }
+            - { name: REFI_DATA_ADAPTER, value: live }
+            - { name: REFI_TRUST_PROXY_HOST, value: "1" }
+            - { name: REFI_AUTH_PROVIDER, value: unconfigured }
+            - { name: REFI_INVESTOR_API_MODE, value: client }
+            - { name: REFI_INVESTOR_API_ALLOW_REMOTE, value: "0" }
+            - { name: FLAG_ALPHA_CLAIM_ROUTE, value: "off" }
+            - { name: REFI_KYC_PROVIDER, value: socure }
+            - { name: REFI_KYC_MOCK_CONTROLS, value: "0" }
+            - { name: SOCURE_ENV, value: sandbox }
+            - {
+                name: SOCURE_API_BASE_URL,
+                value: https://riskos.sandbox.socure.com,
+              }
+            - { name: SOCURE_WORKFLOW_NAME, value: REPLACE_WORKFLOW_NAME }
+            - { name: SOCURE_WEBHOOK_ENFORCE_SENDER_IP, value: "0" }
+            - {
+                name: NEXT_PUBLIC_SOCURE_SDK_KEY,
+                value: REPLACE_PUBLIC_SDK_KEY,
+              }
+            - { name: REFI_BACKING__KYC_EVALUATION, value: durable }
+            - { name: REFI_BACKING__KYC_WEBHOOK_EVENT, value: durable }
+            - { name: GCP_PROJECT_ID, value: refi-socure-sandbox }
+            - { name: ALPHA_HANDOFF_ISSUER, value: refi-alpha-sandbox }
+            - { name: ALPHA_HANDOFF_AUDIENCE, value: refi-socure-sandbox }
+            - {
+                name: ALPHA_HANDOFF_PUBLIC_KEY_JWK,
+                value: "REPLACE_SANDBOX_THROWAWAY_PUBLIC_JWK",
+              }
+            # Secrets — Secret Manager references only; never literal values
+            - name: SOCURE_API_KEY
+              valueFrom:
+                { secretKeyRef: { name: socure-api-key-sandbox, key: latest } }
+            - name: SOCURE_WEBHOOK_BEARER_TOKEN
+              valueFrom:
+                {
+                  secretKeyRef:
+                    { name: socure-webhook-bearer-sandbox, key: latest },
+                }
+            - name: SESSION_SECRET
+              valueFrom:
+                { secretKeyRef: { name: sandbox-session-secret, key: latest } }
+            - name: IP_HASH_SECRET
+              valueFrom:
+                { secretKeyRef: { name: sandbox-ip-hash-secret, key: latest } }
+            - name: ELIGIBILITY_JWT_SECRET
+              valueFrom:
+                {
+                  secretKeyRef:
+                    { name: sandbox-eligibility-jwt-secret, key: latest },
+                }
+            - name: SESSION_JWT_SECRET
+              valueFrom:
+                {
+                  secretKeyRef:
+                    { name: sandbox-session-jwt-secret, key: latest },
+                }

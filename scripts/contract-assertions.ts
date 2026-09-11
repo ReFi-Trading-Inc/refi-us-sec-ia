@@ -6622,6 +6622,32 @@ await section(
       assert.ok(!/console\./.test(src), "no logging in the client");
       assert.equal((src.match(/SOCURE_API_KEY/g) ?? []).length <= 4, true);
       assert.ok(/Authorization: `Bearer \$\{apiKey\}`/.test(src));
+      // Founder decision 2026-09-11: the RiskOS API version is pinned by ONE constant
+      // and sent on every provider request; the string appears nowhere else.
+      assert.equal(client.SOCURE_API_VERSION, "2025-01-01.orion");
+      assert.equal(client.SOCURE_API_VERSION_HEADER, "X-API-Version");
+      assert.ok(
+        /\[SOCURE_API_VERSION_HEADER\]: SOCURE_API_VERSION,/.test(src),
+        "version header sent on the evaluation request",
+      );
+      assert.equal(
+        (src.match(/2025-01-01\.orion/g) ?? []).length,
+        1,
+        "the version string lives in exactly one place",
+      );
+      for (const f of [
+        "adapter.ts",
+        "mapping.ts",
+        "schemas.ts",
+        "errors.ts",
+        "fixtures.ts",
+        "webhook-auth.ts",
+      ]) {
+        assert.ok(
+          !/orion|X-API-Version/.test(read(`apps/web/src/lib/kyc/socure/${f}`)),
+          `${f}: no scattered version string`,
+        );
+      }
       for (const f of ["adapter.ts", "mapping.ts", "schemas.ts", "errors.ts"]) {
         assert.ok(
           !/console\./.test(read(`apps/web/src/lib/kyc/socure/${f}`)),

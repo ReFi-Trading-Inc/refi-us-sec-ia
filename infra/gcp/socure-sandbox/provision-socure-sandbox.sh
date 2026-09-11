@@ -43,10 +43,17 @@ done
 echo "Phase 2 (founder, outside chat): Socure API key from the RiskOS dashboard; webhook Bearer = UUIDv4 via uuidgen; add as secret versions; then switch service.yaml to REFI_KYC_PROVIDER=socure with the two secret refs, workflow name and public SDK key."
 
 # 5. Build the image (staging tier constants at build time)
-run gcloud builds submit --config infra/gcp/socure-sandbox/cloudbuild.sandbox.yaml --project "$PROJECT" .
+# Placeholders resolved here, not by hand: the image tag is the git short SHA and the public base URL is the
+# deterministic Cloud Run URL (https://<service>-<project-number>.<region>.run.app), known once the project exists.
+SHORT_SHA="$(git rev-parse --short=7 HEAD)"
+if [ "${APPLY:-0}" = "1" ]; then PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format 'value(projectNumber)')"; else PROJECT_NUMBER="PROJECT_NUMBER"; fi
+SERVICE_URL="https://refi-socure-sandbox-${PROJECT_NUMBER}.${REGION}.run.app"
+run gcloud builds submit --config infra/gcp/socure-sandbox/cloudbuild.sandbox.yaml --project "$PROJECT" --substitutions "SHORT_SHA=${SHORT_SHA},_PUBLIC_BASE_URL=${SERVICE_URL}" .
 
-# 6. Deploy the service from the manifest (replace REPLACE_* placeholders first)
-run gcloud run services replace infra/gcp/socure-sandbox/service.yaml --project "$PROJECT" --region "$REGION"
+# 6. Deploy the service from a rendered copy of the manifest (image tag = SHORT_SHA)
+RENDERED="$(mktemp -t socure-sandbox-service.XXXXXX).yaml"
+sed "s/REPLACE_TAG/${SHORT_SHA}/" infra/gcp/socure-sandbox/service.yaml > "$RENDERED"
+run gcloud run services replace "$RENDERED" --project "$PROJECT" --region "$REGION"
 run gcloud run services add-iam-policy-binding refi-socure-sandbox --member allUsers --role roles/run.invoker --project "$PROJECT" --region "$REGION"
 run gcloud run services describe refi-socure-sandbox --project "$PROJECT" --region "$REGION" --format "value(status.url)"
 echo "Webhook URL = <status.url>/api/webhooks/kyc/provider (register in RiskOS with the Bearer credential)."

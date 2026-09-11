@@ -113,6 +113,9 @@ importers:
       recharts:
         specifier: ^3.10.0
         version: 3.10.0(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react-is@16.13.1)(react@19.2.8)(redux@5.0.1)
+      stytch:
+        specifier: 14.2.0
+        version: 14.2.0
       viem:
         specifier: ^2.55.8
         version: 2.55.8(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@5.0.10)(zod@4.4.3)
@@ -7541,6 +7544,12 @@ packages:
       }
     hasBin: true
 
+  jose@5.10.0:
+    resolution:
+      {
+        integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==,
+      }
+
   jose@6.2.4:
     resolution:
       {
@@ -9748,6 +9757,13 @@ packages:
       babel-plugin-macros:
         optional: true
 
+  stytch@14.2.0:
+    resolution:
+      {
+        integrity: sha512-7Ws8WpBXNUojPQ2FcrjIBXN3IDwK/cyvDJlySnf4EL7YXpkIrVkyKUq5xoh31l9g/ABzefPQ6w0Pf5w/F7JwlQ==,
+      }
+    engines: { node: ">= 18.0.0" }
+
   sucrase@3.35.1:
     resolution:
       {
@@ -10205,6 +10221,13 @@ packages:
       {
         integrity: sha512-j375ScV60dom+YkPFIfTLcOiPxkN/buHz5GobjLhixFuANaNs3C9l4GmrWqejgXWJ7BbJcFYpTEUkS1Ge8bpZQ==,
       }
+
+  undici@6.28.1:
+    resolution:
+      {
+        integrity: sha512-zWpdTVD54H48CIybL0rWQ3ukpb9d23wM7eH5RtfdmeP70cWHNjtfo7P4vZX+5CoDcO53J4Pu5uXp7lNfjc6DRA==,
+      }
+    engines: { node: ">=18.17" }
 
   unicorn-magic@0.1.0:
     resolution:
@@ -16860,6 +16883,8 @@ snapshots:
 
   jiti@2.6.1: {}
 
+  jose@5.10.0: {}
+
   jose@6.2.4: {}
 
   js-levenshtein@1.1.6: {}
@@ -18256,6 +18281,11 @@ snapshots:
     optionalDependencies:
       "@babel/core": 7.29.7
 
+  stytch@14.2.0:
+    dependencies:
+      jose: 5.10.0
+      undici: 6.28.1
+
   sucrase@3.35.1:
     dependencies:
       "@jridgewell/gen-mapping": 0.3.13
@@ -18542,6 +18572,8 @@ snapshots:
   undici-types@7.28.0: {}
 
   undici-types@8.3.0: {}
+
+  undici@6.28.1: {}
 
   unicorn-magic@0.1.0: {}
 

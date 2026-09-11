@@ -75,14 +75,34 @@ export const RESPONSE_REVIEW_DOCV_PAUSED = {
   eval_id: FIXTURE_EVAL_ID_REVIEW,
   environment_name: "Sandbox",
   data_enrichments: [
-    { response: { data: { other: "ignored" } } },
     {
+      enrichment_name: "OtherEnrichment",
+      response: { data: { other: "ignored" } },
+    },
+    {
+      enrichment_name: "SocureDocRequest",
+      enrichment_provider: "SocureDocRequest",
       response: {
         data: {
           docvTransactionToken: FIXTURE_DOCV_TOKEN,
           url: "https://verify.socure.example.invalid/fixture",
         },
       },
+    },
+  ],
+} as const;
+
+/** REVIEW + paused, but the token sits in a NON-DocV enrichment: not a DocV step-up. */
+export const RESPONSE_REVIEW_TOKEN_WRONG_ENRICHMENT = {
+  decision: "REVIEW",
+  eval_status: "evaluation_paused",
+  status: "ON_HOLD",
+  eval_id: FIXTURE_EVAL_ID_REVIEW,
+  environment_name: "Sandbox",
+  data_enrichments: [
+    {
+      enrichment_name: "SomethingElse",
+      response: { data: { docvTransactionToken: "should-not-be-used" } },
     },
   ],
 } as const;

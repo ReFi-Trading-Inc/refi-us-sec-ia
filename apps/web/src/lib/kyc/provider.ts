@@ -89,6 +89,18 @@ export interface KycProviderAdapter {
     consentTimestamp: string;
     correlationId: string;
   }): Promise<KycIdentityEvaluationOutcome>;
+  /**
+   * Document step-up (provider-hosted capture launched from ReFi's page).
+   * `stepUpToken` returns the provider's capture token for THIS subject only
+   * while a step-up is active; `markStepUpCaptured` records that the browser
+   * finished capture — which is NOT the decision (the provider's
+   * asynchronous final result is).
+   */
+  stepUpToken?(subject: KycSubject): Promise<string | null>;
+  markStepUpCaptured?(
+    subject: KycSubject,
+    correlationId: string,
+  ): Promise<KycVerificationSession | null>;
 }
 
 export type KycIdentityEvaluationOutcome =

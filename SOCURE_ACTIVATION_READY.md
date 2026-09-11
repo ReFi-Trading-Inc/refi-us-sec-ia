@@ -14,3 +14,7 @@
 | Daniel admission contract confirmed?                                                                                  | **NO**                                                                                                                                                   | item 2 of the same message                                                                        |
 | F/G merge-ready?                                                                                                      | **NO**                                                                                                                                                   | held until both Daniel answers; plan in `fg-rebase-plan.md`                                       |
 | GCP connected environment ready?                                                                                      | **NOT REQUIRED YET** for a Sandbox dry run on the current deployment path; **BLOCKED** for the connected BFF (#98 unexecuted, provisioning not approved) |
+
+| Production TPS activated by Socure? | **VERIFY / ACTIVATE WITH SOCURE** | production documents 0 TPS until activated on request; no live traffic before confirmation |
+| Production workflow verified? | **VERIFY BEFORE GO-LIVE** | — |
+| API version pinned (`X-API-Version: 2025-01-01.orion`)? | **NO** | hardening PR pending review |

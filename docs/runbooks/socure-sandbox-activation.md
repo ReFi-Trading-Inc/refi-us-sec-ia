@@ -10,7 +10,7 @@ Preconditions: `main` at or after `abb73d9`; deployment target = the connected B
 2. **Sandbox API key** — RiskOS Dashboard → Developer Workbench → API Keys (Sandbox). Restricted. Never pasted into chat/tickets.
 3. **Public SDK key** — Developer Workbench → SDK Keys. Public by design (reaches the browser).
 4. **Workflow name** — Developer Workbench → Workflows: the environment-specific identifier of the selected KYC + Fraud + Watchlist > DocV Step-Up workflow.
-5. **Webhook Bearer credential** — generate locally: `openssl rand -base64 48` (≥ 32 bytes). Restricted. Never logged.
+5. **Webhook Bearer credential** — a cryptographically random **UUIDv4** generated outside chat (e.g. `uuidgen`), per RiskOS webhook configuration; separate values for Sandbox and Production; Restricted; stored only in Secret Manager; never printed, pasted or committed.
 6. **Webhook subscription** — Developer Workbench → Webhooks → Add: URL `https://<bff-host>/api/webhooks/kyc/provider`, auth **Bearer** = the credential from step 5, events `evaluation_completed` (+ `evaluation_paused`, `workflow_execution_failed` for audit). Use the dashboard "Continue to Test" sample delivery only after step C.
 7. **Sandbox base URL** — `https://riskos.sandbox.socure.com` (must match `SOCURE_ENV=sandbox`; the config invariant refuses any other host).
 

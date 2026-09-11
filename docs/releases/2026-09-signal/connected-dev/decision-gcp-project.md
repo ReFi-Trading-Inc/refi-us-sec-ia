@@ -1,4 +1,23 @@
-# FOUNDER DECISION REQUIRED — GCP project for the connected BFF
+# Connected BFF project decision — refinity-dev selected
+
+**Owner decision, September 11, 2026:** use `refinity-dev/us-west1` with a new,
+isolated Cloud Run service for the existing Next.js application and its BFF.
+Do not create a new project or alter `refi-game-prod`, game/demo services, Vercel
+deployments or existing domain routing. Daniel/ReFinity handles the integration
+branch and connected deployment; both teams merge their changes frequently.
+See the [shared working agreement](../../../integration-collaboration.md).
+
+Frontend and backend share the existing `refinity-*` environment/billing model;
+the name is internal, while the public product/company is **Refi Trading**.
+Zeshan keeps the current Vercel workflow during parallel GCP preparation. Later
+staging/production use `refinity-stg/prod` only after separately approved promotion.
+
+The comparison below is historical rationale, **not an outstanding project
+decision or permission to run its provisioning commands**. Actual service name,
+runtime identity, access/configuration and deployed evidence remain to be
+established; selecting the project does not mean it is deployed.
+
+## Historical proposal — superseded
 
 **Status:** open, 2026-09-09. Blocks provisioning for Daniel's step 1 (runtime
 service account) and step 3 (KMS-backed signer). Does **not** block the code:

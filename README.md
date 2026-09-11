@@ -1,320 +1,355 @@
-# refi-us-sec-ia
+# Refi Trading frontend
 
-> The ReFi.Trading US investor-product shell. A policy-bound trading platform for U.S. investors, structured around SEC Rule 203A-2(e) (Internet Adviser Exemption).
+The public-facing Refi Trading application: investor screens, onboarding and its
+server-side backend-for-frontend (BFF). Repository name: `refi-us-sec-ia`.
+
+**Refi Trading** is the public brand. **Refinity / ReFinity** is the internal
+trading-platform name. This repository is separate from the
+[Refinity trading backend](https://gitlab.com/refinity_dev/refinity-main);
+both systems will share the corresponding `refinity-dev/stg/prod` Google Cloud
+environment and company-managed billing setup. Only Dev is in scope now.
 
 [![CI](https://github.com/ReFi-Trading-Inc/refi-us-sec-ia/actions/workflows/ci.yml/badge.svg)](https://github.com/ReFi-Trading-Inc/refi-us-sec-ia/actions/workflows/ci.yml)
-![Node](https://img.shields.io/badge/node-%E2%89%A520-339933)
-![pnpm](https://img.shields.io/badge/pnpm-11-f69220)
-![Next.js](https://img.shields.io/badge/Next.js-16-000000)
-![TypeScript](https://img.shields.io/badge/TypeScript-6-3178c6)
 
----
+**Start with the [shared integration working agreement](docs/integration-collaboration.md).**
+It defines both teams' ownership, frequent two-way merges, the
+`integration/refinity-dev` branch and deployment isolation. Zeshan continues
+UI/KYC work and his current Vercel workflow while Daniel implements server
+integration and the connected GCP environment.
 
-> [!IMPORTANT]
-> **This README is stale and is being rewritten. Do not use it to establish the
-> current product or backend model.**
->
-> **Product model — being re-baselined.** The launch product is a U.S.
-> long-only, unlevered **direct index** intended to follow the S&P 500,
-> delivered **Signal-only**: personalized, immutable, account-level
-> recommendations with **no execution path**. Managed execution is a separate,
-> later product. The strategy/template framing below, the single-symbol
-> recommendation model, and every Managed and automation surface described in
-> this document are **superseded or out of scope** for that release. The
-> governing documents are Daniel's September 2026 architecture set, listed
-> below; they are **not yet committed to this repository**.
->
-> **Integration mechanics — Phase 2.7 still applies** where the September
-> documents do not supersede it: identity (`identity-ccid`, email-first),
-> BFF↔`investor-api` user assertions, JWKS and rotation, account isolation,
-> disclosure version/hash binding, backend-owned freshness, and the
-> investor/admin boundary.
->
-> | Topic                                                              | Authoritative document                                                                                               |
-> | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-> | Target backend architecture, release boundaries, settled decisions | `arch_migration_overview.md` — request from Daniel                                                                   |
-> | Product model, investor architecture, investor-api surface         | `exec_overview_v2.md` — request from Daniel                                                                          |
-> | Integration direction, Admin Portal rejection, investor-api        | [`docs/phase2-7-daniel-direction-resolution.md`](docs/phase2-7-daniel-direction-resolution.md)                       |
-> | Contract mechanics: assertions, freshness, step-up, Signal surface | [`docs/phase2-7-daniel-contract-mechanics-resolution.md`](docs/phase2-7-daniel-contract-mechanics-resolution.md)     |
-> | Connection mechanics: `amr`, JWKS rotation, idempotency            | [`docs/phase2-7-daniel-connection-mechanics-resolution.md`](docs/phase2-7-daniel-connection-mechanics-resolution.md) |
-> | Dated decision history                                             | [`docs/decisions/DECISION_LOG.md`](docs/decisions/DECISION_LOG.md)                                                   |
->
-> Four reversals to know before reading further: **Admin Portal is not the
-> investor integration path** (a dedicated `investor-api` is); **identity is
-> `identity-ccid` and email-first**, not SIWE, with wallet linking separated
-> from authentication; **risk verdicts are binary** `ALLOW`/`DENY` with no
-> `REVIEW` partition; and **the product is a direct index**, not the legacy
-> RF/RL/D-CQL strategy model.
+## Contents
 
----
+- [Product and architecture](#product-and-architecture)
+- [Current implementation and remaining work](#current-implementation-and-remaining-work)
+- [Work split and delivery plan](#work-split-and-delivery-plan)
+- [Deployment environments](#deployment-environments)
+- [Branch, commit and merge workflow](#branch-commit-and-merge-workflow)
+- [Local development](#local-development)
+- [Testing and CI](#testing-and-ci)
+- [Repository layout](#repository-layout)
+- [Contracts and documentation](#contracts-and-documentation)
+- [Security and support](#security-and-support)
 
-## 🧭 Backend source of truth for Phase 2.6
+## Product and architecture
 
-The current source of truth for the trading backend is **`refinity_dev/refinity-main main @ 9f9dfc9`** and specifically the docs under **`refinity-main/docs/authoritative/*`**. Phase 2.5 docs are retained as historical audit evidence with supersession headers.
+Alpha is a closed, invite-only **automated, long-only SP500-following portfolio**
+using existing Alpaca accounts and user-supplied Trading API credentials.
+It is not a recommendation-only product awaiting a future trading engine.
 
-### If you maintain `refinity-main`, read these first
+Users can complete Refi Trading signup/sign-in and admission before connecting
+Alpaca. Trading additionally requires a ready broker connection, current
+authorization and an explicit portfolio subscription with percentage allocation.
+Paper/live selects the broker environment; Paper does not mean a reduced
+trading lifecycle. Backend-created Alpaca accounts through Broker API are deferred.
 
-| Order | Doc                                                                                                                  | What it gives you                                                                                                          |
-| ----- | -------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| 1     | [`docs/phase2-6-authoritative-source-of-truth.md`](docs/phase2-6-authoritative-source-of-truth.md)                   | The Phase 2.6 source-of-truth declaration with pinned commits and the authority hierarchy.                                 |
-| 2     | [`docs/phase2-6-repo-observation-report.md`](docs/phase2-6-repo-observation-report.md)                               | Evidence-anchored report from inspecting both repos. Conflicts, stale assumptions, validated assumptions.                  |
-| 3     | [`docs/phase2-6-daniel-answer-resolution.md`](docs/phase2-6-daniel-answer-resolution.md)                             | Closes the four Phase 2.5 blockers with your direct answers and the authoritative docs.                                    |
-| 4     | [`docs/phase2-6-signal-to-investor-product-contract-v3.md`](docs/phase2-6-signal-to-investor-product-contract-v3.md) | **Final Contract V3** (authoritative-aligned). Folds in Daniel's 2026-05-30 ratifications.                                 |
-| 4a    | [`docs/phase2-6-contract-v3-plan.md`](docs/phase2-6-contract-v3-plan.md)                                             | Planning evidence for Contract V3.                                                                                         |
-| 5     | [`docs/phase2-6-gap-register-v3-against-authoritative.md`](docs/phase2-6-gap-register-v3-against-authoritative.md)   | **Final Gap Register V3** with severity, owners, surface impact, production-blocker flags, and Daniel-ratification status. |
-| 5a    | [`docs/phase2-6-gap-register-v3-plan.md`](docs/phase2-6-gap-register-v3-plan.md)                                     | Planning evidence for Gap Register V3.                                                                                     |
-| 6     | [`docs/phase2-6-surface-reframing-map.md`](docs/phase2-6-surface-reframing-map.md)                                   | Per-surface reframing against the authoritative backend (all 16 surfaces).                                                 |
-| 7     | [`docs/phase2-6-account-prefs-history-options.md`](docs/phase2-6-account-prefs-history-options.md)                   | The new AccountPrefs history scope — needs your ratification.                                                              |
-| 8     | [`docs/phase2-6-admin-portal-api-consumption-map.md`](docs/phase2-6-admin-portal-api-consumption-map.md)             | Per-endpoint mapping of Admin Portal routes to investor surfaces, with ACL/scoping/cache rules.                            |
-| 9     | [`docs/phase2-6-next-pr-sequence.md`](docs/phase2-6-next-pr-sequence.md)                                             | The 8-PR sequence after this observation branch.                                                                           |
+The application and BFF ship together as one Next.js application:
 
-### Authoritative backend docs (in `refinity-main`)
-
-- `docs/authoritative/executive_overview.md` — system summary with mermaid pipeline diagram
-- `docs/authoritative/frontend_integration_contract.md` — frontend integration contract
-- `docs/authoritative/trade_lifecycle_contract.md` — lifecycle vocabulary and transitions
-- `docs/authoritative/trade_auditability_contract.md` — audit reconstruction patterns
-- `docs/authoritative/trade_lifecycle_retention_legal_hold.md` — retention rules
-
-### SEC-boundary context (unchanged from Phase 2.5)
-
-- [`docs/sec203a-product-boundary.md`](docs/sec203a-product-boundary.md)
-- [`docs/admin-investor-boundary.md`](docs/admin-investor-boundary.md)
-- [`docs/investor-action-taxonomy.md`](docs/investor-action-taxonomy.md)
-
----
-
-## Table of contents
-
-- [What this repo is](#what-this-repo-is)
-- [Why the separation matters](#why-the-separation-matters)
-- [Architecture at a glance](#architecture-at-a-glance)
-- [Project layout](#project-layout)
-- [Doc index](#doc-index) — full per-category reading list
-- [Stack](#stack)
-- [Quick start](#quick-start)
-- [The four enforcement gates](#the-four-enforcement-gates)
-- [Branching and PRs](#branching-and-prs)
-- [Phase status](#phase-status)
-
----
-
-## What this repo is
-
-This is the **investor-facing shell** — the Next.js application, the BFF that fronts it, and the static SEC-boundary controls that constrain both. It is **not** the trading backend.
-
-The trading backend lives in [`gitlab.com/refinity_dev/refinity-main`](https://gitlab.com/refinity_dev/refinity-main) and owns signal generation, portfolio analytics, account-intent generation, risk evaluation, execution policy enforcement, broker lifecycle, and the trade-lifecycle records in Spanner. This repo consumes that backend through a contract boundary documented in [`docs/phase2-5-signal-to-investor-product-contract.md`](docs/phase2-5-signal-to-investor-product-contract.md).
-
-The two repos are intentionally separate. The boundary between them is not a convention — it is **enforced by code, CI, copy, and tests**.
-
----
-
-## Why the separation matters
-
-SEC Rule 203A-2(e) (the Internet Adviser Exemption) requires that recommendations to the investor be **operationally interactive and software-generated**. Three things follow:
-
-1. **No human-in-the-loop on the advice path.** Staff cannot create, alter, approve, or supplement individualized recommendations. There is no founder review, no manual override, no per-trade approval surface. Support helps with the app — never with investment decisions.
-2. **No per-trade investor Accept.** In Managed mode, the investor signs a standing execution policy. After that, eligible recommendations flow to the broker under that policy's guardrails. There is no "Approve for Execution" button by design.
-3. **The investor-product surface and the operator surface are physically separate codebases.** Admin commands — `template.admin`, `target_account_id`, manual rebalances — live in the backend's `admin-portal`. They cannot be referenced anywhere in this repo. This is enforced by [`scripts/tripwire-investor-boundary.ts`](scripts/tripwire-investor-boundary.ts).
-
-The boundary is documented in [`docs/sec203a-product-boundary.md`](docs/sec203a-product-boundary.md) and [`docs/admin-investor-boundary.md`](docs/admin-investor-boundary.md), and is verified by the tripwire (0 violations / 144 scanned files at merge), the contract assertions, and the E2E suite (67 / 67 passing).
-
----
-
-## Architecture at a glance
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  refi-us-sec-ia (this repo)                                     │
-│  ─────────────────────────                                      │
-│                                                                 │
-│  apps/web/app/us/*       ◄── investor UI (Next.js 16, App Router)
-│       │                                                         │
-│       ▼                                                         │
-│  apps/web/app/api/v1/*   ◄── BFF route handlers                 │
-│       │                                                         │
-│       ▼                                                         │
-│  apps/web/src/lib/                                              │
-│    bff/                  ◄── auth, session, CSRF, correlation   │
-│    prototype-store/      ◄── filesystem JSON store for entities │
-│      not yet owned by the upstream backend                      │
-│    sec203a/              ◄── investor-action taxonomy + boundary│
-│                                                                 │
-│  packages/                                                      │
-│    ui/                   ◄── shared component library           │
-│    api-clients/          ◄── OpenAPI-generated client + hooks   │
-│    config/               ◄── shared lint, ts, and blocked-terms │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-                              │  SignalToInvestorProductAdapter
-                              │  (contract boundary; see Contract V2)
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│  gitlab.com/refinity_dev/refinity-main  (separate repo)         │
-│  ─────────────────────────────────────                          │
-│  signals → template.rebalance.intent → account.intent.ready     │
-│  → risk.approved | risk.rejected → orders.cmd → orders.evt      │
-│  → audit.evt                                                    │
-│                                                                 │
-│  Services: inference-worker, portfolio-engine, portfolio-       │
-│  manager, account-intent-builder, risk-engine, exec-gateway,    │
-│  trade-manager, admin-portal                                    │
-└─────────────────────────────────────────────────────────────────┘
+```text
+Investor browser
+  -> Next.js screens and same-origin BFF routes (this repository)
+       -> identity-ccid: verified identity exchange / opaque backend identity
+       -> Investor API: owned accounts, consents, brokerage, portfolio and activity
+            -> Refinity automated trading and reconciliation services
 ```
 
-The contract boundary is defined in [`docs/phase2-5-signal-to-investor-product-contract.md`](docs/phase2-5-signal-to-investor-product-contract.md) (V2, GitLab-aligned). The gap register that tracks open adapter work is [`docs/phase2-5-gap-register-v2-against-gitlab.md`](docs/phase2-5-gap-register-v2-against-gitlab.md).
+Stytch authenticates frontend users. Socure and the frontend's questionnaire/
+compliance logic produce trusted decisions. The trading backend stores the
+attestations and owns canonical admission, account authorization, brokerage
+truth, portfolio automation and trade/audit evidence. Its new independent
+membership/admission projections are still implementation work, not a claim
+that the current onboarding projection already supplies them.
 
----
+KYC evidence, admission, brokerage readiness, commercial entitlement and trading
+authorization are distinct. No browser flag or JWT claim grants account/trading
+authority. The browser does not access Spanner, the Admin Portal or Alpaca
+directly for managed trading; the authenticated BFF uses the supplied contracts.
 
-## Project layout
+Invitation redemption expiry is separate from accepted membership. The agreed
+trial duration is configurable with a three-month default for Paper and live;
+trial start and billing rules still need finalization before enrollment.
+Nonpayment stops ordinary automated trading, not sign-in/history, and does not
+imply liquidation. These admission/entitlement changes belong to the current
+integration work, not the completed frontend baseline.
 
-```
-.
-├── apps/
-│   └── web/                # Next.js 16 investor app + BFF
-│       ├── app/us/         # /us route tree (eligibility, auth, onboarding, app)
-│       ├── app/api/        # BFF route handlers (/api/v1/investor/*)
-│       ├── src/lib/        # bff/, prototype-store/, sec203a/
-│       └── e2e/            # Playwright specs (67 tests)
-├── packages/
-│   ├── ui/                 # shared component library
-│   ├── api-clients/        # OpenAPI-generated client + React Query hooks
-│   └── config/             # shared eslint / tsconfig / blocked-terms
-├── scripts/
-│   ├── tripwire-investor-boundary.ts   # SEC-boundary tripwire
-│   ├── contract-assertions.ts          # taxonomy / receipt / immutability invariants
-│   └── scan-copy.ts                    # blocked-term + placeholder scanner
-├── docs/                   # architecture, contracts, audits (see Doc Index)
-└── .github/workflows/      # CI + staging + prod deploy
-```
+## Current implementation and remaining work
 
----
+Source reviewed at `2051e80` on September 11, 2026. The table describes code in
+that checkout and its existing test coverage, not verification of every deployed
+flow or a fresh CI run.
 
-## Stack
+### Frontend work already implemented
 
-- **App:** Next.js 16 (App Router, Turbopack), React 19, TypeScript 6, Tailwind CSS 3
-- **State:** TanStack Query 5, React Hook Form 7, Zod 4
-- **Auth:** Sign-In With Ethereum (SIWE) via RainbowKit + wagmi, session JWT (`jose`)
-- **API:** OpenAPI-typed client (`openapi-typescript`), MSW for local dev fixtures
-- **Testing:** Playwright 1.5+ (E2E), Vitest 3 (unit), custom contract-assertion script (invariants)
-- **Build:** Turborepo 2, pnpm 11 workspaces
-- **Observability:** Sentry (`@sentry/nextjs`), PostHog
-- **Runtime:** Node 20+, pnpm 11+
+Zeshan's merged work provides substantial foundations to reuse:
 
----
+| Area | Existing implementation |
+| --- | --- |
+| Investor application | Onboarding/profile/KYC/broker screens, account/home/portfolio/recommendation/activity/records-related views, disclosures, preferences, support and demo personas under [`apps/web/app/us`](apps/web/app/us). These are implemented surfaces, not a claim of final UX or live-data acceptance. |
+| Authentication and sessions | Stytch magic-link/OTP adapter, opaque subject mapping, separate identity-bridge assertion, backend identity-result verification, recoverable exchange and durable connected-session/replay storage in [auth](apps/web/src/lib/auth) and [connected-store](apps/web/src/lib/connected-store). |
+| Service authentication | Native Cloud Run Google token providers for separate Identity/Investor audiences, ES256 user assertions, KMS/JWK signing support and JWKS routes. Real runtime bindings still need verification. |
+| Contract-consuming BFF | Strict generated Investor API client, account-scope resolution, brokerage connect/sync/rotation/disconnect handlers, consent/acknowledgment handling, portfolio actions, account projections, Records and SSE in [investor-api](apps/web/src/lib/investor-api). |
+| KYC and attestation | Socure device intelligence/evaluation, DocV and authenticated webhook handling, trusted evidence construction, and durable attestation submission/recovery. [Socure checkpoint](SOCURE_ACTIVATION_READY.md) records merged implementation and pending live acceptance. |
+| Verification and deployment foundation | Vitest/client conformance, Playwright production-artifact lanes, boundary/route/copy checks, a standalone Next.js container and the existing Cloud Run demo deployment. |
 
-## Quick start
+The Socure checkpoint records missing sandbox/account activation and webhook
+configuration at its capture. Provider code exists; genuine provider acceptance
+is not implied. Its older “await Daniel's cohort/project decision” rows have
+since been superseded by the working agreement and decisions summarized here.
+
+### Still to complete
+
+- **Contract adoption:** this checkout actually imports/generates
+  `v1.1.0-alpha.3`; the backend's currently issued package is alpha.4, with
+  funding assessments and corrected recommendation responses. Daniel will
+  integrate the verified current/successor package and its client adapters.
+  The new membership/admission/error corrections are not already delivered.
+- **Backend-owned membership/admission:** replace legacy onboarding/cohort
+  ambiguity with independent canonical reads. The existing setup gate also
+  needs frontend-owned adaptation for “connect Alpaca later.”
+- **Broker and command reliability:** complete backend disconnect/credential
+  retirement and BFF error/retry handling. The current BFF broker input is
+  paper-only; explicit paper/live server support and the frontend selector
+  must align without enabling unauthorized live trading.
+- **Preview and account-data correctness:** distinguish fresh preview requests
+  from retries of saved previews, update recommendation mappings, remove the
+  silent five-page/500-position retrieval limit, and complete funding-notice
+  and activity delivery.
+- **Connected runtime:** provision/configure the separate GCP frontend service,
+  exact service identity, signing/trust, durable non-KYC integration state and
+  real authenticated HTTP/SSE acceptance.
+- **Joint acceptance:** finish basic real KYC and the integrated user experience,
+  then the agreed two-positive/one-negative campaign and final combined release.
+  Positive trading tests require real separate Alpaca Paper accounts and
+  explicit bounded execution authority.
+
+Existing unit/simulator/demo success does not certify a live connected Alpha.
+Do not repeat completed frontend modules or prior backend trade proofs merely
+because their integration acceptance remains open.
+
+## Work split and delivery plan
+
+| Workstream | Owner |
+| --- | --- |
+| UI/UX, screens, copy, navigation and onboarding journeys | Zeshan/frontend team |
+| KYC/Socure/provider flows, questionnaire evaluation and compliance decisions | Zeshan/frontend team |
+| Backend contracts, generated client adoption and non-KYC BFF/server adapters | Daniel/Refinity team |
+| Identity-to-account integration, brokerage commands, allocation/retries, account data and events | Daniel/Refinity team |
+| Connected GCP runtime and cross-system integration verification | Daniel/Refinity team |
+| Shared-file conflicts, interface changes and final combined acceptance | Both teams, with each reviewing its owned area |
+
+Daniel's detailed queue is `FI-001..FI-010` in the backend repository's
+`docs/planning/frontend_contract_delivery_alignment_checklist.md`. It prioritizes
+contract/BFF integration and the connected Dev boundary, followed by entitlement
+and remaining Alpha release gates. This README is an overview, not another queue.
+
+Follow [the full working agreement](docs/integration-collaboration.md) for exact
+scope and milestones. Refinity will not redesign screens, modify KYC decisions,
+rescore questionnaires or take over provider flows. Shared auth/configuration,
+route policies, lockfiles and browser-facing response changes are coordinated.
+
+## Deployment environments
+
+**Vercel remains available to Zeshan during GCP integration.** He does not need
+to move hosting before continuing frontend/KYC development.
+
+| Environment | Current state / plan |
+| --- | --- |
+| Existing Vercel frontend deployments and previews | Continue the frontend team's current workflow. September 11 live checks showed `demo.refi.trading` and `bff-dev.refi.trading` serving from Vercel; the BFF JWKS endpoints returned 503 at that check. These are dated observations, not continuous monitoring. |
+| Existing Cloud Run demo | `refi-game-prod/us-central1`, service `demo-web`. The inspected runtime uses demo data; it is not the connected trading BFF. Leave the game/demo targets and data unchanged. |
+| Connected Dev | A new, separate Next.js application/BFF service in `refinity-dev/us-west1`, alongside the existing trading backend. Daniel owns preparation. Not yet deployed or certified by this README. |
+| Future staging/production | Frontend and backend share `refinity-stg` and `refinity-prod` respectively. No separate frontend project family, provisioning or billing change is authorized now. |
+
+Use separate connected build/deploy configuration, runtime identity, secrets and
+isolated durable state. Do not repurpose
+[`infra/cloudrun/deploy-demo.sh`](infra/cloudrun/deploy-demo.sh): it explicitly
+targets `refi-game-prod/demo-web`. The generic Terraform tree and historical
+deployment guides are implementation inputs, not proof of connected readiness.
+
+Test initially on an isolated address with explicit auth/redirect bindings.
+The selected final Investor assertion JWKS remains
+`https://bff-dev.refi.trading/.well-known/jwks.json`; do not silently change
+that decision or repoint existing domains during setup. Final domain cutover,
+rollback and any eventual Vercel retirement are coordinated after acceptance.
+
+See [deployment isolation and promotion rules](docs/integration-collaboration.md#isolated-connected-deployment)
+and the [demo-only deployment guide](infra/cloudrun/README.md).
+
+## Branch, commit and merge workflow
+
+- `main` is the shared reviewed codebase, not a permanently split product.
+- Daniel uses `integration/refinity-dev`, based on current shared `main`.
+  This is the documented plan; no separate branch announcement/approval is
+  required. The documentation itself does not create that branch.
+- Zeshan keeps his existing feature branches and Vercel flow.
+- Both teams commit/push coherent slices frequently, normally by the end of an
+  active workday, and incorporate each other's completed work regularly.
+  Prefer reviewed slices into `main`, then merge `main` into working branches.
+- Resolve shared-file conflicts with their owners, run focused checks and retain
+  required protected-branch checks. No forced rewriting of shared history.
+- Code merge is not permission to change hosting. Inspect existing automatic
+  deployment triggers; isolate GCP-only settings so shared changes do not force
+  Vercel into an unconfigured native-Google runtime.
+- Use Conventional Commits. Current hooks run `lint-staged` at pre-commit and
+  `commitlint` at commit-msg; this checkout does not contain a pre-push hook.
+  Mark incomplete work/draft PRs honestly and respect any explicit commit/push pause.
+
+Full procedure: [frequent integration in both directions](docs/integration-collaboration.md#frequent-integration-in-both-directions).
+Test the final combined revision before jointly promoting the Google-hosted
+release; neither team waits until launch to reconcile its changes.
+
+## Local development
+
+### Toolchain
+
+Use Node.js **22** to match CI and `pnpm 11.1.2` from `packageManager`.
+The stack is Next.js 16, React 19, TypeScript 6 and Tailwind 3, with Turborepo/
+pnpm workspaces. Stytch is the connected authentication provider; installed
+wallet dependencies do not make SIWE the primary login architecture.
+
+From this repository's root:
 
 ```bash
-pnpm install
+corepack enable
+corepack prepare pnpm@11.1.2 --activate
+pnpm install --frozen-lockfile
+pnpm --filter @refi/api-clients build
 pnpm dev
-# → http://localhost:3000
 ```
 
-Run the full local gate before opening a PR:
+The app normally serves at `http://localhost:3000`. Client generation runs before
+typechecking/builds because generated files are not the contract source.
+
+For local configuration, use [`apps/web/.env.example`](apps/web/.env.example)
+as a reference for an ignored `apps/web/.env.local`; do not overwrite existing
+local settings. Set `NEXT_PUBLIC_API_BASE_URL=http://localhost:3000` for local
+same-origin work rather than retaining the example's historical staging URL.
+Review the actual [environment schema](apps/web/src/lib/config/env.ts);
+some example comments still describe older contract releases.
+
+Local scaffolding can boot without a real trading connection. Unconfigured
+upstream responses are expected until a simulator or approved real environment
+is deliberately configured. Use only synthetic data with local simulators;
+never pass real Alpaca credentials to one. The Playwright harness supplies its
+own isolated fixtures and loopback simulator.
+
+`NEXT_PUBLIC_*` values are browser-visible and baked into the build. Provider
+credentials, signing private keys and session secrets are server-only. Deployed
+connected mode requires persistent signing and durable state, with no mock
+identity/KYC or demo-data fallback. Copying a local example is not deployment
+configuration; do not solve missing live configuration by relaxing those checks.
+
+## Testing and CI
+
+Run the smallest relevant tests while developing. These scripts exist in the
+current manifests:
+
+| Command | Purpose |
+| --- | --- |
+| `pnpm --filter @refi/api-clients build` | Generate clients from the currently pinned contracts. |
+| `pnpm --filter @refi/api-clients test` | Vitest client/boundary/domain suites. |
+| `pnpm --filter @refi/api-clients test:contract` | Packaged conformance tests; Python 3.11+ is needed for the contract tools. |
+| `pnpm typecheck` / `pnpm lint` | Workspace TypeScript/ESLint checks. |
+| `pnpm contract-test` / `pnpm tripwire` | Invariants and investor/admin boundary checks. |
+| `pnpm route-manifest` / `pnpm scan-copy` | Route inventory and copy checks. |
+| `pnpm test` | Contract assertions, tripwire and API-client unit suites. |
+| `pnpm build` | Workspace production build. |
+| `pnpm e2e` | Playwright against a production build/start and isolated fixture backend, not `next dev`. |
+| `pnpm e2e:signal` / `pnpm e2e:demo` | Existing stage-specific regression lanes; their names do not redefine the Alpha product. |
+
+Install Chromium before the first E2E run:
 
 ```bash
-pnpm typecheck       # tsc --noEmit across all workspaces
-pnpm lint            # eslint --max-warnings=0
-pnpm contract-test   # taxonomy + receipt-vs-access-log + immutability invariants
-pnpm tripwire        # SEC 203A-2(e) boundary scan
-pnpm test            # contract-test + tripwire + api-clients vitest
-pnpm scan-copy       # blocked-terms + placeholder scanner
-pnpm e2e             # Playwright E2E (boots Next dev server)
-pnpm build           # next build (catches typed-routes errors local typecheck misses)
+pnpm --filter @refi/web exec playwright install chromium
 ```
 
-The CI workflow ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs the same gates and is required to be green before any merge to `main`.
+Use the CI equivalent `--with-deps` where OS dependencies are needed. Keep local
+servers from occupying the test ports. Review
+[`playwright.config.ts`](apps/web/playwright.config.ts) before changing fixture
+or build settings. Focused tests do not waive the required checks on a merge.
 
----
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs typecheck/lint,
+generation, boundary/route/copy checks, unit/conformance tests, secret/dependency
+scans, production-artifact E2E lanes and a build. It is not a configured connected
+GCP deployment pipeline. Do not infer a passing current run from old test counts,
+this README or simulator results. No suites were rerun for this documentation update.
 
-## The four enforcement gates
+## Repository layout
 
-The investor-product boundary is held by four CI-enforced gates. They are deliberately independent so a regression cannot pass undetected through a single mechanism.
+```text
+apps/web/
+  app/us/                 investor screens and onboarding
+  app/api/                same-origin BFF routes
+  src/lib/auth/           Stytch and identity/session integration
+  src/lib/connected-store/ durable connected security state
+  src/lib/investor-api/   contract-consuming server adapters
+  src/lib/kyc/            frontend-owned KYC/Socure implementation
+  src/lib/compliance/     frontend-owned decision mapping/submission
+  e2e/                    Playwright coverage
+  Dockerfile              standalone Next.js container
+packages/
+  api-clients/            vendored contracts, generated types, strict client/tests
+  ui/                     shared UI components
+  config/                 shared tooling configuration
+infra/                    existing demo and infrastructure configuration
+scripts/                  contract, route and boundary checks
+docs/                     working agreement, integration and dated history
+compliance/               control/evidence documents, not certification claims
+```
 
-| Gate                    | Script                                                                           | What it enforces                                                                                                                                                                                                                |
-| ----------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Tripwire**            | [`scripts/tripwire-investor-boundary.ts`](scripts/tripwire-investor-boundary.ts) | No admin endpoint references, no forbidden investor-action identifiers, no per-trade Accept labels, no `/admin/*` routes in this codebase                                                                                       |
-| **Contract assertions** | [`scripts/contract-assertions.ts`](scripts/contract-assertions.ts)               | Investor-action vs record-access taxonomies stay disjoint; profile snapshots, decision records, and execution-policy versions remain immutable per id; `InvestorActionReceipt` and `RecordAccessLog` remain independent streams |
-| **Copy scan**           | [`scripts/scan-copy.ts`](scripts/scan-copy.ts)                                   | No blocked terms in `_content/*.ts`; no unreplaced `[Bracketed]` placeholders in CI                                                                                                                                             |
-| **E2E boundary specs**  | `apps/web/e2e/*-boundary*.spec.ts`, `support.spec.ts`, `recommendations.spec.ts` | No per-trade Accept / Approve / Submit / staff-approval affordance renders; support classifier blocks SBR-pattern prompts                                                                                                       |
+Prototype/demo stores and legacy modules remain in the tree. Their existence
+does not make them authorities for real connected account or trade state.
 
----
+## Contracts and documentation
 
-## Branching and PRs
+Start with these sources, in order:
 
-- `main` is the integration trunk. CI must be green and the SEC-boundary statement must be in the PR body.
-- Feature branches use the prefix that matches the work — e.g. `phase2-5-*`, `fix-*`, `chore-*`.
-- Commits follow Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`). `commitlint` enforces it.
-- Pre-commit runs `lint-staged` + Prettier. Pre-push runs the full lint + typecheck.
-- Squash-merge is the default. The squash commit subject becomes the `main` history entry.
+1. [Shared integration working agreement](docs/integration-collaboration.md):
+   team scope, branches, merges, environments and milestones.
+2. [Vendored contract pointer](packages/api-clients/contracts/investor-api/CURRENT.json)
+   and [package provenance](packages/api-clients/contracts/investor-api/PACKAGE.md):
+   what this checkout has actually received. Active imports are in
+   [`package.ts`](packages/api-clients/src/investor-api/package.ts) and the
+   [generation command](packages/api-clients/package.json). Verify the referenced
+   files exist; a copied pointer is not proof an operational addendum was supplied.
+3. The trading backend's `contracts/frontend/README.md` and `CURRENT.json`:
+   source of the latest issued handoff. Daniel owns updating the vendor/client
+   together, preserving historical package bytes and documenting migrations.
+4. [Socure integration guide](docs/integrations/socure/IntegrationGuide.md),
+   [activation runbook](docs/runbooks/socure-sandbox-activation.md) and
+   [acceptance matrix](docs/security/socure-review/socure-acceptance-matrix.md):
+   frontend-owned provider implementation and its real acceptance procedure.
+5. [Connected-operation coverage](docs/releases/2026-09-signal/connected-dev/appendix-c-coverage.md)
+   and [activation checkpoint](SOCURE_ACTIVATION_READY.md): dated implementation
+   evidence. Earlier ownership/project/cohort questions are superseded by the
+   current agreement, not instructions to redo completed code.
 
----
+Backend execution/audit specifications live in its `docs/authoritative`;
+the executable delivery queue is its `docs/planning/frontend_contract_delivery_alignment_checklist.md`.
+No private email or raw broker credentials are required to use the contract package.
 
-## Doc index
+Older Phase 2.x, Signal-only, ML/inference, Admin Portal proxy and “Managed later”
+plans are historical context, not current implementation authority. Do not use
+their old commit pins, route suggestions, admission assumptions or legal wording
+to override the current contracts and owner-approved plan. Update implementation
+status when code or connected evidence changes; do not silently change a frozen
+package to match an undocumented behavior.
 
-The documentation is organized as a **control-plane archive**: each doc either codifies a rule, records an audit, or specifies a contract. They are written to be re-read, not just written once.
+## Security and support
 
-### Boundary and control rules
-
-- [`docs/sec203a-product-boundary.md`](docs/sec203a-product-boundary.md) — The SEC Rule 203A-2(e) posture encoded as enforceable product rules.
-- [`docs/admin-investor-boundary.md`](docs/admin-investor-boundary.md) — The impermeable boundary between admin/operator commands and the investor product.
-- [`docs/investor-action-taxonomy.md`](docs/investor-action-taxonomy.md) — Allowed and forbidden investor actions, canonicalised.
-- [`docs/frontend-sec203a-contract-map.md`](docs/frontend-sec203a-contract-map.md) — How the boundary maps onto frontend code.
-- [`docs/bff-prototype-state-contract.md`](docs/bff-prototype-state-contract.md) — The three-bucket rule for entities not yet owned by the upstream backend.
-- [`docs/signal-vs-managed-mode.md`](docs/signal-vs-managed-mode.md) — The two subscription tiers, what differs, what stays the same.
-
-### Contracts (current, Phase 2.5)
-
-- [`docs/phase2-5-signal-to-investor-product-contract.md`](docs/phase2-5-signal-to-investor-product-contract.md) — **Contract V2.** Signal-to-investor-product contract, GitLab-aligned. The authoritative bridge between the trading backend and this shell.
-- [`docs/phase2-5-gap-register-v2-against-gitlab.md`](docs/phase2-5-gap-register-v2-against-gitlab.md) — **Gap Register V2.** Per-gap classification (aligned / adapter-pending / BFF-owned / Daniel-confirm / skeletal).
-
-### Audits and verifications (Phase 2.5)
-
-- [`docs/phase2-5-final-merge-package.md`](docs/phase2-5-final-merge-package.md) — One-stop summary of what shipped in Phase 2.5.
-- [`docs/phase2-5-gitlab-refinity-main-source-verification.md`](docs/phase2-5-gitlab-refinity-main-source-verification.md) — Verification that `refinity-main main @ 0a7d64d` is canonical.
-- [`docs/phase2-5-gitlab-backend-capability-map.md`](docs/phase2-5-gitlab-backend-capability-map.md) — Verified file:line refs, topic names, table columns from the trading backend.
-- [`docs/phase2-5-gitlab-branch-inventory.md`](docs/phase2-5-gitlab-branch-inventory.md) — GitLab branch posture (single-branch trunk).
-- [`docs/phase2-5-frontend-surface-inventory.md`](docs/phase2-5-frontend-surface-inventory.md) — 16 frontend surfaces × route × BFF backing × entity × hook × test.
-- [`docs/phase2-5-surface-to-gitlab-alignment-register.md`](docs/phase2-5-surface-to-gitlab-alignment-register.md) — Per-surface alignment verdict.
-- [`docs/phase2-5-core-alignment-decision.md`](docs/phase2-5-core-alignment-decision.md) — Direct answers to the 16 alignment questions.
-- [`docs/phase2-5-stale-e2e-cleanup.md`](docs/phase2-5-stale-e2e-cleanup.md) — E2E realignment record.
-
-### Phase history
-
-- [`docs/repo-truth-audit.md`](docs/repo-truth-audit.md) — Repo source-of-truth audit.
-- [`docs/phase2-checkpoint-surfaces-1-3.md`](docs/phase2-checkpoint-surfaces-1-3.md) — Phase 2 mid-stage checkpoint.
-- [`docs/phase2-midpoint-architecture-checkpoint.md`](docs/phase2-midpoint-architecture-checkpoint.md) — Phase 2 architecture mid-point.
-- [`docs/current-gaps-register.md`](docs/current-gaps-register.md) — Working gaps register.
-
-### Superseded (kept for historical audit)
-
-- `docs/phase2-5-daniel-*.md`, `docs/phase2-5-signal-contract-live-backend-delta.md` — pre-GitLab assumptions, retained so the audit trail is reconstructible.
-
----
-
-## Phase status
-
-| Phase                                   | Status                                                                                                                                                                                                                                                               |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Phase 1                                 | Boundary, taxonomy, and tripwire established. Shipped.                                                                                                                                                                                                               |
-| Phase 2                                 | Surfaces 1–3 + Exception Review + Disclosure Re-ack + Profile Reactivation + Managed Pause/Resume. Shipped.                                                                                                                                                          |
-| **Phase 2.5**                           | **GitLab backend alignment, Contract V2, Gap Register V2, full E2E green. Shipped on `main`.**                                                                                                                                                                       |
-| **Phase 2.6**                           | **Backend source-of-truth realignment to `refinity-main main @ 9f9dfc9` + `docs/authoritative/*`: Contract V3, Gap Register V3, 16-surface reframing, Admin Portal outbound proxy. Docs on `main`; proxy + PR-D (AccountPrefs History Contract) branches unmerged.** |
-| Phase 3 (Surface 4 / Automation Center) | Blocked on PR-D (AccountPrefs History Contract, Daniel ratification gate) + PR-E (Admin Portal proxy). The four Phase 2.5 Daniel-confirmation items were resolved in Phase 2.6 (see below).                                                                          |
-| Phase 4 (Adapter implementation)        | Blocked on Phase 2.6 PR sequence (PR-E onward).                                                                                                                                                                                                                      |
-| Production                              | Blocked on adapter implementation, durable BFF storage, broker integration, legal/compliance review. (audit-writer + compliance-adapter were de-classified as shell blockers in Gap Register V3 — on-chain audit infra, deferred.)                                   |
-
-The four Phase 2.5 Daniel-confirmation items are resolved in [Phase 2.6 Daniel answer resolution](docs/phase2-6-daniel-answer-resolution.md) (risk verdicts binary ALLOW\|DENY; Spanner-backed template registry; `signal: 0` preserved; no backend per-account ExecutionPolicy). Historical context: [Gap Register V2 §10](docs/phase2-5-gap-register-v2-against-gitlab.md), [Contract V2 §7.2](docs/phase2-5-signal-to-investor-product-contract.md). For how the alpha funnel, the game, and this product connect, see the [system integration map](docs/system-integration-map.md).
-
----
+- Never commit env files, private keys, session tokens, Alpaca credentials or
+  raw KYC evidence. Use approved secret storage; public issue/PR reports are redacted.
+- Keep account ownership, freshness, replay protection, consent binding and
+  independent operational holds enforced. Neither a stored attestation nor an
+  accepted async command is proof of trading authorization or completion.
+- Investor routes cannot expose operator/admin commands, risk overrides or
+  direct order controls. KYC evaluation and compliance decisions remain with
+  their owners; software/test status is not licensing or compliance certification.
+- Report integration issues with the source revision, affected operation, safe
+  correlation ID and sanitized reproduction. Coordinate with Daniel for backend/
+  contract/runtime issues and Zeshan for UI/onboarding/KYC. Security-sensitive
+  material goes through the team's private channel, never a public issue.
+- Avoid repo-wide formatting during scoped integration; `pnpm format` touches
+  multiple file types throughout the repository.
 
 ## License
 
 UNLICENSED — proprietary to ReFi Trading Inc.
-
----
-
-## Contact
-
-For boundary, compliance, or contract questions: open an issue with the `boundary` label. For backend coordination: see [`gitlab.com/refinity_dev/refinity-main`](https://gitlab.com/refinity_dev/refinity-main).

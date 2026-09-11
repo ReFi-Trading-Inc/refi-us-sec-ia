@@ -8,7 +8,7 @@
  * admission. Admission never implies AccountAuthorization.
  */
 import { bffRead } from "@lib/bff/handler";
-import { runAlphaAdmissionEvaluation } from "@lib/compliance/alpha-admission";
+import { ensureAlphaAdmissionEvaluated } from "@lib/compliance/alpha-admission";
 import { investorApiClientFor } from "@lib/investor-api/gateway";
 import { getKycProvider, KycProviderUnavailableError } from "@lib/kyc";
 
@@ -22,7 +22,7 @@ export const GET = bffRead({
     } catch (err) {
       if (!(err instanceof KycProviderUnavailableError)) throw err;
     }
-    const { record } = await runAlphaAdmissionEvaluation({
+    const { record } = await ensureAlphaAdmissionEvaluated({
       auth: ctx.auth,
       client: investorApiClientFor(ctx.auth),
       provider,

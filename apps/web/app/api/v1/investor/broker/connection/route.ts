@@ -17,6 +17,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { bffMutate, bffRead } from "@lib/bff/handler";
+import { reevaluateAlphaAdmission } from "@lib/compliance/admission-hook";
 import { InvestorApiError } from "@refi/api-clients/investor-api";
 import { investorApiClientFor } from "@lib/investor-api/gateway";
 import {
@@ -67,6 +68,13 @@ export const POST = bffMutate<Body>({
   source: "backend",
   parse: (body) => bodySchema.parse(body),
   apply: async (ctx) => {
+    // Alpha-gated boundary: re-derive admission from current authoritative
+    // state (self-heals a missed webhook-side evaluation) before proceeding.
+    await reevaluateAlphaAdmission(
+      ctx.auth,
+      ctx.correlationId,
+      "brokerage_connection",
+    );
     const client = investorApiClientFor(ctx.auth);
     let accountId: string;
     try {

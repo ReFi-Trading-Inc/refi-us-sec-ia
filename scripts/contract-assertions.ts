@@ -8160,6 +8160,530 @@ await section(
   );
 }
 
+// ─── Admission hardening (PR G): positive cohort gate + atomic transition ───
+{
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const adm = await import("../apps/web/src/lib/compliance/alpha-admission.ts");
+  const admEntity =
+    await import("../apps/web/src/lib/prototype-store/entities/alpha-admission.ts");
+  const fx = await import("../apps/web/src/lib/kyc/socure/fixtures.ts");
+  const client = await import("../apps/web/src/lib/kyc/socure/client.ts");
+  const { SocureKycProvider } =
+    await import("../apps/web/src/lib/kyc/socure/adapter.ts");
+  const kycEntity =
+    await import("../apps/web/src/lib/prototype-store/entities/kyc-evaluation.ts");
+  const profile =
+    await import("../apps/web/src/lib/prototype-store/entities/investor-profile-v2.ts");
+  const engine =
+    await import("../apps/web/src/lib/sec203a/investor-profile-engine.ts");
+  const { kvStore } =
+    await import("../apps/web/src/lib/prototype-store/store.ts");
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  const KEYS = [
+    "REFI_KYC_PROVIDER",
+    "REFI_KYC_MOCK_CONTROLS",
+    "SOCURE_API_BASE_URL",
+    "SOCURE_API_KEY",
+    "SOCURE_WORKFLOW_NAME",
+    "SOCURE_ENV",
+  ];
+  const saved: Record<string, string | undefined> = {};
+  for (const k of KEYS) saved[k] = process.env[k];
+  const withEnv = async (
+    over: Record<string, string | undefined>,
+    fn: () => Promise<void>,
+  ) => {
+    for (const [k, v] of Object.entries(over)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    resetServerEnvCacheForTests();
+    try {
+      await fn();
+    } finally {
+      for (const k of KEYS) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+      resetServerEnvCacheForTests();
+    }
+  };
+  const SOCURE_OK = {
+    REFI_KYC_PROVIDER: "socure",
+    REFI_KYC_MOCK_CONTROLS: "0",
+    SOCURE_API_BASE_URL: "https://riskos.sandbox.socure.com",
+    SOCURE_API_KEY: "fixture-api-key-not-real-0123456789",
+    SOCURE_WORKFLOW_NAME: "kyc-fraud-watchlist-docv-fixture",
+    SOCURE_ENV: "sandbox",
+  };
+  const CONSENT_AT = "2026-09-10T00:00:00.000Z";
+  type Script = {
+    onboardingState: unknown;
+    eligibility: "ELIGIBLE" | "INELIGIBLE";
+    disclosures: string[];
+    consented: string[];
+    onboardingThrows?: boolean;
+  };
+  const fakeClient = (sc: Script) =>
+    ({
+      call: (op: string): Promise<unknown> => {
+        const ok = (data: unknown) =>
+          Promise.resolve({
+            data: { data },
+            response: new Response(null, { status: 200 }),
+          });
+        switch (op) {
+          case "getOnboardingStatus":
+            if (sc.onboardingThrows)
+              return Promise.reject(new Error("onboarding unavailable"));
+            return ok({
+              user_id: "u",
+              state: sc.onboardingState,
+              required_steps: [],
+              policy_version: "p",
+              evaluated_at: CONSENT_AT,
+            });
+          case "getEligibility":
+            return ok({
+              eligibility_decision_id: "elig-1",
+              decision: sc.eligibility,
+              jurisdiction: "US",
+              reason_codes: [],
+              policy_version: "p",
+              decided_at: CONSENT_AT,
+              expires_at: null,
+            });
+          case "listEffectiveDisclosures":
+            return ok({
+              items: sc.disclosures.map((k) => ({
+                disclosure_key: k,
+                disclosure_version: 1,
+                content_hash: `h-${k}`,
+                status: "EFFECTIVE",
+              })),
+              page: { has_more: false, next_cursor: null },
+            });
+          case "listConsents":
+            return ok({
+              items: sc.consented.map((k) => ({
+                consent_receipt_id: `cr-${k}`,
+                status: "ACTIVE",
+                disclosure_key: k,
+                disclosure_version: 1,
+                disclosure_hash: `h-${k}`,
+              })),
+              page: { has_more: false, next_cursor: null },
+            });
+          default:
+            return Promise.reject(new Error(`unexpected op ${op}`));
+        }
+      },
+    }) as unknown as import("../apps/web/src/lib/investor-api/demo-client").InvestorApiReadClient;
+  const COMPLETE: Script = {
+    onboardingState: "INVITED",
+    eligibility: "ELIGIBLE",
+    disclosures: ["d1"],
+    consented: ["d1"],
+  };
+  const subject = { authId: "auth-hard-a" };
+  const account = "acct-hard-a";
+  const auth = { authId: subject.authId, accountId: account };
+  const subjectB = { authId: "auth-hard-b" };
+  const authB = { authId: subjectB.authId, accountId: "acct-hard-b" };
+  const seedProfile = async (accountId: string) => {
+    const answers = { questionnaireVersion: 2 as const };
+    const v = await profile.appendProfileAnswers({
+      accountId,
+      answers,
+      correlationId: "hard",
+    });
+    await profile.appendProfileAssessment({
+      accountId,
+      profileVersion: v.profileVersion,
+      answerSnapshotHash: v.answerSnapshotHash,
+      assessment: engine.assessInvestorProfile(answers),
+      correlationId: "hard",
+    });
+  };
+  const clearAll = async () => {
+    for (const id of [
+      fx.FIXTURE_EVAL_ID_REVIEW,
+      fx.FIXTURE_EVAL_ID_ACCEPT,
+      fx.FIXTURE_EVAL_ID_REJECT,
+    ]) {
+      const owner = await kycEntity.findAuthIdByProviderEvaluation(id);
+      if (owner) await kycEntity.resetKycEvaluationForTests(owner);
+      await kycEntity.clearEvaluationIndexForTests(id);
+    }
+    for (const s of [subject, subjectB]) {
+      await kycEntity.resetKycEvaluationForTests(s.authId);
+      await admEntity.resetAlphaAdmissionForTests(s.authId);
+    }
+  };
+  const acceptedProvider = async (subj: { authId: string }, key: string) => {
+    const p = new SocureKycProvider(
+      () => new client.FakeSocureClient(fx.SCRIPT_ACCEPT),
+    );
+    await p.evaluate({
+      subject: subj,
+      individual: fx.FIXTURE_INDIVIDUAL,
+      consentTimestamp: CONSENT_AT,
+      submissionKey: key,
+      correlationId: "hard",
+    });
+    return p;
+  };
+  const ensure = (
+    a: { authId: string; accountId?: string },
+    sc: Script,
+    p: InstanceType<typeof SocureKycProvider>,
+    trigger = "test",
+  ) =>
+    adm.ensureAlphaAdmissionEvaluated({
+      auth: a,
+      client: fakeClient(sc),
+      provider: p,
+      correlationId: "hard",
+      trigger,
+    });
+
+  await section(
+    "cohort gate: positive allowlist pinned to the alpha.3 OnboardingStatus enum; explicit invited/eligible states admit; WAITLISTED/INELIGIBLE/SUSPENDED/unknown/missing/malformed/future values fail closed; browser cannot supply cohort state; users isolated",
+    async () => {
+      const schema = JSON.parse(
+        read(
+          "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/schemas.json",
+        ),
+      ) as {
+        $defs: {
+          OnboardingStatus: { properties: { state: { enum: string[] } } };
+        };
+      };
+      const contractEnum = schema.$defs.OnboardingStatus.properties.state.enum;
+      const positive = adm.ALPHA_COHORT_POSITIVE_STATES as readonly string[];
+      for (const s of positive)
+        assert.ok(
+          contractEnum.includes(s),
+          `${s} must exist in the contract enum`,
+        );
+      assert.deepEqual(
+        contractEnum.filter((s) => !positive.includes(s)).sort(),
+        ["INELIGIBLE", "SUSPENDED", "WAITLISTED"],
+        "every contract state is classified explicitly; a new enum value would fail this pin and fail closed",
+      );
+      for (const s of positive)
+        assert.equal(adm.cohortSignalFrom(s), `onboarding_state:${s}`);
+      for (const s of [
+        "WAITLISTED",
+        "INELIGIBLE",
+        "SUSPENDED",
+        "APPROVED",
+        "ALPHA_ADMITTED",
+        "invited",
+        "",
+        null,
+        undefined,
+        42,
+        {},
+        "READY ",
+      ]) {
+        assert.equal(
+          adm.cohortSignalFrom(s),
+          null,
+          `no cohort signal for ${JSON.stringify(s)}`,
+        );
+      }
+      await withEnv({ ...SOCURE_OK }, async () => {
+        await clearAll();
+        await seedProfile(account);
+        const p = await acceptedProvider(subject, "coh-1");
+        // 1. explicit INVITED + everything else → admitted (and READY)
+        let r = await ensure(auth, COMPLETE, p);
+        assert.equal(r.record.state, "admitted");
+        assert.equal(
+          r.record.evidence.cohortSignal,
+          "onboarding_state:INVITED",
+        );
+        await admEntity.resetAlphaAdmissionForTests(subject.authId);
+        r = await ensure(auth, { ...COMPLETE, onboardingState: "READY" }, p);
+        assert.equal(r.record.state, "admitted");
+        assert.equal(r.record.evidence.cohortSignal, "onboarding_state:READY");
+        // 2–8. negative / unknown / missing / malformed / future → not admitted, cohort missing
+        for (const [label, sc] of [
+          ["WAITLISTED", { ...COMPLETE, onboardingState: "WAITLISTED" }],
+          ["INELIGIBLE", { ...COMPLETE, onboardingState: "INELIGIBLE" }],
+          ["SUSPENDED", { ...COMPLETE, onboardingState: "SUSPENDED" }],
+          ["unknown", { ...COMPLETE, onboardingState: "SOMETHING_NEW" }],
+          ["future enum", { ...COMPLETE, onboardingState: "ALPHA_APPROVED" }],
+          ["missing", { ...COMPLETE, onboardingState: undefined }],
+          ["malformed", { ...COMPLETE, onboardingState: { state: "INVITED" } }],
+          ["backend unavailable", { ...COMPLETE, onboardingThrows: true }],
+        ] as const) {
+          await admEntity.resetAlphaAdmissionForTests(subject.authId);
+          r = await ensure(auth, sc, p);
+          assert.equal(r.record.state, "pending", `${label}: not admitted`);
+          assert.ok(
+            r.record.reason.includes("alpha_cohort"),
+            `${label}: cohort is the missing prerequisite (${r.record.reason})`,
+          );
+          assert.equal(r.record.evidence.cohortSignal, null);
+        }
+        // 9. one user's cohort state cannot affect another's
+        await admEntity.resetAlphaAdmissionForTests(subject.authId);
+        assert.equal(
+          (await ensure(auth, COMPLETE, p)).record.state,
+          "admitted",
+        );
+        const rB = await ensure(authB, COMPLETE, p);
+        assert.equal(
+          rB.record.state,
+          "pending",
+          "B has no KYC evidence; A's cohort/admission never leaks",
+        );
+        await clearAll();
+      });
+      // 10. browser-supplied cohort state is ignored: no route reads cohort from a body; gather reads the backend only
+      const mod = read(
+        "apps/web/src/lib/compliance/alpha-admission.ts",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      assert.ok(
+        /client\.call\("getOnboardingStatus"\)/.test(mod) &&
+          !/req\.|body|input\./.test(mod),
+        "cohort comes from the backend read, never from a request body",
+      );
+      assert.ok(
+        !/NOT_IN_COHORT|!.*has\(onboardingState\)/.test(mod),
+        "no denylist logic remains",
+      );
+      const admissionRoute = read(
+        "apps/web/app/api/v1/investor/admission/route.ts",
+      );
+      assert.ok(
+        !/parse:|ctx\.input|searchParams/.test(admissionRoute),
+        "the admission read accepts no input",
+      );
+    },
+  );
+
+  await section(
+    "atomic admission: store.update is an exclusive transactional transition (prototype: per-key lock across handles; durable: Firestore runTransaction) — concurrent workers, two store instances, restart and racing triggers produce exactly one admission transition and one history entry; both observe admitted",
+    async () => {
+      // Store primitive: 40 concurrent read-modify-writes across two handles → exactly 40 applied.
+      const h1 = kvStore<{ n: number }>("atomic-smoke");
+      const h2 = kvStore<{ n: number }>("atomic-smoke");
+      await h1.delete("k");
+      await Promise.all(
+        Array.from({ length: 40 }, (_, i) =>
+          (i % 2 ? h1 : h2).update("k", (c) => ({ n: (c?.n ?? 0) + 1 })),
+        ),
+      );
+      assert.deepEqual(
+        await h1.get("k"),
+        { n: 40 },
+        "no lost update across concurrent callers and handles",
+      );
+      const noop = await h1.update("k", () => null);
+      assert.equal(noop.written, false);
+      assert.deepEqual(noop.value, { n: 40 });
+      await h1.delete("k");
+      // Durable driver: transaction semantics against a stand-in client.
+      const durable =
+        await import("../apps/web/src/lib/durable-store/store.ts");
+      const docs = new Map<string, Record<string, unknown>>();
+      let inTx = 0;
+      let txRuns = 0;
+      const fakeDoc = (id: string) => ({ id });
+      const fakeFirestore = {
+        collection: (_c: string) => ({ doc: (id: string) => fakeDoc(id) }),
+        runTransaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+          txRuns += 1;
+          inTx += 1;
+          const tx = {
+            get: (ref: { id: string }) => {
+              assert.ok(inTx > 0, "read happens inside the transaction");
+              const d = docs.get(ref.id);
+              return Promise.resolve({
+                exists: d !== undefined,
+                data: () => d,
+              });
+            },
+            set: (ref: { id: string }, v: Record<string, unknown>) => {
+              assert.ok(inTx > 0, "write happens inside the transaction");
+              docs.set(ref.id, v);
+            },
+          };
+          try {
+            return await fn(tx);
+          } finally {
+            inTx -= 1;
+          }
+        },
+      };
+      durable.__setDurableClientForTests(fakeFirestore as never);
+      try {
+        const dk = durable.durableKvStore<{ n: number }>("atomic-durable");
+        const first = await dk.update("k", (c) => (c ? null : { n: 1 }));
+        assert.deepEqual(first, { value: { n: 1 }, written: true });
+        const second = await dk.update("k", (c) => (c ? null : { n: 2 }));
+        assert.deepEqual(
+          second,
+          { value: { n: 1 }, written: false },
+          "loser observes the winner's value inside the transaction",
+        );
+        assert.equal(txRuns, 2, "every update runs in runTransaction");
+      } finally {
+        durable.__resetDurableClientForTests();
+      }
+      const src = read("apps/web/src/lib/durable-store/store.ts").replace(
+        /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+        "",
+      );
+      assert.ok(
+        /runTransaction\(async \(tx\) => \{[\s\S]*tx\.get\(ref\)[\s\S]*tx\.set\(ref/.test(
+          src,
+        ),
+        "durable update reads and writes inside one Firestore transaction",
+      );
+      // Admission: 1. two workers process the same immediate ACCEPT simultaneously → one transition
+      await withEnv({ ...SOCURE_OK }, async () => {
+        await clearAll();
+        await seedProfile(account);
+        const p = await acceptedProvider(subject, "atom-1");
+        const [w1, w2, w3] = await Promise.all([
+          ensure(auth, COMPLETE, p, "kyc_evaluation"),
+          ensure(auth, COMPLETE, p, "kyc_webhook"),
+          ensure(auth, COMPLETE, p, "profile"),
+        ]);
+        const transitions = [w1, w2, w3].filter((w) => w.transitioned).length;
+        assert.equal(
+          transitions,
+          1,
+          "exactly one authoritative admission transition",
+        );
+        for (const w of [w1, w2, w3])
+          assert.equal(
+            w.record.state,
+            "admitted",
+            "every worker observes admitted",
+          );
+        let rec = (await admEntity.getAlphaAdmission(subject.authId))!;
+        assert.equal(rec.history.length, 1, "one history entry");
+        assert.equal(rec.history[0]!.state, "admitted");
+        // 2/3. webhook ACCEPT racing profile-completion and consent-completion triggers (already admitted → no second transition)
+        const [c1, c2] = await Promise.all([
+          ensure(auth, COMPLETE, p, "consent"),
+          ensure(auth, COMPLETE, p, "kyc_webhook"),
+        ]);
+        assert.equal(c1.transitioned || c2.transitioned, false);
+        // 5/6. a second "instance" / restart: fresh provider + fresh module state read the persisted record → no duplicate
+        const p2 = new SocureKycProvider(
+          () => new client.FakeSocureClient(fx.SCRIPT_ACCEPT),
+        );
+        const after = await ensure(auth, COMPLETE, p2, "onboarding_read");
+        assert.equal(after.transitioned, false);
+        assert.equal(after.record.state, "admitted");
+        rec = (await admEntity.getAlphaAdmission(subject.authId))!;
+        assert.equal(
+          rec.history.length,
+          1,
+          "restart/multi-instance: still one transition entry",
+        );
+        assert.equal(rec.admittedAt, after.record.admittedAt);
+        // pending → admitted race from a clean record: 3 concurrent evaluators with complete state
+        await admEntity.resetAlphaAdmissionForTests(subject.authId);
+        const ws = await Promise.all(
+          Array.from({ length: 5 }, (_, i) =>
+            ensure(auth, COMPLETE, p, `race-${String(i)}`),
+          ),
+        );
+        assert.equal(ws.filter((w) => w.transitioned).length, 1);
+        assert.equal(
+          (await admEntity.getAlphaAdmission(subject.authId))!.history.length,
+          1,
+        );
+        await clearAll();
+      });
+      const entity = read(
+        "apps/web/src/lib/prototype-store/entities/alpha-admission.ts",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      assert.ok(
+        /store\(\)\.update\(args\.authId, \(current\) =>/.test(entity) &&
+          !/store\(\)\.get\(args\.authId\)[\s\S]*store\(\)\.put\(/.test(entity),
+        "admission uses the transactional update, not read-check-write",
+      );
+    },
+  );
+
+  await section(
+    "admission re-evaluation boundaries: the shared ensure function is invoked from KYC evaluation, final webhook, consent, profile, onboarding read, admission read and brokerage connection; a missed evaluation self-heals on the next boundary",
+    async () => {
+      for (const [f, needle] of [
+        [
+          "apps/web/app/api/v1/investor/kyc/evaluation/route.ts",
+          "reevaluateAlphaAdmission(",
+        ],
+        [
+          "apps/web/app/api/webhooks/kyc/provider/route.ts",
+          "reevaluateAlphaAdmission(",
+        ],
+        [
+          "apps/web/app/api/v1/investor/disclosures/[id]/acknowledge/route.ts",
+          "reevaluateAlphaAdmission(",
+        ],
+        [
+          "apps/web/app/api/v1/investor/profile/v2/route.ts",
+          "reevaluateAlphaAdmission(",
+        ],
+        [
+          "apps/web/app/api/v1/investor/onboarding/route.ts",
+          "reevaluateAlphaAdmission(",
+        ],
+        [
+          "apps/web/app/api/v1/investor/broker/connection/route.ts",
+          "reevaluateAlphaAdmission(",
+        ],
+        [
+          "apps/web/app/api/v1/investor/admission/route.ts",
+          "ensureAlphaAdmissionEvaluated(",
+        ],
+      ] as const) {
+        assert.ok(
+          read(f).includes(needle),
+          `${f} must call the shared evaluation`,
+        );
+      }
+      assert.ok(
+        /ensureAlphaAdmissionEvaluated/.test(
+          read("apps/web/src/lib/compliance/admission-hook.ts"),
+        ),
+        "hook delegates to the single function",
+      );
+      // Self-heal: backend unavailable at webhook time → pending; the next boundary with the backend back → admitted, no new KYC
+      await withEnv({ ...SOCURE_OK }, async () => {
+        await clearAll();
+        await seedProfile(account);
+        const p = await acceptedProvider(subject, "heal-1");
+        const missed = await ensure(
+          auth,
+          { ...COMPLETE, onboardingThrows: true },
+          p,
+          "kyc_webhook",
+        );
+        assert.equal(missed.record.state, "pending");
+        const healed = await ensure(auth, COMPLETE, p, "brokerage_connection");
+        assert.equal(healed.record.state, "admitted");
+        assert.equal(healed.transitioned, true);
+        assert.equal(
+          healed.record.history.at(-1)!.trigger,
+          "brokerage_connection",
+        );
+        await clearAll();
+      });
+    },
+  );
+}
+
 // ─── Investor Profile v2 is the ONE canonical public questionnaire ──────────
 {
   const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");

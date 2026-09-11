@@ -8,7 +8,7 @@ import type { AuthContext } from "../bff/auth";
 import { investorApiClientFor } from "../investor-api/gateway";
 import { getKycProvider, KycProviderUnavailableError } from "../kyc";
 import type { KycProviderAdapter } from "../kyc/provider";
-import { runAlphaAdmissionEvaluation } from "./alpha-admission";
+import { ensureAlphaAdmissionEvaluated } from "./alpha-admission";
 
 export async function reevaluateAlphaAdmission(
   auth: AuthContext,
@@ -25,7 +25,7 @@ export async function reevaluateAlphaAdmission(
     }
   }
   try {
-    await runAlphaAdmissionEvaluation({
+    await ensureAlphaAdmissionEvaluated({
       auth,
       client: investorApiClientFor(auth),
       provider,

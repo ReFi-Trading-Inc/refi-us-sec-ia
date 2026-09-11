@@ -14,6 +14,8 @@
  * `authorization` and `onboarding.state` are the backend's words, echoed.
  */
 import { bffRead } from "@lib/bff/handler";
+import { reevaluateAlphaAdmission } from "@lib/compliance/admission-hook";
+import { getAlphaAdmission } from "@lib/prototype-store/entities/alpha-admission";
 import { investorApiClientFor } from "@lib/investor-api/gateway";
 import {
   AccountScopeError,
@@ -34,6 +36,16 @@ export const GET = bffRead({
     if (!ctx.auth) return null;
     const auth = ctx.auth;
     const client = investorApiClientFor(auth);
+    // Admission read boundary: derive from current state (self-healing).
+    await reevaluateAlphaAdmission(auth, ctx.correlationId, "onboarding_read");
+    const admissionRecord = await getAlphaAdmission(auth.authId);
+    const admission = admissionRecord
+      ? {
+          state: admissionRecord.state,
+          ruleVersion: admissionRecord.ruleVersion,
+          admittedAt: admissionRecord.admittedAt,
+        }
+      : null;
 
     const identity = await (async () => {
       try {
@@ -133,6 +145,7 @@ export const GET = bffRead({
       accountId,
       authorization,
       identity,
+      admission,
       profile,
       connection,
       template,

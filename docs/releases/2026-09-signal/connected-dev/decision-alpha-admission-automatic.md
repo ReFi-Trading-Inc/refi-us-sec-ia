@@ -20,7 +20,7 @@ UI ordering may differ; admission is **state-based, not sequence-dependent**.
 
 1. authenticated identity (Stytch-backed BFF session);
 2. ReFi identity mapping (backend account id);
-3. Alpha cohort — backend onboarding state not `WAITLISTED` / `INELIGIBLE` / `SUSPENDED` (invitation/cohort authority remains the backend's; Socure ACCEPT alone never admits);
+3. Alpha cohort — a **positive** signal only: backend `OnboardingStatus.state` ∈ {INVITED, IDENTITY_VERIFIED, PROFILE_REQUIRED, DISCLOSURE_REQUIRED, CONSENT_REQUIRED, READY} (the states alpha.3 reaches only after a backend-issued invitation); WAITLISTED, INELIGIBLE, SUSPENDED, unknown, missing, malformed or future values fail closed. The allowlist is pinned to the vendored contract enum by an assertion. **BACKEND CONTRACT DEPENDENCY: POSITIVE ALPHA COHORT SIGNAL** — a dedicated field is requested from Daniel; Socure ACCEPT alone never admits;
 4. eligibility decision `ELIGIBLE` (backend);
 5. advisory profile complete (ReFi profile v2 answers + assessment);
 6. required disclosures delivered (backend effective list answered);
@@ -46,7 +46,7 @@ Subject reference, account id, state, rule version, `AUTOMATIC` provenance, reas
 
 ## Idempotency and durability
 
-Unchanged evaluations append no history (a duplicate `evaluation_completed` produces one record). Admission reached from a final trusted ACCEPT is not revoked by a later unrelated provider error. Two workers evaluating the same decision produce one transition under the store's atomicity; a Firestore transaction wrap is a follow-up once the durable backing is provisioned. Later adverse provider updates need an explicit suspension/review policy — **future compliance work, not built here**.
+Unchanged evaluations append no history (a duplicate `evaluation_completed` produces one record). Admission reached from a final trusted ACCEPT is not revoked by a later unrelated provider error. The transition is **atomic in the store abstraction** (`KVStore.update`): a Firestore transaction on the durable backing and an exclusive per-key lock on the prototype backing — concurrent workers, two instances or a restart produce exactly one transition and one history entry, and the loser observes the winner's record (asserted, PR G). Later adverse provider updates need an explicit suspension/review policy — **future compliance work, not built here**.
 
 ## Boundaries preserved
 
@@ -54,6 +54,14 @@ KYC state and admission state are separate fields. Admission never implies `Acco
 
 ## Backend contract impact (alpha.3)
 
-- No dedicated admission mutation exists in alpha.3 and none is invented. The backend's own admission condition is the attestation: "Alpha admission requires effective accepted evidence with KYC `passed` … profile `eligible`, trading eligibility `eligible`, and effective consent" (`INTEGRATION.md`). The trusted KYC evidence now feeds `createComplianceProfileAttestation` (PR E), so the existing operation is the backend-facing admission proof.
+- No dedicated admission mutation exists in alpha.3 and none is invented. **The compliance attestation transmits trusted ReFi KYC/compliance evidence to the backend. Whether Daniel requires a separate canonical admission state remains a contract dependency.** The trusted KYC evidence feeds `createComplianceProfileAttestation` (PR E) as evidence only; alpha.3's `INTEGRATION.md` sentence "Alpha admission requires effective accepted evidence with KYC `passed` …" describes the backend's evidence expectation and is NOT treated as establishing that the attestation is an admission mutation.
 - Cohort/invitation stays backend-owned (invitation at identity exchange; onboarding state projection); the frontend never writes it.
-- Open for Daniel (packet question 8, revised): confirm the attestation `kyc` vocabulary; confirm no separate manually-set admission flag is expected. Status: **AUTOMATIC ADMISSION POLICY COMPLETE; backend admission evidence = attestation (existing operation); DANIEL CONFIRMATION of vocabulary pending.**
+- Open for Daniel (packet questions 8, 9a, 9b): the attestation `kyc` vocabulary; whether a separate canonical Alpha-admission state/mutation is required; the positive cohort field. Status: **AUTOMATIC ADMISSION POLICY COMPLETE (ReFi-owned); BACKEND CONTRACT DEPENDENCY: canonical admission semantics and positive cohort signal.**
+
+## Authority model (until Daniel confirms)
+
+ReFi owns KYC state, the automatic closed-Alpha product admission policy and its audit/provenance. Daniel's backend owns canonical account identity, `AccountAuthorization`, economic permissions, risk and execution. Unknown: whether the backend also expects a distinct canonical Alpha-admission flag — that write is not invented.
+
+## Boundaries where admission is (re)evaluated
+
+Post-KYC immediate ACCEPT · final KYC webhook ACCEPT (best-effort, never fails delivery) · consent acceptance · profile refresh · onboarding aggregate read · admission read · brokerage connection request. Every boundary derives from current authoritative state, so a missed evaluation self-heals without support intervention. Enforcing a hard deny on brokerage connection for non-admitted users is **not enabled yet**: the demo/E2E personas carry no admission fixtures and the founder's first-connection correction is preserved; enabling the deny is a product decision recorded as open.

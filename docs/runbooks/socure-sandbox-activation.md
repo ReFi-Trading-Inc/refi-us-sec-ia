@@ -1,0 +1,44 @@
+# Runbook — Socure Sandbox activation and acceptance (operator; NOT executed)
+
+Scope: activate the merged Socure foundation against the **Socure Sandbox** with **synthetic identities only**, and collect acceptance evidence. Automatic Alpha admission stays disabled (PR F/G held). Nothing here authorises production keys, real PII, real documents, connected GCP provisioning, Stytch/Daniel/Alpaca activation or live capital. Every step is a founder-approved, separately authorised action; this document is the procedure, not the approval.
+
+Preconditions: `main` at or after `abb73d9`; deployment target = the connected BFF (Cloud Run) or, for a first dry run, a local `.env.local` never committed. Product: KYC + Fraud + Watchlist > DocV Step Up · Build Your Own UI · Sandbox only.
+
+## A. Credentials (from zero)
+
+1. **Sandbox account** — request via support@socure.com (Socure Launch, "KYC + Fraud + Watchlist > DocV Step-Up", Direct API + SDK path). Record who holds dashboard access (named person, MFA on).
+2. **Sandbox API key** — RiskOS Dashboard → Developer Workbench → API Keys (Sandbox). Restricted. Never pasted into chat/tickets.
+3. **Public SDK key** — Developer Workbench → SDK Keys. Public by design (reaches the browser).
+4. **Workflow name** — Developer Workbench → Workflows: the environment-specific identifier of the selected KYC + Fraud + Watchlist > DocV Step-Up workflow.
+5. **Webhook Bearer credential** — generate locally: `openssl rand -base64 48` (≥ 32 bytes). Restricted. Never logged.
+6. **Webhook subscription** — Developer Workbench → Webhooks → Add: URL `https://<bff-host>/api/webhooks/kyc/provider`, auth **Bearer** = the credential from step 5, events `evaluation_completed` (+ `evaluation_paused`, `workflow_execution_failed` for audit). Use the dashboard "Continue to Test" sample delivery only after step C.
+7. **Sandbox base URL** — `https://riskos.sandbox.socure.com` (must match `SOCURE_ENV=sandbox`; the config invariant refuses any other host).
+
+## B. Secrets and configuration (approved path only)
+
+8. Store in Secret Manager of the connected project (or the deployment's secret store), never in source: `SOCURE_API_KEY`, `SOCURE_WEBHOOK_BEARER_TOKEN`. Non-secret config as environment: `REFI_KYC_PROVIDER=socure`, `SOCURE_API_BASE_URL`, `SOCURE_ENV=sandbox`, `SOCURE_WORKFLOW_NAME`, `NEXT_PUBLIC_SOCURE_SDK_KEY`, `SOCURE_WEBHOOK_ENFORCE_SENDER_IP=0` (defense in depth only; enable later if the runtime exposes the true source address). Keep `REFI_KYC_MOCK_CONTROLS=0`.
+9. Deploy. Boot must succeed: the env schema fails closed on any missing SOCURE_* value or host/environment mismatch. Confirm `/api/v1/investor/kyc/verification` (authenticated) reports `available: true, adapter: "socure", collectsIdentity: true`.
+10. **No secret reaches the browser**: view page source / network for the KYC page; only `NEXT_PUBLIC_SOCURE_SDK_KEY` may appear; `SOCURE_API_KEY` and the Bearer credential must not appear anywhere client-side (also asserted in CI).
+
+## C. Synthetic acceptance runs (see `docs/security/socure-review/socure-acceptance-matrix.md`)
+
+Use an approved authenticated test user (Stytch fixture session or approved test identity) and **synthetic** identity data only (no real SSN, DOB, address, documents).
+
+11. **ACCEPT** — submit the identity form; expect `result: "evaluated"`, state `passed`; record `eval_id`, request id, workflow; verify the evidence record (`kyc-evaluations`) has `providerDecision=accept`, `providerDecisionFinal=true`, `decisionProvenance=provider_evaluation`, no PII/score fields; verify the attestation evidence module yields trusted `passed` (route `profile/v2/attestation` GET shows the chain no longer blocked on `KYC_EVIDENCE_MISSING`).
+12. **REVIEW → DocV** — submit a synthetic identity the Sandbox routes to REVIEW; expect `stepUpRequired: true`, state `additional_info_required`, `GET /kyc/step-up` returns a token for this user only; launch capture (Sandbox test documents only); on completion expect `under_review`.
+13. **Final webhook** — expect `evaluation_completed` delivery → state `passed` or `failed`; record `event_id`; verify the delivery was acknowledged 2xx after the durable record.
+14. **REJECT** — synthetic reject identity → state `failed`; UI shows "We could not verify your identity"; no admission evaluation (F/G held).
+15. **Replay** — resend the same webhook (dashboard re-send or curl with the Bearer credential) → 200 `duplicate_event`, no state or history change.
+16. **Unknown eval_id** — send a well-formed event with an unknown `eval_id` → 200 `unknown_evaluation`, nothing created.
+17. **Invalid credential** — send without / with a wrong Bearer → 401; no audit record.
+18. **429** — if the Sandbox rate limit (1/s) can be triggered, expect `provider_error` with `retryable: true`, state stays `in_progress`.
+19. **5xx / timeout** — cannot be forced against Socure; covered by the fake-client assertions; record as "fixture-proven".
+20. **No operational failure becomes a rejection** — confirm every error case above left the record `in_progress` (never `failed`).
+21. **Logs** — review Cloud Run / Vercel logs for the run window: no SSN, DOB, address, API key, Bearer credential, document or selfie payload (search terms in the acceptance matrix).
+22. Collect evidence per the matrix into the acceptance packet (no synthetic SSNs, no images).
+
+## D. Rollback
+
+- Set `REFI_KYC_PROVIDER=unconfigured` and redeploy: the KYC page reports "not available yet" (never pending); the webhook route goes dark (404); no data is deleted.
+- Rotate the webhook Bearer credential and the Sandbox API key in the dashboard and Secret Manager if either was exposed; redeploy.
+- Evidence records created during acceptance are synthetic; delete the acceptance test users' `kyc-evaluations`, `kyc-evaluation-index` and `kyc-webhook-events` entries when the run is closed.

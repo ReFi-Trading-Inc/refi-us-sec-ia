@@ -118,3 +118,19 @@ responsibility as well as a scanner responsibility.
   `docs/releases/2026-09-signal/gcp-bff-migration-plan.md`.
 - `docs/releases/2026-09-signal/connected-dev/founder-activation-actions.md`
   and `decision-gcp-project.md` (GCP project `refi-us-connected-investor`).
+
+## Questionnaire control index (status vocabulary: IMPLEMENTED · HUMAN ACTION REQUIRED · NOT IMPLEMENTED · NOT APPLICABLE)
+
+| Control                                             | Status                | Answer now | Answer after human completion | Evidence                                                                                                                       |
+| --------------------------------------------------- | --------------------- | ---------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Third-party certification (SOC 2 / ISO 27001 / PCI) | NOT IMPLEMENTED       | NO         | NO                            | `certifications.md` (cloud-provider attestations are provider facts only)                                                      |
+| Encryption in transit and at rest                   | IMPLEMENTED           | YES        | YES                           | `encryption-architecture.md`, `secrets-management.md`                                                                          |
+| Data handling / classification                      | IMPLEMENTED           | YES        | YES                           | `data-classification-policy.md`, `data-handling-standard.md`, `../../integrations/socure/pii-inventory.md`                     |
+| Background checks                                   | NOT IMPLEMENTED       | NO         | NO                            | `background-checks.md`                                                                                                         |
+| Security awareness training                         | HUMAN ACTION REQUIRED | NO FOR NOW | YES                           | `security-awareness-policy.md`, `security-training-package.md`, `training-completion-checklist.md`, `founder-human-actions.md` |
+| Incident response                                   | IMPLEMENTED           | YES        | YES                           | `incident-response.md`, `../../incident-response-runbook.md`                                                                   |
+| Change management                                   | IMPLEMENTED           | YES        | YES                           | `change-management.md`                                                                                                         |
+| Endpoint security                                   | HUMAN ACTION REQUIRED | NO FOR NOW | YES                           | `endpoint-security-baseline.md`, `endpoint-verification-2026-09-10.md`, `founder-human-actions.md`                             |
+| Vulnerability scanning                              | IMPLEMENTED           | YES        | YES                           | `vulnerability-scan.md`                                                                                                        |
+
+Target after human completion: **7 YES / 2 NO**. Answers change only when evidence exists. Related activation material: `socure-acceptance-matrix.md`, `socure-credential-inventory.md`, `socure-readiness-review-2026-09-11.md`, `../../runbooks/socure-sandbox-activation.md`, repository root `SOCURE_ACTIVATION_READY.md`.

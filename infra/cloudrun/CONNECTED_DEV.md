@@ -90,11 +90,33 @@ The initial hosting configuration is **not an admitted Alpha release**:
   No push trigger has been attached to main or Zeshan's branches. A Google-hosted
   GitHub build trigger needs the approved Cloud Build GitHub App connection;
   keep GitHub credentials out of Terraform and build substitutions.
+  The September 11 connection attempt could not start OAuth: Cloud Build's
+  service agent lacks `secretmanager.secrets.create`/`setIamPolicy` for storing
+  its GitHub authorization. No connection or trigger was created and no
+  project-wide secret administration was granted. Configure scoped authorization
+  storage/app installation before adding a trigger for exactly
+  `^integration/refinity-dev$`; manual Cloud Build already works.
 
 ## Verification record
 
-Provisioning/build/runtime verification is in progress. Update this section with
-actual IDs and results, not planned values, before marking FI-008 hosted/bound.
+September 11, 2026: 27 isolated Terraform resources plus the private state bucket
+created; zero existing backend resources changed/destroyed. The default database
+is unchanged. Runtime Google subject is `104683840377279941448`.
+
+Initial build `2597b0ef-6475-41c7-8804-950e574c1bc6` from `dc688a5` succeeded.
+Initial web revision `refi-frontend-integration-00001-9pk` serves the root/health
+and both JWKS with HTTP 200; Investor session/dashboard refuse anonymous callers
+with 401; demo and unconfigured login POST return 404. Separate public `kid`s:
+`refi-dev-investor-20260911-1` and `refi-dev-bridge-20260911-1`.
+
+The initial standalone probe import failed because Next.js bundles dependencies.
+The corrected built-in-Node/Google-REST probe passed as an execution override in
+`refi-frontend-runtime-check-mhkkj`: atomic named-database create, default
+Datastore API denial, actual KMS signatures and both audience-bound Google
+tokens. Packaging/re-execution of that correction is in progress; only the final
+image checks below close hosting verification. Local typechecks, all contract
+assertions, investor-boundary checks, focused settings tests and Terraform
+validation pass. These are hosting proofs, not real login/KYC or broker evidence.
 
 References: [named Firestore databases and scoped IAM](https://docs.cloud.google.com/firestore/native/docs/manage-databases),
 [Cloud Run HTTPS addresses](https://docs.cloud.google.com/run/docs/triggering/https-request),

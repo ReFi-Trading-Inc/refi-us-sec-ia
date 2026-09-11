@@ -81,14 +81,14 @@ flow or a fresh CI run.
 
 Zeshan's merged work provides substantial foundations to reuse:
 
-| Area | Existing implementation |
-| --- | --- |
-| Investor application | Onboarding/profile/KYC/broker screens, account/home/portfolio/recommendation/activity/records-related views, disclosures, preferences, support and demo personas under [`apps/web/app/us`](apps/web/app/us). These are implemented surfaces, not a claim of final UX or live-data acceptance. |
-| Authentication and sessions | Stytch magic-link/OTP adapter, opaque subject mapping, separate identity-bridge assertion, backend identity-result verification, recoverable exchange and durable connected-session/replay storage in [auth](apps/web/src/lib/auth) and [connected-store](apps/web/src/lib/connected-store). |
-| Service authentication | Native Cloud Run Google token providers for separate Identity/Investor audiences, ES256 user assertions, KMS/JWK signing support and JWKS routes. Real runtime bindings still need verification. |
-| Contract-consuming BFF | Strict generated Investor API client, account-scope resolution, brokerage connect/sync/rotation/disconnect handlers, consent/acknowledgment handling, portfolio actions, account projections, Records and SSE in [investor-api](apps/web/src/lib/investor-api). |
-| KYC and attestation | Socure device intelligence/evaluation, DocV and authenticated webhook handling, trusted evidence construction, and durable attestation submission/recovery. [Socure checkpoint](SOCURE_ACTIVATION_READY.md) records merged implementation and pending live acceptance. |
-| Verification and deployment foundation | Vitest/client conformance, Playwright production-artifact lanes, boundary/route/copy checks, a standalone Next.js container and the existing Cloud Run demo deployment. |
+| Area                                   | Existing implementation                                                                                                                                                                                                                                                                       |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Investor application                   | Onboarding/profile/KYC/broker screens, account/home/portfolio/recommendation/activity/records-related views, disclosures, preferences, support and demo personas under [`apps/web/app/us`](apps/web/app/us). These are implemented surfaces, not a claim of final UX or live-data acceptance. |
+| Authentication and sessions            | Stytch magic-link/OTP adapter, opaque subject mapping, separate identity-bridge assertion, backend identity-result verification, recoverable exchange and durable connected-session/replay storage in [auth](apps/web/src/lib/auth) and [connected-store](apps/web/src/lib/connected-store).  |
+| Service authentication                 | Native Cloud Run Google token providers for separate Identity/Investor audiences, ES256 user assertions, KMS/JWK signing support and JWKS routes. Real runtime bindings still need verification.                                                                                              |
+| Contract-consuming BFF                 | Strict generated Investor API client, account-scope resolution, brokerage connect/sync/rotation/disconnect handlers, consent/acknowledgment handling, portfolio actions, account projections, Records and SSE in [investor-api](apps/web/src/lib/investor-api).                               |
+| KYC and attestation                    | Socure device intelligence/evaluation, DocV and authenticated webhook handling, trusted evidence construction, and durable attestation submission/recovery. [Socure checkpoint](SOCURE_ACTIVATION_READY.md) records merged implementation and pending live acceptance.                        |
+| Verification and deployment foundation | Vitest/client conformance, Playwright production-artifact lanes, boundary/route/copy checks, a standalone Next.js container and the existing Cloud Run demo deployment.                                                                                                                       |
 
 The Socure checkpoint records missing sandbox/account activation and webhook
 configuration at its capture. Provider code exists; genuine provider acceptance
@@ -127,14 +127,14 @@ because their integration acceptance remains open.
 
 ## Work split and delivery plan
 
-| Workstream | Owner |
-| --- | --- |
-| UI/UX, screens, copy, navigation and onboarding journeys | Zeshan/frontend team |
-| KYC/Socure/provider flows, questionnaire evaluation and compliance decisions | Zeshan/frontend team |
-| Backend contracts, generated client adoption and non-KYC BFF/server adapters | Daniel/Refinity team |
-| Identity-to-account integration, brokerage commands, allocation/retries, account data and events | Daniel/Refinity team |
-| Connected GCP runtime and cross-system integration verification | Daniel/Refinity team |
-| Shared-file conflicts, interface changes and final combined acceptance | Both teams, with each reviewing its owned area |
+| Workstream                                                                                       | Owner                                          |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------- |
+| UI/UX, screens, copy, navigation and onboarding journeys                                         | Zeshan/frontend team                           |
+| KYC/Socure/provider flows, questionnaire evaluation and compliance decisions                     | Zeshan/frontend team                           |
+| Backend contracts, generated client adoption and non-KYC BFF/server adapters                     | Daniel/Refinity team                           |
+| Identity-to-account integration, brokerage commands, allocation/retries, account data and events | Daniel/Refinity team                           |
+| Connected GCP runtime and cross-system integration verification                                  | Daniel/Refinity team                           |
+| Shared-file conflicts, interface changes and final combined acceptance                           | Both teams, with each reviewing its owned area |
 
 Daniel's detailed queue is `FI-001..FI-010` in the backend repository's
 `docs/planning/frontend_contract_delivery_alignment_checklist.md`. It prioritizes
@@ -151,12 +151,12 @@ route policies, lockfiles and browser-facing response changes are coordinated.
 **Vercel remains available to Zeshan during GCP integration.** He does not need
 to move hosting before continuing frontend/KYC development.
 
-| Environment | Current state / plan |
-| --- | --- |
-| Existing Vercel frontend deployments and previews | Continue the frontend team's current workflow. September 11 live checks showed `demo.refi.trading` and `bff-dev.refi.trading` serving from Vercel; the BFF JWKS endpoints returned 503 at that check. These are dated observations, not continuous monitoring. |
-| Existing Cloud Run demo | `refi-game-prod/us-central1`, service `demo-web`. The inspected runtime uses demo data; it is not the connected trading BFF. Leave the game/demo targets and data unchanged. |
-| Connected Dev | A new, separate Next.js application/BFF service in `refinity-dev/us-west1`, alongside the existing trading backend. Daniel owns preparation. Not yet deployed or certified by this README. |
-| Future staging/production | Frontend and backend share `refinity-stg` and `refinity-prod` respectively. No separate frontend project family, provisioning or billing change is authorized now. |
+| Environment                                       | Current state / plan                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Existing Vercel frontend deployments and previews | Continue the frontend team's current workflow. September 11 live checks showed `demo.refi.trading` and `bff-dev.refi.trading` serving from Vercel; the BFF JWKS endpoints returned 503 at that check. These are dated observations, not continuous monitoring.                                                           |
+| Existing Cloud Run demo                           | `refi-game-prod/us-central1`, service `demo-web`. The inspected runtime uses demo data; it is not the connected trading BFF. Leave the game/demo targets and data unchanged.                                                                                                                                             |
+| Connected Dev                                     | The separate `refi-frontend-integration` Next.js/BFF service is hosted in `refinity-dev/us-west1`. See [deployment status and commands](infra/cloudrun/CONNECTED_DEV.md) for the isolated URL and verified image. Provider login and backend trust binding are still pending; hosting is not connected Alpha acceptance. |
+| Future staging/production                         | Frontend and backend share `refinity-stg` and `refinity-prod` respectively. No separate frontend project family, provisioning or billing change is authorized now.                                                                                                                                                       |
 
 Use separate connected build/deploy configuration, runtime identity, secrets and
 isolated durable state. Do not repurpose
@@ -178,7 +178,9 @@ and the [demo-only deployment guide](infra/cloudrun/README.md).
 - `main` is the shared reviewed codebase, not a permanently split product.
 - Daniel uses `integration/refinity-dev`, based on current shared `main`.
   This is the documented plan; no separate branch announcement/approval is
-  required. The documentation itself does not create that branch.
+  required. The branch is now active, created from `b3e7a1a`; deployment uses
+  the separate [connected Dev path](infra/cloudrun/CONNECTED_DEV.md). Only this
+  branch is excluded from Vercel auto-deployments; other branches are unchanged.
 - Zeshan keeps his existing feature branches and Vercel flow.
 - Both teams commit/push coherent slices frequently, normally by the end of an
   active workday, and incorporate each other's completed work regularly.
@@ -242,18 +244,18 @@ configuration; do not solve missing live configuration by relaxing those checks.
 Run the smallest relevant tests while developing. These scripts exist in the
 current manifests:
 
-| Command | Purpose |
-| --- | --- |
-| `pnpm --filter @refi/api-clients build` | Generate clients from the currently pinned contracts. |
-| `pnpm --filter @refi/api-clients test` | Vitest client/boundary/domain suites. |
-| `pnpm --filter @refi/api-clients test:contract` | Packaged conformance tests; Python 3.11+ is needed for the contract tools. |
-| `pnpm typecheck` / `pnpm lint` | Workspace TypeScript/ESLint checks. |
-| `pnpm contract-test` / `pnpm tripwire` | Invariants and investor/admin boundary checks. |
-| `pnpm route-manifest` / `pnpm scan-copy` | Route inventory and copy checks. |
-| `pnpm test` | Contract assertions, tripwire and API-client unit suites. |
-| `pnpm build` | Workspace production build. |
-| `pnpm e2e` | Playwright against a production build/start and isolated fixture backend, not `next dev`. |
-| `pnpm e2e:signal` / `pnpm e2e:demo` | Existing stage-specific regression lanes; their names do not redefine the Alpha product. |
+| Command                                         | Purpose                                                                                   |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `pnpm --filter @refi/api-clients build`         | Generate clients from the currently pinned contracts.                                     |
+| `pnpm --filter @refi/api-clients test`          | Vitest client/boundary/domain suites.                                                     |
+| `pnpm --filter @refi/api-clients test:contract` | Packaged conformance tests; Python 3.11+ is needed for the contract tools.                |
+| `pnpm typecheck` / `pnpm lint`                  | Workspace TypeScript/ESLint checks.                                                       |
+| `pnpm contract-test` / `pnpm tripwire`          | Invariants and investor/admin boundary checks.                                            |
+| `pnpm route-manifest` / `pnpm scan-copy`        | Route inventory and copy checks.                                                          |
+| `pnpm test`                                     | Contract assertions, tripwire and API-client unit suites.                                 |
+| `pnpm build`                                    | Workspace production build.                                                               |
+| `pnpm e2e`                                      | Playwright against a production build/start and isolated fixture backend, not `next dev`. |
+| `pnpm e2e:signal` / `pnpm e2e:demo`             | Existing stage-specific regression lanes; their names do not redefine the Alpha product.  |
 
 Install Chromium before the first E2E run:
 

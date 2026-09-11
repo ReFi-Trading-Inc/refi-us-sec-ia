@@ -5628,7 +5628,7 @@ await section(
     "SOCURE_API_KEY",
     "SOCURE_WORKFLOW_NAME",
     "SOCURE_ENV",
-    "SOCURE_WEBHOOK_SECRET",
+    "SOCURE_WEBHOOK_BEARER_TOKEN",
     "REFI_INVESTOR_API_CREDENTIAL_MODE",
   ];
   const saved: Record<string, string | undefined> = {};
@@ -5659,7 +5659,7 @@ await section(
     SOCURE_API_KEY: "fixture-api-key-not-real-0123456789",
     SOCURE_WORKFLOW_NAME: "kyc-fraud-watchlist-docv-fixture",
     SOCURE_ENV: "sandbox",
-    SOCURE_WEBHOOK_SECRET: undefined,
+    SOCURE_WEBHOOK_BEARER_TOKEN: undefined,
   };
   const CONSENT_AT = "2026-09-10T00:00:00.000Z";
   const subjectA = { authId: "auth-socure-a" };
@@ -6026,7 +6026,7 @@ await section(
         {
           ...SOCURE_OK,
           SOCURE_ENV: "production",
-          SOCURE_WEBHOOK_SECRET: "fixture-webhook-secret-0123456789",
+          SOCURE_WEBHOOK_BEARER_TOKEN: "fixture-webhook-secret-0123456789",
         },
         async () =>
           assert.throws(
@@ -6045,7 +6045,7 @@ await section(
           assert.throws(
             () => getServerEnv(),
             /Invalid server environment/,
-            "production requires webhook secret",
+            "production requires the webhook Bearer token",
           ),
       );
       await withEnv(
@@ -6053,7 +6053,7 @@ await section(
           ...SOCURE_OK,
           SOCURE_ENV: "production",
           SOCURE_API_BASE_URL: "https://riskos.socure.com",
-          SOCURE_WEBHOOK_SECRET: "fixture-webhook-secret-0123456789",
+          SOCURE_WEBHOOK_BEARER_TOKEN: "fixture-webhook-secret-0123456789",
         },
         async () => assert.doesNotThrow(() => getServerEnv()),
       );

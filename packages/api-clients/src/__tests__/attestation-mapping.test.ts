@@ -385,6 +385,16 @@ describe("ledger: KYC evidence gate (D — provider-blocked) — trust is explic
       "compliance",
       "attestation-submission.ts",
     );
+    // Founder decision 2026-09-10 (ReFi-owned KYC via Socure): exactly ONE
+    // runtime module may establish trusted provenance — the attestation
+    // evidence module — and only from a FINAL provider decision.
+    const PERMITTED_PROVENANCE_CALLER = join(
+      root,
+      "src",
+      "lib",
+      "kyc",
+      "attestation-evidence.ts",
+    );
     const submitters: string[] = [];
     for (const f of [...walk(join(root, "app")), ...walk(join(root, "src"))]) {
       if (f.endsWith(join("kyc", "provenance.ts"))) continue;
@@ -392,6 +402,12 @@ describe("ledger: KYC evidence gate (D — provider-blocked) — trust is explic
         /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
         "",
       );
+      if (f === PERMITTED_PROVENANCE_CALLER) {
+        expect(code, f).toMatch(/establishTrustedKycProvenance\s*\(/);
+        expect(code, f).toMatch(/providerDecisionFinal/);
+        expect(code, f).toMatch(/provider_webhook/);
+        continue;
+      }
       expect(code, f).not.toMatch(/establishTrustedKycProvenance\s*\(/);
       if (/call\(\s*["']createComplianceProfileAttestation["']/.test(code)) {
         submitters.push(f);

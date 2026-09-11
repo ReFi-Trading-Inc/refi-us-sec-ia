@@ -220,10 +220,12 @@ const serverSchemaBase = clientSchema.extend({
     .enum(["mint", "simulator-fixture"])
     .default("mint"),
   /**
-   * Frontend-owned KYC provider adapter (public U.S. onboarding, decision
-   * 2026-09-04). "unconfigured" (default): no provider selected — verification
-   * is reported unavailable and nothing starts. "mock": the deterministic mock
-   * adapter for local/E2E only; never identity verification.
+   * Frontend-owned KYC lifecycle adapter (decision 2026-09-04; initial-Alpha
+   * KYC/CIP is Alpaca-owned per founder decision 2026-09-10, boundary awaiting
+   * Daniel). "unconfigured" (default): no authoritative source bound —
+   * verification is reported unavailable (not pending) and nothing starts.
+   * "mock": the deterministic mock adapter for local/E2E/demo only; never
+   * identity verification; a boot failure on a connected deployment.
    */
   // Investor API upstream mode. "client" = the frozen HTTP client against the
   // configured base URLs (simulator or connected). "demo" = the in-process,
@@ -471,6 +473,17 @@ const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
     fail(
       "REFI_KYC_MOCK_CONTROLS",
       "must be 0 on a connected deployment — mock KYC controls never run there",
+    );
+  }
+  // F-1 (founder review 2026-09-10): the mock adapter itself is a configuration
+  // defect on a connected deployment, not only its controls. With no
+  // authoritative KYC source bound (Alpaca-owned KYC/CIP; boundary awaiting
+  // Daniel) the only truthful connected value is "unconfigured", which the
+  // routes report as unavailable — never as a pending verification.
+  if (env.REFI_KYC_PROVIDER !== "unconfigured") {
+    fail(
+      "REFI_KYC_PROVIDER",
+      'must be "unconfigured" on a connected deployment — the mock adapter is never an authoritative KYC source; no provider is bound until Daniel defines the Alpaca onboarding/KYC boundary',
     );
   }
   if (env.REFI_DATA_ADAPTER !== "live") {

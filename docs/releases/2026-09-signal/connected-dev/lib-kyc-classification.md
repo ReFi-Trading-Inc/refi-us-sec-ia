@@ -37,8 +37,9 @@ so mock evidence can never satisfy the attestation/admission gate in any mode.
   `REFI_KYC_PROVIDER=unconfigured`. With `mock` set on a connected deployment the
   mock session can be _started_ (it can never advance without controls, and its
   evidence is refused at attestation), so the only effect is a misleading
-  "Verification in progress" display. Recommend adding the invariant when the
-  next code slice is approved.
+  "Verification in progress" display. **Applied** on branch `connected-dev/kyc-config-safety` (founder-approved
+  safety PR): connected deployments now fail boot unless `REFI_KYC_PROVIDER` is
+  `unconfigured`; demo/local/E2E tiers keep the mock adapter.
 - **F-2:** no `lib/kyc` code is Alpaca-specific and none should be renamed to
   imply Alpaca onboarding authority; the generic lifecycle is retained as-is
   pending Daniel A1/K1.

@@ -7873,6 +7873,11 @@ await section(
         ],
         ["ephemeral signing key", { BFF_ASSERTION_ALLOW_EPHEMERAL_KEY: "1" }],
         ["mock KYC controls", { REFI_KYC_MOCK_CONTROLS: "1" }],
+        ["mock KYC adapter (F-1)", { REFI_KYC_PROVIDER: "mock" }],
+        [
+          "mock KYC adapter with controls (F-1)",
+          { REFI_KYC_PROVIDER: "mock", REFI_KYC_MOCK_CONTROLS: "1" },
+        ],
         ["mock data adapter", { REFI_DATA_ADAPTER: "mock" }],
         [
           "demo world upstream",
@@ -7904,6 +7909,7 @@ await section(
         {
           REFI_INVESTOR_API_CREDENTIAL_MODE: "simulator-fixture",
           REFI_INVESTOR_API_ASSERTION_MODE: "simulator-fixture",
+          REFI_KYC_PROVIDER: "mock",
           REFI_KYC_MOCK_CONTROLS: "1",
           REFI_DATA_ADAPTER: "mock",
         },
@@ -7911,6 +7917,80 @@ await section(
           assert.doesNotThrow(() => getServerEnv());
         },
       );
+      // Demo tier keeps its mock KYC (presenter flows) — nothing weakened.
+      await withEnv(
+        {
+          REFI_INVESTOR_API_CREDENTIAL_MODE: "simulator-fixture",
+          REFI_INVESTOR_API_ASSERTION_MODE: "simulator-fixture",
+          REFI_INVESTOR_API_MODE: "demo",
+          REFI_ENV: "demo",
+          NEXT_PUBLIC_REFI_ENV: "demo",
+          REFI_KYC_PROVIDER: "mock",
+          REFI_KYC_MOCK_CONTROLS: "1",
+          REFI_DATA_ADAPTER: "mock",
+        },
+        async () => {
+          const env = getServerEnv();
+          assert.equal(env.REFI_KYC_PROVIDER, "mock");
+          assert.equal(env.REFI_KYC_MOCK_CONTROLS, "1");
+        },
+      );
+      // Connected mode with no authoritative KYC source bound: the resolver
+      // fails closed (no fallback to mock), the verification view reports
+      // "unavailable" with reason provider_unconfigured and a null session —
+      // never a pending/in-progress lifecycle state — and the attestation
+      // evidence is null (KYC_EVIDENCE_MISSING), never synthetic.
+      const kyc = await import("../apps/web/src/lib/kyc/index.ts");
+      const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+      await withEnv({}, async () => {
+        assert.throws(
+          () => kyc.getKycProvider(),
+          kyc.KycProviderUnavailableError,
+          "connected + unconfigured → unavailable, no mock fallback",
+        );
+        assert.equal(kyc.getMockKycControls(), null);
+        const indexSrc = read("apps/web/src/lib/kyc/index.ts").replace(
+          /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+          "",
+        );
+        assert.ok(
+          !/unconfigured[\s\S]{0,120}MockKycProvider/.test(indexSrc),
+          "no branch maps unconfigured to the mock adapter",
+        );
+        const viewSrc = read(
+          "apps/web/app/api/v1/investor/kyc/verification/route.ts",
+        );
+        assert.ok(
+          /KycProviderUnavailableError[\s\S]{0,400}available: false[\s\S]{0,200}session: null[\s\S]{0,200}reason: "provider_unconfigured"/.test(
+            viewSrc,
+          ),
+          "unconfigured → available:false, session:null, reason provider_unconfigured (not a lifecycle state)",
+        );
+        const accountSrc = read("apps/web/app/us/app/account/page.tsx");
+        assert.ok(
+          /kycAvailable \? kycLabel\[kycState\] : "Not available yet"/.test(
+            accountSrc,
+          ),
+          "account card shows 'Not available yet' when unavailable, never a pending label",
+        );
+        const mappingSrc = read(
+          "apps/web/src/lib/compliance/attestation-mapping.ts",
+        );
+        assert.ok(
+          /kyc === null\) return "KYC_EVIDENCE_MISSING"/.test(mappingSrc) &&
+            /source === "mock"\) return "KYC_EVIDENCE_MOCK"/.test(mappingSrc),
+          "attestation: missing evidence and mock evidence both block; nothing synthesises passed",
+        );
+        assert.ok(
+          !/KYC_VERIFIED/.test(mappingSrc) &&
+            !/status:\s*"passed"/.test(
+              read(
+                "apps/web/app/api/v1/investor/profile/v2/attestation/route.ts",
+              ),
+            ),
+          "no synthetic verified/passed evidence in the connected attestation path",
+        );
+      });
     },
   );
 

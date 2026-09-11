@@ -21,6 +21,7 @@ import {
   CONTRACT_DOCUMENT,
   CONTRACT_PACKAGE_DIR,
   CONTRACT_VERSION,
+  OPTIONAL_REQUEST_BODY_OPERATIONS,
 } from "../investor-api/package";
 
 const ROOT = join(__dirname, "..", "..");
@@ -252,5 +253,99 @@ describe("alpha.3 error profiles through the strict client", () => {
     for (const k of Object.keys(seq.initial.body)) {
       expect(seq.confirmed.body[k]).toEqual(seq.initial.body[k]);
     }
+  });
+});
+
+describe("contract selection (founder mandate 2026-09-10)", () => {
+  const ROOT2 = join(__dirname, "..", "..");
+  it("CURRENT.json (vendored from Daniel's handoff root) resolves to alpha.3 and its digest matches the selected bundle", () => {
+    const current = JSON.parse(
+      readFileSync(join(ROOT2, "contracts/investor-api/CURRENT.json"), "utf8"),
+    ) as {
+      contract_version: string;
+      package_path: string;
+      package_content_sha256: string;
+      archive_status: string;
+    };
+    expect(current.contract_version).toBe("v1.1.0-alpha.3");
+    expect(current.package_path).toBe("v1.1.0-alpha.3");
+    expect(current.archive_status).toBe("superseded_reference_only");
+    expect(current.package_content_sha256).toBe(
+      "5eca1200f6af807093ea0986f835235e2da478b69478e621fd54954ba1d77608",
+    );
+    expect(current.package_content_sha256).toBe(
+      (
+        JSON.parse(readFileSync(join(PKG, "bundle.json"), "utf8")) as {
+          package_content_sha256: string;
+        }
+      ).package_content_sha256,
+    );
+    expect(CONTRACT_PACKAGE_DIR.endsWith(current.package_path)).toBe(true);
+  });
+
+  it("alpha.3 is byte-exact against its own bundle", () => {
+    const bundle = JSON.parse(
+      readFileSync(join(PKG, "bundle.json"), "utf8"),
+    ) as { artifacts: Array<{ path: string; sha256: string }> };
+    for (const a of bundle.artifacts) {
+      expect(
+        createHash("sha256")
+          .update(readFileSync(join(PKG, a.path)))
+          .digest("hex"),
+        a.path,
+      ).toBe(a.sha256);
+    }
+  });
+
+  it("no runtime fallback to alpha.2 exists: the version string appears in no runtime source and every contract import resolves to the selected package", () => {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap((n) => {
+        const full = join(dir, n);
+        return statSync(full).isDirectory() ? walk(full) : [full];
+      });
+    for (const f of walk(join(ROOT2, "src")).filter(
+      (f) => /\.ts$/.test(f) && !f.includes("__tests__"),
+    )) {
+      const code = readFileSync(f, "utf8").replace(
+        /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+        "",
+      );
+      expect(code, relative(ROOT2, f)).not.toMatch(/alpha\.2/);
+      for (const m of code.matchAll(
+        /from\s+["']([^"']*contracts\/investor-api\/[^"']+)["']/g,
+      )) {
+        expect(m[1], relative(ROOT2, f)).toContain("/v1.1.0-alpha.3/");
+      }
+    }
+  });
+});
+
+describe("optional request bodies", () => {
+  it("OPTIONAL_REQUEST_BODY_OPERATIONS equals the openapi operations whose requestBody is not required", () => {
+    const openapi = JSON.parse(
+      readFileSync(join(PKG, "openapi.json"), "utf8"),
+    ) as {
+      paths: Record<
+        string,
+        Record<
+          string,
+          { operationId?: string; requestBody?: { required?: boolean } }
+        >
+      >;
+    };
+    const optional = new Set<string>();
+    for (const ops of Object.values(openapi.paths)) {
+      for (const op of Object.values(ops)) {
+        if (
+          op.requestBody &&
+          op.requestBody.required !== true &&
+          op.operationId
+        )
+          optional.add(op.operationId);
+      }
+    }
+    expect([...OPTIONAL_REQUEST_BODY_OPERATIONS].sort()).toEqual(
+      [...optional].sort(),
+    );
   });
 });

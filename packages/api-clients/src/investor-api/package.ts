@@ -53,3 +53,15 @@ if (contract.routes.length !== contract.route_policy.product_route_count) {
     `contract.json lists ${String(contract.routes.length)} routes but declares product_route_count=${String(contract.route_policy.product_route_count)}`,
   );
 }
+
+/**
+ * Operations whose `openapi.json` requestBody is `required: false`. The
+ * contract.json route inventory names a request schema for them, but a call
+ * may legitimately omit the body (alpha.3: `disconnectBrokerageConnection`
+ * takes the acknowledgment confirmation only when the backend required
+ * one). Parity with openapi.json is asserted by
+ * `investor-api-alpha3.test.ts`.
+ */
+export const OPTIONAL_REQUEST_BODY_OPERATIONS: ReadonlySet<string> = new Set([
+  "disconnectBrokerageConnection",
+]);

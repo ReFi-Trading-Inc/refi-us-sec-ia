@@ -1,32 +1,23 @@
 /**
- * PATCH /api/v1/investor/preferences
+ * POST /api/v1/investor/preferences/confirm — the investor's EXPLICIT
+ * confirmation of a preference change the backend challenged with
+ * 409 ACKNOWLEDGMENT_REQUIRED (alpha.3 `preference_mutation`).
  *
- * The investor's ONLY preference write: exactly the four supported fields
- * (`drift_threshold`, `min_order`, `excluded_assets`, `fractional_enabled`;
- * IB-06) through the frozen v1.1.0-alpha.3 client (`updateAccountPreferences`,
- * a dedicated PATCH — never `/actions`, per Daniel 2026-08-17 / D-018).
- *
- * Governed by `bffMutate` (same-origin, release-stage capability policy —
- * `updateAccountPrefs` is Signal-allowed — and an append-only receipt).
- * Optimistic concurrency: the client sends the preference version it saw and
- * the BFF forwards it as If-Match; a stale version is a 409 the UI must
- * refresh from. Deterministic Idempotency-Key; no automatic retry.
- *
- * alpha.3 acknowledgment: a 409 ACKNOWLEDGMENT_REQUIRED is NOT a completed
- * mutation — the complete continuation is retained durably and the UI must
- * post an explicit confirmation to /preferences/confirm (see
- * lib/investor-api/preference-confirmation.ts). A
- * preference change is advice-side: the backend produces NEW advice and
- * preserves the prior recommendation. Nothing here touches execution.
+ * Bound to the retained challenge: the same intended preference values and
+ * expected version, a currently valid continuation, consent recorded by the
+ * BFF for exactly the required disclosure key/version/hash, then the
+ * confirmation PATCH with `continuation_ref` + `consent_receipt_id`, the
+ * current If-Match and a NEW Idempotency-Key. Canonical `APPLIED` and an
+ * authoritative re-read are returned. Anything else fails closed.
  */
 import { z } from "zod";
-import { bffMutate } from "../../../../../src/lib/bff/handler";
-import { startPreferenceChange } from "../../../../../src/lib/investor-api/preference-confirmation";
+import { bffMutate } from "../../../../../../src/lib/bff/handler";
+import { confirmPreferenceChange } from "../../../../../../src/lib/investor-api/preference-confirmation";
 import {
   clientAndScopeOrRefusal,
   upstreamRefusal,
-} from "../../../../../src/lib/investor-api/mutation-route";
-import { CONTRACT_VERSION } from "../../../../../src/lib/investor-api/upstream-state";
+} from "../../../../../../src/lib/investor-api/mutation-route";
+import { CONTRACT_VERSION } from "../../../../../../src/lib/investor-api/upstream-state";
 
 const DECIMAL_FRACTION = /^(0(?:\.[0-9]+)?|1(?:\.0+)?)$/;
 const DECIMAL = /^(0|[1-9][0-9]*)(\.[0-9]+)?$/;
@@ -34,24 +25,18 @@ const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/;
 
 const bodySchema = z
   .object({
+    confirm: z.literal(true),
+    continuationRef: z.string().regex(ID),
     expectedVersion: z.number().int().min(1),
     driftThreshold: z.string().regex(DECIMAL_FRACTION).optional(),
     minOrder: z.string().regex(DECIMAL).optional(),
     excludedAssets: z.array(z.string().regex(ID)).max(100).optional(),
     fractionalEnabled: z.boolean().optional(),
   })
-  .strict()
-  .refine(
-    (b) =>
-      b.driftThreshold !== undefined ||
-      b.minOrder !== undefined ||
-      b.excludedAssets !== undefined ||
-      b.fractionalEnabled !== undefined,
-    { message: "at least one preference field is required" },
-  );
+  .strict();
 type Body = z.infer<typeof bodySchema>;
 
-export const PATCH = bffMutate<Body>({
+export const POST = bffMutate<Body>({
   action: "updateAccountPrefs",
   source: "backend",
   parse: (body) => bodySchema.parse(body),
@@ -61,8 +46,9 @@ export const PATCH = bffMutate<Body>({
     const b = ctx.input;
     let out;
     try {
-      out = await startPreferenceChange(scope.client, {
+      out = await confirmPreferenceChange(scope.client, {
         accountId: scope.accountId,
+        continuationRef: b.continuationRef,
         expectedVersion: b.expectedVersion,
         patch: {
           ...(b.driftThreshold !== undefined
@@ -91,24 +77,32 @@ export const PATCH = bffMutate<Body>({
             preferences: out.preferences,
             contractVersion: CONTRACT_VERSION,
           },
-          references: [`action-receipt:${out.receipt.action_receipt_id}`],
+          references: [
+            `action-receipt:${out.receipt.action_receipt_id}`,
+            `continuation:${b.continuationRef}`,
+          ],
           status: 202,
         };
+      case "refused":
+        return {
+          data: {
+            ok: false,
+            reason: `confirmation_${out.reason}`,
+            detail: out.detail ?? null,
+          },
+          outcome: "blocked" as const,
+          reasonCode: `confirmation_${out.reason}`,
+          status: 412,
+        };
       case "acknowledgment_required":
-        // NOT a completed mutation. The complete validated continuation is
-        // retained server-side and echoed so the UI can show the exact
-        // required disclosure and post an explicit confirmation.
         return {
           data: {
             ok: false,
             reason: "acknowledgment_required",
-            mutationApplied: false,
             continuation: out.challenge.continuation,
-            confirmPath: "/api/v1/investor/preferences/confirm",
           },
           outcome: "rejected" as const,
           reasonCode: "acknowledgment_required",
-          references: [`continuation:${out.challenge.continuationRef}`],
           status: 409,
         };
       case "stale_version":

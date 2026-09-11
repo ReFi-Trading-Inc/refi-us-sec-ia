@@ -53,24 +53,63 @@ export async function clientAndScopeOrRefusal(
 }
 
 /**
- * Contract errors keep their status and code (409/422 are the backend's own
- * rejections; the rest are upstream faults); transport/config failures are
- * 503 and never carry submitted content.
+ * alpha.3 error disposition for the generic mutation layer. Backend
+ * decisions keep their status and code; ambiguous/transport states are 503;
+ * never a message, never diagnostic material.
+ *
+ *   403 ACCOUNT_AUTHORIZATION_REQUIRED → explicit denial (rejected, 403)
+ *   409 ACKNOWLEDGMENT_REQUIRED       → challenge (rejected, 409) with the
+ *                                       VALIDATED continuation only
+ *   409 ACKNOWLEDGMENT_BINDING_INVALID / ACKNOWLEDGMENT_NOT_REQUIRED /
+ *       VERSION_CONFLICT / other 409  → rejected, 409
+ *   404 / 413 REQUEST_TOO_LARGE / 422 VALIDATION_ERROR|CURSOR_*  → rejected, same status
+ *   429 RATE_LIMITED                  → blocked, 429, Retry-After surfaced
+ *   5xx envelope                      → blocked, 503 (retryable)
+ *   transport / config                → blocked, 503
  */
 export function upstreamRefusal(err: unknown): RouteRefusal {
   if (err instanceof InvestorApiError) {
-    const backendDecision = err.status === 409 || err.status === 422;
+    const base = {
+      ok: false,
+      code: err.code,
+      upstreamStatus: err.status,
+      upstreamCorrelationId: err.correlationId,
+      retryAfterSeconds: err.retryAfterSeconds,
+    };
+    if (err.status === 429) {
+      return {
+        data: base,
+        outcome: "blocked",
+        reasonCode: err.code.toLowerCase(),
+        status: 429,
+      };
+    }
+    if (err.status >= 500) {
+      return {
+        data: base,
+        outcome: "blocked",
+        reasonCode: err.code.toLowerCase(),
+        status: 503,
+      };
+    }
+    if ([403, 404, 409, 413, 422].includes(err.status)) {
+      return {
+        data: {
+          ...base,
+          ...(err.code === "ACKNOWLEDGMENT_REQUIRED" && err.continuation
+            ? { continuation: err.continuation, mutationApplied: false }
+            : {}),
+        },
+        outcome: "rejected",
+        reasonCode: err.code.toLowerCase(),
+        status: err.status,
+      };
+    }
     return {
-      data: {
-        ok: false,
-        code: err.code,
-        upstreamStatus: err.status,
-        upstreamCorrelationId: err.correlationId,
-        retryAfterSeconds: err.retryAfterSeconds,
-      },
-      outcome: backendDecision ? "rejected" : "blocked",
+      data: base,
+      outcome: "blocked",
       reasonCode: err.code.toLowerCase(),
-      status: backendDecision ? err.status : 502,
+      status: 502,
     };
   }
   return {

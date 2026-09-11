@@ -6570,11 +6570,20 @@ await section(
         /resolveAccountScope\(client, ctx\.auth\)/.test(portfolioRoute) &&
           !/prototype-store/.test(portfolioRoute),
       );
-      const prefs = stripComments(
+      // alpha.3 (2026-09-10): the route delegates the PATCH to the
+      // acknowledgment-aware adapter; the dedicated operation, If-Match and
+      // Idempotency-Key discipline live there, and the route still carries
+      // the governed action and the four-field body.
+      const prefsRoute = stripComments(
         read("apps/web/app/api/v1/investor/preferences/route.ts"),
       );
+      const prefsAdapter = stripComments(
+        read("apps/web/src/lib/investor-api/preference-confirmation.ts"),
+      );
+      const prefs = prefsRoute + "\n" + prefsAdapter;
       assert.ok(
-        /client\.call\(\s*"updateAccountPreferences"/.test(prefs),
+        /startPreferenceChange\(/.test(prefsRoute) &&
+          /client\.call\(\s*"updateAccountPreferences"/.test(prefsAdapter),
         "preferences must use the dedicated PATCH operation",
       );
       assert.ok(
@@ -6582,7 +6591,7 @@ await section(
         "preferences must never travel through /actions (D-018)",
       );
       assert.ok(
-        /ifMatch:/.test(prefs) && /idempotencyKey/.test(prefs),
+        /ifMatch:/.test(prefsAdapter) && /idempotencyKey/.test(prefsAdapter),
         "If-Match + Idempotency-Key are required on PATCH",
       );
       assert.ok(
@@ -13406,6 +13415,1170 @@ await section(
         else process.env["REFI_CONNECTED_STORE_NAMESPACE"] = savedNs;
         resetEnvTu();
       }
+    },
+  );
+}
+
+// ─── alpha.3 acknowledgment: preference confirmation (B2) and brokerage disconnect — retained continuation, exact consent tuple, new key, canonical status, fail closed ──
+
+{
+  const { createInvestorApiClient: createClientAck } =
+    await import("../packages/api-clients/src/investor-api/index.ts");
+  const pref =
+    await import("../apps/web/src/lib/investor-api/preference-confirmation.ts");
+  const maintAck =
+    await import("../apps/web/src/lib/investor-api/brokerage-maintenance.ts");
+  const chal =
+    await import("../apps/web/src/lib/prototype-store/entities/acknowledgment-challenge.ts");
+  const ackMod =
+    await import("../apps/web/src/lib/investor-api/acknowledgment.ts");
+  const {
+    resetServerEnvCacheForTests: resetEnvAck,
+    getServerEnv: getServerEnvAck,
+  } = await import("../apps/web/src/lib/config/env.ts");
+  const prefRoute =
+    await import("../apps/web/app/api/v1/investor/preferences/route.ts");
+  const confirmRoute =
+    await import("../apps/web/app/api/v1/investor/preferences/confirm/route.ts");
+  const disconnectRoute =
+    await import("../apps/web/app/api/v1/investor/broker/connection/[id]/route.ts");
+  const { createRequire: createRequireAck } = await import("node:module");
+  const requireWebAck = createRequireAck(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const joseAck = (await import(
+    requireWebAck.resolve("jose")
+  )) as typeof import("jose");
+  const { NextRequest: NextRequestAck } = (await import(
+    requireWebAck.resolve("next/server")
+  )) as typeof import("next/server");
+  const ex = JSON.parse(
+    readFileSync(
+      join(
+        REPO_ROOT,
+        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/examples.json",
+      ),
+      "utf8",
+    ),
+  ) as {
+    responses: Record<string, { data: Record<string, unknown> }>;
+    preference_confirmation: {
+      challenge: { error: { continuation: Record<string, unknown> } };
+    };
+  };
+  const CONT = ex.preference_confirmation.challenge.error.continuation as {
+    continuation_ref: string;
+    required_disclosure_key: string;
+    required_disclosure_version: number;
+    required_disclosure_hash: string;
+  };
+  const A = {
+    account: "acct_ack_user_a_01",
+    conn: "brokerconn_ack_a_01",
+    assertion: "assertion-A",
+  };
+  const B = {
+    account: "acct_ack_user_b_02",
+    conn: "brokerconn_ack_b_02",
+    assertion: "assertion-B",
+  };
+  const H = {
+    "Content-Type": "application/json",
+    "Cache-Control": "private, no-store",
+    "X-Correlation-Id": "corr_ack",
+  };
+  const errBody = (code: string) =>
+    JSON.stringify({
+      error: { code, message: "not applied", correlation_id: "corr_ack" },
+    });
+  type Mode =
+    | { kind: "applied" }
+    | { kind: "challenge"; cont?: Record<string, unknown> }
+    | { kind: "error"; status: number; code: string; retryAfter?: string }
+    | { kind: "transport" };
+  type Seen = {
+    user: string;
+    method: string;
+    path: string;
+    headers: Headers;
+    body: unknown;
+  };
+  function upstream(
+    opts: {
+      initial?: Mode;
+      confirm?: Mode;
+      consentEcho?: Partial<{
+        disclosure_key: string;
+        disclosure_version: number;
+        disclosure_hash: string;
+      }>;
+      consentMode?: "ok" | "not_effective" | "error";
+      prefVersion?: number;
+      connections?: Record<string, string[]>;
+      disconnectedIds?: string[];
+      disconnectInitial?: Mode;
+      disconnectConfirm?: Mode;
+    } = {},
+  ) {
+    const seen: Seen[] = [];
+    const fetchImpl: typeof fetch = (input, init) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      const path = new URL(url).pathname;
+      const method = init?.method ?? "GET";
+      const headers = new Headers(init?.headers);
+      const user =
+        headers.get("X-Refinity-User-Assertion") === B.assertion ? "B" : "A";
+      const me = user === "A" ? A : B;
+      const body =
+        typeof init?.body === "string"
+          ? (JSON.parse(init.body) as Record<string, unknown>)
+          : undefined;
+      seen.push({ user, method, path, headers, body });
+      const R = (
+        status: number,
+        json: unknown,
+        extra: Record<string, string> = {},
+      ) =>
+        Promise.resolve(
+          new Response(JSON.stringify(json), {
+            status,
+            headers: { ...H, ...extra },
+          }),
+        );
+      const page = (items: unknown[]) =>
+        R(200, {
+          data: { items, page: { has_more: false, next_cursor: null } },
+        });
+      const answer = (mode: Mode, success: () => Promise<Response>) => {
+        if (mode.kind === "transport")
+          return Promise.reject(new TypeError("fetch failed"));
+        if (mode.kind === "error")
+          return R(
+            mode.status,
+            JSON.parse(errBody(mode.code)),
+            mode.retryAfter ? { "Retry-After": mode.retryAfter } : {},
+          );
+        if (mode.kind === "challenge")
+          return R(409, {
+            error: {
+              code: "ACKNOWLEDGMENT_REQUIRED",
+              message: "not applied",
+              correlation_id: "corr_ack",
+              continuation: { ...CONT, ...(mode.cont ?? {}) },
+            },
+          });
+        return success();
+      };
+      if (path === "/api/v1/investor/accounts" && method === "GET")
+        return page([
+          { ...ex.responses["AccountEnvelope"]!.data, account_id: me.account },
+        ]);
+      const m = /^\/api\/v1\/investor\/accounts\/([^/]+)(\/.*)?$/.exec(path);
+      if (path === "/api/v1/investor/disclosures" && method === "GET") {
+        return page([
+          {
+            content_hash: CONT.required_disclosure_hash,
+            content_ref: "https://example.invalid/d",
+            disclosure_key: CONT.required_disclosure_key,
+            disclosure_version: CONT.required_disclosure_version,
+            effective_at: "2026-09-01T00:00:00Z",
+            locale: "en-US",
+            status:
+              opts.consentMode === "not_effective" ? "RETIRED" : "EFFECTIVE",
+          },
+        ]);
+      }
+      if (path === "/api/v1/investor/consents" && method === "POST") {
+        if (opts.consentMode === "error")
+          return R(503, JSON.parse(errBody("SERVICE_UNAVAILABLE")));
+        const b = body as Record<string, unknown>;
+        return R(201, {
+          data: {
+            account_id: b["account_id"],
+            consent_key: b["consent_key"],
+            consent_receipt_id: "consent_ack_00000001",
+            disclosure_hash: b["disclosure_hash"],
+            disclosure_key: b["disclosure_key"],
+            disclosure_version: b["disclosure_version"],
+            expires_at: "2026-12-01T00:00:00Z",
+            recorded_at: "2026-09-10T00:00:00Z",
+            status: "ACTIVE",
+            ...(opts.consentEcho ?? {}),
+          },
+        });
+      }
+      if (m) {
+        const [, accountId, rest = ""] = m;
+        if (accountId !== me.account)
+          return R(404, JSON.parse(errBody("RESOURCE_NOT_FOUND")));
+        if (rest === "/preferences" && method === "GET")
+          return R(200, {
+            data: {
+              drift_threshold: "0.01",
+              excluded_assets: ["security_us_aapl"],
+              fractional_enabled: true,
+              min_order: "10",
+              preference_fingerprint: "4".repeat(64),
+              updated_at: "2026-09-10T00:00:00Z",
+              version: opts.prefVersion ?? 2,
+            },
+          });
+        if (rest === "/preferences" && method === "PATCH") {
+          const isConfirm = body !== undefined && "continuation_ref" in body;
+          return answer(
+            isConfirm
+              ? (opts.confirm ?? { kind: "applied" })
+              : (opts.initial ?? { kind: "applied" }),
+            () =>
+              R(202, {
+                data: {
+                  account_id: me.account,
+                  action_receipt_id: isConfirm
+                    ? "action_ack_confirm_01"
+                    : "action_ack_initial_01",
+                  aggregate_version: 2,
+                  duplicate: false,
+                  effect: "updated",
+                  status: "APPLIED",
+                  status_path: `/api/v1/investor/accounts/${me.account}/actions/x`,
+                },
+              }),
+          );
+        }
+        if (rest === "/brokerage-connections" && method === "GET") {
+          const ids = opts.connections?.[user] ?? [me.conn];
+          return page(
+            ids.map((id) => ({
+              ...ex.responses["BrokerageConnectionEnvelope"]!.data,
+              account_id: me.account,
+              connection_id: id,
+              ...(opts.disconnectedIds?.includes(id)
+                ? { connection_status: "DISCONNECTED" }
+                : {}),
+            })),
+          );
+        }
+        const d = /^\/brokerage-connections\/([^/]+)$/.exec(rest);
+        if (d && method === "DELETE") {
+          const isConfirm = body !== undefined && "continuation_ref" in body;
+          return answer(
+            isConfirm
+              ? (opts.disconnectConfirm ?? { kind: "applied" })
+              : (opts.disconnectInitial ?? { kind: "applied" }),
+            () =>
+              R(202, {
+                data: {
+                  ...ex.responses["BrokerageDisconnectReceiptEnvelope"]!.data,
+                  connection_id: d[1],
+                },
+              }),
+          );
+        }
+      }
+      return R(404, JSON.parse(errBody("RESOURCE_NOT_FOUND")));
+    };
+    const clientFor = (user: "A" | "B") =>
+      createClientAck({
+        identityCcid: {
+          baseUrl: "http://127.0.0.1:1",
+          getBearer: () => Promise.resolve("id-b"),
+        },
+        investorApi: {
+          baseUrl: "http://127.0.0.1:1",
+          getBearer: () => Promise.resolve("inv-b"),
+        },
+        mintAssertion: () =>
+          Promise.resolve(user === "A" ? A.assertion : B.assertion),
+        fetch: fetchImpl,
+      });
+    return {
+      client: clientFor("A"),
+      clientB: clientFor("B"),
+      seen,
+      patches: () => seen.filter((s) => s.method === "PATCH"),
+      deletes: () => seen.filter((s) => s.method === "DELETE"),
+      consents: () =>
+        seen.filter((s) => s.method === "POST" && s.path.endsWith("/consents")),
+    };
+  }
+  const PATCH = {
+    drift_threshold: "0.01",
+    excluded_assets: ["security_us_aapl"],
+    fractional_enabled: true,
+    min_order: "10",
+  };
+  let refN = 0;
+  const freshRef = () => `continuation_ack_${String(++refN).padStart(6, "0")}`;
+  const account = (n: number) =>
+    `acct_ack_user_a_${String(n).padStart(2, "0")}`;
+  let acctN = 10;
+  // Each scenario uses its own account id so durable challenge records never collide.
+  const scenario = async (
+    opts: Parameters<typeof upstream>[0],
+    f: (
+      u: ReturnType<typeof upstream>,
+      acct: string,
+      ref: string,
+    ) => Promise<void>,
+  ) => {
+    const ref = freshRef();
+    const acct = A.account;
+    void account;
+    void acctN;
+    const u = upstream({
+      ...opts,
+      ...(opts.initial?.kind === "challenge"
+        ? {
+            initial: {
+              kind: "challenge",
+              cont: { continuation_ref: ref, ...(opts.initial.cont ?? {}) },
+            },
+          }
+        : {}),
+      ...(opts.disconnectInitial?.kind === "challenge"
+        ? {
+            disconnectInitial: {
+              kind: "challenge",
+              cont: {
+                continuation_ref: ref,
+                ...(opts.disconnectInitial.cont ?? {}),
+              },
+            },
+          }
+        : {}),
+    });
+    await f(u, acct, ref);
+  };
+  const start = (u: ReturnType<typeof upstream>, acct: string) =>
+    pref.startPreferenceChange(u.client, {
+      accountId: acct,
+      expectedVersion: 1,
+      patch: PATCH,
+      correlationId: "c_ack",
+    });
+  const confirm = (
+    u: ReturnType<typeof upstream>,
+    acct: string,
+    ref: string,
+    patch = PATCH,
+    version = 1,
+  ) =>
+    pref.confirmPreferenceChange(u.client, {
+      accountId: acct,
+      continuationRef: ref,
+      expectedVersion: version,
+      patch,
+      correlationId: "c_ack2",
+    });
+
+  await section(
+    "preference confirmation (B2): ordinary update applies without acknowledgment (key A, If-Match, canonical APPLIED, re-read); a 409 ACKNOWLEDGMENT_REQUIRED is NOT a completed mutation — the complete continuation is retained durably with the exact intent",
+    async () => {
+      await scenario({}, async (u, acct) => {
+        const out = await start(u, acct);
+        assert.equal(out.kind, "applied");
+        if (out.kind !== "applied") return;
+        assert.equal(out.backendStatus, "APPLIED");
+        assert.equal(out.preferences?.version, 2);
+        const p = u.patches()[0]!;
+        assert.deepEqual(p.body, PATCH);
+        assert.equal(p.headers.get("If-Match"), "1");
+        assert.match(p.headers.get("Idempotency-Key") ?? "", /^[0-9a-f]{64}$/);
+        assert.equal(u.consents().length, 0);
+      });
+      await scenario(
+        { initial: { kind: "challenge" } },
+        async (u, acct, ref) => {
+          const out = await start(u, acct);
+          assert.equal(out.kind, "acknowledgment_required");
+          if (out.kind !== "acknowledgment_required") return;
+          assert.equal(out.challenge.state, "challenged");
+          assert.deepEqual(out.challenge.continuation, {
+            ...CONT,
+            continuation_ref: ref,
+          });
+          assert.deepEqual(out.challenge.intent, {
+            kind: "preference",
+            expectedVersion: 1,
+            patch: PATCH,
+          });
+          assert.equal(u.patches().length, 1, "no confirmation was sent");
+          assert.equal(
+            u.consents().length,
+            0,
+            "no consent recorded from the challenge alone",
+          );
+          const rec = await chal.getAcknowledgmentChallenge(acct, ref);
+          assert.equal(rec?.state, "challenged");
+        },
+      );
+    },
+  );
+
+  await section(
+    "preference confirmation (B2): valid confirmation records consent for EXACTLY the required disclosure tuple, re-sends the SAME intended values with continuation_ref + consent_receipt_id, current If-Match and a NEW key; canonical APPLIED and an authoritative re-read; a reused confirmation is refused without an upstream call",
+    async () => {
+      await scenario(
+        { initial: { kind: "challenge" } },
+        async (u, acct, ref) => {
+          await start(u, acct);
+          const initialKey = u.patches()[0]!.headers.get("Idempotency-Key");
+          const out = await confirm(u, acct, ref);
+          assert.equal(out.kind, "applied");
+          if (out.kind !== "applied") return;
+          assert.equal(out.backendStatus, "APPLIED");
+          assert.equal(out.receipt.action_receipt_id, "action_ack_confirm_01");
+          assert.equal(out.preferences?.version, 2);
+          const c = u.consents()[0]!;
+          assert.deepEqual(c.body, {
+            account_id: acct,
+            action: "ACCEPT",
+            consent_key: CONT.required_disclosure_key,
+            disclosure_key: CONT.required_disclosure_key,
+            disclosure_version: CONT.required_disclosure_version,
+            disclosure_hash: CONT.required_disclosure_hash,
+          });
+          const p = u.patches()[1]!;
+          assert.deepEqual(p.body, {
+            ...PATCH,
+            continuation_ref: ref,
+            consent_receipt_id: "consent_ack_00000001",
+          });
+          assert.equal(p.headers.get("If-Match"), "1");
+          assert.notEqual(
+            p.headers.get("Idempotency-Key"),
+            initialKey,
+            "new key B",
+          );
+          const rec = await chal.getAcknowledgmentChallenge(acct, ref);
+          assert.equal(rec?.state, "confirmed");
+          assert.equal(rec?.confirmKey, p.headers.get("Idempotency-Key"));
+          assert.deepEqual(
+            rec?.history.map((h) => h.state),
+            ["challenged", "consented", "confirmed"],
+          );
+          const again = await confirm(u, acct, ref);
+          assert.deepEqual(again, {
+            kind: "refused",
+            reason: "already_confirmed",
+          });
+          assert.equal(
+            u.patches().length,
+            2,
+            "reused confirmation sends nothing",
+          );
+        },
+      );
+    },
+  );
+
+  await section(
+    "preference confirmation (B2): fail closed — changed values, stale expected version, unknown/foreign continuation, wrong disclosure key/version/hash on the receipt, missing consent receipt, malformed continuation — nothing is confirmed",
+    async () => {
+      for (const [name, tweak, expectReason] of [
+        [
+          "changed values",
+          (a: string, r: string, u: ReturnType<typeof upstream>) =>
+            confirm(u, a, r, { ...PATCH, drift_threshold: "0.02" }),
+          "changed_intent",
+        ],
+        [
+          "stale expected version",
+          (a: string, r: string, u: ReturnType<typeof upstream>) =>
+            confirm(u, a, r, PATCH, 2),
+          "stale_expected_version",
+        ],
+        [
+          "unknown continuation",
+          (a: string, _r: string, u: ReturnType<typeof upstream>) =>
+            confirm(u, a, "continuation_never_issued_0001"),
+          "unknown_continuation",
+        ],
+      ] as const) {
+        await scenario(
+          { initial: { kind: "challenge" } },
+          async (u, acct, ref) => {
+            await start(u, acct);
+            const out = await tweak(acct, ref, u);
+            assert.equal(out.kind, "refused", name);
+            if (out.kind === "refused")
+              assert.equal(out.reason, expectReason, name);
+            assert.equal(
+              u.patches().length,
+              1,
+              `${name}: no confirmation sent`,
+            );
+            assert.equal(
+              u.consents().length,
+              0,
+              `${name}: no consent recorded`,
+            );
+          },
+        );
+      }
+      // Foreign continuation: a challenge issued to account B cannot be confirmed by A.
+      await scenario(
+        { initial: { kind: "challenge" } },
+        async (u, _acct, ref) => {
+          await pref.startPreferenceChange(u.clientB, {
+            accountId: B.account,
+            expectedVersion: 1,
+            patch: PATCH,
+            correlationId: "c",
+          });
+          const out = await confirm(u, A.account, ref);
+          assert.deepEqual(out, {
+            kind: "refused",
+            reason: "unknown_continuation",
+          });
+        },
+      );
+      for (const [name, echo] of [
+        ["wrong disclosure key", { disclosure_key: "other_disclosure" }],
+        ["wrong disclosure version", { disclosure_version: 2 }],
+        ["wrong disclosure hash", { disclosure_hash: "9".repeat(64) }],
+      ] as const) {
+        await scenario(
+          { initial: { kind: "challenge" }, consentEcho: echo },
+          async (u, acct, ref) => {
+            await start(u, acct);
+            const out = await confirm(u, acct, ref);
+            assert.equal(out.kind, "refused", name);
+            if (out.kind === "refused") {
+              assert.equal(out.reason, "consent_not_recorded");
+              assert.equal(out.detail, "tuple_mismatch");
+            }
+            assert.equal(
+              u.patches().length,
+              1,
+              `${name}: confirmation never sent with a mismatched receipt`,
+            );
+            assert.equal(
+              (await chal.getAcknowledgmentChallenge(acct, ref))?.state,
+              "challenged",
+            );
+          },
+        );
+      }
+      await scenario(
+        { initial: { kind: "challenge" }, consentMode: "not_effective" },
+        async (u, acct, ref) => {
+          await start(u, acct);
+          const out = await confirm(u, acct, ref);
+          assert.equal(out.kind, "refused");
+          if (out.kind === "refused")
+            assert.equal(out.reason, "consent_not_recorded");
+          assert.equal(u.patches().length, 1);
+        },
+      );
+      await scenario(
+        {
+          initial: {
+            kind: "challenge",
+            cont: { expires_at: "2020-01-01T00:00:00Z" },
+          },
+        },
+        async (u, acct) => {
+          const out = await start(u, acct);
+          assert.equal(out.kind, "rejected");
+          if (out.kind === "rejected")
+            assert.equal(out.code, "ACKNOWLEDGMENT_REQUIRED_EXPIRED");
+        },
+      );
+      await scenario(
+        { initial: { kind: "challenge", cont: { mutation_applied: true } } },
+        async (u, acct) => {
+          // A schema-invalid continuation never becomes a challenge: the
+          // frozen client refuses it as a contract mismatch.
+          await assert.rejects(
+            start(u, acct),
+            (e: unknown) =>
+              (e as Error).name === "ContractVersionMismatchError",
+          );
+          assert.equal(u.consents().length, 0);
+        },
+      );
+    },
+  );
+
+  await section(
+    "preference confirmation (B2): backend answers — ACKNOWLEDGMENT_BINDING_INVALID, ACKNOWLEDGMENT_NOT_REQUIRED, ACCOUNT_AUTHORIZATION_REQUIRED (403), REQUEST_TOO_LARGE (413), VALIDATION_ERROR (422) and VERSION_CONFLICT after confirmation are terminal for the challenge; 429/503/transport keep it `consented` under the same key B for identical recovery",
+    async () => {
+      for (const [status, code, kind] of [
+        [409, "ACKNOWLEDGMENT_BINDING_INVALID", "rejected"],
+        [409, "ACKNOWLEDGMENT_NOT_REQUIRED", "rejected"],
+        [403, "ACCOUNT_AUTHORIZATION_REQUIRED", "authorization_required"],
+        [413, "REQUEST_TOO_LARGE", "rejected"],
+        [422, "VALIDATION_ERROR", "rejected"],
+        [409, "VERSION_CONFLICT", "stale_version"],
+      ] as const) {
+        await scenario(
+          {
+            initial: { kind: "challenge" },
+            confirm: { kind: "error", status, code },
+          },
+          async (u, acct, ref) => {
+            await start(u, acct);
+            const out = await confirm(u, acct, ref);
+            assert.equal(out.kind, kind, code);
+            if (out.kind === "rejected") assert.equal(out.code, code);
+            assert.equal(
+              (await chal.getAcknowledgmentChallenge(acct, ref))?.state,
+              "failed",
+              `${code}: challenge ends`,
+            );
+            assert.deepEqual(await confirm(u, acct, ref), {
+              kind: "refused",
+              reason: "challenge_failed",
+            });
+          },
+        );
+      }
+      for (const mode of [
+        { kind: "error", status: 429, code: "RATE_LIMITED", retryAfter: "5" },
+        { kind: "error", status: 503, code: "SERVICE_UNAVAILABLE" },
+        { kind: "transport" },
+      ] as const) {
+        await scenario(
+          { initial: { kind: "challenge" }, confirm: mode },
+          async (u, acct, ref) => {
+            await start(u, acct);
+            const out =
+              mode.kind === "transport"
+                ? await confirm(u, acct, ref).catch((e: unknown) => ({
+                    kind: "threw",
+                    name: (e as Error).name,
+                  }))
+                : await confirm(u, acct, ref);
+            if (mode.kind === "transport")
+              assert.equal(
+                (out as { name?: string }).name,
+                "InvestorApiTransportError",
+              );
+            else {
+              assert.equal(out.kind, "retryable");
+              if (out.kind === "retryable" && mode.status === 429)
+                assert.equal(out.retryAfterSeconds, 5);
+            }
+            const rec = await chal.getAcknowledgmentChallenge(acct, ref);
+            assert.equal(
+              rec?.state,
+              "consented",
+              "challenge stays recoverable",
+            );
+            const keyB = rec?.confirmKey;
+            assert.ok(keyB);
+            // Identical explicit recovery: same body, same key B, no new consent.
+            const ok = upstream({});
+            const rec2 = await pref.confirmPreferenceChange(ok.client, {
+              accountId: acct,
+              continuationRef: ref,
+              expectedVersion: 1,
+              patch: PATCH,
+              correlationId: "c_rec",
+            });
+            assert.equal(rec2.kind, "applied");
+            assert.equal(ok.patches()[0]?.headers.get("Idempotency-Key"), keyB);
+            assert.equal(ok.consents().length, 0);
+            assert.deepEqual(ok.patches()[0]?.body, {
+              ...PATCH,
+              continuation_ref: ref,
+              consent_receipt_id: "consent_ack_00000001",
+            });
+          },
+        );
+      }
+      // The initial request's own partition: 403 / 413 / 422 / 429 / 503 without a challenge.
+      for (const [status, code, kind] of [
+        [403, "ACCOUNT_AUTHORIZATION_REQUIRED", "authorization_required"],
+        [413, "REQUEST_TOO_LARGE", "rejected"],
+        [422, "VALIDATION_ERROR", "rejected"],
+        [429, "RATE_LIMITED", "retryable"],
+        [503, "SERVICE_UNAVAILABLE", "retryable"],
+      ] as const) {
+        await scenario(
+          { initial: { kind: "error", status, code } },
+          async (u, acct) => {
+            const out = await start(u, acct);
+            assert.equal(out.kind, kind, code);
+          },
+        );
+      }
+    },
+  );
+
+  await section(
+    "brokerage disconnect (alpha.3 DELETE C): valid disconnect returns the canonical receipt with no credential material; wrong account, malformed id, another user's connection and an already-disconnected connection are refused before any upstream call; acknowledgment required → retained continuation → valid confirmation with exact consent tuple and new key",
+    async () => {
+      const dis = (
+        u: ReturnType<typeof upstream>,
+        acct: string,
+        conn: string,
+      ) => maintAck.disconnectBrokerageConnection(u.client, acct, conn, "c_d");
+      await scenario({}, async (u) => {
+        const out = await dis(u, A.account, A.conn);
+        assert.equal(out.kind, "accepted");
+        if (out.kind !== "accepted") return;
+        assert.equal(out.backendStatus, "DISCONNECTING");
+        assert.equal(out.receipt.positions_unchanged, true);
+        assert.equal(out.upstreamStatus, 202);
+        const d = u.deletes()[0]!;
+        assert.equal(d.body, undefined, "no body on the initial request");
+        assert.match(d.headers.get("Idempotency-Key") ?? "", /^[0-9a-f]{64}$/);
+        assert.ok(
+          !/api_key|api_secret|secret/i.test(JSON.stringify(out)),
+          "no credential in the outcome",
+        );
+      });
+      await scenario({}, async (u) => {
+        // A browser can never name an account; a wrong account id reaching
+        // the adapter is answered by the backend's uniform 404 on the
+        // ownership list and surfaces as the client error the route maps.
+        await assert.rejects(
+          dis(u, B.account, A.conn),
+          (e: unknown) =>
+            (e as { name: string }).name === "InvestorApiError" &&
+            (e as { status: number }).status === 404,
+        );
+        assert.equal(
+          u.deletes().length,
+          0,
+          "no DELETE reached the other account",
+        );
+        assert.deepEqual(await dis(u, A.account, "x"), {
+          kind: "connection_out_of_scope",
+          reason: "malformed",
+        });
+        assert.deepEqual(await dis(u, A.account, B.conn), {
+          kind: "connection_out_of_scope",
+          reason: "not_owned",
+        });
+        assert.equal(u.deletes().length, 0);
+      });
+      await scenario({ disconnectedIds: [A.conn] }, async (u) => {
+        assert.deepEqual(await dis(u, A.account, A.conn), {
+          kind: "connection_out_of_scope",
+          reason: "terminal",
+        });
+        assert.equal(u.deletes().length, 0);
+      });
+      await scenario(
+        { disconnectInitial: { kind: "challenge" } },
+        async (u, _a, ref) => {
+          const out = await dis(u, A.account, A.conn);
+          assert.equal(out.kind, "acknowledgment_required");
+          if (out.kind !== "acknowledgment_required") return;
+          assert.equal(out.challenge.kind, "disconnect");
+          assert.deepEqual(out.challenge.intent, {
+            kind: "disconnect",
+            connectionId: A.conn,
+          });
+          const initialKey = u.deletes()[0]!.headers.get("Idempotency-Key");
+          const conf = await maintAck.confirmBrokerageDisconnect(
+            u.client,
+            A.account,
+            A.conn,
+            ref,
+            "c_dc",
+          );
+          assert.equal(conf.kind, "accepted");
+          const c = u.consents()[0]!;
+          assert.equal(
+            (c.body as Record<string, unknown>)["disclosure_hash"],
+            CONT.required_disclosure_hash,
+          );
+          const d = u.deletes()[1]!;
+          assert.deepEqual(d.body, {
+            continuation_ref: ref,
+            consent_receipt_id: "consent_ack_00000001",
+          });
+          assert.notEqual(d.headers.get("Idempotency-Key"), initialKey);
+          assert.equal(
+            (await chal.getAcknowledgmentChallenge(A.account, ref))?.state,
+            "confirmed",
+          );
+          assert.deepEqual(
+            await maintAck.confirmBrokerageDisconnect(
+              u.client,
+              A.account,
+              A.conn,
+              ref,
+              "c",
+            ),
+            { kind: "refused", reason: "already_confirmed" },
+          );
+          assert.deepEqual(
+            await maintAck.confirmBrokerageDisconnect(
+              u.client,
+              A.account,
+              B.conn,
+              ref,
+              "c",
+            ),
+            { kind: "connection_out_of_scope", reason: "not_owned" },
+          );
+          assert.deepEqual(
+            await maintAck.confirmBrokerageDisconnect(
+              u.client,
+              A.account,
+              A.conn,
+              "continuation_never_issued_0002",
+              "c",
+            ),
+            { kind: "refused", reason: "unknown_continuation" },
+          );
+        },
+      );
+    },
+  );
+
+  await section(
+    "brokerage disconnect: backend 404 / 409 VERSION_CONFLICT / 413 / 422 are terminal with their code; 403 and ACKNOWLEDGMENT_BINDING_INVALID are outside brokerage_mutation and fail closed as contract mismatches; 429 and 503 are retryable and never auto-retried; the confirmation refusal ends the challenge; no broker-write credential is ever stored in the challenge record",
+    async () => {
+      for (const [status, code] of [
+        [404, "RESOURCE_NOT_FOUND"],
+        [409, "VERSION_CONFLICT"],
+        [413, "REQUEST_TOO_LARGE"],
+        [422, "VALIDATION_ERROR"],
+      ] as const) {
+        await scenario(
+          {
+            disconnectInitial: { kind: "challenge" },
+            disconnectConfirm: { kind: "error", status, code },
+          },
+          async (u, _a, ref) => {
+            await maintAck.disconnectBrokerageConnection(
+              u.client,
+              A.account,
+              A.conn,
+              "c",
+            );
+            const out = await maintAck.confirmBrokerageDisconnect(
+              u.client,
+              A.account,
+              A.conn,
+              ref,
+              "c",
+            );
+            assert.equal(out.kind, "rejected", code);
+            if (out.kind === "rejected") {
+              assert.equal(out.code, code);
+              assert.equal(out.status, status);
+            }
+            assert.equal(
+              (await chal.getAcknowledgmentChallenge(A.account, ref))?.state,
+              "failed",
+            );
+            assert.equal(u.deletes().length, 2, "no auto-retry");
+          },
+        );
+        await scenario(
+          { disconnectInitial: { kind: "error", status, code } },
+          async (u) => {
+            const out = await maintAck.disconnectBrokerageConnection(
+              u.client,
+              A.account,
+              A.conn,
+              "c",
+            );
+            assert.equal(out.kind, "rejected", code);
+          },
+        );
+      }
+      // `brokerage_mutation` declares no ACKNOWLEDGMENT_BINDING_INVALID either:
+      // an invalid confirmation binding reaches the frontend as 422
+      // VALIDATION_ERROR / 409 VERSION_CONFLICT (tested above); the
+      // preference-only code on this route is a contract mismatch → fail closed.
+      await scenario(
+        {
+          disconnectInitial: { kind: "challenge" },
+          disconnectConfirm: {
+            kind: "error",
+            status: 409,
+            code: "ACKNOWLEDGMENT_BINDING_INVALID",
+          },
+        },
+        async (u, _a, ref) => {
+          await maintAck.disconnectBrokerageConnection(
+            u.client,
+            A.account,
+            A.conn,
+            "c",
+          );
+          await assert.rejects(
+            maintAck.confirmBrokerageDisconnect(
+              u.client,
+              A.account,
+              A.conn,
+              ref,
+              "c",
+            ),
+            (e: unknown) =>
+              (e as Error).name === "ContractVersionMismatchError",
+          );
+        },
+      );
+      // `brokerage_mutation` declares no 403: a backend 403 on disconnect is
+      // a contract mismatch and fails closed (never a local verdict).
+      await scenario(
+        {
+          disconnectInitial: {
+            kind: "error",
+            status: 403,
+            code: "ACCOUNT_AUTHORIZATION_REQUIRED",
+          },
+        },
+        async (u) => {
+          await assert.rejects(
+            maintAck.disconnectBrokerageConnection(
+              u.client,
+              A.account,
+              A.conn,
+              "c",
+            ),
+            (e: unknown) =>
+              (e as Error).name === "ContractVersionMismatchError",
+          );
+        },
+      );
+      for (const mode of [
+        { kind: "error", status: 429, code: "RATE_LIMITED", retryAfter: "3" },
+        { kind: "error", status: 503, code: "SERVICE_UNAVAILABLE" },
+      ] as const) {
+        await scenario({ disconnectInitial: mode }, async (u) => {
+          const out = await maintAck.disconnectBrokerageConnection(
+            u.client,
+            A.account,
+            A.conn,
+            "c",
+          );
+          assert.equal(out.kind, "retryable");
+          if (out.kind === "retryable" && mode.status === 429)
+            assert.equal(out.retryAfterSeconds, 3);
+          assert.equal(u.deletes().length, 1);
+        });
+      }
+      await scenario(
+        { disconnectInitial: { kind: "challenge" } },
+        async (u, _a, ref) => {
+          await maintAck.disconnectBrokerageConnection(
+            u.client,
+            A.account,
+            A.conn,
+            "c",
+          );
+          const rec = await chal.getAcknowledgmentChallenge(A.account, ref);
+          assert.ok(
+            !/api_key|api_secret|PK[A-Z0-9]{18}/.test(JSON.stringify(rec)),
+            "no credential in the challenge record",
+          );
+        },
+      );
+    },
+  );
+
+  await section(
+    "acknowledgment routes: PATCH /preferences echoes the challenge with mutationApplied:false and confirmPath; POST /preferences/confirm and DELETE /broker/connection/[id] are same-origin + session + stage gated, strict bodies reject a browser-supplied account_id, and an unconfigured upstream is a 503 refusal with a receipt; continuation checks are structural",
+    async () => {
+      const token = await new joseAck.SignJWT({ sub: "user-ack-route-1" })
+        .setProtectedHeader({ alg: "HS256" })
+        .setExpirationTime("1h")
+        .sign(new TextEncoder().encode(getServerEnvAck().SESSION_JWT_SECRET));
+      const req = (
+        method: string,
+        path: string,
+        body: unknown,
+        opts: { origin?: string | null; cookie?: boolean } = {},
+      ) =>
+        new NextRequestAck(`http://localhost:3000${path}`, {
+          method,
+          headers: {
+            ...(opts.origin === null
+              ? {}
+              : { origin: opts.origin ?? "http://localhost:3000" }),
+            ...(opts.cookie === false
+              ? {}
+              : { cookie: `us_session_v1=${token}` }),
+            "content-type": "application/json",
+          },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+      const savedBase = process.env["REFI_INVESTOR_API_BASE_URL"];
+      const savedStage = process.env["REFI_RELEASE_STAGE"];
+      delete process.env["REFI_INVESTOR_API_BASE_URL"];
+      process.env["REFI_RELEASE_STAGE"] = "automated_alpha";
+      resetEnvAck();
+      try {
+        const cases: Array<
+          [
+            string,
+            string,
+            (
+              m: string,
+              p: string,
+              b: unknown,
+              o?: { origin?: string | null; cookie?: boolean },
+            ) => Promise<Response>,
+            unknown,
+          ]
+        > = [
+          [
+            "PATCH",
+            "/api/v1/investor/preferences",
+            (m, p, b, o) => prefRoute.PATCH(req(m, p, b, o)),
+            { expectedVersion: 1, driftThreshold: "0.01" },
+          ],
+          [
+            "POST",
+            "/api/v1/investor/preferences/confirm",
+            (m, p, b, o) => confirmRoute.POST(req(m, p, b, o)),
+            {
+              confirm: true,
+              continuationRef: CONT.continuation_ref,
+              expectedVersion: 1,
+              driftThreshold: "0.01",
+            },
+          ],
+          [
+            "DELETE",
+            `/api/v1/investor/broker/connection/${A.conn}`,
+            (m, p, b, o) => disconnectRoute.DELETE(req(m, p, b, o)),
+            { confirm: true, continuationRef: CONT.continuation_ref },
+          ],
+        ];
+        for (const [method, path, call, body] of cases) {
+          assert.equal(
+            (await call(method, path, body, { origin: "https://evil.example" }))
+              .status,
+            403,
+            `${method} ${path} cross-origin`,
+          );
+          assert.equal(
+            (await call(method, path, body, { cookie: false })).status,
+            401,
+            `${method} ${path} no session`,
+          );
+          assert.equal(
+            (
+              await call(method, path, {
+                ...(body as object),
+                account_id: B.account,
+              })
+            ).status,
+            400,
+            `${method} ${path} smuggled account_id`,
+          );
+          const res = await call(method, path, body);
+          const parsed = (await res.json()) as {
+            receipt?: { action?: string };
+          };
+          assert.equal(res.status, 503, `${method} ${path}`);
+          assert.ok(parsed.receipt?.action, "receipted");
+        }
+        assert.equal(
+          (
+            await confirmRoute.POST(
+              req("POST", "/api/v1/investor/preferences/confirm", {
+                confirm: false,
+                continuationRef: CONT.continuation_ref,
+                expectedVersion: 1,
+                driftThreshold: "0.01",
+              }),
+            )
+          ).status,
+          400,
+          "confirm must be the literal true",
+        );
+      } finally {
+        if (savedBase === undefined)
+          delete process.env["REFI_INVESTOR_API_BASE_URL"];
+        else process.env["REFI_INVESTOR_API_BASE_URL"] = savedBase;
+        if (savedStage === undefined) delete process.env["REFI_RELEASE_STAGE"];
+        else process.env["REFI_RELEASE_STAGE"] = savedStage;
+        resetEnvAck();
+      }
+      assert.deepEqual(
+        ackMod.checkContinuation({
+          ...CONT,
+          effective_at: "2026-09-01T00:00:00Z",
+          expires_at: "2099-01-01T00:00:00Z",
+          mutation_applied: false,
+          policy_version: "p",
+          retry_idempotency_key: "new_key",
+        } as never),
+        { ok: true },
+      );
+      assert.deepEqual(
+        ackMod.checkContinuation({
+          ...CONT,
+          effective_at: "2026-09-01T00:00:00Z",
+          expires_at: "2000-01-01T00:00:00Z",
+          mutation_applied: false,
+          policy_version: "p",
+          retry_idempotency_key: "new_key",
+        } as never),
+        { ok: false, reason: "expired" },
+      );
+      const strip = (f: string) =>
+        readFileSync(join(REPO_ROOT, f), "utf8").replace(
+          /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+          "",
+        );
+      const r = strip("apps/web/app/api/v1/investor/preferences/route.ts");
+      assert.ok(
+        /mutationApplied: false/.test(r) &&
+          /confirmPath/.test(r) &&
+          !/ok: true[^}]*acknowledgment/.test(r),
+        "a challenge is never presented as applied",
+      );
+      const pc = strip(
+        "apps/web/src/lib/investor-api/preference-confirmation.ts",
+      );
+      const order = [
+        "getAcknowledgmentChallenge(",
+        "samePatch(",
+        "checkContinuation(",
+        "recordConsentForContinuation(",
+        "setConfirmKey(",
+        'call("updateAccountPreferences"',
+        "reread(",
+      ].map((k) =>
+        pc.indexOf(
+          k,
+          pc.indexOf("export async function confirmPreferenceChange"),
+        ),
+      );
+      assert.ok(
+        order.every(
+          (i, n) => i >= 0 && (n === 0 || i > (order[n - 1] as number)),
+        ),
+        "confirm order: challenge → intent → continuation → consent → key B → PATCH → re-read",
+      );
+      assert.ok(
+        /confirmKey === challenge\.initialKey/.test(pc),
+        "key A is never reused for confirmation",
+      );
+      const bm = strip(
+        "apps/web/src/lib/investor-api/brokerage-maintenance.ts",
+      );
+      assert.ok(
+        bm.indexOf(
+          "assertConnectionInScope(client, accountId, connectionId)",
+          bm.indexOf("export async function disconnectBrokerageConnection"),
+        ) < bm.indexOf('call("disconnectBrokerageConnection"'),
+        "scope before disconnect",
+      );
+      assert.ok(
+        !/api_secret|apiSecretKey/.test(
+          bm.slice(bm.indexOf("Disconnect (alpha.3")),
+        ),
+        "disconnect path handles no credential",
+      );
     },
   );
 }

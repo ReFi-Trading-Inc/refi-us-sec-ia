@@ -30,6 +30,9 @@ import {
 } from "../../../../../src/lib/kyc/socure/webhook-auth";
 import { socureWebhookEventSchema } from "../../../../../src/lib/kyc/socure/schemas";
 import { noteIgnoredWebhookEvent } from "../../../../../src/lib/prototype-store/entities/kyc-evaluation";
+import { reevaluateAlphaAdmission } from "../../../../../src/lib/compliance/admission-hook";
+import { getAuthSessionLink } from "../../../../../src/lib/prototype-store/entities/auth-link";
+import type { AuthContext } from "../../../../../src/lib/bff/auth";
 import { createRateLimiter } from "../../../../_lib/rateLimit";
 
 const limiter = createRateLimiter({ windowMs: 60_000, max: 120 });
@@ -114,8 +117,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Malformed" }, { status: 400 });
   }
   // The durable record (event marker + state change) is written by
-  // applyWebhook BEFORE this response; 2xx is returned only after that, and
-  // no heavier work runs inside the request.
+  // applyWebhook BEFORE this response. A newly applied FINAL decision then
+  // runs the same server-side admission evaluation as the immediate-ACCEPT
+  // path (idempotent; duplicates/unknown/conflicts never reach it).
+  if (applied.outcome === "applied" && applied.record) {
+    const link = await getAuthSessionLink(applied.record.authId);
+    // Identity comes from the durable evaluation record (provider-authenticated
+    // delivery), never from a browser; the account link is the BFF's own.
+    const auth: AuthContext = link
+      ? {
+          authId: applied.record.authId,
+          accountId: link.accountId,
+          source: "prototype-bff",
+        }
+      : { authId: applied.record.authId, source: "prototype-bff" };
+    // Best-effort: a backend gap here never fails the delivery; admission is
+    // re-derived from current state on the next read.
+    await reevaluateAlphaAdmission(
+      auth,
+      correlationId,
+      "kyc_webhook",
+      provider,
+    );
+  }
   return NextResponse.json(
     { received: true, outcome: applied.outcome },
     { status: 200 },

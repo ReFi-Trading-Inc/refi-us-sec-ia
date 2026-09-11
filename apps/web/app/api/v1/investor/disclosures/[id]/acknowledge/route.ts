@@ -20,6 +20,7 @@
  */
 import { z } from "zod";
 import { bffMutate } from "@lib/bff/handler";
+import { reevaluateAlphaAdmission } from "@lib/compliance/admission-hook";
 import {
   ContractVersionMismatchError,
   InvestorApiTransportError,
@@ -112,6 +113,10 @@ export const POST = bffMutate<AckBody>({
       throw err;
     }
 
+    if (outcome.kind === "recorded") {
+      // A consent is an admission prerequisite: re-evaluate from current state.
+      await reevaluateAlphaAdmission(ctx.auth, ctx.correlationId, "consent");
+    }
     switch (outcome.kind) {
       case "recorded":
         return {

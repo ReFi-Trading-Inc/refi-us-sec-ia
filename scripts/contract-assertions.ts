@@ -7563,6 +7563,603 @@ await section(
   );
 }
 
+// ─── Alpha admission rule (PR F: automatic admission on final trusted ACCEPT) ──
+{
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const adm = await import("../apps/web/src/lib/compliance/alpha-admission.ts");
+  const admEntity =
+    await import("../apps/web/src/lib/prototype-store/entities/alpha-admission.ts");
+  const fx = await import("../apps/web/src/lib/kyc/socure/fixtures.ts");
+  const client = await import("../apps/web/src/lib/kyc/socure/client.ts");
+  const { SocureKycProvider } =
+    await import("../apps/web/src/lib/kyc/socure/adapter.ts");
+  const kycEntity =
+    await import("../apps/web/src/lib/prototype-store/entities/kyc-evaluation.ts");
+  const profile =
+    await import("../apps/web/src/lib/prototype-store/entities/investor-profile-v2.ts");
+  const engine =
+    await import("../apps/web/src/lib/sec203a/investor-profile-engine.ts");
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  const KEYS = [
+    "REFI_KYC_PROVIDER",
+    "REFI_KYC_MOCK_CONTROLS",
+    "SOCURE_API_BASE_URL",
+    "SOCURE_API_KEY",
+    "SOCURE_WORKFLOW_NAME",
+    "SOCURE_ENV",
+  ];
+  const saved: Record<string, string | undefined> = {};
+  for (const k of KEYS) saved[k] = process.env[k];
+  const withEnv = async (
+    over: Record<string, string | undefined>,
+    fn: () => Promise<void>,
+  ) => {
+    for (const [k, v] of Object.entries(over)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    resetServerEnvCacheForTests();
+    try {
+      await fn();
+    } finally {
+      for (const k of KEYS) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+      resetServerEnvCacheForTests();
+    }
+  };
+  const SOCURE_OK = {
+    REFI_KYC_PROVIDER: "socure",
+    REFI_KYC_MOCK_CONTROLS: "0",
+    SOCURE_API_BASE_URL: "https://riskos.sandbox.socure.com",
+    SOCURE_API_KEY: "fixture-api-key-not-real-0123456789",
+    SOCURE_WORKFLOW_NAME: "kyc-fraud-watchlist-docv-fixture",
+    SOCURE_ENV: "sandbox",
+  };
+  const CONSENT_AT = "2026-09-10T00:00:00.000Z";
+
+  // Backend authorities as a scripted fake: cohort (onboarding state), eligibility, disclosures, consents.
+  type Script = {
+    onboardingState: string;
+    eligibility: "ELIGIBLE" | "INELIGIBLE" | "PENDING";
+    disclosures: string[];
+    consented: string[];
+  };
+  const fakeClient = (sc: Script) =>
+    ({
+      call: (op: string): Promise<unknown> => {
+        const ok = (data: unknown) =>
+          Promise.resolve({
+            data: { data },
+            response: new Response(null, { status: 200 }),
+          });
+        switch (op) {
+          case "getOnboardingStatus":
+            return ok({
+              user_id: "u",
+              state: sc.onboardingState,
+              required_steps: [],
+              policy_version: "p",
+              evaluated_at: CONSENT_AT,
+            });
+          case "getEligibility":
+            return ok({
+              eligibility_decision_id: "elig-1",
+              decision: sc.eligibility,
+              jurisdiction: "US",
+              reason_codes: [],
+              policy_version: "p",
+              decided_at: CONSENT_AT,
+              expires_at: null,
+            });
+          case "listEffectiveDisclosures":
+            return ok({
+              items: sc.disclosures.map((k) => ({
+                disclosure_key: k,
+                disclosure_version: 1,
+                content_hash: `h-${k}`,
+                status: "EFFECTIVE",
+              })),
+              page: { has_more: false, next_cursor: null },
+            });
+          case "listConsents":
+            return ok({
+              items: sc.consented.map((k) => ({
+                consent_receipt_id: `cr-${k}`,
+                status: "ACTIVE",
+                disclosure_key: k,
+                disclosure_version: 1,
+                disclosure_hash: `h-${k}`,
+              })),
+              page: { has_more: false, next_cursor: null },
+            });
+          default:
+            return Promise.reject(new Error(`unexpected op ${op}`));
+        }
+      },
+    }) as unknown as import("../apps/web/src/lib/investor-api/demo-client").InvestorApiReadClient;
+
+  const seedProfile = async (accountId: string) => {
+    const answers = { questionnaireVersion: 2 as const };
+    const v = await profile.appendProfileAnswers({
+      accountId,
+      answers,
+      correlationId: "adm",
+    });
+    const assessment = engine.assessInvestorProfile(answers);
+    await profile.appendProfileAssessment({
+      accountId,
+      profileVersion: v.profileVersion,
+      answerSnapshotHash: v.answerSnapshotHash,
+      assessment,
+      correlationId: "adm",
+    });
+  };
+  const COMPLETE: Script = {
+    onboardingState: "INVITED",
+    eligibility: "ELIGIBLE",
+    disclosures: ["d1", "d2"],
+    consented: ["d1", "d2"],
+  };
+  const subjectA = { authId: "auth-adm-a" };
+  const accountA = "acct-adm-a";
+  const subjectB = { authId: "auth-adm-b" };
+  const accountB = "acct-adm-b";
+  const authA = { authId: subjectA.authId, accountId: accountA };
+  const authB = { authId: subjectB.authId, accountId: accountB };
+  const clearFixtures = async () => {
+    for (const id of [
+      fx.FIXTURE_EVAL_ID_REVIEW,
+      fx.FIXTURE_EVAL_ID_ACCEPT,
+      fx.FIXTURE_EVAL_ID_REJECT,
+    ]) {
+      const owner = await kycEntity.findAuthIdByProviderEvaluation(id);
+      if (owner) await kycEntity.resetKycEvaluationForTests(owner);
+      await kycEntity.clearEvaluationIndexForTests(id);
+    }
+    for (const s of [subjectA, subjectB]) {
+      await kycEntity.resetKycEvaluationForTests(s.authId);
+      await admEntity.resetAlphaAdmissionForTests(s.authId);
+    }
+  };
+  const run = (
+    auth: { authId: string; accountId?: string },
+    sc: Script,
+    p: InstanceType<typeof SocureKycProvider> | null,
+    trigger = "test",
+  ) =>
+    adm.runAlphaAdmissionEvaluation({
+      auth,
+      client: fakeClient(sc),
+      provider: p,
+      correlationId: "adm",
+      trigger,
+    });
+
+  await section(
+    "alpha admission (pure rule): all ten prerequisites → admitted; any gap → pending with the exact missing list; trusted REJECT → not_admitted; hold → hold; never derived from event order",
+    async () => {
+      const full: Parameters<typeof adm.evaluateAlphaAdmission>[0] = {
+        authenticatedIdentity: true,
+        accountId: "a",
+        cohort: { ok: true, onboardingState: "INVITED" },
+        eligibility: { ok: true, decisionId: "e" },
+        profile: { ok: true, version: 1 },
+        disclosures: { delivered: true, count: 1 },
+        consents: { ok: true, missing: 0, receiptIds: ["c"] },
+        kyc: {
+          status: "passed",
+          trusted: true,
+          evidenceRef: "kyc-session:x",
+          providerEvaluationId: "ev",
+        },
+        complianceHold: { active: false, reason: null },
+      };
+      assert.deepEqual(adm.evaluateAlphaAdmission(full), {
+        state: "admitted",
+        reason: "KYC_ACCEPT_AND_PREREQUISITES_COMPLETE",
+      });
+      assert.equal(adm.ALPHA_ADMISSION_RULE_VERSION, "refi.alpha.admission.v1");
+      assert.equal(adm.ALPHA_ADMISSION_PREREQUISITES.length, 10);
+      const miss = (o: Partial<typeof full>) => {
+        const r = adm.evaluateAlphaAdmission({ ...full, ...o });
+        return r.state === "pending" ? r.missing : r.state;
+      };
+      assert.deepEqual(
+        miss({ consents: { ok: false, missing: 1, receiptIds: [] } }),
+        ["consents_accepted"],
+      );
+      assert.deepEqual(miss({ profile: { ok: false, version: 0 } }), [
+        "advisory_profile",
+      ]);
+      assert.deepEqual(
+        miss({ cohort: { ok: false, onboardingState: "WAITLISTED" } }),
+        ["alpha_cohort"],
+      );
+      assert.deepEqual(miss({ eligibility: { ok: false, decisionId: null } }), [
+        "eligibility",
+      ]);
+      assert.deepEqual(
+        miss({ kyc: { ...full.kyc, status: null, trusted: false } }),
+        ["kyc_accept", "kyc_final_trusted"],
+      );
+      assert.deepEqual(
+        miss({ kyc: { ...full.kyc, status: "passed", trusted: false } }),
+        ["kyc_final_trusted"],
+        "an untrusted 'passed' never admits",
+      );
+      assert.equal(
+        miss({ kyc: { ...full.kyc, status: "failed" } }),
+        "not_admitted",
+      );
+      assert.equal(
+        miss({ complianceHold: { active: true, reason: "X" } }),
+        "hold",
+      );
+      assert.deepEqual(miss({ accountId: null }), ["identity_mapping"]);
+    },
+  );
+
+  await section(
+    "alpha admission (end to end, fixture): immediate ACCEPT admits; REVIEW does not; DocV final ACCEPT admits via the same evaluator; REJECT → not_admitted; ACCEPT + missing consent / incomplete profile / not in cohort / compliance hold → KYC verified but not admitted; timeout/429 → neither admitted nor rejected",
+    async () => {
+      await withEnv({ ...SOCURE_OK }, async () => {
+        await clearFixtures();
+        await seedProfile(accountA);
+        // 1. immediate ACCEPT + everything complete → admitted
+        let p = new SocureKycProvider(
+          () => new client.FakeSocureClient(fx.SCRIPT_ACCEPT),
+        );
+        await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "a1",
+          correlationId: "adm",
+        });
+        let r = await run(authA, COMPLETE, p, "kyc_evaluation");
+        assert.equal(r.record.state, "admitted");
+        assert.equal(r.transitioned, true);
+        assert.equal(r.record.provenance, "AUTOMATIC");
+        assert.equal(r.record.ruleVersion, "refi.alpha.admission.v1");
+        assert.equal(r.record.reason, "KYC_ACCEPT_AND_PREREQUISITES_COMPLETE");
+        assert.equal(
+          r.record.evidence.providerEvaluationId,
+          fx.FIXTURE_EVAL_ID_ACCEPT,
+        );
+        assert.match(
+          r.record.evidence.kycEvidenceRef ?? "",
+          /^kyc-session:refi-kyc-/,
+        );
+        assert.deepEqual(
+          [...r.record.evidence.consentReceiptIds],
+          ["cr-d1", "cr-d2"],
+        );
+        assert.ok(r.record.admittedAt, "admittedAt set");
+        assert.ok(
+          !JSON.stringify(r.record).includes(fx.FIXTURE_INDIVIDUAL.given_name),
+          "no PII in the admission record",
+        );
+        // idempotent: same decision again → no transition, one history entry
+        const again = await run(authA, COMPLETE, p, "read");
+        assert.equal(again.transitioned, false);
+        assert.equal(again.record.history.length, 1);
+        // durable: a later unrelated provider error does not revoke admission
+        const rAfterGap = await run(
+          authA,
+          { ...COMPLETE, consented: ["d1"] },
+          p,
+          "read",
+        );
+        assert.equal(
+          rAfterGap.record.state,
+          "admitted",
+          "admission is not silently revoked by a later gap",
+        );
+        // 2. REVIEW (DocV pending) → not admitted
+        await clearFixtures();
+        await seedProfile(accountA);
+        p = new SocureKycProvider(
+          () => new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV),
+        );
+        await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "a2",
+          correlationId: "adm",
+        });
+        r = await run(authA, COMPLETE, p);
+        assert.equal(r.record.state, "pending");
+        assert.ok(
+          r.record.reason.includes("kyc_accept"),
+          `2: ${r.record.reason}`,
+        );
+        // 3. DocV final ACCEPT (webhook) → admitted through the same evaluator
+        const reqA = (await kycEntity.getKycEvaluation(subjectA.authId))!
+          .evidence.providerRequestId!;
+        await p.markDocvCaptured(subjectA, "adm");
+        const w = await p.applyWebhook(
+          fx.webhookEvent({
+            eventId: "550e8400-e29b-41d4-a716-446655440300",
+            requestId: reqA,
+          }),
+          "adm",
+        );
+        assert.equal(w.handled && w.outcome, "applied");
+        r = await run(authA, COMPLETE, p, "kyc_webhook");
+        assert.equal(r.record.state, "admitted");
+        assert.equal(r.transitioned, true);
+        // 11. duplicate ACCEPT webhook → one admission record, no new history
+        const dup = await p.applyWebhook(
+          fx.webhookEvent({
+            eventId: "550e8400-e29b-41d4-a716-446655440300",
+            requestId: reqA,
+          }),
+          "adm",
+        );
+        assert.equal(dup.handled && dup.outcome, "duplicate_event");
+        const afterDup = await run(authA, COMPLETE, p, "kyc_webhook");
+        assert.equal(afterDup.transitioned, false);
+        assert.equal(
+          afterDup.record.history.length,
+          2,
+          "pending → admitted only",
+        );
+        // 13. stale REVIEW after ACCEPT → remains admitted / KYC verified
+        const stale = await p.applyWebhook(
+          fx.webhookEvent({
+            eventId: "550e8400-e29b-41d4-a716-446655440301",
+            requestId: reqA,
+            decision: "REVIEW",
+          }),
+          "adm",
+        );
+        assert.equal(stale.handled && stale.outcome, "stale_ignored");
+        assert.equal((await run(authA, COMPLETE, p)).record.state, "admitted");
+        assert.equal(
+          (await kycEntity.getKycEvaluation(subjectA.authId))!.state,
+          "passed",
+        );
+        // 12. conflicting webhook → flagged; admission untouched (no silent change); hold surfaces only for NEW evaluations
+        const conflict = await p.applyWebhook(
+          fx.webhookEvent({
+            eventId: "550e8400-e29b-41d4-a716-446655440302",
+            requestId: reqA,
+            decision: "REJECT",
+          }),
+          "adm",
+        );
+        assert.equal(conflict.handled && conflict.outcome, "conflict_flagged");
+        const afterConflict = await run(authA, COMPLETE, p);
+        assert.equal(
+          afterConflict.record.state,
+          "hold",
+          "a conflicting terminal event is surfaced for investigation, never silently applied",
+        );
+        assert.equal(
+          afterConflict.record.reason,
+          "CONFLICTING_PROVIDER_DECISION",
+        );
+        // 4. final REJECT → not_admitted
+        await clearFixtures();
+        await seedProfile(accountA);
+        p = new SocureKycProvider(
+          () => new client.FakeSocureClient(fx.SCRIPT_REJECT),
+        );
+        await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "a4",
+          correlationId: "adm",
+        });
+        r = await run(authA, COMPLETE, p);
+        assert.equal(r.record.state, "not_admitted");
+        assert.equal(r.record.reason, "KYC_REJECTED");
+        // 5–8: ACCEPT but a non-KYC gap → KYC verified, not admitted; then convergence admits WITHOUT a new evaluation
+        await clearFixtures();
+        p = new SocureKycProvider(
+          () => new client.FakeSocureClient(fx.SCRIPT_ACCEPT),
+        );
+        await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "a5",
+          correlationId: "adm",
+        });
+        assert.equal(
+          (await kycEntity.getKycEvaluation(subjectA.authId))!.state,
+          "passed",
+          "KYC verified",
+        );
+        r = await run(authA, { ...COMPLETE, consented: ["d1"] }, p);
+        assert.equal(r.record.state, "pending");
+        assert.equal(
+          r.record.reason,
+          "MISSING:consents_accepted",
+          "5: ACCEPT + missing consent → KYC verified, not admitted",
+        );
+        // 6. incomplete profile: a mapping with no advisory profile yet
+        const authNoProfile = {
+          authId: subjectA.authId,
+          accountId: "acct-adm-noprofile",
+        };
+        r = await run(authNoProfile, COMPLETE, p);
+        assert.equal(
+          r.record.reason,
+          "MISSING:advisory_profile",
+          "6: ACCEPT + incomplete profile → not admitted",
+        );
+        await seedProfile(accountA);
+        r = await run(authA, { ...COMPLETE, onboardingState: "WAITLISTED" }, p);
+        assert.deepEqual(
+          r.record.reason,
+          "MISSING:alpha_cohort",
+          "7. not in the Alpha cohort",
+        );
+        r = await run(authA, { ...COMPLETE, eligibility: "INELIGIBLE" }, p);
+        assert.deepEqual(r.record.reason, "MISSING:eligibility");
+        r = await run(authA, COMPLETE, p, "consent");
+        assert.equal(
+          r.record.state,
+          "admitted",
+          "22/23: prerequisites converged later → admitted without a new Socure evaluation",
+        );
+        assert.equal(p.constructor.name, "SocureKycProvider");
+        // 8. compliance hold (conflict flag) → KYC verified, not admitted
+        await clearFixtures();
+        await seedProfile(accountA);
+        p = new SocureKycProvider(
+          () => new client.FakeSocureClient(fx.SCRIPT_ACCEPT),
+        );
+        await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "a8",
+          correlationId: "adm",
+        });
+        const recA = (await kycEntity.getKycEvaluation(subjectA.authId))!;
+        await kycEntity.putKycEvaluation({
+          ...recA,
+          conflict: {
+            providerDecision: "reject",
+            eventId: "x",
+            at: CONSENT_AT,
+          },
+        });
+        r = await run(authA, COMPLETE, p);
+        assert.equal(r.record.state, "hold");
+        // 9/10. provider timeout / 429 → neither admitted nor rejected
+        await clearFixtures();
+        await seedProfile(accountA);
+        for (const script of [fx.SCRIPT_TIMEOUT, fx.SCRIPT_429]) {
+          p = new SocureKycProvider(() => new client.FakeSocureClient(script));
+          const out = await p.evaluate({
+            subject: subjectA,
+            individual: fx.FIXTURE_INDIVIDUAL,
+            consentTimestamp: CONSENT_AT,
+            submissionKey: `a9-${script.kind}`,
+            correlationId: "adm",
+          });
+          assert.equal(!out.ok && out.reason, "provider_error");
+          r = await run(authA, COMPLETE, p);
+          assert.equal(
+            r.record.state,
+            "pending",
+            "operational failure → not admitted, not rejected",
+          );
+          assert.ok(
+            !r.record.reason.includes("KYC_REJECTED"),
+            `9/10: ${r.record.reason}`,
+          );
+        }
+        // 16. two users cannot influence one another's admission
+        await clearFixtures();
+        await seedProfile(accountA);
+        p = new SocureKycProvider(
+          () => new client.FakeSocureClient(fx.SCRIPT_ACCEPT),
+        );
+        await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "a16",
+          correlationId: "adm",
+        });
+        assert.equal((await run(authA, COMPLETE, p)).record.state, "admitted");
+        const rB = await run(authB, COMPLETE, p);
+        assert.equal(
+          rB.record.state,
+          "pending",
+          "B has no KYC evidence: A's admission is not B's",
+        );
+        assert.equal(
+          (await admEntity.getAlphaAdmission(subjectB.authId))!.authId,
+          subjectB.authId,
+        );
+        await clearFixtures();
+      });
+    },
+  );
+
+  await section(
+    "alpha admission (boundaries): browser cannot set admission; admission never touches AccountAuthorization or brokerage/economic gates; evaluation runs from KYC, webhook, consent and profile routes and on read; provider adapter carries no admission policy",
+    async () => {
+      const admissionRoute = read(
+        "apps/web/app/api/v1/investor/admission/route.ts",
+      );
+      assert.ok(
+        /bffRead\(/.test(admissionRoute) &&
+          !/bffMutate|parse:|POST/.test(admissionRoute),
+        "admission is read-only for the browser",
+      );
+      const manifest = JSON.parse(
+        read("compliance/API_ROUTE_MANIFEST.json"),
+      ) as { routes: Array<{ route: string; methods: string[] }> };
+      const e = manifest.routes.find(
+        (r) => r.route === "/api/v1/investor/admission",
+      );
+      assert.deepEqual(e?.methods, ["GET"]);
+      const mod = read(
+        "apps/web/src/lib/compliance/alpha-admission.ts",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      assert.ok(
+        !/AccountAuthorization|getAccountAuthorization|AUTHORIZED|createBrokerageConnection|joinTemplate|updateAccountPreferences/.test(
+          mod,
+        ),
+        "admission never reads or writes AccountAuthorization or economic operations",
+      );
+      for (const f of [
+        "apps/web/src/lib/kyc/socure/adapter.ts",
+        "apps/web/src/lib/kyc/socure/mapping.ts",
+        "apps/web/src/lib/kyc/provider.ts",
+      ]) {
+        assert.ok(
+          !/admission|ADMITTED/i.test(
+            read(f).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""),
+          ),
+          `${f}: provider layer carries no admission policy`,
+        );
+      }
+      for (const f of [
+        "apps/web/app/api/v1/investor/kyc/evaluation/route.ts",
+        "apps/web/app/api/webhooks/kyc/provider/route.ts",
+      ]) {
+        assert.ok(
+          /reevaluateAlphaAdmission\(/.test(read(f)),
+          `${f}: converges on the single evaluator`,
+        );
+      }
+      for (const f of [
+        "apps/web/app/api/v1/investor/disclosures/[id]/acknowledge/route.ts",
+        "apps/web/app/api/v1/investor/profile/v2/route.ts",
+      ]) {
+        assert.ok(
+          /reevaluateAlphaAdmission\(/.test(read(f)),
+          `${f}: re-evaluates after a prerequisite change`,
+        );
+      }
+      const webhook = read("apps/web/app/api/webhooks/kyc/provider/route.ts");
+      assert.ok(
+        /applied\.outcome === "applied" && applied\.record/.test(webhook),
+        "webhook evaluates admission only for a newly applied final decision (duplicates/unknown/conflicts never reach it)",
+      );
+      const rp = await import("../apps/web/src/lib/sec203a/release-policy.ts");
+      assert.ok(
+        !(rp.AUTOMATED_ALPHA_ALLOWED_ACTIONS as readonly string[]).some((a) =>
+          /admit/i.test(a),
+        ),
+        "no investor action grants admission",
+      );
+    },
+  );
+}
+
 // ─── Investor Profile v2 is the ONE canonical public questionnaire ──────────
 {
   const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");

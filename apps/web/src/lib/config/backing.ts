@@ -27,6 +27,7 @@ export const ENTITY_MATRIX = {
   "acknowledgment-challenge": ["prototype", "durable"],
   "kyc-evaluation": ["prototype", "durable"],
   "kyc-webhook-event": ["prototype", "durable"],
+  "alpha-admission": ["prototype", "durable"],
 } as const satisfies Record<string, readonly BackingMode[]>;
 
 export type EntityId = keyof typeof ENTITY_MATRIX;

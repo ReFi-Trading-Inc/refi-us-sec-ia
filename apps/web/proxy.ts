@@ -25,9 +25,17 @@ function buildCsp(): string {
   // GET submits). Same-origin + inline is the strongest policy that works
   // until pages are rendered dynamically with the nonce threaded through
   // Next via request headers.
-  const scriptSrc = isProd
-    ? `'self' 'unsafe-inline'`
-    : `'self' 'unsafe-inline' 'unsafe-eval'`;
+  // Provider capture SDK (document step-up) is admitted ONLY when the public
+  // SDK key is configured for this deployment; otherwise no provider origin
+  // appears in the policy at all.
+  const providerSdkOrigin = process.env["NEXT_PUBLIC_SOCURE_SDK_KEY"]
+    ? "https://websdk.socure.com"
+    : null;
+  const scriptSrc =
+    (isProd
+      ? `'self' 'unsafe-inline'`
+      : `'self' 'unsafe-inline' 'unsafe-eval'`) +
+    (providerSdkOrigin ? ` ${providerSdkOrigin}` : "");
 
   const sHost = sentryHost(sentryDsn);
   const extraConnect = [
@@ -44,6 +52,11 @@ function buildCsp(): string {
     "img-src 'self' data: blob:",
     `connect-src 'self' wss: https:${extraConnect ? " " + extraConnect : ""}`,
     "font-src 'self' data:",
+    // The capture SDK renders the provider's Capture App in an iframe and
+    // needs camera access from that frame; admitted only with the SDK key.
+    providerSdkOrigin
+      ? `frame-src 'self' ${providerSdkOrigin} https://*.socure.com`
+      : "frame-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

@@ -872,6 +872,7 @@ await section(
       [...AUTOMATED_ALPHA_ALLOWED_ACTIONS].sort(),
       [
         "acknowledgeDisclosure",
+        "completeKycStepUp",
         "connectBroker",
         "disconnectBroker",
         "dismissSignal",
@@ -6876,6 +6877,399 @@ await section(
       assert.ok(
         /collectsIdentity/.test(page) && !/socure/i.test(page),
         "page gates the form on a neutral capability flag",
+      );
+    },
+  );
+}
+
+// ─── KYC step-up and provider webhook (PR D) ──────────────────────────────
+{
+  const { resetServerEnvCacheForTests } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const wa = await import("../apps/web/src/lib/kyc/socure/webhook-auth.ts");
+  const fx = await import("../apps/web/src/lib/kyc/socure/fixtures.ts");
+  const client = await import("../apps/web/src/lib/kyc/socure/client.ts");
+  const { SocureKycProvider } =
+    await import("../apps/web/src/lib/kyc/socure/adapter.ts");
+  const kycIndex = await import("../apps/web/src/lib/kyc/index.ts");
+  const entity =
+    await import("../apps/web/src/lib/prototype-store/entities/kyc-evaluation.ts");
+  const { createRequire: createRequireD } = await import("node:module");
+  const requireFromWebD = createRequireD(
+    join(process.cwd(), "apps/web/package.json"),
+  );
+  const { NextRequest } = (await import(
+    requireFromWebD.resolve("next/server")
+  )) as typeof import("next/server");
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  const SECRET = "wh-" + "fixture-".repeat(3) + "token";
+  const KEYS = [
+    "REFI_KYC_PROVIDER",
+    "REFI_KYC_MOCK_CONTROLS",
+    "SOCURE_API_BASE_URL",
+    "SOCURE_API_KEY",
+    "SOCURE_WORKFLOW_NAME",
+    "SOCURE_ENV",
+    "SOCURE_WEBHOOK_SECRET",
+    "SOCURE_WEBHOOK_ENFORCE_SENDER_IP",
+    "REFI_ENV",
+    "NEXT_PUBLIC_REFI_ENV",
+  ];
+  const saved: Record<string, string | undefined> = {};
+  for (const k of KEYS) saved[k] = process.env[k];
+  const withEnv = async (
+    over: Record<string, string | undefined>,
+    fn: () => Promise<void>,
+  ) => {
+    for (const [k, v] of Object.entries(over)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    resetServerEnvCacheForTests();
+    try {
+      await fn();
+    } finally {
+      for (const k of KEYS) {
+        if (saved[k] === undefined) delete process.env[k];
+        else process.env[k] = saved[k];
+      }
+      resetServerEnvCacheForTests();
+    }
+  };
+  const SOCURE_OK = {
+    REFI_KYC_PROVIDER: "socure",
+    REFI_KYC_MOCK_CONTROLS: "0",
+    SOCURE_API_BASE_URL: "https://riskos.sandbox.socure.com",
+    SOCURE_API_KEY: "fixture-api-key-not-real-0123456789",
+    SOCURE_WORKFLOW_NAME: "kyc-fraud-watchlist-docv-fixture",
+    SOCURE_ENV: "sandbox",
+    SOCURE_WEBHOOK_SECRET: SECRET,
+    SOCURE_WEBHOOK_ENFORCE_SENDER_IP: "0",
+  };
+  const subject = { authId: "auth-socure-wh" };
+  const CONSENT_AT = "2026-09-10T00:00:00.000Z";
+
+  await section(
+    "webhook auth: documented mechanisms only (Bearer / Basic), constant-time, unset secret fails closed, sender IPs per environment",
+    async () => {
+      assert.deepEqual(
+        wa.verifySocureWebhookAuthorization(`Bearer ${SECRET}`, SECRET),
+        { ok: true, scheme: "bearer" },
+      );
+      assert.equal(
+        wa.verifySocureWebhookAuthorization(`Bearer ${SECRET}x`, SECRET).ok,
+        false,
+      );
+      assert.equal(
+        wa.verifySocureWebhookAuthorization(`Bearer ${SECRET}`, undefined).ok,
+        false,
+        "unset secret → refused",
+      );
+      assert.equal(wa.verifySocureWebhookAuthorization(null, SECRET).ok, false);
+      assert.equal(
+        wa.verifySocureWebhookAuthorization(`Digest ${SECRET}`, SECRET).ok,
+        false,
+        "unknown scheme refused",
+      );
+      const basic = "socure-user:" + "p".repeat(20);
+      const b64 = Buffer.from(basic, "utf8").toString("base64");
+      assert.deepEqual(
+        wa.verifySocureWebhookAuthorization(`Basic ${b64}`, basic),
+        { ok: true, scheme: "basic" },
+      );
+      assert.equal(
+        wa.verifySocureWebhookAuthorization(`Basic ${b64}`, SECRET).ok,
+        false,
+        "basic against a bearer secret refused",
+      );
+      assert.ok(
+        wa.isDocumentedSocureSender("35.230.191.253", "sandbox") &&
+          !wa.isDocumentedSocureSender("35.230.191.253", "production"),
+      );
+      assert.ok(wa.isDocumentedSocureSender("44.195.229.53", "production"));
+      const src = read("apps/web/src/lib/kyc/socure/webhook-auth.ts").replace(
+        /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+        "",
+      );
+      assert.ok(
+        /timingSafeEqual/.test(src) && !/hmac|createHmac|signature/i.test(src),
+        "no invented HMAC scheme; constant-time compare",
+      );
+    },
+  );
+
+  await section(
+    "webhook route: dark unless socure; 401 without/with wrong credential; sender-IP allowlist when enforced; applies once; duplicates/unknown acknowledged; paused audited; wrong environment refused; session cookies irrelevant",
+    async () => {
+      const { POST } =
+        await import("../apps/web/app/api/webhooks/kyc/provider/route.ts");
+      const post = (body: unknown, headers: Record<string, string> = {}) =>
+        POST(
+          new NextRequest(
+            "https://bff.example.invalid/api/webhooks/kyc/provider",
+            {
+              method: "POST",
+              headers: { "content-type": "application/json", ...headers },
+              body: typeof body === "string" ? body : JSON.stringify(body),
+            },
+          ),
+        );
+      await withEnv({ REFI_KYC_PROVIDER: "unconfigured" }, async () => {
+        assert.equal(
+          (await post({})).status,
+          404,
+          "dark when the adapter is not selected",
+        );
+      });
+      await withEnv({ ...SOCURE_OK }, async () => {
+        await entity.resetKycEvaluationForTests(subject.authId);
+        const fake = new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV);
+        const p = new SocureKycProvider(() => fake);
+        kycIndex.setSocureProviderForTests(p);
+        await p.evaluate({
+          subject,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "wh-1",
+          correlationId: "wh",
+        });
+        const rec = (await entity.getKycEvaluation(subject.authId))!;
+        const reqId = rec.evidence.providerRequestId!;
+        const ev = (
+          o: Partial<Parameters<typeof fx.webhookEvent>[0]> & {
+            eventId: string;
+          },
+        ) => fx.webhookEvent({ requestId: reqId, ...o });
+        const auth = { authorization: `Bearer ${SECRET}` };
+        assert.equal(
+          (await post(ev({ eventId: "550e8400-e29b-41d4-a716-446655440100" })))
+            .status,
+          401,
+          "no credential",
+        );
+        assert.equal(
+          (
+            await post(
+              ev({ eventId: "550e8400-e29b-41d4-a716-446655440100" }),
+              { authorization: "Bearer nope-nope-nope-nope-nope" },
+            )
+          ).status,
+          401,
+          "wrong credential",
+        );
+        assert.equal(
+          (
+            await post(
+              ev({ eventId: "550e8400-e29b-41d4-a716-446655440100" }),
+              { ...auth, cookie: "us_session_v1=forged" },
+            )
+          ).status,
+          200,
+          "a session cookie neither helps nor hurts",
+        );
+        assert.equal(
+          (await entity.getKycEvaluation(subject.authId))!.state,
+          "passed",
+        );
+        const dup = await post(
+          ev({ eventId: "550e8400-e29b-41d4-a716-446655440100" }),
+          auth,
+        );
+        assert.equal(dup.status, 200);
+        assert.equal(
+          ((await dup.json()) as { outcome: string }).outcome,
+          "duplicate_event",
+        );
+        const unknown = await post(
+          ev({
+            eventId: "550e8400-e29b-41d4-a716-446655440101",
+            evalId: fx.WEBHOOK_UNKNOWN_EVAL_ID,
+          }),
+          auth,
+        );
+        assert.equal(
+          ((await unknown.json()) as { outcome: string }).outcome,
+          "unknown_evaluation",
+        );
+        const paused = await post(
+          ev({
+            eventId: "550e8400-e29b-41d4-a716-446655440102",
+            eventType: "evaluation_paused",
+            decision: "REVIEW",
+          }),
+          auth,
+        );
+        assert.equal(paused.status, 200);
+        assert.equal(
+          ((await paused.json()) as { outcome: string }).outcome,
+          "ignored",
+        );
+        assert.equal(
+          (await entity.getWebhookEvent("550e8400-e29b-41d4-a716-446655440102"))
+            ?.outcome,
+          "ignored_event_type",
+        );
+        assert.equal(
+          (
+            await post(
+              ev({
+                eventId: "550e8400-e29b-41d4-a716-446655440103",
+                environment: "Production",
+              }),
+              auth,
+            )
+          ).status,
+          400,
+          "environment mismatch refused",
+        );
+        assert.equal((await post("{not json", auth)).status, 400);
+        assert.equal((await post({ hello: 1 }, auth)).status, 400);
+        assert.equal(
+          (
+            await post(
+              ev({ eventId: "550e8400-e29b-41d4-a716-446655440104" }),
+              { ...auth, "content-length": String(300 * 1024) },
+            )
+          ).status,
+          413,
+        );
+        assert.equal(
+          (await entity.getKycEvaluation(subject.authId))!.state,
+          "passed",
+          "nothing above regressed the terminal state",
+        );
+        kycIndex.setSocureProviderForTests(null);
+        await entity.resetKycEvaluationForTests(subject.authId);
+      });
+      await withEnv(
+        { ...SOCURE_OK, SOCURE_WEBHOOK_ENFORCE_SENDER_IP: "1" },
+        async () => {
+          const auth = { authorization: `Bearer ${SECRET}` };
+          assert.equal(
+            (
+              await post(
+                { hello: 1 },
+                { ...auth, "x-forwarded-for": "203.0.113.9" },
+              )
+            ).status,
+            403,
+            "non-documented sender refused when enforced",
+          );
+          assert.equal(
+            (
+              await post(
+                { hello: 1 },
+                { ...auth, "x-forwarded-for": "35.230.191.253" },
+              )
+            ).status,
+            400,
+            "documented sandbox sender passes the IP gate (then fails schema)",
+          );
+        },
+      );
+      await withEnv(
+        { ...SOCURE_OK, SOCURE_WEBHOOK_SECRET: undefined },
+        async () => {
+          assert.equal(
+            (
+              await post(
+                { hello: 1 },
+                { authorization: "Bearer anything-at-all-here" },
+              )
+            ).status,
+            401,
+            "no configured secret → refused, never open",
+          );
+        },
+      );
+      const src = read(
+        "apps/web/app/api/webhooks/kyc/provider/route.ts",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      assert.ok(
+        !/console\./.test(src) && !/authorization[^\n]*\+/.test(src),
+        "credential never logged or concatenated",
+      );
+      assert.ok(
+        !/cookies|getAuthContext|bffMutate|bffRead/.test(src),
+        "no session path in the webhook route",
+      );
+    },
+  );
+
+  await section(
+    "step-up: token only for the owner while active; capture completion → under_review, never passed; CSP admits the capture SDK origin only with the public key",
+    async () => {
+      await withEnv({ ...SOCURE_OK }, async () => {
+        await entity.resetKycEvaluationForTests(subject.authId);
+        const fake = new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV);
+        const p = new SocureKycProvider(() => fake);
+        await p.evaluate({
+          subject,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "su-1",
+          correlationId: "su",
+        });
+        assert.equal(await p.stepUpToken(subject), fx.FIXTURE_DOCV_TOKEN);
+        assert.equal(await p.stepUpToken({ authId: "someone-else" }), null);
+        const after = await p.markStepUpCaptured(subject, "su-c");
+        assert.equal(after?.state, "under_review");
+        assert.equal(
+          await p.stepUpToken(subject),
+          null,
+          "no token once capture is reported",
+        );
+        assert.equal(
+          await p.markStepUpCaptured(subject, "su-c2"),
+          null,
+          "second completion is a no-op",
+        );
+        assert.equal(
+          (await entity.getKycEvaluation(subject.authId))!.state,
+          "under_review",
+          "capture is never verification",
+        );
+        await entity.resetKycEvaluationForTests(subject.authId);
+      });
+      for (const f of [
+        "apps/web/app/api/v1/investor/kyc/step-up/route.ts",
+        "apps/web/app/api/v1/investor/kyc/step-up/complete/route.ts",
+      ]) {
+        const src = read(f);
+        assert.ok(
+          /bff(Read|Mutate)/.test(src) &&
+            !/socure/i.test(src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "")),
+          `${f}: session-authenticated and vendor-neutral`,
+        );
+        assert.ok(
+          !/SOCURE_|apiKey|api_key/.test(src),
+          `${f}: no server credential`,
+        );
+      }
+      const proxy = read("apps/web/proxy.ts");
+      assert.ok(
+        /NEXT_PUBLIC_SOCURE_SDK_KEY[\s\S]{0,120}https:\/\/websdk\.socure\.com/.test(
+          proxy,
+        ),
+        "SDK origin gated on the public key",
+      );
+      const docv = read("apps/web/app/_lib/kyc/docv-sdk.ts");
+      assert.ok(
+        /onSuccess/.test(docv) && /never the verification decision/.test(docv),
+      );
+      assert.ok(
+        !/SOCURE_API_KEY/.test(docv) &&
+          !/SOCURE_API_KEY/.test(
+            read(
+              "apps/web/app/us/onboarding/kyc/_components/KycDocumentStepUp.tsx",
+            ),
+          ),
+      );
+      const page = read("apps/web/app/us/onboarding/kyc/page.tsx");
+      assert.ok(
+        /state === "additional_info_required" && <KycDocumentStepUp \/>/.test(
+          page,
+        ),
       );
     },
   );

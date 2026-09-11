@@ -127,6 +127,46 @@ export function useKycVerification(options?: {
   });
 }
 
+export interface KycStepUpView {
+  required: boolean;
+  token: string | null;
+}
+
+const STEP_UP_KEY = ["investor", "kyc", "step-up"] as const;
+
+export function useKycStepUp(enabled: boolean) {
+  return useQuery({
+    queryKey: STEP_UP_KEY,
+    enabled,
+    queryFn: async (): Promise<KycStepUpView> => {
+      const res = await fetch(
+        `${BASE.replace(/\/verification$/, "")}/step-up`,
+        {
+          credentials: "include",
+        },
+      );
+      if (!res.ok) throw new Error(`step-up ${String(res.status)}`);
+      const body = (await res.json()) as { data: KycStepUpView };
+      return body.data;
+    },
+  });
+}
+
+export function useCompleteKycStepUp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      postJson<{ ok: boolean; session?: KycVerificationSession }>(
+        `${BASE.replace(/\/verification$/, "")}/step-up/complete`,
+        {},
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+      void qc.invalidateQueries({ queryKey: STEP_UP_KEY });
+    },
+  });
+}
+
 export function useSubmitKycEvaluation() {
   const qc = useQueryClient();
   return useMutation({

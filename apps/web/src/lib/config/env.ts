@@ -258,6 +258,8 @@ const serverSchemaBase = clientSchema.extend({
    * Bearer only. Unset → every delivery is refused; required in production.
    */
   SOCURE_WEBHOOK_BEARER_TOKEN: z.string().min(16).optional(),
+  /** "1" → deliveries must come from the documented RiskOS™ sender IPs for SOCURE_ENV. */
+  SOCURE_WEBHOOK_ENFORCE_SENDER_IP: z.enum(["0", "1"]).default("0"),
   /**
    * Enables the mock adapter's server-side test control route. Must never be
    * set on a deployed production tier; the route answers 404 otherwise.
@@ -743,6 +745,8 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     SOCURE_ENV: process.env["SOCURE_ENV"] || undefined,
     SOCURE_WEBHOOK_BEARER_TOKEN:
       process.env["SOCURE_WEBHOOK_BEARER_TOKEN"] || undefined,
+    SOCURE_WEBHOOK_ENFORCE_SENDER_IP:
+      process.env["SOCURE_WEBHOOK_ENFORCE_SENDER_IP"] || undefined,
     DEMO_HANDOFF_PRIVATE_KEY_JWK:
       process.env["DEMO_HANDOFF_PRIVATE_KEY_JWK"] || undefined,
     REFI_TRUST_PROXY_HOST: process.env["REFI_TRUST_PROXY_HOST"] || undefined,

@@ -56,6 +56,9 @@ export const InvestorActions = [
   // configured provider adapter. Receipted; never reaches the trading
   // backend; the response is provider-neutral product state only.
   "submitKycEvaluation",
+  // BFF-only: the browser reports the provider's document capture finished
+  // for the current subject → under_review. Never a verification decision.
+  "completeKycStepUp",
   // BFF-only TEST CONTROL for the mock adapter. Enabled solely by
   // REFI_KYC_MOCK_CONTROLS=1; answers 404 everywhere else.
   "advanceMockKycVerification",

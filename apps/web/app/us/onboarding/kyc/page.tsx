@@ -13,6 +13,7 @@ import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardContent, StatusBanner } from "@ui/components";
 import { KycIdentityForm } from "./_components/KycIdentityForm";
+import { KycDocumentStepUp } from "./_components/KycDocumentStepUp";
 import { kycCopy } from "../../_content/app-copy";
 import {
   KYC_LIFECYCLE_STATES,
@@ -105,6 +106,10 @@ export default function OnboardingKycPage() {
             (state === "not_started" ||
               state === "in_progress" ||
               state === "failed") && <KycIdentityForm />}
+
+          {view?.available === true &&
+            collectsIdentity &&
+            state === "additional_info_required" && <KycDocumentStepUp />}
 
           {canStart && !collectsIdentity && (
             <Button

@@ -20,7 +20,14 @@ Status: **PARTIALLY VERIFIED — organizational control NOT YET COMPLETE.** One 
 | Endpoint protection not disabled | Gatekeeper/XProtect/SIP on; firewall off (see above)                                                                                                                                                     | PARTIAL                                                                                 |
 | Lost/stolen reporting            | policy in `endpoint-security-baseline.md`; Find My status not queried                                                                                                                                    | MANUAL VERIFICATION REQUIRED                                                            |
 
-## Required founder actions before this device passes
+## Exact remediation steps (founder; not performed by tooling)
+
+1. **Application firewall:** System Settings → Network → Firewall → turn on; enable "Stealth mode" under Options. Verify: `/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate` → `enabled`.
+2. **Idle lock ≤ 15 minutes:** System Settings → Lock Screen → "Start Screen Saver when inactive" ≤ 15 minutes and "Require password after screen saver begins or display is turned off" = immediately; set display sleep ≤ 15 minutes on battery and power. Verify: `defaults -currentHost read com.apple.screensaver idleTime` ≤ 900.
+3. **Manual attestations:** confirm Touch ID + strong password, Remote Login off (System Settings → General → Sharing), Find My Mac on, Chrome/Safari at current stable; record the date in `endpoint-checklist-template.md`.
+4. Then request the read-only re-check. The organizational answer stays **NO FOR NOW** until every customer-data-access device passes.
+
+## Required founder actions before this device passes (summary)
 
 1. Enable the macOS application firewall (System Settings → Network → Firewall); consider stealth mode.
 2. Set screen-saver / display-sleep idle time to ≤ 15 minutes (lock on sleep is already immediate).

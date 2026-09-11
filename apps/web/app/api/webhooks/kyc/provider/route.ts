@@ -4,9 +4,12 @@
  * Unauthenticated by session (the sender is the provider, not a browser).
  * Controls, in order: dark (404) unless the Socure adapter is selected;
  * per-IP rate limit; optional documented sender-IP allowlist
- * (SOCURE_WEBHOOK_ENFORCE_SENDER_IP=1); body-size cap; constant-time
- * verification of the configured endpoint credential (Bearer or Basic —
- * the documented RiskOS™ mechanisms; unset secret → 401, fail closed);
+ * (SOCURE_WEBHOOK_ENFORCE_SENDER_IP=1 — defense in depth only, never the
+ * primary control; disabled until the runtime network exposes the original
+ * source address reliably, since forwarded headers are client-settable);
+ * body-size cap; constant-time Bearer credential validation (founder
+ * decision 2026-09-10; credential comparison, not payload signing; unset
+ * token → 401, fail closed);
  * schema validation; exactly-once application by event id; every delivery
  * audited. Only an authenticated `evaluation_completed` for a known
  * evaluation whose `data.id` matches our stored request id can change a
@@ -58,7 +61,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const auth = verifySocureWebhookAuthorization(
     req.headers.get("authorization"),
-    env.SOCURE_WEBHOOK_SECRET,
+    env.SOCURE_WEBHOOK_BEARER_TOKEN,
   );
   if (!auth.ok) {
     // Never say which part failed; never log the presented credential.
@@ -110,8 +113,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     }
     return NextResponse.json({ error: "Malformed" }, { status: 400 });
   }
-  // Acknowledge every correlated/duplicate/unknown outcome with 2xx so the
-  // provider does not retry; the outcome is audited server-side.
+  // The durable record (event marker + state change) is written by
+  // applyWebhook BEFORE this response; 2xx is returned only after that, and
+  // no heavier work runs inside the request.
   return NextResponse.json(
     { received: true, outcome: applied.outcome },
     { status: 200 },

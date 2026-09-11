@@ -5,10 +5,11 @@
  * Bearer (UUID token) or OAuth 2.0 — and documents sender IP allowlists per
  * environment. There is NO HMAC signature scheme; nothing here invents one.
  *
- * ReFi's configuration: `SOCURE_WEBHOOK_SECRET` holds either the bearer
- * token, or `username:password` for Basic. Comparison is constant-time.
- * Unset secret → every delivery is refused (fail closed); the route is dark
- * (404) unless the Socure adapter is selected.
+ * ReFi's configuration (founder decision 2026-09-10): Bearer only —
+ * `SOCURE_WEBHOOK_BEARER_TOKEN` holds the credential configured on the
+ * endpoint in the RiskOS™ dashboard. This is credential comparison, not
+ * payload signing. Unset token → every delivery is refused (fail closed);
+ * the route is dark (404) unless the Socure adapter is selected.
  */
 import { timingSafeEqual } from "node:crypto";
 
@@ -36,48 +37,34 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 export type WebhookAuthResult =
-  | { ok: true; scheme: "bearer" | "basic" }
+  | { ok: true; scheme: "bearer" }
   | {
       ok: false;
-      reason: "secret_unconfigured" | "missing" | "scheme" | "mismatch";
+      reason: "token_unconfigured" | "missing" | "scheme" | "mismatch";
     };
 
 /**
- * Verify the delivery's `Authorization` header against the configured
- * endpoint credential. Never logs either value.
+ * Validate the delivery's `Authorization: Bearer <token>` header against the
+ * configured endpoint credential (founder decision 2026-09-10: Bearer only).
+ * Constant-time comparison; neither value is ever logged.
  */
 export function verifySocureWebhookAuthorization(
   authorizationHeader: string | null,
-  configuredSecret: string | undefined,
+  configuredToken: string | undefined,
 ): WebhookAuthResult {
-  if (!configuredSecret || configuredSecret.length < 16) {
-    return { ok: false, reason: "secret_unconfigured" };
+  if (!configuredToken || configuredToken.length < 16) {
+    return { ok: false, reason: "token_unconfigured" };
   }
   if (!authorizationHeader) return { ok: false, reason: "missing" };
-  const m = /^(Bearer|Basic)\s+(\S+)$/i.exec(authorizationHeader.trim());
-  const schemeRaw = m?.[1];
-  const presented = m?.[2];
-  if (!schemeRaw || !presented) return { ok: false, reason: "scheme" };
-  const scheme = schemeRaw.toLowerCase();
-  if (scheme === "bearer") {
-    return safeEqual(presented, configuredSecret)
-      ? { ok: true, scheme: "bearer" }
-      : { ok: false, reason: "mismatch" };
-  }
-  // Basic: configured as "username:password"
-  if (!configuredSecret.includes(":")) return { ok: false, reason: "scheme" };
-  let decoded: string;
-  try {
-    decoded = Buffer.from(presented, "base64").toString("utf8");
-  } catch {
-    return { ok: false, reason: "mismatch" };
-  }
-  return safeEqual(decoded, configuredSecret)
-    ? { ok: true, scheme: "basic" }
+  const m = /^Bearer\s+(\S+)$/i.exec(authorizationHeader.trim());
+  const presented = m?.[1];
+  if (!presented) return { ok: false, reason: "scheme" };
+  return safeEqual(presented, configuredToken)
+    ? { ok: true, scheme: "bearer" }
     : { ok: false, reason: "mismatch" };
 }
 
-/** True when `ip` is one of the documented sender addresses for the environment. */
+/** True when `ip` is one of the documented sender addresses for the environment (defense in depth only). */
 export function isDocumentedSocureSender(
   ip: string,
   environment: "sandbox" | "production",

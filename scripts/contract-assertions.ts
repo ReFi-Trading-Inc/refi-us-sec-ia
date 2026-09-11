@@ -5816,6 +5816,30 @@ await section(
         ),
         null,
       );
+      assert.equal(
+        mapping.extractDocvTransactionToken(
+          schemas.socureEvaluationResponseSchema.parse(
+            fx.RESPONSE_REVIEW_TOKEN_WRONG_ENRICHMENT,
+          ),
+        ),
+        null,
+        "a token outside the SocureDocRequest enrichment is never used",
+      );
+      assert.deepEqual(
+        mapping.mapSocureEvaluation(
+          schemas.socureEvaluationResponseSchema.parse(
+            fx.RESPONSE_REVIEW_TOKEN_WRONG_ENRICHMENT,
+          ),
+        ),
+        {
+          refiState: "under_review",
+          providerDecision: "review",
+          final: false,
+          docvTransactionToken: null,
+          reviewReason: "provider_review",
+        },
+        "REVIEW without a DocV enrichment stays non-terminal and safe",
+      );
       const ev = (o: Parameters<typeof fx.webhookEvent>[0]) =>
         fx.webhookEvent(o);
       const REQ = "refi-kyc-req-00000000-0000-0000-0000-000000000000";
@@ -6910,7 +6934,7 @@ await section(
     "SOCURE_API_KEY",
     "SOCURE_WORKFLOW_NAME",
     "SOCURE_ENV",
-    "SOCURE_WEBHOOK_SECRET",
+    "SOCURE_WEBHOOK_BEARER_TOKEN",
     "SOCURE_WEBHOOK_ENFORCE_SENDER_IP",
     "REFI_ENV",
     "NEXT_PUBLIC_REFI_ENV",
@@ -6943,14 +6967,14 @@ await section(
     SOCURE_API_KEY: "fixture-api-key-not-real-0123456789",
     SOCURE_WORKFLOW_NAME: "kyc-fraud-watchlist-docv-fixture",
     SOCURE_ENV: "sandbox",
-    SOCURE_WEBHOOK_SECRET: SECRET,
+    SOCURE_WEBHOOK_BEARER_TOKEN: SECRET,
     SOCURE_WEBHOOK_ENFORCE_SENDER_IP: "0",
   };
   const subject = { authId: "auth-socure-wh" };
   const CONSENT_AT = "2026-09-10T00:00:00.000Z";
 
   await section(
-    "webhook auth: documented mechanisms only (Bearer / Basic), constant-time, unset secret fails closed, sender IPs per environment",
+    "webhook auth: Bearer credential validation only, constant-time, unset token fails closed, sender IPs per environment (defense in depth)",
     async () => {
       assert.deepEqual(
         wa.verifySocureWebhookAuthorization(`Bearer ${SECRET}`, SECRET),
@@ -6963,7 +6987,7 @@ await section(
       assert.equal(
         wa.verifySocureWebhookAuthorization(`Bearer ${SECRET}`, undefined).ok,
         false,
-        "unset secret → refused",
+        "unset token → refused",
       );
       assert.equal(wa.verifySocureWebhookAuthorization(null, SECRET).ok, false);
       assert.equal(
@@ -6971,16 +6995,13 @@ await section(
         false,
         "unknown scheme refused",
       );
-      const basic = "socure-user:" + "p".repeat(20);
-      const b64 = Buffer.from(basic, "utf8").toString("base64");
-      assert.deepEqual(
-        wa.verifySocureWebhookAuthorization(`Basic ${b64}`, basic),
-        { ok: true, scheme: "basic" },
-      );
       assert.equal(
-        wa.verifySocureWebhookAuthorization(`Basic ${b64}`, SECRET).ok,
+        wa.verifySocureWebhookAuthorization(
+          `Basic ${Buffer.from("u:" + "p".repeat(20)).toString("base64")}`,
+          SECRET,
+        ).ok,
         false,
-        "basic against a bearer secret refused",
+        "Bearer only: Basic is refused",
       );
       assert.ok(
         wa.isDocumentedSocureSender("35.230.191.253", "sandbox") &&
@@ -7168,7 +7189,7 @@ await section(
         },
       );
       await withEnv(
-        { ...SOCURE_OK, SOCURE_WEBHOOK_SECRET: undefined },
+        { ...SOCURE_OK, SOCURE_WEBHOOK_BEARER_TOKEN: undefined },
         async () => {
           assert.equal(
             (

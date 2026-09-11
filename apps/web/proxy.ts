@@ -31,6 +31,11 @@ function buildCsp(): string {
   const providerSdkOrigin = process.env["NEXT_PUBLIC_SOCURE_SDK_KEY"]
     ? "https://websdk.socure.com"
     : null;
+  // Digital Intelligence SDK (installed npm package) contacts these origins
+  // once initialised in the KYC funnel; admitted only with the public key.
+  const providerDiConnect = process.env["NEXT_PUBLIC_SOCURE_SDK_KEY"]
+    ? "https://ingestion.dv.socure.io https://analytics.dv.socure.io https://network.dv.socure.io https://sdk.dv.socure.io"
+    : null;
   const scriptSrc =
     (isProd
       ? `'self' 'unsafe-inline'`
@@ -41,6 +46,7 @@ function buildCsp(): string {
   const extraConnect = [
     isProd ? `https://${posthogHost}` : null,
     sHost ? `https://${sHost}` : null,
+    providerDiConnect,
   ]
     .filter(Boolean)
     .join(" ");

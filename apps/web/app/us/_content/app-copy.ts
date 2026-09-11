@@ -335,6 +335,19 @@ export const kycCopy = {
       "Additional identity verification is required. You'll be asked to photograph a government ID and take a selfie.",
     invalid: "Please check the highlighted fields.",
   },
+  stepUp: {
+    heading: "Additional identity verification required",
+    intro:
+      "To finish verifying your identity, photograph a government-issued ID and take a selfie. This takes about two minutes.",
+    launch: "Start document verification",
+    launching: "Opening…",
+    captured:
+      "Thanks — your documents were submitted. Verification is under review; we'll update this page automatically.",
+    unavailable:
+      "Document verification isn't available in this environment yet. Nothing has been submitted.",
+    error:
+      "Document capture didn't complete. You can try again; nothing has been decided about your identity.",
+  },
 } as const;
 
 export const compliancePreviewCopy = {

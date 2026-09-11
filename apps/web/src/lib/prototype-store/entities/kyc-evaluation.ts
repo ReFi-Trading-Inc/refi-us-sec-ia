@@ -93,7 +93,10 @@ export interface KycWebhookEventRecord {
     | "evaluation_mismatch"
     | "idempotent_same_result"
     | "conflict_flagged"
-    | "stale_ignored";
+    | "stale_ignored"
+    | "ignored_event_type";
+  /** Provider event type as delivered (audit). */
+  eventType?: string;
 }
 
 const HISTORY_LIMIT = 64;
@@ -322,6 +325,25 @@ export async function applyFinalProviderDecision(args: {
   };
   await records().put(authId, next);
   return note("applied", next);
+}
+
+/** Audit a delivery that is not acted on (paused / failed / case events). Idempotent on event id. */
+export async function noteIgnoredWebhookEvent(args: {
+  eventId: string;
+  eventType: string;
+  providerEvaluationId: string;
+}): Promise<"recorded" | "duplicate_event"> {
+  const seen = await webhookEvents().get(args.eventId);
+  if (seen) return "duplicate_event";
+  await webhookEvents().put(args.eventId, {
+    eventId: args.eventId,
+    providerEvaluationId: args.providerEvaluationId,
+    providerDecision: null,
+    receivedAt: nowIso(),
+    outcome: "ignored_event_type",
+    eventType: args.eventType,
+  });
+  return "recorded";
 }
 
 export async function getWebhookEvent(

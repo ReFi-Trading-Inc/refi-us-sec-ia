@@ -60,6 +60,7 @@ export const SIGNAL_ALLOWED_ACTIONS = [
   // state with no execution reach. Signal-allowed.
   "startKycVerification",
   "submitKycEvaluation",
+  "completeKycStepUp",
   "advanceMockKycVerification",
 ] as const;
 
@@ -107,6 +108,7 @@ export const AUTOMATED_ALPHA_ALLOWED_ACTIONS = [
   "saveProfileDraft",
   "startKycVerification", //         frontend-owned adapter lifecycle
   "submitKycEvaluation", //          identity data → configured adapter (ReFi-owned KYC)
+  "completeKycStepUp", //            capture finished → under_review (not a decision)
   "submitComplianceAttestation", //  createComplianceProfileAttestation
   "syncBrokerConnection", //         syncBrokerageConnection
   "rotateBrokerCredentials", //      rotateBrokerageCredentials

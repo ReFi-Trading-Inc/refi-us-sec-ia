@@ -420,6 +420,18 @@ export class SocureKycProvider implements KycProviderAdapter {
     }
   }
 
+  /** Neutral step-up capability (interface): the DocV transaction token for THIS user only. */
+  async stepUpToken(subject: KycSubject): Promise<string | null> {
+    return this.docvTokenFor(subject);
+  }
+
+  async markStepUpCaptured(
+    subject: KycSubject,
+    correlationId: string,
+  ): Promise<KycVerificationSession | null> {
+    return this.markDocvCaptured(subject, correlationId);
+  }
+
   /** The DocV token for THIS user only, if a step-up is active. */
   async docvTokenFor(subject: KycSubject): Promise<string | null> {
     const r = await getKycEvaluation(subject.authId);

@@ -1,5 +1,5 @@
 {
-  "description": "Deny-by-default API route allowlist (control CM-04). Every App Router route-handler candidate (any route.* under apps/web/app/api/**) must have exactly one entry here, with exact HTTP-method parity. CI fails on any unlisted route, ghost entry, or method drift (scripts/route-manifest-gate.ts); a route.* candidate with an unsupported extension fails closed as UNSUPPORTED ROUTE FILE, and the introduction of a Pages Router API surface (pages/api) fails closed as an UNMANIFESTED API ROUTING MECHANISM until CM-04 is explicitly redesigned to cover it. This manifest proves INVENTORY COMPLETENESS and REVIEWED ROUTE/METHOD EXPANSION only — it does not prove any route's authorization behaviour is correct; the auth field records the measured mechanism, and the auth-specific controls in CONTROL_MATRIX.md (AC-*, CS-*, IB-*) remain responsible for proving that behaviour.",
+  "description": "Deny-by-default API route allowlist (control CM-04). Every App Router route-handler candidate (any route.* under apps/web/app/api/**) must have exactly one entry here, with exact HTTP-method parity. CI fails on any unlisted route, ghost entry, or method drift (scripts/route-manifest-gate.ts); a route.* candidate with an unsupported extension fails closed as UNSUPPORTED ROUTE FILE, and the introduction of a Pages Router API surface (pages/api) fails closed as an UNMANIFESTED API ROUTING MECHANISM until CM-04 is explicitly redesigned to cover it. This manifest proves INVENTORY COMPLETENESS and REVIEWED ROUTE/METHOD EXPANSION only \u2014 it does not prove any route's authorization behaviour is correct; the auth field records the measured mechanism, and the auth-specific controls in CONTROL_MATRIX.md (AC-*, CS-*, IB-*) remain responsible for proving that behaviour.",
   "auth_vocabulary": {
     "public": "No authentication; intentionally unauthenticated (liveness only).",
     "public-rate-limited": "Unauthenticated by design; per-IP rate limiter; issues or consumes signed evidence rather than a session.",
@@ -35,7 +35,7 @@
       "source": "apps/web/app/api/demo/handoff/route.ts",
       "route": "/api/demo/handoff",
       "methods": ["POST"],
-      "purpose": "Demo-tier SIMULATED game handoff: mints an ES256 AlphaHandoffToken with a demo-only key pair (DEMO_HANDOFF_PRIVATE_KEY_JWK) for a fixed demo player subject so the walkthrough passes through the REAL /us/alpha-claim page and route, which verifies it like a game-minted token. 404 unless REFI_ENV=demo, the demo key is set, and FLAG_ALPHA_CLAIM_ROUTE=on; same-origin; session required. Game lineage only — asserts no identity, admission, or authority.",
+      "purpose": "Demo-tier SIMULATED game handoff: mints an ES256 AlphaHandoffToken with a demo-only key pair (DEMO_HANDOFF_PRIVATE_KEY_JWK) for a fixed demo player subject so the walkthrough passes through the REAL /us/alpha-claim page and route, which verifies it like a game-minted token. 404 unless REFI_ENV=demo, the demo key is set, and FLAG_ALPHA_CLAIM_ROUTE=on; same-origin; session required. Game lineage only \u2014 asserts no identity, admission, or authority.",
       "owner": "demo-tier",
       "auth": {
         "POST": "demo-tier-gated"
@@ -45,7 +45,7 @@
       "source": "apps/web/app/api/demo/session/route.ts",
       "route": "/api/demo/session",
       "methods": ["DELETE", "GET", "POST"],
-      "purpose": "Demo-tier persona sign-in (applicant | admitted): GET reports the tier and display persona for the environment indicator; POST mints the standard session cookie for a fixed persona subject (admitted also receives an eligibility decision cookie); DELETE clears them. 404 outside REFI_ENV=demo. Account scope and admission state are never asserted here — they come from BFF/backend projections.",
+      "purpose": "Demo-tier persona sign-in (applicant | admitted): GET reports the tier and display persona for the environment indicator; POST mints the standard session cookie for a fixed persona subject (admitted also receives an eligibility decision cookie); DELETE clears them. 404 outside REFI_ENV=demo. Account scope and admission state are never asserted here \u2014 they come from BFF/backend projections.",
       "owner": "demo-tier",
       "auth": {
         "DELETE": "demo-tier-gated",
@@ -127,7 +127,7 @@
       "source": "apps/web/app/api/v1/investor/allocation/join/route.ts",
       "route": "/api/v1/investor/allocation/join",
       "methods": ["POST"],
-      "purpose": "Automated Alpha: createAccountAction { action: join_template } through the frozen client. ECONOMIC subscription change: AccountAuthorization must be exactly AUTHORIZED before the body is built or forwarded (PENDING/DENIED/SUSPENDED → 412 with the backend's status word verbatim, never relabelled). Requires a fresh allocation_preview_id; deterministic Idempotency-Key from the exact parameters; the backend owns every resulting execution decision.",
+      "purpose": "Automated Alpha: createAccountAction { action: join_template } through the frozen client. ECONOMIC subscription change: AccountAuthorization must be exactly AUTHORIZED before the body is built or forwarded (PENDING/DENIED/SUSPENDED \u2192 412 with the backend's status word verbatim, never relabelled). Requires a fresh allocation_preview_id; deterministic Idempotency-Key from the exact parameters; the backend owns every resulting execution decision.",
       "owner": "investor-bff",
       "auth": {
         "POST": "bff-mutate"
@@ -137,7 +137,7 @@
       "source": "apps/web/app/api/v1/investor/allocation/leave/route.ts",
       "route": "/api/v1/investor/allocation/leave",
       "methods": ["POST"],
-      "purpose": "Automated Alpha: createAccountAction { action: leave_template } through the frozen client. DISENGAGEMENT (reduces exposure): never blocked here on a non-AUTHORIZED account — the backend decides. Account scope from the session only; deterministic Idempotency-Key; no retry.",
+      "purpose": "Automated Alpha: createAccountAction { action: leave_template } through the frozen client. DISENGAGEMENT (reduces exposure): never blocked here on a non-AUTHORIZED account \u2014 the backend decides. Account scope from the session only; deterministic Idempotency-Key; no retry.",
       "owner": "investor-bff",
       "auth": {
         "POST": "bff-mutate"
@@ -177,7 +177,7 @@
       "source": "apps/web/app/api/v1/investor/broker/connection/route.ts",
       "route": "/api/v1/investor/broker/connection",
       "methods": ["GET", "POST"],
-      "purpose": "Brokerage connection: GET is the status/metadata projection of the contract's listBrokerageConnections (no credentials). POST is the ONLY credential-bearing request in the app: a paper Alpaca key pair, validated by shape (environment is the literal 'paper'; live keys never parse), forwarded ONCE to createBrokerageConnection with a deterministic Idempotency-Key and then forgotten — never logged, stored, hashed, echoed or reused; the BFF never calls Alpaca. Signal-allowed action connectBroker; C1b-2 row 13 (D-LAUNCH-06 = YES); paper|live value per D-LAUNCH-07 (OPEN).",
+      "purpose": "Brokerage connection: GET is the status/metadata projection of the contract's listBrokerageConnections (no credentials). POST is the ONLY credential-bearing request in the app: a paper Alpaca key pair, validated by shape (environment is the literal 'paper'; live keys never parse), forwarded ONCE to createBrokerageConnection with a deterministic Idempotency-Key and then forgotten \u2014 never logged, stored, hashed, echoed or reused; the BFF never calls Alpaca. Signal-allowed action connectBroker; C1b-2 row 13 (D-LAUNCH-06 = YES); paper|live value per D-LAUNCH-07 (OPEN).",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read",
@@ -188,7 +188,7 @@
       "source": "apps/web/app/api/v1/investor/broker/connection/[id]/route.ts",
       "route": "/api/v1/investor/broker/connection/[id]",
       "methods": ["DELETE"],
-      "purpose": "alpha.3: disconnectBrokerageConnection (DELETE C) through the frozen client for a connection that MUST belong to the session's authoritative account (ownership checked before the call; foreign/terminal/malformed ids → 404; the browser never names an account). Disconnect is not liquidation, closure, identity deletion or record revocation. Without a body: the initial request; 409 ACKNOWLEDGMENT_REQUIRED retains the continuation; { confirm: true, continuationRef } confirms explicitly — consent recorded for exactly the required disclosure, DELETE re-issued with the binding under a NEW Idempotency-Key. No credentials involved, returned or stored. Backend refusals keep their code; retryable answers are not auto-retried.",
+      "purpose": "alpha.3: disconnectBrokerageConnection (DELETE C) through the frozen client for a connection that MUST belong to the session's authoritative account (ownership checked before the call; foreign/terminal/malformed ids \u2192 404; the browser never names an account). Disconnect is not liquidation, closure, identity deletion or record revocation. Without a body: the initial request; 409 ACKNOWLEDGMENT_REQUIRED retains the continuation; { confirm: true, continuationRef } confirms explicitly \u2014 consent recorded for exactly the required disclosure, DELETE re-issued with the binding under a NEW Idempotency-Key. No credentials involved, returned or stored. Backend refusals keep their code; retryable answers are not auto-retried.",
       "owner": "investor-bff",
       "auth": {
         "DELETE": "bff-mutate"
@@ -198,7 +198,7 @@
       "source": "apps/web/app/api/v1/investor/broker/connection/[id]/rotate/route.ts",
       "route": "/api/v1/investor/broker/connection/[id]/rotate",
       "methods": ["POST"],
-      "purpose": "Automated Alpha: rotateBrokerageCredentials through the frozen client for a connection that MUST belong to the session's authoritative account (checked against listBrokerageConnections before any mutation path is built; foreign, terminal or malformed ids → 404 without an upstream call). Second credential-bearing request in the app: paper Alpaca key pair validated by shape, forwarded once, never logged/stored/echoed; Idempotency-Key from the key ID only.",
+      "purpose": "Automated Alpha: rotateBrokerageCredentials through the frozen client for a connection that MUST belong to the session's authoritative account (checked against listBrokerageConnections before any mutation path is built; foreign, terminal or malformed ids \u2192 404 without an upstream call). Second credential-bearing request in the app: paper Alpaca key pair validated by shape, forwarded once, never logged/stored/echoed; Idempotency-Key from the key ID only.",
       "owner": "investor-bff",
       "auth": {
         "POST": "bff-mutate"
@@ -305,6 +305,16 @@
       }
     },
     {
+      "source": "apps/web/app/api/v1/investor/kyc/evaluation/route.ts",
+      "route": "/api/v1/investor/kyc/evaluation",
+      "methods": ["POST"],
+      "purpose": "Submit identity data collected by ReFi's own onboarding form to the configured KYC provider adapter (submitKycEvaluation, BFF-only, Signal-allowed; founder decision 2026-09-10: ReFi-owned KYC, Build Your Own UI). Strict body (no provider controls can be supplied by the browser); requires a device-intelligence session token; PII is normalised, handed to the adapter once and dropped; response is provider-neutral state only. 503 when no adapter is configured; 409 when the adapter does not evaluate in-app (mock); provider operational failure is a retryable blocked result, never a rejection. Submits nothing to the trading backend.",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
       "source": "apps/web/app/api/v1/investor/kyc/verification/route.ts",
       "route": "/api/v1/investor/kyc/verification",
       "methods": ["GET"],
@@ -358,7 +368,7 @@
       "source": "apps/web/app/api/v1/investor/preferences/route.ts",
       "route": "/api/v1/investor/preferences",
       "methods": ["PATCH"],
-      "purpose": "The investor's only preference write: exactly the four supported fields through the frozen client's dedicated updateAccountPreferences PATCH (never /actions), with If-Match from the version the client saw and a deterministic Idempotency-Key; Signal-allowed action updateAccountPrefs; advice-side only. alpha.3: a 409 ACKNOWLEDGMENT_REQUIRED is NOT a completed mutation — the complete continuation is retained durably and echoed with confirmPath; confirmation happens only through /preferences/confirm.",
+      "purpose": "The investor's only preference write: exactly the four supported fields through the frozen client's dedicated updateAccountPreferences PATCH (never /actions), with If-Match from the version the client saw and a deterministic Idempotency-Key; Signal-allowed action updateAccountPrefs; advice-side only. alpha.3: a 409 ACKNOWLEDGMENT_REQUIRED is NOT a completed mutation \u2014 the complete continuation is retained durably and echoed with confirmPath; confirmation happens only through /preferences/confirm.",
       "owner": "investor-bff",
       "auth": {
         "PATCH": "bff-mutate"
@@ -400,7 +410,7 @@
       "source": "apps/web/app/api/v1/investor/profile/v2/attestation/route.ts",
       "route": "/api/v1/investor/profile/v2/attestation",
       "methods": ["GET", "POST"],
-      "purpose": "ComplianceProfileAttestation submission (Daniel step 6) through the frozen v1.1.0-alpha.3 client: POST submits the LATEST questionnaire-v2 decision after verifying, against the backend, that every effective disclosure has an ACTIVE ACCEPT consent; the chain is recorded as distinct durable states (disclosure delivered → consent accepted → attestation constructed → submitted → backend acknowledgment) and only the backend 201 is evidence. The body carries nothing; every input is server state under the session's account scope. KYC provenance comes from the provider boundary — the mock is never evidence, so the chain stops at `blocked` (KYC_EVIDENCE_MOCK / KYC_EVIDENCE_MISSING) until a genuine provider exists. Deterministic Idempotency-Key; no mutation retry; contract drift 502. GET lists this account's submission records.",
+      "purpose": "ComplianceProfileAttestation submission (Daniel step 6) through the frozen v1.1.0-alpha.3 client: POST submits the LATEST questionnaire-v2 decision after verifying, against the backend, that every effective disclosure has an ACTIVE ACCEPT consent; the chain is recorded as distinct durable states (disclosure delivered \u2192 consent accepted \u2192 attestation constructed \u2192 submitted \u2192 backend acknowledgment) and only the backend 201 is evidence. The body carries nothing; every input is server state under the session's account scope. KYC provenance comes from the provider boundary \u2014 the mock is never evidence, so the chain stops at `blocked` (KYC_EVIDENCE_MOCK / KYC_EVIDENCE_MISSING) until a genuine provider exists. Deterministic Idempotency-Key; no mutation retry; contract drift 502. GET lists this account's submission records.",
       "owner": "investor-bff",
       "auth": {
         "GET": "bff-read",
@@ -472,7 +482,7 @@
       "source": "apps/web/app/api/v1/investor/session/route.ts",
       "route": "/api/v1/investor/session",
       "methods": ["DELETE", "GET"],
-      "purpose": "Session/identity context for the signed-in investor; 401 with no dev fallback outside REFI_ENV=dev. DELETE clears the BFF session (sign-out) — C1b-2 rows 1–3: the legacy browser-direct /auth/* calls are retired.",
+      "purpose": "Session/identity context for the signed-in investor; 401 with no dev fallback outside REFI_ENV=dev. DELETE clears the BFF session (sign-out) \u2014 C1b-2 rows 1\u20133: the legacy browser-direct /auth/* calls are retired.",
       "owner": "identity",
       "auth": {
         "GET": "bff-read",

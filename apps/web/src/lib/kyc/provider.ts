@@ -27,6 +27,7 @@
  * this boundary. `scripts/contract-assertions.ts` enforces that.
  */
 import type { components } from "@refi/api-clients/generated/investor-api.gen";
+import type { NormalizedIdentityInput } from "./identity-input";
 
 /** The lifecycle states the product flow needs. Not a vendor enum. */
 export const KYC_LIFECYCLE_STATES = [
@@ -76,7 +77,37 @@ export interface KycProviderAdapter {
   getSession(subject: KycSubject): Promise<KycVerificationSession>;
   /** Start or resume the user's verification. Idempotent from an in-progress state. */
   start(subject: KycSubject, correlationId?: string): Promise<KycStartResult>;
+  /**
+   * Evaluate identity data collected by ReFi's own form (Build Your Own UI).
+   * Absent on adapters that do not evaluate in-app (the mock). The input is
+   * the provider-neutral `IdentityInput`; the adapter maps it to its wire
+   * shape internally and discards it after one request.
+   */
+  evaluateIdentity?(args: {
+    subject: KycSubject;
+    input: NormalizedIdentityInput;
+    consentTimestamp: string;
+    correlationId: string;
+  }): Promise<KycIdentityEvaluationOutcome>;
 }
+
+export type KycIdentityEvaluationOutcome =
+  | {
+      kind: "evaluated" | "reused";
+      session: KycVerificationSession;
+      /** True when the user must complete a document step-up next. */
+      stepUpRequired: boolean;
+    }
+  | { kind: "already_terminal"; session: KycVerificationSession }
+  | { kind: "submission_in_flight"; session: KycVerificationSession }
+  | {
+      kind: "provider_error";
+      session: KycVerificationSession;
+      retryable: boolean;
+      retryAfterSeconds: number | null;
+      /** Coarse operational class; never a provider message. */
+      errorKind: string;
+    };
 
 export interface KycSubject {
   /** The authenticated identity (BFF `authId`). Never an account id, email or wallet. */

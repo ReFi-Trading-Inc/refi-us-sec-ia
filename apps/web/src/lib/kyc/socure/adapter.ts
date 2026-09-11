@@ -26,8 +26,10 @@ import {
   type WebhookApplication,
 } from "../../prototype-store/entities/kyc-evaluation";
 import { getServerEnv } from "../../config/env";
+import type { NormalizedIdentityInput } from "../identity-input";
 import {
   TERMINAL_KYC_STATES,
+  type KycIdentityEvaluationOutcome,
   type KycProviderAdapter,
   type KycStartResult,
   type KycSubject,
@@ -361,6 +363,61 @@ export class SocureKycProvider implements KycProviderAdapter {
         retryAfterSeconds: e.retryAfterSeconds,
       },
     };
+  }
+
+  /** Neutral entry point used by the BFF route: maps ReFi's identity input to the wire shape once. */
+  async evaluateIdentity(args: {
+    subject: KycSubject;
+    input: NormalizedIdentityInput;
+    consentTimestamp: string;
+    correlationId: string;
+  }): Promise<KycIdentityEvaluationOutcome> {
+    const i = args.input;
+    const individual: SocureIndividual = {
+      di_session_token: i.diSessionToken,
+      given_name: i.givenName,
+      family_name: i.familyName,
+      date_of_birth: i.dateOfBirth,
+      ...(i.email ? { email: i.email } : {}),
+      ...(i.phoneNumber ? { phone_number: i.phoneNumber } : {}),
+      ...(i.nationalId ? { national_id: i.nationalId } : {}),
+      address: {
+        line_1: i.address.line1,
+        ...(i.address.line2 ? { line_2: i.address.line2 } : {}),
+        locality: i.address.locality,
+        major_admin_division: i.address.region,
+        postal_code: i.address.postalCode,
+        country: "US",
+      },
+    };
+    const out = await this.evaluate({
+      subject: args.subject,
+      individual,
+      consentTimestamp: args.consentTimestamp,
+      submissionKey: i.submissionKey,
+      correlationId: args.correlationId,
+    });
+    if (out.ok) {
+      return {
+        kind: out.reused ? "reused" : "evaluated",
+        session: out.session,
+        stepUpRequired: out.session.state === "additional_info_required",
+      };
+    }
+    switch (out.reason) {
+      case "already_terminal":
+        return { kind: "already_terminal", session: out.session };
+      case "submission_in_flight":
+        return { kind: "submission_in_flight", session: out.session };
+      case "provider_error":
+        return {
+          kind: "provider_error",
+          session: out.session,
+          retryable: out.error?.retryable ?? false,
+          retryAfterSeconds: out.error?.retryAfterSeconds ?? null,
+          errorKind: out.error?.kind ?? "provider_unavailable",
+        };
+    }
   }
 
   /** The DocV token for THIS user only, if a step-up is active. */

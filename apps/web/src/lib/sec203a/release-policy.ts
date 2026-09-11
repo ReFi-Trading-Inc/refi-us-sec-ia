@@ -59,6 +59,7 @@ export const SIGNAL_ALLOWED_ACTIONS = [
   // Identity-verification lifecycle (frontend-owned mock adapter): onboarding
   // state with no execution reach. Signal-allowed.
   "startKycVerification",
+  "submitKycEvaluation",
   "advanceMockKycVerification",
 ] as const;
 
@@ -105,6 +106,7 @@ export const AUTOMATED_ALPHA_ALLOWED_ACTIONS = [
   "submitSupportRequest",
   "saveProfileDraft",
   "startKycVerification", //         frontend-owned adapter lifecycle
+  "submitKycEvaluation", //          identity data → configured adapter (ReFi-owned KYC)
   "submitComplianceAttestation", //  createComplianceProfileAttestation
   "syncBrokerConnection", //         syncBrokerageConnection
   "rotateBrokerCredentials", //      rotateBrokerageCredentials

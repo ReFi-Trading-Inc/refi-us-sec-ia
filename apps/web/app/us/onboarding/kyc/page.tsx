@@ -12,6 +12,7 @@
 import { useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardContent, StatusBanner } from "@ui/components";
+import { KycIdentityForm } from "./_components/KycIdentityForm";
 import { kycCopy } from "../../_content/app-copy";
 import {
   KYC_LIFECYCLE_STATES,
@@ -60,6 +61,7 @@ export default function OnboardingKycPage() {
   }, [state, router]);
 
   const unavailable = view !== undefined && !view.available;
+  const collectsIdentity = view?.collectsIdentity === true;
   const canStart =
     view?.available === true &&
     (state === "not_started" ||
@@ -98,7 +100,13 @@ export default function OnboardingKycPage() {
             </StatusBanner>
           )}
 
-          {canStart && (
+          {view?.available === true &&
+            collectsIdentity &&
+            (state === "not_started" ||
+              state === "in_progress" ||
+              state === "failed") && <KycIdentityForm />}
+
+          {canStart && !collectsIdentity && (
             <Button
               data-testid="kyc-start"
               onClick={() => {

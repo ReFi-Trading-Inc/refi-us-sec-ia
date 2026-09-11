@@ -33,6 +33,12 @@ export interface KycVerificationView {
    */
   normalized: AttestationKyc | null;
   reason?: "provider_unconfigured";
+  /**
+   * True when the configured adapter evaluates identity data collected by
+   * ReFi's own form (Build Your Own UI); false for the mock, which has no
+   * form and no provider. Derived from adapter capability, never a vendor name.
+   */
+  collectsIdentity: boolean;
 }
 
 export const GET = bffRead({
@@ -44,6 +50,7 @@ export const GET = bffRead({
         adapter: null,
         session: null,
         normalized: null,
+        collectsIdentity: false,
       };
     }
     try {
@@ -54,6 +61,7 @@ export const GET = bffRead({
         adapter: provider.kind,
         session,
         normalized: toNormalizedKycResult(session, provider.kind),
+        collectsIdentity: typeof provider.evaluateIdentity === "function",
       };
     } catch (err) {
       if (err instanceof KycProviderUnavailableError) {
@@ -63,6 +71,7 @@ export const GET = bffRead({
           session: null,
           normalized: null,
           reason: "provider_unconfigured",
+          collectsIdentity: false,
         };
       }
       throw err;

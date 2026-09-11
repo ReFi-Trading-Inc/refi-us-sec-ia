@@ -1,5 +1,11 @@
 # 2026-09 Signal Release Candidate — governance archive
 
+**Current integration ownership and workflow:** read the
+[shared working agreement](../../integration-collaboration.md). ReFinity handles
+BFF/client/backend integration and isolated `refinity-dev` deployment; frontend
+retains UI/UX and KYC. Both teams merge tested work frequently. Older Signal-only
+scope, all-frontend BFF ownership and undecided hosting text do not override it.
+
 Canonical, tracked home for the September 13 "Client-Onboarding-Ready Signal Release
 Candidate" program documents. These were session working papers until 2026-08-22;
 the copies here are authoritative.

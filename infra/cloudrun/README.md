@@ -1,5 +1,18 @@
 # Demo tier on Cloud Run — one always-on instance
 
+**Scope: existing demo deployment only.** The connected integration environment
+will use a separate service/build configuration in `refinity-dev/us-west1`, not
+this script's `refi-game-prod/demo-web` target. Leave the game/demo and their
+domains unchanged. Both teams follow the
+[shared integration working agreement](../../docs/integration-collaboration.md).
+
+Zeshan's current Vercel development/deployment flow continues while Daniel sets
+up connected GCP services on `integration/refinity-dev`. `refinity-dev`
+hosts both frontend/BFF and trading backend; future `refinity-stg/prod` follows
+the same shared-environment pattern. These internal project names do not change
+the public **Refi Trading** brand. No staging/production provisioning or domain
+cutover is authorized by this guide.
+
 **Why this exists (2026-09-08).** The demo tier keeps walkthrough state
 in-process (the demo world: broker connection, holdings, fills, advice) and on
 local disk (the prototype store: KYC mock session, Investor Profile v2,

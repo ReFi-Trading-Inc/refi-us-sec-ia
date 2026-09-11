@@ -44,6 +44,7 @@ export {
   InvestorApiError,
   InvestorApiTransportError,
   RemoteBaseUrlNotAllowedError,
+  type AcknowledgmentContinuation,
 } from "./errors";
 export {
   DEFAULT_MAX_PENDING_CHARS,

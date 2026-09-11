@@ -185,6 +185,16 @@
       }
     },
     {
+      "source": "apps/web/app/api/v1/investor/broker/connection/[id]/route.ts",
+      "route": "/api/v1/investor/broker/connection/[id]",
+      "methods": ["DELETE"],
+      "purpose": "alpha.3: disconnectBrokerageConnection (DELETE C) through the frozen client for a connection that MUST belong to the session's authoritative account (ownership checked before the call; foreign/terminal/malformed ids → 404; the browser never names an account). Disconnect is not liquidation, closure, identity deletion or record revocation. Without a body: the initial request; 409 ACKNOWLEDGMENT_REQUIRED retains the continuation; { confirm: true, continuationRef } confirms explicitly — consent recorded for exactly the required disclosure, DELETE re-issued with the binding under a NEW Idempotency-Key. No credentials involved, returned or stored. Backend refusals keep their code; retryable answers are not auto-retried.",
+      "owner": "investor-bff",
+      "auth": {
+        "DELETE": "bff-mutate"
+      }
+    },
+    {
       "source": "apps/web/app/api/v1/investor/broker/connection/[id]/rotate/route.ts",
       "route": "/api/v1/investor/broker/connection/[id]/rotate",
       "methods": ["POST"],
@@ -348,10 +358,20 @@
       "source": "apps/web/app/api/v1/investor/preferences/route.ts",
       "route": "/api/v1/investor/preferences",
       "methods": ["PATCH"],
-      "purpose": "The investor's only preference write: exactly the four supported fields through the frozen client's dedicated updateAccountPreferences PATCH (never /actions), with If-Match from the version the client saw and a deterministic Idempotency-Key; Signal-allowed action updateAccountPrefs; advice-side only.",
+      "purpose": "The investor's only preference write: exactly the four supported fields through the frozen client's dedicated updateAccountPreferences PATCH (never /actions), with If-Match from the version the client saw and a deterministic Idempotency-Key; Signal-allowed action updateAccountPrefs; advice-side only. alpha.3: a 409 ACKNOWLEDGMENT_REQUIRED is NOT a completed mutation — the complete continuation is retained durably and echoed with confirmPath; confirmation happens only through /preferences/confirm.",
       "owner": "investor-bff",
       "auth": {
         "PATCH": "bff-mutate"
+      }
+    },
+    {
+      "source": "apps/web/app/api/v1/investor/preferences/confirm/route.ts",
+      "route": "/api/v1/investor/preferences/confirm",
+      "methods": ["POST"],
+      "purpose": "alpha.3 B2: the investor's EXPLICIT confirmation of a preference change the backend challenged with 409 ACKNOWLEDGMENT_REQUIRED. Bound to the durably retained challenge (same intended values, same expected version, currently valid continuation); the BFF records ACCEPT consent for exactly the required disclosure key/version/hash and re-checks the receipt tuple, then re-issues updateAccountPreferences with continuation_ref + consent_receipt_id, current If-Match and a NEW Idempotency-Key; canonical APPLIED plus an authoritative preference re-read are returned. Unknown/expired/mismatched continuation, changed intent, missing consent or reused confirmation fail closed (412); backend refusals keep their code; retryable answers keep the challenge under the same key.",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
       }
     },
     {

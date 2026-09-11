@@ -64,6 +64,7 @@ import {
   CONTRACT_DOCUMENT,
   type ContractRoute,
   type RuntimeOwner,
+  OPTIONAL_REQUEST_BODY_OPERATIONS,
 } from "./package";
 import { expandPath, routeFor, type OperationId } from "./routes";
 import { parseSseFrames, type SseFrame } from "./sse";
@@ -780,7 +781,13 @@ export class InvestorApiClient {
     }
 
     let bodyText: string | undefined;
-    if (route.request_schema !== null) {
+    if (
+      route.request_schema !== null &&
+      options.body === undefined &&
+      OPTIONAL_REQUEST_BODY_OPERATIONS.has(operationId)
+    ) {
+      // Contract-optional body (openapi requestBody.required=false): omitted.
+    } else if (route.request_schema !== null) {
       if (!hasSchema(route.request_schema)) {
         throw new Error(
           `contract.json names unknown request schema ${route.request_schema}`,

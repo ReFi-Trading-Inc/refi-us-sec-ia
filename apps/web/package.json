@@ -22,6 +22,7 @@
     "@refi/api-clients": "workspace:*",
     "@refi/ui": "workspace:*",
     "@sentry/nextjs": "^10.71.0",
+    "@socure-inc/device-risk-sdk": "2.11.0",
     "@tanstack/react-query": "^5.101.4",
     "jose": "^6.2.4",
     "msw": "^2.15.0",

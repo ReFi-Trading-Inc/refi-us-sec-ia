@@ -6762,17 +6762,90 @@ await section(
   );
 
   await section(
-    "kyc evaluation browser seam: DI token comes from the provider SDK on the device; the form posts once to the same-origin BFF with an idempotency key; no provider host, no server key in the browser",
+    "kyc evaluation browser seam: pinned DI SDK behind a typed adapter — initialise once, token only after init, no key → unavailable, no fake token; form posts once to the same-origin BFF; no provider host or server key in the browser",
     async () => {
-      const di = read("apps/web/app/_lib/kyc/di-session.ts");
+      const pkg = JSON.parse(read("apps/web/package.json")) as {
+        dependencies: Record<string, string>;
+      };
+      assert.equal(
+        pkg.dependencies["@socure-inc/device-risk-sdk"],
+        "2.11.0",
+        "SDK pinned exactly",
+      );
+      const di = await import("../apps/web/app/_lib/kyc/socure-di.ts");
+      let inits = 0;
+      const fake = {
+        initialize: (c: { sdkKey: string }) => {
+          inits += 1;
+          assert.equal(c.sdkKey, "public-sdk-key-fixture");
+        },
+        getSessionToken: () => Promise.resolve("di-token-fixture"),
+      };
+      di.setSocureDiSdkForTests(fake);
+      assert.equal(
+        await di.socureDiSessionToken(),
+        null,
+        "no token before initialisation",
+      );
+      assert.equal(await di.ensureSocureDiInitialized(undefined), "no_key");
+      assert.equal(inits, 0, "no key → the SDK is never initialised");
+      assert.equal(
+        await di.ensureSocureDiInitialized("public-sdk-key-fixture"),
+        "initialized",
+      );
+      assert.equal(
+        await di.ensureSocureDiInitialized("public-sdk-key-fixture"),
+        "already",
+      );
+      assert.equal(
+        await di.ensureSocureDiInitialized("public-sdk-key-fixture"),
+        "already",
+      );
+      assert.equal(inits, 1, "initialise exactly once per page lifetime");
+      assert.equal(di.socureDiInitCount(), 1);
+      assert.equal(
+        await di.ensureSocureDiInitialized("another-key"),
+        "key_mismatch",
+      );
+      assert.equal(await di.socureDiSessionToken(), "di-token-fixture");
+      di.setSocureDiSdkForTests({
+        initialize: () => {},
+        getSessionToken: () => Promise.reject(new Error("x")),
+      });
+      await di.ensureSocureDiInitialized("public-sdk-key-fixture");
+      assert.equal(
+        await di.socureDiSessionToken(),
+        null,
+        "SDK failure → null, never a fabricated token",
+      );
+      di.setSocureDiSdkForTests(null);
+      const wrapper = read("apps/web/app/_lib/kyc/socure-di.ts");
       assert.ok(
-        /window\.SigmaDeviceManager/.test(di) && /sdk_unavailable/.test(di),
-        "no token without the device SDK; no fake token",
+        /await import\("@socure-inc\/device-risk-sdk"\)/.test(wrapper),
+        "SDK loaded lazily",
       );
       assert.ok(
-        !/SOCURE_API_KEY|riskos\.|socure\.com/.test(di),
-        "no provider host or server key in the seam",
+        /disableNavigationContextTracking: true/.test(wrapper),
+        "no navigation tracking outside the funnel",
       );
+      assert.ok(
+        !/SOCURE_API_KEY|riskos\./.test(wrapper),
+        "no server key / evaluation host in the browser adapter",
+      );
+      const seam = read("apps/web/app/_lib/kyc/di-session.ts");
+      assert.ok(
+        /NEXT_PUBLIC_SOCURE_SDK_KEY/.test(seam) && !/SOCURE_API_KEY/.test(seam),
+      );
+      for (const f of [
+        "apps/web/app/us/onboarding/kyc/_components/KycIdentityForm.tsx",
+        "apps/web/app/us/onboarding/kyc/page.tsx",
+        "apps/web/app/_hooks/useKycVerification.ts",
+      ]) {
+        assert.ok(
+          !/device-risk-sdk|SigmaDeviceManager/.test(read(f)),
+          `${f}: SDK API stays behind the adapter`,
+        );
+      }
       const form = read(
         "apps/web/app/us/onboarding/kyc/_components/KycIdentityForm.tsx",
       );
@@ -6781,8 +6854,10 @@ await section(
         "one idempotency key per mounted form",
       );
       assert.ok(
-        /getDiSessionToken\(\)/.test(form) && /if \(!di\.ok\)/.test(form),
-        "submit requires a DI token",
+        /void prepareDiSession\(\);/.test(form) &&
+          /getDiSessionToken\(\)/.test(form) &&
+          /if \(!di\.ok\)/.test(form),
+        "init on mount; submit requires a DI token",
       );
       assert.ok(
         !/fetch\(\s*["']https?:/.test(form) && !/socure/i.test(form),

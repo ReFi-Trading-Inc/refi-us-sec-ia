@@ -17,6 +17,7 @@ import {
   KycProviderUnavailableError,
   toNormalizedKycResult,
   type AttestationKyc,
+  type KycAdapterKind,
   type KycLifecycleState,
   type KycVerificationSession,
 } from "@lib/kyc";
@@ -24,7 +25,7 @@ import {
 export interface KycVerificationView {
   available: boolean;
   /** Adapter kind — a label for humans/tests ("mock"), never product logic. */
-  adapter: "mock" | null;
+  adapter: KycAdapterKind | null;
   session: KycVerificationSession | null;
   /**
    * What a LATER attestation slice would submit for `kyc`. Informational

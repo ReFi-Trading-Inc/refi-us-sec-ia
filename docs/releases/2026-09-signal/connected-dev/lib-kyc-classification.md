@@ -57,3 +57,5 @@ entity, and the routes `kyc/evaluation`, `kyc/step-up`, `kyc/step-up/complete`,
 `/api/webhooks/kyc/provider`. F-1 is resolved differently from the earlier
 proposal: connected deployments forbid `mock` but permit a complete `socure`
 configuration; `unconfigured` still reports unavailable, never pending.
+
+Admission (PR F): `lib/compliance/alpha-admission.ts` and `admission-hook.ts` are ReFi product/compliance logic (class **C**), deliberately outside `lib/kyc/`.

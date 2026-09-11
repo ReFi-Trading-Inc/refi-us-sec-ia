@@ -108,13 +108,13 @@ credential validation + sync through Daniel's integration
 genuine Stytch login · identity bridge signed by the KMS bridge key · remote
 identity exchange against identity-ccid · durable cloud session state in
 Firestore · backend identity resolution · account ownership resolution ·
-closed-Alpha admission gate proved with a backend-issued invitation. **KYC:
-ReFi-owned via Socure (sandbox acceptance) — a prerequisite for admission, not
-admission.**
+closed-Alpha cohort gate proved with a backend-issued invitation. **KYC:
+ReFi-owned via Socure (sandbox acceptance); a final trusted ACCEPT plus the
+other prerequisites admits automatically (rule v1); human review is exception-based.**
 
 ### Connected Signal Alpha — exact remaining conditions
 
-admitted real user (Socure `passed` + eligibility + internal approval) · Alpaca
+admitted real user (automatic admission: cohort + eligibility + profile + consents + Socure `passed`) · Alpaca
 account-opening step through the bound boundary (TBD) · real brokerage connection `CONNECTED`/`VALID` · fresh account truth ·
 attestation accepted per K1 · Signal data (catalog, preferences, records) from
 the remote Investor API · records access-logged · two-user isolation proved

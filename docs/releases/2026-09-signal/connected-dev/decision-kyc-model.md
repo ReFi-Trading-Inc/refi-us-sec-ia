@@ -1,4 +1,4 @@
-> **SUPERSEDED 2026-09-10 (later the same day).** The founder selected **Socure** as ReFi's own KYC provider for the initial US Alpha (`decision-kyc-provider-socure.md`). The Alpaca-owned KYC/CIP model below is retained as history; the Alpaca account-opening boundary questions to Daniel remain open independently of KYC.
+> **SUPERSEDED 2026-09-10 (later the same day).** Also superseded: the "INTERNAL REFI HUMAN CLOSED-ALPHA APPROVAL" step — admission is now automatic on a final trusted Socure ACCEPT (`decision-alpha-admission-automatic.md`); human review is exception-based. The founder selected **Socure** as ReFi's own KYC provider for the initial US Alpha (`decision-kyc-provider-socure.md`). The Alpaca-owned KYC/CIP model below is retained as history; the Alpaca account-opening boundary questions to Daniel remain open independently of KYC.
 
 # KYC/CIP model for the initial US Alpha — founder decision 2026-09-10
 

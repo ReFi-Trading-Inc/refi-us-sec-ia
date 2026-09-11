@@ -68,6 +68,11 @@ Please confirm (exact operation/object/status names where possible):
    this satisfies your trusted-provenance expectation, or state the exact
    `provider` / `level` / `evidence_ref` vocabulary you want.
 9. Does this require an alpha.3 addendum or new frontend projection?
+   **9a (admission).** ReFi now admits automatically on a final trusted
+   Socure ACCEPT once cohort, eligibility, profile, disclosures and consents
+   hold. Do you expect any separately-set admission flag beyond the
+   attestation with `kyc.status=passed`, or is the attestation (plus your
+   invitation/onboarding state) the complete backend admission evidence?
 10. Will B3 test identities receive pre-created Alpaca PAPER accounts?
 
 Status until answered: **ALPACA ACCOUNT OPENING: DANIEL DEPENDENCY** ·

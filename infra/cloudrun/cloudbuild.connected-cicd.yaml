@@ -33,8 +33,10 @@ steps:
       ]
   - id: verify-and-promote
     name: gcr.io/google.com/cloudsdktool/google-cloud-cli:stable
-    entrypoint: python3
-    args: [infra/cloudrun/connected-release.py]
+    entrypoint: /bin/sh
+    args:
+      - -ec
+      - 'exec "$$(gcloud info --format="value(basic.python_location)")" infra/cloudrun/connected-release.py'
     env:
       - "CB_BUILD_ID=${BUILD_ID}"
       - "CB_SOURCE_SHA=${COMMIT_SHA}"

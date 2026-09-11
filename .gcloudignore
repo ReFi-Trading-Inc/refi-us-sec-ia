@@ -13,3 +13,11 @@ artifacts
 september-12-launch
 *.xlsx
 .claude
+**/.terraform
+**/*.tfstate
+**/*.tfstate.*
+**/*.tfplan
+**/*.auto.tfvars
+**/*.auto.tfvars.json
+docs/scratch_pads
+**/gha-creds-*.json

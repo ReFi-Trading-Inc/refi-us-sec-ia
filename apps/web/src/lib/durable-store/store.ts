@@ -33,15 +33,25 @@ const PREFIX_END = "\uf8ff";
 
 let cachedClient: Firestore | null = null;
 
-function client(): Firestore {
-  if (cachedClient) return cachedClient;
-
+export function firestoreSettings(
+  env: NodeJS.ProcessEnv = process.env,
+): Settings {
   // ignoreUndefinedProperties matches prototype-store semantics (JSON
   // stringify drops undefined); without it, entities with optional fields
   // (accountId, campaignSource, …) would throw on write.
   const settings: Settings = { ignoreUndefinedProperties: true };
 
-  const keyJson = process.env["GCP_SERVICE_ACCOUNT_KEY"];
+  const keyJson = env["GCP_SERVICE_ACCOUNT_KEY"];
+  if (
+    env["REFI_INVESTOR_API_CREDENTIAL_MODE"] === "native-cloud-run" &&
+    (keyJson ||
+      env["GOOGLE_APPLICATION_CREDENTIALS"] ||
+      env["FIRESTORE_EMULATOR_HOST"])
+  ) {
+    throw new Error(
+      "Connected Firestore requires native runtime credentials, not keys or an emulator",
+    );
+  }
   if (keyJson) {
     const key = JSON.parse(keyJson) as {
       project_id?: string;
@@ -57,11 +67,27 @@ function client(): Firestore {
     }
     if (key.project_id) settings.projectId = key.project_id;
   }
-  const projectId =
-    process.env["GCP_PROJECT_ID"] ?? process.env["GOOGLE_CLOUD_PROJECT"];
+  const projectId = env["GCP_PROJECT_ID"] ?? env["GOOGLE_CLOUD_PROJECT"];
   if (projectId && !settings.projectId) settings.projectId = projectId;
 
-  cachedClient = new Firestore(settings);
+  // Optional for existing deployments. The integration deployment must select
+  // its named native database; refinity-dev's default is Datastore mode.
+  const databaseId = env["FIRESTORE_DATABASE_ID"];
+  if (databaseId !== undefined) {
+    if (!/^(?:\(default\)|[a-z][a-z0-9-]{2,61}[a-z0-9])$/.test(databaseId)) {
+      throw new Error(
+        "FIRESTORE_DATABASE_ID must be a valid explicit database ID",
+      );
+    }
+    settings.databaseId = databaseId;
+  }
+  return settings;
+}
+
+function client(): Firestore {
+  if (cachedClient) return cachedClient;
+
+  cachedClient = new Firestore(firestoreSettings());
   return cachedClient;
 }
 

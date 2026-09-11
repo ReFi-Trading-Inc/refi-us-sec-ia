@@ -1,8 +1,10 @@
 # Shared integration working agreement
 
 Status: owner-approved plan, September 11, 2026. For both frontend and ReFinity
-teams. This records responsibilities and workflow, not completed code, a created
-branch or a deployed connected environment.
+teams. The `integration/refinity-dev` branch was created from `main` at
+`b3e7a1abd412fa4712ad68d7b76782241b1d6955` on September 11. Hosting preparation
+is tracked in [the connected deployment guide](../infra/cloudrun/CONNECTED_DEV.md);
+branch creation is not connected user acceptance.
 
 ## Names and environments
 
@@ -31,12 +33,12 @@ activation. Signup and admission must allow connecting Alpaca later.
 
 ### Branch plan
 
-| Branch | Purpose / owner | Deployment relationship |
-| --- | --- | --- |
-| `main` | Shared reviewed codebase for both teams | Retain existing approved frontend deployment behavior; a merge must not silently retarget anything to GCP. |
-| Zeshan's existing working/feature branches | Frontend, UX, onboarding and KYC work | Continue the current Vercel development/preview flow. No forced rename or migration now. |
-| `integration/refinity-dev` — planned, not yet created | Daniel's ongoing server integration/GCP preparation branch | Separate connected Dev deployment configuration, targeting only `refinity-dev`. |
-| Small task branches/PRs, where useful | Bounded work by either team | No new deployment target merely because a branch exists. |
+| Branch                                     | Purpose / owner                                            | Deployment relationship                                                                                                                  |
+| ------------------------------------------ | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `main`                                     | Shared reviewed codebase for both teams                    | Retain existing approved frontend deployment behavior; a merge must not silently retarget anything to GCP.                               |
+| Zeshan's existing working/feature branches | Frontend, UX, onboarding and KYC work                      | Continue the current Vercel development/preview flow. No forced rename or migration now.                                                 |
+| `integration/refinity-dev` — active        | Daniel's ongoing server integration/GCP preparation branch | Separate connected Dev deployment configuration, targeting only `refinity-dev`; see the linked deployment guide for actual verification. |
+| Small task branches/PRs, where useful      | Bounded work by either team                                | No new deployment target merely because a branch exists.                                                                                 |
 
 This document communicates the branch plan to both teams. Daniel owns creation
 and management of the integration branch; no separate announcement, permission
@@ -48,15 +50,15 @@ The frontend branch lives in this shared GitHub repository. Backend changes
 remain in the existing ReFinity/GitLab repository; their commits/contract changes
 are linked in frontend PRs rather than importing backend source into this repo.
 
-| Area | Implementation owner |
-| --- | --- |
-| UI/UX, screens, components, styling, copy, navigation and onboarding journeys | Zeshan/frontend team, including connect-later UX, environment selection and presentation of backend states/notices. |
-| Socure/KYC, provider calls/webhooks/DocV, questionnaire evaluation and compliance decisions | Zeshan/frontend team. ReFinity does not alter these flows or mappings. |
-| Contract packages, generated clients, strict validation and server response adapters | Daniel/ReFinity, updating the backend and consuming BFF integration together. |
+| Area                                                                                                | Implementation owner                                                                                                                         |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| UI/UX, screens, components, styling, copy, navigation and onboarding journeys                       | Zeshan/frontend team, including connect-later UX, environment selection and presentation of backend states/notices.                          |
+| Socure/KYC, provider calls/webhooks/DocV, questionnaire evaluation and compliance decisions         | Zeshan/frontend team. ReFinity does not alter these flows or mappings.                                                                       |
+| Contract packages, generated clients, strict validation and server response adapters                | Daniel/ReFinity, updating the backend and consuming BFF integration together.                                                                |
 | BFF-to-backend authentication, identity exchange/account mapping, signing/JWKS and runtime bindings | Daniel/ReFinity, reusing existing modules. Frontend retains its authentication-provider flow and supplies approved provider/redirect inputs. |
-| Brokerage commands, allocation/subscriptions, retries, account data, Records and events | Daniel/ReFinity through the backend contracts, not browser broker calls or BFF-created trading authority. |
-| Connected GCP deployment, non-KYC integration/session persistence and integration testing | Daniel/ReFinity; no game/demo resource changes or KYC evidence-store redesign. |
-| Shared files and browser-facing data-shape changes | Coordinate before editing; each domain owner reviews their part. Frontend owns resulting screen changes. |
+| Brokerage commands, allocation/subscriptions, retries, account data, Records and events             | Daniel/ReFinity through the backend contracts, not browser broker calls or BFF-created trading authority.                                    |
+| Connected GCP deployment, non-KYC integration/session persistence and integration testing           | Daniel/ReFinity; no game/demo resource changes or KYC evidence-store redesign.                                                               |
+| Shared files and browser-facing data-shape changes                                                  | Coordinate before editing; each domain owner reviews their part. Frontend owns resulting screen changes.                                     |
 
 Typical ReFinity paths: `packages/api-clients`, non-KYC server modules in
 `apps/web/src/lib/investor-api`, relevant BFF API handlers, identity integration,
@@ -114,12 +116,12 @@ combined head so final convergence is not postponed until launch.
 Daniel's team builds and configures the future GCP services alongside it; the
 frontend team is not being asked to migrate hosting before continuing UI/KYC.
 
-| Deployment | What happens during integration |
-| --- | --- |
-| Existing frontend Vercel projects, previews and domains | Continue under the frontend team's current flow. Our work does not retarget or retire them. |
-| Existing game/demo in `refi-game-prod` | Leave services, data, credentials and deployment scripts unchanged. |
+| Deployment                                                             | What happens during integration                                                                                                                                 |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Existing frontend Vercel projects, previews and domains                | Continue under the frontend team's current flow. Our work does not retarget or retire them.                                                                     |
+| Existing game/demo in `refi-game-prod`                                 | Leave services, data, credentials and deployment scripts unchanged.                                                                                             |
 | Connected frontend/BFF plus trading backend in `refinity-dev/us-west1` | Daniel prepares the separate frontend service and necessary supporting resources; existing trading services remain their owners. Test the real connection here. |
-| `refinity-stg` / `refinity-prod` | Later shared frontend/backend environments, promoted only by a separate agreed release decision. |
+| `refinity-stg` / `refinity-prod`                                       | Later shared frontend/backend environments, promoted only by a separate agreed release decision.                                                                |
 
 - **Target: `refinity-dev`, `us-west1`.** Deploy the existing Next.js application
   and its BFF together as a new, separately named Cloud Run service. Keep the UI

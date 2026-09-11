@@ -14,6 +14,14 @@ dist
 .env.*.local
 !.env.example
 
+# Local Terraform working state/plans, never source or credentials.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.auto.tfvars
+*.auto.tfvars.json
+
 # generated — raw openapi-typescript output is ephemeral. The hand-maintained
 # compatibility / shim layer lives at packages/api-clients/src/compat.ts.
 packages/api-clients/src/generated/

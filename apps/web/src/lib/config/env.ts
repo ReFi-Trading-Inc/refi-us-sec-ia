@@ -104,6 +104,12 @@ const clientSchema = z.object({
   NEXT_PUBLIC_REFI_ENV: z
     .enum(["dev", "staging", "demo", "prod"])
     .default("dev"),
+  /**
+   * Socure frontend SDK key (Digital Intelligence + DocV Web SDK). A PUBLIC
+   * SDK key by design — not the Evaluation API key, which is server-only
+   * (`SOCURE_API_KEY`). Optional; absent until the founder activates Socure.
+   */
+  NEXT_PUBLIC_SOCURE_SDK_KEY: z.string().min(8).optional(),
 });
 
 const serverSchemaBase = clientSchema.extend({
@@ -230,7 +236,28 @@ const serverSchemaBase = clientSchema.extend({
   // contract-validated demo world — permitted ONLY when REFI_ENV=demo; the
   // gateway throws otherwise, so production can never be pointed at it.
   REFI_INVESTOR_API_MODE: z.enum(["client", "demo"]).default("client"),
-  REFI_KYC_PROVIDER: z.enum(["unconfigured", "mock"]).default("unconfigured"),
+  REFI_KYC_PROVIDER: z
+    .enum(["unconfigured", "mock", "socure"])
+    .default("unconfigured"),
+  /**
+   * Socure RiskOS™ (founder decision 2026-09-10: ReFi-owned KYC, provider
+   * Socure, "Build Your Own UI", KYC + Fraud + Watchlist > DocV Step Up).
+   * All server-only. Required together when REFI_KYC_PROVIDER=socure.
+   * Sandbox: https://riskos.sandbox.socure.com. No default base URL: the
+   * environment is an explicit choice, never inferred.
+   */
+  SOCURE_API_BASE_URL: z.url().optional(),
+  /** Server-only secret; never a NEXT_PUBLIC_ value, never logged, never echoed. */
+  SOCURE_API_KEY: z.string().min(16).optional(),
+  SOCURE_WORKFLOW_NAME: z.string().min(1).max(200).optional(),
+  SOCURE_ENV: z.enum(["sandbox", "production"]).default("sandbox"),
+  /**
+   * Webhook authentication: the Bearer credential configured for the
+   * endpoint in the RiskOS™ dashboard (credential comparison, not payload
+   * signing — RiskOS™ documents no HMAC scheme). Founder decision 2026-09-10:
+   * Bearer only. Unset → every delivery is refused; required in production.
+   */
+  SOCURE_WEBHOOK_BEARER_TOKEN: z.string().min(16).optional(),
   /**
    * Enables the mock adapter's server-side test control route. Must never be
    * set on a deployed production tier; the route answers 404 otherwise.
@@ -332,6 +359,47 @@ const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
   };
   // Stytch configuration is all-or-nothing on every tier, and the callback
   // must be https (Daniel: exact HTTPS redirect URIs).
+  // ── Socure configuration is all-or-nothing and environment-explicit ─────
+  if (env.REFI_KYC_PROVIDER === "socure") {
+    if (
+      !env.SOCURE_API_BASE_URL ||
+      !env.SOCURE_API_KEY ||
+      !env.SOCURE_WORKFLOW_NAME
+    ) {
+      fail(
+        "REFI_KYC_PROVIDER",
+        "socure requires SOCURE_API_BASE_URL, SOCURE_API_KEY and SOCURE_WORKFLOW_NAME",
+      );
+    }
+    if (env.SOCURE_API_BASE_URL) {
+      const host = new URL(env.SOCURE_API_BASE_URL).host;
+      const isSandbox = host === "riskos.sandbox.socure.com";
+      if (env.SOCURE_ENV === "sandbox" && !isSandbox) {
+        fail(
+          "SOCURE_API_BASE_URL",
+          "SOCURE_ENV=sandbox requires the sandbox host riskos.sandbox.socure.com",
+        );
+      }
+      if (env.SOCURE_ENV === "production" && isSandbox) {
+        fail(
+          "SOCURE_API_BASE_URL",
+          "SOCURE_ENV=production must not point at the sandbox host",
+        );
+      }
+      if (!/\.socure\.com$/.test(host)) {
+        fail("SOCURE_API_BASE_URL", "must be a socure.com host");
+      }
+    }
+    if (env.SOCURE_ENV === "production" && !env.SOCURE_WEBHOOK_BEARER_TOKEN) {
+      fail(
+        "SOCURE_WEBHOOK_BEARER_TOKEN",
+        "required when SOCURE_ENV=production — webhook Bearer authentication must not be skipped",
+      );
+    }
+    if (env.REFI_ENV === "demo") {
+      fail("REFI_KYC_PROVIDER", "socure never runs on the demo tier");
+    }
+  }
   if (env.REFI_AUTH_PROVIDER === "stytch") {
     if (!env.STYTCH_PROJECT_ID || !env.STYTCH_SECRET) {
       fail(
@@ -473,6 +541,27 @@ const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
       "must be 0 on a connected deployment — mock KYC controls never run there",
     );
   }
+  // F-1 (founder review 2026-09-10): the mock adapter is a configuration
+  // defect on a connected deployment, not only its controls. Permitted:
+  // "unconfigured" (verification reported unavailable, never pending) or a
+  // COMPLETE "socure" configuration (checked above). Never a silent fallback
+  // from socure to mock.
+  if (env.REFI_KYC_PROVIDER === "mock") {
+    fail(
+      "REFI_KYC_PROVIDER",
+      'must not be "mock" on a connected deployment — the mock adapter is never an authoritative KYC source',
+    );
+  }
+  if (
+    env.REFI_KYC_PROVIDER === "socure" &&
+    env.SOCURE_ENV === "production" &&
+    !env.SOCURE_WEBHOOK_BEARER_TOKEN
+  ) {
+    fail(
+      "SOCURE_WEBHOOK_BEARER_TOKEN",
+      "connected production requires webhook Bearer authentication",
+    );
+  }
   if (env.REFI_DATA_ADAPTER !== "live") {
     fail(
       "REFI_DATA_ADAPTER",
@@ -543,6 +632,8 @@ const clientParsed = clientSchema.safeParse({
     process.env["NEXT_PUBLIC_SENTRY_DSN"],
     "NEXT_PUBLIC_SENTRY_DSN",
   ),
+  NEXT_PUBLIC_SOCURE_SDK_KEY:
+    process.env["NEXT_PUBLIC_SOCURE_SDK_KEY"] || undefined,
   NEXT_PUBLIC_REFI_ENV: process.env["NEXT_PUBLIC_REFI_ENV"],
 });
 
@@ -582,6 +673,8 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
       process.env["NEXT_PUBLIC_SENTRY_DSN"],
       "NEXT_PUBLIC_SENTRY_DSN",
     ),
+    NEXT_PUBLIC_SOCURE_SDK_KEY:
+      process.env["NEXT_PUBLIC_SOCURE_SDK_KEY"] || undefined,
     NEXT_PUBLIC_REFI_ENV: process.env["NEXT_PUBLIC_REFI_ENV"],
     SESSION_SECRET: withFallback(
       process.env["SESSION_SECRET"],
@@ -644,6 +737,12 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     REFI_INVESTOR_API_MODE: process.env["REFI_INVESTOR_API_MODE"] || undefined,
     REFI_KYC_PROVIDER: process.env["REFI_KYC_PROVIDER"] || undefined,
     REFI_KYC_MOCK_CONTROLS: process.env["REFI_KYC_MOCK_CONTROLS"] || undefined,
+    SOCURE_API_BASE_URL: process.env["SOCURE_API_BASE_URL"] || undefined,
+    SOCURE_API_KEY: process.env["SOCURE_API_KEY"] || undefined,
+    SOCURE_WORKFLOW_NAME: process.env["SOCURE_WORKFLOW_NAME"] || undefined,
+    SOCURE_ENV: process.env["SOCURE_ENV"] || undefined,
+    SOCURE_WEBHOOK_BEARER_TOKEN:
+      process.env["SOCURE_WEBHOOK_BEARER_TOKEN"] || undefined,
     DEMO_HANDOFF_PRIVATE_KEY_JWK:
       process.env["DEMO_HANDOFF_PRIVATE_KEY_JWK"] || undefined,
     REFI_TRUST_PROXY_HOST: process.env["REFI_TRUST_PROXY_HOST"] || undefined,

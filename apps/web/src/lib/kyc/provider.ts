@@ -3,10 +3,12 @@
  *
  * PRODUCT DECISION (Zeshan, 2026-09-04): the U.S. APPLICATION surface is
  * public while Alpha admission stays closed and human-approved — passing KYC
- * never admits anyone; the frontend system owns the KYC provider lifecycle; no provider has been
- * selected; the current implementation is a MOCK behind this interface so a
- * real vendor can replace the adapter later without changing the product or
- * the backend contract boundary. Once the frontend holds a normalized result
+ * never admits anyone; the frontend system owns the KYC provider lifecycle.
+ * FOUNDER DECISION (2026-09-10): ReFi owns KYC for the initial US Alpha with a
+ * selected provider adapter (`./socure/`, "Build Your Own UI", KYC + Fraud +
+ * Watchlist > DocV step-up) behind this same interface; the MOCK remains for
+ * local/E2E/demo only. Provider-specific types never leave the adapter
+ * directory; this boundary and the routes/UI stay provider-neutral. Once the frontend holds a normalized result
  * it is submitted to the trading backend via `createComplianceProfileAttestation`
  * — a LATER slice (sequenced after Investor Profile slice 3). This module
  * never submits.
@@ -64,9 +66,13 @@ export interface KycVerificationSession {
  * The adapter contract a real vendor integration must satisfy. Callbacks /
  * webhooks and vendor trust live BEHIND this interface, on the server.
  */
+/** Adapter kinds. A label for humans/tests and the resolver — never product logic. */
+export const KYC_ADAPTER_KINDS = ["mock", "socure"] as const;
+export type KycAdapterKind = (typeof KYC_ADAPTER_KINDS)[number];
+
 export interface KycProviderAdapter {
   /** Stable identifier of the adapter kind — for labelling, never for product logic. */
-  readonly kind: "mock";
+  readonly kind: KycAdapterKind;
   getSession(subject: KycSubject): Promise<KycVerificationSession>;
   /** Start or resume the user's verification. Idempotent from an in-progress state. */
   start(subject: KycSubject, correlationId?: string): Promise<KycStartResult>;

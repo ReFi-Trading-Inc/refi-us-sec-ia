@@ -7763,6 +7763,10 @@ await section(
           "https://investor-api-74kl57biwa-uw.a.run.app",
         REFI_IDENTITY_CCID_BASE_URL:
           "https://identity-ccid-74kl57biwa-uw.a.run.app",
+        // Durable security state is part of the connected baseline.
+        REFI_CONNECTED_STORE_BACKING: "durable",
+        REFI_CONNECTED_STORE_NAMESPACE: "us-connected-dev",
+        GCP_PROJECT_ID: "refi-us-connected-investor",
       };
       const KEYS = [
         ...Object.keys(base),
@@ -8351,6 +8355,548 @@ await section(
       );
     },
   );
+}
+// ─── Connected security state (US Investor Integration Foundation): durable, namespaced, single-use, multi-instance ──
+
+{
+  const { resetServerEnvCacheForTests, getServerEnv: getServerEnvConnected } =
+    await import("../apps/web/src/lib/config/env.ts");
+  const cs = await import("../apps/web/src/lib/connected-store/index.ts");
+  const sessions =
+    await import("../apps/web/src/lib/connected-store/session.ts");
+  const logins =
+    await import("../apps/web/src/lib/connected-store/login-state.ts");
+  const replay = await import("../apps/web/src/lib/connected-store/replay.ts");
+  const subjects =
+    await import("../apps/web/src/lib/connected-store/subject-map.ts");
+
+  // A shared in-memory backing that behaves like Firestore for these tests:
+  // atomic create (putIfAbsent), and the SAME map visible from any number of
+  // "instances" (store objects) — which is exactly what a second Cloud Run
+  // instance or a restarted process sees.
+  const backing = new Map<string, Map<string, unknown>>();
+  const instance =
+    (): Parameters<typeof cs.setConnectedStoreFactoryForTests>[0] =>
+    <T>(collection: string) => {
+      const col = () => {
+        let m = backing.get(collection);
+        if (!m) {
+          m = new Map();
+          backing.set(collection, m);
+        }
+        return m as Map<string, T>;
+      };
+      return {
+        async get(k: string) {
+          return col().get(k) ?? null;
+        },
+        async put(k: string, v: T) {
+          col().set(k, v);
+        },
+        async putIfAbsent(k: string, v: T) {
+          if (col().has(k)) return false;
+          col().set(k, v);
+          return true;
+        },
+        async list(prefix?: string) {
+          return [...col().entries()]
+            .filter(([k]) => !prefix || k.startsWith(prefix))
+            .map(([key, value]) => ({ key, value }));
+        },
+        async delete(k: string) {
+          col().delete(k);
+        },
+      };
+    };
+  const savedNs = process.env["REFI_CONNECTED_STORE_NAMESPACE"];
+  const savedBacking = process.env["REFI_CONNECTED_STORE_BACKING"];
+  process.env["REFI_CONNECTED_STORE_NAMESPACE"] = "us-connected-test";
+  process.env["REFI_CONNECTED_STORE_BACKING"] = "prototype";
+  resetServerEnvCacheForTests();
+  cs.setConnectedStoreFactoryForTests(instance());
+
+  try {
+    await section(
+      "connected-store: namespaced collections; demo/mock/prototype/simulator names are structurally refused; no fallback when unset",
+      async () => {
+        assert.equal(
+          cs.collectionNameFor("us-connected-dev", "session"),
+          "us-connected-dev--connected-session",
+        );
+        for (const bad of [
+          "demo",
+          "refi-demo",
+          "mock-us",
+          "prototype",
+          "simulator-x",
+          "Upper",
+          "x",
+          "has space",
+          undefined,
+        ]) {
+          assert.throws(
+            () => cs.collectionNameFor(bad, "session"),
+            cs.ConnectedStoreUnavailableError,
+            String(bad),
+          );
+        }
+        assert.deepEqual([...cs.CONNECTED_ENTITIES].sort(), [
+          "bridge-assertion-jti",
+          "identity-result-jti",
+          "login-consumed",
+          "login-state",
+          "session",
+          "subject-map",
+          "subject-map-reverse",
+        ]);
+        // No entity name can collide with a prototype/demo collection: they carry the namespace prefix + "connected-".
+        for (const e of cs.CONNECTED_ENTITIES)
+          assert.ok(
+            /^[a-z0-9-]+--connected-/.test(
+              cs.collectionNameFor("us-connected-dev", e),
+            ),
+          );
+      },
+    );
+
+    await section(
+      "connected-store: sessions are created atomically, looked up by sid, refused when expired or revoked, and revocation is visible from another instance",
+      async () => {
+        const s1 = await sessions.createConnectedSession({
+          sub: "usr_backend_0000000001",
+          authTime: 1_800_000_000,
+          amr: ["email_link"],
+          identityResultJti: "jti_identity_result_0001",
+          correlationId: "c1",
+        });
+        assert.ok(sessions.SESSION_ID_PATTERN.test(s1.sid));
+        assert.equal(s1.revokedAt, null);
+        const found = await sessions.getActiveConnectedSession(s1.sid);
+        assert.deepEqual(found, s1, "lookup returns the record");
+        assert.equal(
+          await sessions.getActiveConnectedSession(
+            "sid_unknown_00000000000000000000",
+          ),
+          null,
+        );
+        // Expired sessions are refused (clock injected).
+        assert.equal(
+          await sessions.getActiveConnectedSession(
+            s1.sid,
+            new Date(Date.now() + 9 * 3600 * 1000),
+          ),
+          null,
+          "expired",
+        );
+        // Instance B (fresh store object over the SAME backing) sees the session…
+        cs.setConnectedStoreFactoryForTests(instance());
+        assert.ok(
+          await sessions.getActiveConnectedSession(s1.sid),
+          "visible from a second instance",
+        );
+        // …and instance A sees B's revocation immediately.
+        assert.equal(
+          await sessions.revokeConnectedSession(s1.sid, "user_logout"),
+          true,
+        );
+        cs.setConnectedStoreFactoryForTests(instance());
+        assert.equal(
+          await sessions.getActiveConnectedSession(s1.sid),
+          null,
+          "revoked on every instance",
+        );
+        assert.equal(
+          await sessions.revokeConnectedSession(s1.sid, "again"),
+          false,
+          "revocation is idempotent",
+        );
+        // touch never advances auth_time
+        const s2 = await sessions.createConnectedSession({
+          sub: "usr_backend_0000000002",
+          authTime: 1_800_000_100,
+          identityResultJti: "jti_identity_result_0002",
+          correlationId: "c2",
+        });
+        await sessions.touchConnectedSession(s2.sid);
+        assert.equal(
+          (await sessions.getActiveConnectedSession(s2.sid))?.authTime,
+          1_800_000_100,
+        );
+        // Inputs that would smuggle authority or PII are refused.
+        await assert.rejects(
+          sessions.createConnectedSession({
+            sub: "someone@example.com",
+            authTime: 1,
+            identityResultJti: "j",
+            correlationId: "c",
+          }),
+        );
+        await assert.rejects(
+          sessions.createConnectedSession({
+            sub: "usr_backend_0000000003",
+            authTime: 0,
+            identityResultJti: "j",
+            correlationId: "c",
+          }),
+          /auth_time/,
+        );
+      },
+    );
+
+    await section(
+      "connected-store: pending login bindings are random and in Daniel's 22–128 base64url window; consumption is single-use, state-bound, expiry-bound, atomic across instances",
+      async () => {
+        const net = logins.newLoginBinding();
+        const login = await logins.createPendingLogin({
+          redirectUri: "https://bff-dev.refi.trading/us/auth/callback",
+          networkContext: net,
+          correlationId: "c",
+        });
+        for (const v of [
+          login.loginId,
+          login.state,
+          login.challenge,
+          login.nonce,
+        ])
+          assert.ok(logins.LOGIN_BINDING_PATTERN.test(v), v);
+        assert.equal(
+          new Set([login.loginId, login.state, login.challenge, login.nonce])
+            .size,
+          4,
+          "independent random values",
+        );
+        assert.equal(
+          login.networkContext,
+          net,
+          "network_context is the caller's stable id, not regenerated",
+        );
+        await assert.rejects(
+          logins.createPendingLogin({
+            redirectUri: "http://insecure.example/cb",
+            networkContext: net,
+            correlationId: "c",
+          }),
+          /https/,
+        );
+        await assert.rejects(
+          logins.createPendingLogin({
+            redirectUri: "https://x.example/cb",
+            networkContext: "short",
+            correlationId: "c",
+          }),
+          /networkContext/,
+        );
+        // Wrong state does not consume.
+        const wrong = await logins.consumePendingLogin({
+          loginId: login.loginId,
+          state: logins.newLoginBinding(),
+          correlationId: "c",
+        });
+        assert.deepEqual(wrong, { ok: false, reason: "state_mismatch" });
+        // Two instances race: exactly one wins.
+        const a = logins.consumePendingLogin({
+          loginId: login.loginId,
+          state: login.state,
+          correlationId: "a",
+        });
+        cs.setConnectedStoreFactoryForTests(instance());
+        const b = logins.consumePendingLogin({
+          loginId: login.loginId,
+          state: login.state,
+          correlationId: "b",
+        });
+        const results = await Promise.all([a, b]);
+        assert.equal(
+          results.filter((r) => r.ok).length,
+          1,
+          "exactly one consumer wins",
+        );
+        assert.ok(
+          results.some((r) => !r.ok && r.reason === "already_consumed"),
+        );
+        // Replay after "restart" (new instance) is refused.
+        cs.setConnectedStoreFactoryForTests(instance());
+        assert.deepEqual(
+          await logins.consumePendingLogin({
+            loginId: login.loginId,
+            state: login.state,
+            correlationId: "c",
+          }),
+          { ok: false, reason: "already_consumed" },
+        );
+        // Expired logins are refused before any marker is written.
+        const stale = await logins.createPendingLogin({
+          redirectUri: "https://bff-dev.refi.trading/us/auth/callback",
+          networkContext: net,
+          ttlSeconds: 1,
+          correlationId: "c",
+        });
+        assert.deepEqual(
+          await logins.consumePendingLogin({
+            loginId: stale.loginId,
+            state: stale.state,
+            correlationId: "c",
+            now: new Date(Date.now() + 5000),
+          }),
+          { ok: false, reason: "expired" },
+        );
+        assert.deepEqual(
+          await logins.consumePendingLogin({
+            loginId: "nope",
+            state: "nope",
+            correlationId: "c",
+          }),
+          { ok: false, reason: "unknown" },
+        );
+      },
+    );
+
+    await section(
+      "connected-store: jti replay protection is atomic, per family, and survives restart; identity-result and bridge jtis never collide",
+      async () => {
+        const first = await replay.consumeJtiOnce("identity-result-jti", {
+          jti: "jti_identity_result_0009",
+          sub: "usr_backend_0000000009",
+          exp: 1_900_000_000,
+          correlationId: "c",
+        });
+        assert.equal(first.first, true);
+        cs.setConnectedStoreFactoryForTests(instance()); // restart / other instance
+        const again = await replay.consumeJtiOnce("identity-result-jti", {
+          jti: "jti_identity_result_0009",
+          sub: "usr_backend_0000000009",
+          exp: 1_900_000_000,
+          correlationId: "c",
+        });
+        assert.equal(again.first, false, "replay refused after restart");
+        assert.equal(again.record.correlationId, "c");
+        // Same jti value in the OTHER family is a different record space.
+        const bridge = await replay.consumeJtiOnce("bridge-assertion-jti", {
+          jti: "jti_identity_result_0009",
+          sub: "usr_refi_000000000001",
+          exp: 1_900_000_000,
+          correlationId: "c",
+        });
+        assert.equal(bridge.first, true, "families are isolated");
+        assert.equal(
+          await replay.isJtiConsumed(
+            "identity-result-jti",
+            "jti_identity_result_0009",
+          ),
+          true,
+        );
+        assert.equal(
+          await replay.isJtiConsumed(
+            "identity-result-jti",
+            "jti_never_seen_000000",
+          ),
+          false,
+        );
+        assert.equal(
+          await replay.isJtiConsumed("identity-result-jti", "bad jti"),
+          true,
+          "malformed jti is treated as consumed (fail closed)",
+        );
+        await assert.rejects(
+          replay.consumeJtiOnce("identity-result-jti", {
+            jti: "x",
+            sub: "s",
+            exp: 1,
+            correlationId: "c",
+          }),
+          /jti pattern/,
+        );
+      },
+    );
+
+    await section(
+      "connected-store: opaque subject map is stable, atomic under a race, never derived from email, and reverse-lookable",
+      async () => {
+        const a = await subjects.getOrCreateOpaqueSubject({
+          provider: "stytch",
+          providerUserId: "user-test-11111111-2222-3333-4444-555555555555",
+          correlationId: "c",
+        });
+        assert.equal(a.created, true);
+        assert.ok(subjects.SUBJECT_PATTERN.test(a.record.sub));
+        assert.ok(
+          !a.record.sub.includes("user-test"),
+          "sub is not derived from the provider id",
+        );
+        cs.setConnectedStoreFactoryForTests(instance());
+        const b = await subjects.getOrCreateOpaqueSubject({
+          provider: "stytch",
+          providerUserId: "user-test-11111111-2222-3333-4444-555555555555",
+          correlationId: "c",
+        });
+        assert.equal(b.created, false);
+        assert.equal(
+          b.record.sub,
+          a.record.sub,
+          "stable across instances/restarts",
+        );
+        assert.equal(
+          (await subjects.lookupSubject(a.record.sub))?.providerUserId,
+          "user-test-11111111-2222-3333-4444-555555555555",
+        );
+        await assert.rejects(
+          subjects.getOrCreateOpaqueSubject({
+            provider: "stytch",
+            providerUserId: "alice@example.com",
+            correlationId: "c",
+          }),
+          /email/,
+        );
+        // Two different provider ids never share a sub.
+        const c = await subjects.getOrCreateOpaqueSubject({
+          provider: "stytch",
+          providerUserId: "user-test-99999999-2222-3333-4444-555555555555",
+          correlationId: "c",
+        });
+        assert.notEqual(c.record.sub, a.record.sub);
+      },
+    );
+
+    await section(
+      "connected-store: env invariants — native mode requires durable backing, a safe namespace and a project; prototype backing is refused on a connected deployment even if forced",
+      async () => {
+        const base: Record<string, string> = {
+          NEXT_PUBLIC_REFI_ENV: "staging",
+          REFI_ENV: "staging",
+          NEXT_PUBLIC_API_BASE_URL: "https://bff-dev.refi.trading",
+          NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "x",
+          NEXT_PUBLIC_POSTHOG_KEY: "x",
+          NEXT_PUBLIC_SENTRY_DSN: "https://x@o0.ingest.sentry.io/0",
+          SESSION_SECRET: "s".repeat(40),
+          IP_HASH_SECRET: "s".repeat(40),
+          ELIGIBILITY_JWT_SECRET: "s".repeat(40),
+          SESSION_JWT_SECRET: "s".repeat(40),
+          ALPHA_HANDOFF_PUBLIC_KEY_JWK: JSON.stringify({
+            kty: "EC",
+            crv: "P-256",
+            x: "a",
+            y: "b",
+          }),
+          ALPHA_HANDOFF_ISSUER: "refi-alpha",
+          ALPHA_HANDOFF_AUDIENCE: "refi-us-sec-ia",
+          REFI_INVESTOR_API_CREDENTIAL_MODE: "native-cloud-run",
+          REFI_INVESTOR_API_MODE: "client",
+          REFI_INVESTOR_API_ASSERTION_MODE: "mint",
+          BFF_ASSERTION_ALLOW_EPHEMERAL_KEY: "0",
+          REFI_KYC_MOCK_CONTROLS: "0",
+          REFI_KYC_PROVIDER: "unconfigured",
+          REFI_DATA_ADAPTER: "live",
+          REFI_INVESTOR_API_BASE_URL:
+            "https://investor-api-74kl57biwa-uw.a.run.app",
+          REFI_IDENTITY_CCID_BASE_URL:
+            "https://identity-ccid-74kl57biwa-uw.a.run.app",
+          REFI_CONNECTED_STORE_BACKING: "durable",
+          REFI_CONNECTED_STORE_NAMESPACE: "us-connected-dev",
+          GCP_PROJECT_ID: "refi-us-connected-investor",
+        };
+        const KEYS = [
+          ...Object.keys(base),
+          "REFI_INVESTOR_API_ALLOW_REMOTE",
+          "REFI_IDENTITY_CCID_GOOGLE_AUDIENCE",
+          "REFI_INVESTOR_API_GOOGLE_AUDIENCE",
+        ];
+        const saved: Record<string, string | undefined> = {};
+        for (const k of KEYS) saved[k] = process.env[k];
+        const withEnv = async (
+          over: Record<string, string | undefined>,
+          fn: () => Promise<void>,
+        ) => {
+          for (const k of KEYS) delete process.env[k];
+          for (const [k, v] of Object.entries({ ...base, ...over }))
+            if (v !== undefined) process.env[k] = v;
+          resetServerEnvCacheForTests();
+          try {
+            await fn();
+          } finally {
+            for (const k of KEYS) {
+              if (saved[k] === undefined) delete process.env[k];
+              else process.env[k] = saved[k];
+            }
+            resetServerEnvCacheForTests();
+          }
+        };
+        await withEnv({}, async () => {
+          assert.doesNotThrow(
+            () => getServerEnvConnected(),
+            "connected baseline boots",
+          );
+        });
+        for (const [label, over] of [
+          ["prototype backing", { REFI_CONNECTED_STORE_BACKING: "prototype" }],
+          ["missing namespace", { REFI_CONNECTED_STORE_NAMESPACE: undefined }],
+          ["demo namespace", { REFI_CONNECTED_STORE_NAMESPACE: "us-demo" }],
+          ["mock namespace", { REFI_CONNECTED_STORE_NAMESPACE: "mock-users" }],
+          ["missing project", { GCP_PROJECT_ID: undefined }],
+        ] as const) {
+          await withEnv({ ...over }, async () => {
+            assert.throws(
+              () => getServerEnvConnected(),
+              /Invalid server environment/,
+              `${label} must fail boot`,
+            );
+          });
+        }
+        // Even with the schema bypassed, the resolver refuses prototype backing in native mode.
+        cs.setConnectedStoreFactoryForTests(null);
+        await withEnv(
+          {
+            REFI_INVESTOR_API_CREDENTIAL_MODE: "simulator-fixture",
+            REFI_INVESTOR_API_ASSERTION_MODE: "simulator-fixture",
+            REFI_CONNECTED_STORE_BACKING: "prototype",
+          },
+          async () => {
+            assert.equal(
+              typeof cs.connectedKvStore("session").get,
+              "function",
+              "prototype backing resolves outside native mode (local/E2E)",
+            );
+          },
+        );
+        cs.setConnectedStoreFactoryForTests(instance());
+        // Source guards: connected entities go through the resolver only; no demo/prototype entity import; no localStorage.
+        for (const f of [
+          "session.ts",
+          "login-state.ts",
+          "replay.ts",
+          "subject-map.ts",
+        ]) {
+          const src = readFileSync(
+            join(REPO_ROOT, "apps/web/src/lib/connected-store", f),
+            "utf8",
+          ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+          assert.ok(
+            /connectedKvStore</.test(src) &&
+              !/prototype-store|demo-client|durable-store|localStorage|console\./.test(
+                src,
+              ),
+            `${f} uses only the connected resolver`,
+          );
+        }
+        const idx = readFileSync(
+          join(REPO_ROOT, "apps/web/src/lib/connected-store/index.ts"),
+          "utf8",
+        ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+        assert.ok(
+          !/new Map\(|globalThis/.test(idx),
+          "no in-memory fallback in the resolver",
+        );
+      },
+    );
+  } finally {
+    cs.setConnectedStoreFactoryForTests(null);
+    if (savedNs === undefined)
+      delete process.env["REFI_CONNECTED_STORE_NAMESPACE"];
+    else process.env["REFI_CONNECTED_STORE_NAMESPACE"] = savedNs;
+    if (savedBacking === undefined)
+      delete process.env["REFI_CONNECTED_STORE_BACKING"];
+    else process.env["REFI_CONNECTED_STORE_BACKING"] = savedBacking;
+    resetServerEnvCacheForTests();
+  }
 }
 
 // ─── Done ───────────────────────────────────────────────────────────────────

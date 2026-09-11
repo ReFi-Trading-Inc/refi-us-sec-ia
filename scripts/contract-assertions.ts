@@ -5661,6 +5661,7 @@ await section(
     SOCURE_ENV: "sandbox",
     SOCURE_WEBHOOK_SECRET: undefined,
   };
+  const CONSENT_AT = "2026-09-10T00:00:00.000Z";
   const subjectA = { authId: "auth-socure-a" };
   const subjectB = { authId: "auth-socure-b" };
   const freshProvider = (fake: InstanceType<typeof client.FakeSocureClient>) =>
@@ -5703,13 +5704,70 @@ await section(
         false,
         "strict: unknown applicant keys are refused",
       );
+      const reqOk = {
+        workflow: "w",
+        id: "refi-kyc-req-" + "0".repeat(8) + "-0000-0000-0000-000000000000",
+        timestamp: CONSENT_AT,
+        data: {
+          individual: {
+            ...fx.FIXTURE_INDIVIDUAL,
+            additional_context: {
+              user_consent: true,
+              consent_timestamp: CONSENT_AT,
+            },
+          },
+        },
+      };
+      assert.equal(
+        schemas.socureEvaluationRequestSchema.safeParse(reqOk).success,
+        true,
+      );
       assert.equal(
         schemas.socureEvaluationRequestSchema.safeParse({
-          workflow: "w",
-          data: { individual: fx.FIXTURE_INDIVIDUAL },
+          ...reqOk,
           base_url: "x",
         }).success,
         false,
+        "strict top level",
+      );
+      assert.equal(
+        schemas.socureEvaluationRequestSchema.safeParse({
+          ...reqOk,
+          id: "user-123",
+        }).success,
+        false,
+        "request id must be the opaque refi-kyc-req shape (never a user id)",
+      );
+      const { additional_context: _ac, ...noConsent } = reqOk.data.individual;
+      assert.equal(
+        schemas.socureEvaluationRequestSchema.safeParse({
+          ...reqOk,
+          data: { individual: noConsent },
+        }).success,
+        false,
+        "consent context required",
+      );
+      assert.equal(
+        schemas.socureEvaluationRequestSchema.safeParse({
+          ...reqOk,
+          data: {
+            individual: {
+              ...reqOk.data.individual,
+              additional_context: {
+                user_consent: false,
+                consent_timestamp: CONSENT_AT,
+              },
+            },
+          },
+        }).success,
+        false,
+        "user_consent must be true",
+      );
+      assert.equal(
+        schemas.socureErrorBodySchema.safeParse(
+          fx.ERROR_BODY_WORKFLOW_NOT_FOUND,
+        ).success,
+        true,
       );
     },
   );
@@ -5756,25 +5814,39 @@ await section(
         ),
         null,
       );
+      const ev = (o: Parameters<typeof fx.webhookEvent>[0]) =>
+        fx.webhookEvent(o);
+      const REQ = "refi-kyc-req-00000000-0000-0000-0000-000000000000";
       for (const w of [
-        fx.WEBHOOK_ACCEPT,
-        fx.WEBHOOK_REJECT,
-        fx.WEBHOOK_UNKNOWN_EVAL,
+        ev({ eventId: fx.FIXTURE_WEBHOOK_EVENT_ID, requestId: REQ }),
+        ev({
+          eventId: fx.FIXTURE_WEBHOOK_EVENT_ID,
+          requestId: REQ,
+          decision: "REJECT",
+        }),
+        ev({
+          eventId: fx.FIXTURE_WEBHOOK_EVENT_ID,
+          requestId: REQ,
+          evalId: fx.WEBHOOK_UNKNOWN_EVAL_ID,
+        }),
       ]) {
         assert.equal(
           schemas.socureEvaluationCompletedEventSchema.safeParse(w).success,
           true,
         );
       }
+      const paused = ev({
+        eventId: fx.FIXTURE_WEBHOOK_EVENT_ID,
+        requestId: REQ,
+        eventType: "evaluation_paused",
+        decision: "REVIEW",
+      });
       assert.equal(
-        schemas.socureEvaluationCompletedEventSchema.safeParse(
-          fx.WEBHOOK_OTHER_EVENT,
-        ).success,
+        schemas.socureEvaluationCompletedEventSchema.safeParse(paused).success,
         false,
       );
       assert.equal(
-        schemas.socureWebhookEventSchema.safeParse(fx.WEBHOOK_OTHER_EVENT)
-          .success,
+        schemas.socureWebhookEventSchema.safeParse(paused).success,
         true,
       );
       assert.equal(
@@ -5783,7 +5855,7 @@ await section(
           data: { id: "x", eval_id: "y" },
         }).success,
         false,
-        "decision required",
+        "event_id and decision required",
       );
     },
   );
@@ -5827,21 +5899,34 @@ await section(
         mapping.mapSocureWebhookDecision(
           schemas.socureEvaluationCompletedEventSchema.parse(b),
         );
-      assert.deepEqual(w(fx.WEBHOOK_ACCEPT), {
-        refiState: "passed",
-        providerDecision: "accept",
-        final: true,
-      });
-      assert.deepEqual(w(fx.WEBHOOK_REJECT), {
-        refiState: "failed",
-        providerDecision: "reject",
-        final: true,
-      });
+      const REQ2 = "refi-kyc-req-00000000-0000-0000-0000-000000000000";
       assert.deepEqual(
-        w({
-          ...fx.WEBHOOK_ACCEPT,
-          data: { ...fx.WEBHOOK_ACCEPT.data, decision: "REVIEW" },
-        }),
+        w(
+          fx.webhookEvent({
+            eventId: fx.FIXTURE_WEBHOOK_EVENT_ID,
+            requestId: REQ2,
+          }),
+        ),
+        { refiState: "passed", providerDecision: "accept", final: true },
+      );
+      assert.deepEqual(
+        w(
+          fx.webhookEvent({
+            eventId: fx.FIXTURE_WEBHOOK_EVENT_ID,
+            requestId: REQ2,
+            decision: "REJECT",
+          }),
+        ),
+        { refiState: "failed", providerDecision: "reject", final: true },
+      );
+      assert.deepEqual(
+        w(
+          fx.webhookEvent({
+            eventId: fx.FIXTURE_WEBHOOK_EVENT_ID,
+            requestId: REQ2,
+            decision: "REVIEW",
+          }),
+        ),
         { refiState: "under_review", providerDecision: "review", final: false },
       );
       // Component statuses are derived only from documented aggregates.
@@ -6053,6 +6138,7 @@ await section(
         const acc = await p.evaluate({
           subject: subjectA,
           individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
           submissionKey: "sub-1",
           correlationId: "corr-1",
         });
@@ -6063,6 +6149,25 @@ await section(
           fake.requests[0]!.request.workflow,
           SOCURE_OK.SOCURE_WORKFLOW_NAME,
         );
+        assert.match(
+          fake.requests[0]!.request.id,
+          /^refi-kyc-req-/,
+          "customer id is opaque",
+        );
+        assert.ok(
+          !fake.requests[0]!.request.id.includes(subjectA.authId),
+          "never the auth id",
+        );
+        assert.equal(
+          fake.requests[0]!.request.data.individual.additional_context
+            .user_consent,
+          true,
+        );
+        assert.equal(
+          fake.requests[0]!.request.data.individual.additional_context
+            .consent_timestamp,
+          CONSENT_AT,
+        );
         assert.equal(
           fake.requests[0]!.request.data.individual.di_session_token,
           fx.FIXTURE_INDIVIDUAL.di_session_token,
@@ -6071,6 +6176,16 @@ await section(
         assert.equal(
           recA.evidence.providerEvaluationId,
           fx.FIXTURE_EVAL_ID_ACCEPT,
+        );
+        assert.equal(
+          recA.evidence.providerRequestId,
+          fake.requests[0]!.request.id,
+        );
+        assert.equal(recA.evidence.providerWorkflowVersion, "1.0.0");
+        assert.ok(
+          !JSON.stringify(recA).includes("fixture_reason_not_for_users") &&
+            !/"score"/.test(JSON.stringify(recA)),
+          "score/reason codes are never persisted",
         );
         assert.equal(recA.evidence.providerDecision, "accept");
         assert.equal(recA.evidence.providerDecisionFinal, true);
@@ -6092,6 +6207,7 @@ await section(
         const again = await p.evaluate({
           subject: subjectA,
           individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
           submissionKey: "sub-2",
           correlationId: "corr-2",
         });
@@ -6104,6 +6220,7 @@ await section(
         const rej = await p.evaluate({
           subject: subjectB,
           individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
           submissionKey: "sub-b1",
           correlationId: "corr-b",
         });
@@ -6120,6 +6237,7 @@ await section(
         const rev = await p.evaluate({
           subject: subjectB,
           individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
           submissionKey: "sub-b2",
           correlationId: "corr-b2",
         });
@@ -6138,6 +6256,25 @@ await section(
           null,
           "no token for a user without an active step-up",
         );
+        // Wrong environment echoed back → refused, never applied
+        {
+          await entity.resetKycEvaluationForTests(subjectA.authId);
+          const f2 = new client.FakeSocureClient({
+            kind: "json",
+            status: 200,
+            body: fx.RESPONSE_ACCEPT_WRONG_ENV,
+          });
+          const p2 = freshProvider(f2);
+          const out = await p2.evaluate({
+            subject: subjectA,
+            individual: fx.FIXTURE_INDIVIDUAL,
+            consentTimestamp: CONSENT_AT,
+            submissionKey: "env-x",
+            correlationId: "c",
+          });
+          assert.equal(!out.ok && out.error?.kind, "malformed_response");
+          assert.equal(out.session.state, "in_progress");
+        }
         // Provider errors: 429, 503, timeout, malformed → journey stays in_progress & retryable; not failed
         for (const a of [subjectA])
           await entity.resetKycEvaluationForTests(a.authId);
@@ -6154,6 +6291,7 @@ await section(
           const out = await p.evaluate({
             subject: subjectA,
             individual: fx.FIXTURE_INDIVIDUAL,
+            consentTimestamp: CONSENT_AT,
             submissionKey: `sub-err-${kind}`,
             correlationId: "corr-e",
           });
@@ -6190,6 +6328,7 @@ await section(
         const first = await p.evaluate({
           subject: subjectA,
           individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
           submissionKey: "dbl",
           correlationId: "c1",
         });
@@ -6197,6 +6336,7 @@ await section(
         const second = await p.evaluate({
           subject: subjectA,
           individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
           submissionKey: "dbl",
           correlationId: "c2",
         });
@@ -6208,6 +6348,7 @@ await section(
         const third = await p.evaluate({
           subject: subjectA,
           individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
           submissionKey: "other",
           correlationId: "c3",
         });
@@ -6234,6 +6375,7 @@ await section(
         const inflight = await p.evaluate({
           subject: subjectA,
           individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
           submissionKey: "inflight",
           correlationId: "c4",
         });
@@ -6244,7 +6386,7 @@ await section(
   );
 
   await section(
-    "socure: webhook idempotency — duplicate event once; same final result safe; conflict flagged; unknown eval creates nothing; no reassignment; no regression of terminal states; REJECT never silently becomes VERIFIED",
+    "socure: webhook idempotency — event_id once; same final result safe; conflict flagged; unknown eval creates nothing; request-id mismatch refused (no reassignment); no terminal regression; REJECT never silently becomes VERIFIED; wrong environment refused",
     async () => {
       await withEnv({ ...SOCURE_OK }, async () => {
         for (const a of [subjectA, subjectB])
@@ -6254,30 +6396,77 @@ await section(
         await p.evaluate({
           subject: subjectA,
           individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
           submissionKey: "w1",
           correlationId: "w",
         });
-        // browser reports capture → under_review (not final)
+        const reqA = (await entity.getKycEvaluation(subjectA.authId))!.evidence
+          .providerRequestId!;
+        const ev = (
+          o: Partial<Parameters<typeof fx.webhookEvent>[0]> & {
+            eventId: string;
+          },
+        ) => fx.webhookEvent({ requestId: reqA, ...o });
         const captured = await p.markDocvCaptured(subjectA, "w-cap");
         assert.equal(captured?.state, "under_review");
         // unknown evaluation → nothing created
-        const unknown = await p.applyWebhook(fx.WEBHOOK_UNKNOWN_EVAL, "w-u");
+        const unknown = await p.applyWebhook(
+          ev({
+            eventId: "550e8400-e29b-41d4-a716-446655440002",
+            evalId: fx.WEBHOOK_UNKNOWN_EVAL_ID,
+          }),
+          "w-u",
+        );
         assert.equal(unknown.handled && unknown.outcome, "unknown_evaluation");
         assert.equal(
-          await entity.getKycEvaluation("99999999-9999-9999-9999-999999999999"),
+          await entity.getKycEvaluation(fx.WEBHOOK_UNKNOWN_EVAL_ID),
           null,
         );
+        // request-id mismatch on a known eval → refused (cannot reassign / spoof)
+        const mism = await p.applyWebhook(
+          ev({
+            eventId: "550e8400-e29b-41d4-a716-446655440003",
+            requestId: "refi-kyc-req-ffffffff-ffff-ffff-ffff-ffffffffffff",
+          }),
+          "w-mm",
+        );
+        assert.equal(mism.handled && mism.outcome, "evaluation_mismatch");
+        assert.equal(
+          (await entity.getKycEvaluation(subjectA.authId))!.state,
+          "under_review",
+        );
+        // wrong environment → refused
+        assert.deepEqual(
+          await p.applyWebhook(
+            ev({
+              eventId: "550e8400-e29b-41d4-a716-446655440004",
+              environment: "Production",
+            }),
+            "w-env",
+          ),
+          { handled: false, reason: "environment_mismatch" },
+        );
         // other event types ignored; malformed refused
-        assert.deepEqual(await p.applyWebhook(fx.WEBHOOK_OTHER_EVENT, "w-o"), {
-          handled: false,
-          reason: "ignored_event_type",
-        });
+        assert.deepEqual(
+          await p.applyWebhook(
+            ev({
+              eventId: "550e8400-e29b-41d4-a716-446655440005",
+              eventType: "evaluation_paused",
+              decision: "REVIEW",
+            }),
+            "w-o",
+          ),
+          { handled: false, reason: "ignored_event_type" },
+        );
         assert.deepEqual(await p.applyWebhook({ nope: true }, "w-m"), {
           handled: false,
           reason: "malformed",
         });
         // final ACCEPT applies once
-        const a1 = await p.applyWebhook(fx.WEBHOOK_ACCEPT, "w-a1");
+        const a1 = await p.applyWebhook(
+          ev({ eventId: fx.FIXTURE_WEBHOOK_EVENT_ID }),
+          "w-a1",
+        );
         assert.equal(a1.handled && a1.outcome, "applied");
         let rec = (await entity.getKycEvaluation(subjectA.authId))!;
         assert.equal(rec.state, "passed");
@@ -6291,8 +6480,12 @@ await section(
         );
         assert.ok(rec.docv?.captureCompletedAt);
         noPii(rec, "record after webhook");
+        assert.ok(!JSON.stringify(rec).includes("fixture notes never stored"));
         // duplicate event id → no change
-        const a2 = await p.applyWebhook(fx.WEBHOOK_ACCEPT, "w-a2");
+        const a2 = await p.applyWebhook(
+          ev({ eventId: fx.FIXTURE_WEBHOOK_EVENT_ID }),
+          "w-a2",
+        );
         assert.equal(a2.handled && a2.outcome, "duplicate_event");
         assert.equal(
           (await entity.getKycEvaluation(subjectA.authId))!.history.length,
@@ -6300,13 +6493,7 @@ await section(
         );
         // same eval, same final result, new event id → idempotent
         const same = await p.applyWebhook(
-          {
-            ...fx.WEBHOOK_ACCEPT,
-            data: {
-              ...fx.WEBHOOK_ACCEPT.data,
-              id: "550e8400-e29b-41d4-a716-4466554400aa",
-            },
-          },
+          ev({ eventId: "550e8400-e29b-41d4-a716-4466554400aa" }),
           "w-s",
         );
         assert.equal(same.handled && same.outcome, "idempotent_same_result");
@@ -6316,14 +6503,10 @@ await section(
         );
         // stale REVIEW after final ACCEPT → ignored
         const stale = await p.applyWebhook(
-          {
-            ...fx.WEBHOOK_ACCEPT,
-            data: {
-              ...fx.WEBHOOK_ACCEPT.data,
-              id: "550e8400-e29b-41d4-a716-4466554400bb",
-              decision: "REVIEW",
-            },
-          },
+          ev({
+            eventId: "550e8400-e29b-41d4-a716-4466554400bb",
+            decision: "REVIEW",
+          }),
           "w-st",
         );
         assert.equal(stale.handled && stale.outcome, "stale_ignored");
@@ -6333,13 +6516,10 @@ await section(
         );
         // conflicting final REJECT after ACCEPT → flagged, state unchanged
         const conflict = await p.applyWebhook(
-          {
-            ...fx.WEBHOOK_REJECT,
-            data: {
-              ...fx.WEBHOOK_REJECT.data,
-              id: "550e8400-e29b-41d4-a716-4466554400cc",
-            },
-          },
+          ev({
+            eventId: "550e8400-e29b-41d4-a716-4466554400cc",
+            decision: "REJECT",
+          }),
           "w-c",
         );
         assert.equal(conflict.handled && conflict.outcome, "conflict_flagged");
@@ -6359,25 +6539,25 @@ await section(
           /another user/,
         );
         // REJECT never silently becomes VERIFIED: B fails, then an ACCEPT webhook for B's eval → conflict
+        await entity.resetKycEvaluationForTests(subjectA.authId);
         await entity.resetKycEvaluationForTests(subjectB.authId);
         const fakeB = new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV);
         const pB = freshProvider(fakeB);
-        // reuse REVIEW eval id fixture for B requires A's index cleared first
-        await entity.resetKycEvaluationForTests(subjectA.authId);
         await pB.evaluate({
           subject: subjectB,
           individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
           submissionKey: "b1",
           correlationId: "b",
         });
+        const reqB = (await entity.getKycEvaluation(subjectB.authId))!.evidence
+          .providerRequestId!;
         const bRej = await pB.applyWebhook(
-          {
-            ...fx.WEBHOOK_REJECT,
-            data: {
-              ...fx.WEBHOOK_REJECT.data,
-              id: "550e8400-e29b-41d4-a716-4466554400dd",
-            },
-          },
+          fx.webhookEvent({
+            eventId: "550e8400-e29b-41d4-a716-4466554400dd",
+            requestId: reqB,
+            decision: "REJECT",
+          }),
           "b-r",
         );
         assert.equal(bRej.handled && bRej.outcome, "applied");
@@ -6386,13 +6566,11 @@ await section(
           "failed",
         );
         const bAcc = await pB.applyWebhook(
-          {
-            ...fx.WEBHOOK_ACCEPT,
-            data: {
-              ...fx.WEBHOOK_ACCEPT.data,
-              id: "550e8400-e29b-41d4-a716-4466554400ee",
-            },
-          },
+          fx.webhookEvent({
+            eventId: "550e8400-e29b-41d4-a716-4466554400ee",
+            requestId: reqB,
+            decision: "ACCEPT",
+          }),
           "b-a",
         );
         assert.equal(bAcc.handled && bAcc.outcome, "conflict_flagged");
@@ -6401,7 +6579,6 @@ await section(
           "failed",
           "a final REJECT is not overwritten by a late ACCEPT",
         );
-        // webhook event records exist for audit
         assert.equal(
           (await entity.getWebhookEvent(fx.FIXTURE_WEBHOOK_EVENT_ID))?.outcome,
           "applied",

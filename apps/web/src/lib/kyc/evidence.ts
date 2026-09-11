@@ -43,10 +43,13 @@ export interface KycEvidenceRecord {
   schemaVersion: typeof KYC_EVIDENCE_SCHEMA_VERSION;
   /** Adapter kind label (e.g. "socure", "mock"); never a claim of trust by itself. */
   provider: string;
-  /** Provider evaluation id (Socure `eval_id`). Opaque; safe to log. */
+  /** Provider evaluation id (e.g. `eval_id`). Opaque; safe to log. */
   providerEvaluationId: string | null;
+  /** OUR customer-defined request id echoed by the provider (`id` / webhook `data.id`). */
+  providerRequestId: string | null;
   /** Provider workflow name/version as configured (not a secret). */
   providerWorkflow: string | null;
+  providerWorkflowVersion: string | null;
   /** Latest provider decision, normalised. */
   providerDecision: KycProviderDecision | null;
   /** Whether the latest decision is final (webhook / closed) or interim (paused for step-up). */
@@ -75,7 +78,9 @@ export function emptyEvidence(
     schemaVersion: KYC_EVIDENCE_SCHEMA_VERSION,
     provider,
     providerEvaluationId: null,
+    providerRequestId: null,
     providerWorkflow: null,
+    providerWorkflowVersion: null,
     providerDecision: null,
     providerDecisionFinal: false,
     refiState,
@@ -104,6 +109,10 @@ export const KYC_EVIDENCE_FORBIDDEN_KEYS = [
   "selfie",
   "document_image",
   "tags",
+  "decision_tags",
+  "reason_codes",
+  "score",
+  "notes",
   "di_session_token",
   "api_key",
 ] as const;

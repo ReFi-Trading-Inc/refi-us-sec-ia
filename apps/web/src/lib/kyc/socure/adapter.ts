@@ -149,6 +149,8 @@ export class SocureKycProvider implements KycProviderAdapter {
   async evaluate(args: {
     subject: KycSubject;
     individual: SocureIndividual;
+    /** ISO time the investor consented to identity verification (ReFi consent record). */
+    consentTimestamp: string;
     submissionKey: string;
     correlationId: string;
   }): Promise<SocureEvaluateOutcome> {
@@ -191,9 +193,24 @@ export class SocureKycProvider implements KycProviderAdapter {
 
     const env = getServerEnv();
     const workflow = env.SOCURE_WORKFLOW_NAME ?? "unconfigured";
+    // Spec: `id` is customer-defined and unique per evaluation; it is an
+    // opaque ReFi request id (never a user id, email or account id) and is
+    // the correlation value echoed back in webhooks as `data.id`.
+    const providerRequestId = `refi-kyc-req-${crypto.randomUUID()}`;
+    const nowIso = new Date().toISOString();
     const request = socureEvaluationRequestSchema.parse({
       workflow,
-      data: { individual: args.individual },
+      id: providerRequestId,
+      timestamp: nowIso,
+      data: {
+        individual: {
+          ...args.individual,
+          additional_context: {
+            user_consent: true,
+            consent_timestamp: args.consentTimestamp,
+          },
+        },
+      },
     });
 
     // Record the in-flight submission BEFORE the provider call so a retry is visible.
@@ -204,7 +221,8 @@ export class SocureKycProvider implements KycProviderAdapter {
       submission: {
         key: submissionKey,
         phase: "submitting",
-        at: new Date().toISOString(),
+        at: nowIso,
+        providerRequestId,
       },
       lastProviderError: null,
     };
@@ -236,6 +254,22 @@ export class SocureKycProvider implements KycProviderAdapter {
       );
     }
     const response = parsed.data;
+    if (
+      response.environment_name !== undefined &&
+      response.environment_name.toLowerCase() !== env.SOCURE_ENV
+    ) {
+      return this.failed(
+        submitting,
+        submissionKey,
+        correlationId,
+        new SocureProviderError(
+          "malformed_response",
+          raw.status,
+          null,
+          "environment mismatch",
+        ),
+      );
+    }
     const outcome = mapSocureEvaluation(response);
     const at = new Date().toISOString();
     let next = transition(
@@ -263,7 +297,9 @@ export class SocureKycProvider implements KycProviderAdapter {
       evidence: {
         ...next.evidence,
         providerEvaluationId: response.eval_id,
-        providerWorkflow: workflow,
+        providerRequestId,
+        providerWorkflow: response.workflow ?? workflow,
+        providerWorkflowVersion: response.workflow_version ?? null,
         providerDecision: outcome.providerDecision,
         providerDecisionFinal: outcome.final,
         evaluationCreatedAt: next.evidence.evaluationCreatedAt ?? at,
@@ -365,7 +401,10 @@ export class SocureKycProvider implements KycProviderAdapter {
     payload: unknown,
     correlationId: string,
   ): Promise<
-    | { handled: false; reason: "ignored_event_type" | "malformed" }
+    | {
+        handled: false;
+        reason: "ignored_event_type" | "malformed" | "environment_mismatch";
+      }
     | ({ handled: true } & WebhookApplication)
   > {
     const generic = socureWebhookEventSchema.safeParse(payload);
@@ -375,9 +414,17 @@ export class SocureKycProvider implements KycProviderAdapter {
     }
     const completed = socureEvaluationCompletedEventSchema.safeParse(payload);
     if (!completed.success) return { handled: false, reason: "malformed" };
+    const env = getServerEnv();
+    if (
+      completed.data.data.environment_name !== undefined &&
+      completed.data.data.environment_name.toLowerCase() !== env.SOCURE_ENV
+    ) {
+      return { handled: false, reason: "environment_mismatch" };
+    }
     const mapped = mapSocureWebhookDecision(completed.data);
     const applied = await applyFinalProviderDecision({
-      eventId: completed.data.data.id,
+      eventId: completed.data.event_id,
+      providerRequestId: completed.data.data.id,
       providerEvaluationId: completed.data.data.eval_id,
       providerDecision: mapped.providerDecision,
       mapped: { refiState: mapped.refiState, final: mapped.final },

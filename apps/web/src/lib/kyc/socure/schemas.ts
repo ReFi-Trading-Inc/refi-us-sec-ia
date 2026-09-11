@@ -138,6 +138,8 @@ export const socureEvaluationResponseSchema = z
       .array(
         z
           .object({
+            enrichment_name: z.string().max(200).optional(),
+            enrichment_provider: z.string().max(200).optional(),
             response: z
               .object({
                 data: z
@@ -167,6 +169,8 @@ export type SocureEvaluationResponse = z.infer<
 
 /** Guide step 4: REVIEW + eval_status "evaluation_paused" + a DocV transaction token. */
 export const SOCURE_EVAL_STATUS_PAUSED = "evaluation_paused" as const;
+/** Help center ("Handle DocV Step-Up"): the DocV request enrichment object. */
+export const SOCURE_DOCV_ENRICHMENT = "SocureDocRequest" as const;
 export const SOCURE_EVAL_STATUS_COMPLETED = "evaluation_completed" as const;
 
 // ─── Error body ─────────────────────────────────────────────────────────────

@@ -19,6 +19,7 @@
 import type { KycLifecycleState } from "../provider";
 import type { KycProviderDecision } from "../evidence";
 import {
+  SOCURE_DOCV_ENRICHMENT,
   SOCURE_EVAL_STATUS_PAUSED,
   type SocureDecision,
   type SocureEvaluationCompletedEvent,
@@ -38,11 +39,18 @@ export function normalizeSocureDecision(
   }
 }
 
-/** Guide step 4: the DocV transaction token, if RiskOS triggered DocV. */
+/**
+ * The DocV transaction token — ONLY from the `SocureDocRequest` enrichment
+ * (help center "Handle DocV Step-Up"), never from an arbitrary nested field.
+ */
 export function extractDocvTransactionToken(
   r: SocureEvaluationResponse,
 ): string | null {
   for (const e of r.data_enrichments ?? []) {
+    const isDocv =
+      e.enrichment_provider === SOCURE_DOCV_ENRICHMENT ||
+      e.enrichment_name === SOCURE_DOCV_ENRICHMENT;
+    if (!isDocv) continue;
     const t = e.response?.data?.docvTransactionToken;
     if (typeof t === "string" && t.length > 0) return t;
   }
@@ -82,7 +90,8 @@ export function mapSocureEvaluation(
       };
     case "REVIEW": {
       const token = extractDocvTransactionToken(r);
-      const paused = r.eval_status === SOCURE_EVAL_STATUS_PAUSED;
+      const paused =
+        r.eval_status === SOCURE_EVAL_STATUS_PAUSED || r.status === "ON_HOLD";
       if (token !== null && paused) {
         return {
           refiState: "additional_info_required",

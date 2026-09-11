@@ -311,6 +311,8 @@ export async function applyFinalProviderDecision(args: {
       ...next.evidence,
       providerDecision: args.providerDecision,
       providerDecisionFinal: args.mapped.final,
+      providerEvaluationStatus: "evaluation_completed",
+      docvRequired: next.evidence.docvRequired || docvOccurred,
       completedAt: args.mapped.final ? receivedAt : null,
       providerReferenceIds: [
         ...next.evidence.providerReferenceIds,

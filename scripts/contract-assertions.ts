@@ -7497,6 +7497,72 @@ await section(
   );
 }
 
+// ─── KYC logging hygiene (mandate §16): no PII, keys or tokens in application logs ──
+{
+  const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");
+  const walk = (dir: string): string[] =>
+    readdirSync(join(REPO_ROOT, dir), { withFileTypes: true }).flatMap((d) =>
+      d.isDirectory()
+        ? walk(`${dir}/${d.name}`)
+        : /\.(tsx?)$/.test(d.name)
+          ? [`${dir}/${d.name}`]
+          : [],
+    );
+  await section(
+    "kyc logging hygiene: no console/log call anywhere in the KYC, webhook, attestation or BFF wrapper paths; env/secret names never interpolated into messages; receipts carry no identity field",
+    async () => {
+      const files = [
+        ...walk("apps/web/src/lib/kyc"),
+        ...walk("apps/web/app/api/v1/investor/kyc"),
+        ...walk("apps/web/app/api/webhooks"),
+        ...walk("apps/web/app/_lib/kyc"),
+        "apps/web/app/api/v1/investor/profile/v2/attestation/route.ts",
+        "apps/web/src/lib/compliance/attestation-mapping.ts",
+        "apps/web/src/lib/compliance/attestation-submission.ts",
+        "apps/web/src/lib/bff/handler.ts",
+        "apps/web/src/lib/prototype-store/entities/kyc-evaluation.ts",
+        "apps/web/src/lib/prototype-store/entities/receipt.ts",
+      ];
+      for (const f of files) {
+        const code = read(f).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+        assert.ok(
+          !/console\.(log|info|warn|error|debug)\s*\(/.test(code),
+          `${f}: no console logging`,
+        );
+        const withoutAuthHeader = code
+          .split("\n")
+          .filter((l) => !/Authorization: `Bearer \$\{apiKey\}`/.test(l))
+          .join("\n");
+        assert.ok(
+          !/\$\{[^}]*(SOCURE_API_KEY|SOCURE_WEBHOOK_BEARER_TOKEN|NEXT_PUBLIC_SOCURE_SDK_KEY|national_id|nationalId|date_of_birth|dateOfBirth|api_key|apiKey)[^}]*\}/.test(
+            withoutAuthHeader,
+          ),
+          `${f}: never interpolates a key, token or identity field into a string (the provider Authorization header is the only permitted use of the API key)`,
+        );
+      }
+      // Receipts: the receipt entity stores only action/actor/authId/accountId/correlation/outcome/reason/references.
+      const receipt = read(
+        "apps/web/src/lib/prototype-store/entities/receipt.ts",
+      );
+      assert.ok(
+        !/givenName|nationalId|dateOfBirth|address|email/.test(
+          receipt.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""),
+        ),
+        "receipt entity has no identity fields",
+      );
+      // Error messages from the provider layer carry no request body.
+      const errors = await import("../apps/web/src/lib/kyc/socure/errors.ts");
+      for (const k of errors.SOCURE_ERROR_KINDS) {
+        assert.ok(
+          !/given_name|national_id|Bearer|api_key/i.test(
+            new errors.SocureProviderError(k, 500).message,
+          ),
+        );
+      }
+    },
+  );
+}
+
 // ─── Investor Profile v2 is the ONE canonical public questionnaire ──────────
 {
   const read = (rel: string) => readFileSync(join(REPO_ROOT, rel), "utf8");

@@ -245,11 +245,7 @@ type ManagedBlocker = {
   userActionRequired: boolean;
   route: string | null;
   source:
-    | "bff"
-    | "daniel_backend_projection"
-    | "broker"
-    | "market_data"
-    | "system";
+    "bff" | "daniel_backend_projection" | "broker" | "market_data" | "system";
   createdAt: string;
   resolvedAt: string | null;
 };

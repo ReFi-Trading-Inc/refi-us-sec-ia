@@ -27,24 +27,24 @@ Alignment status legend:
 
 ### Surface 1 — Signal vs Managed mode
 
-| Field                             | Value                                                                                                                                                          |
+| Field | Value |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| Current frontend route            | `/us/app/home`, `/us/app/recommendations`                                                                                                                      |
-| Current BFF route                 | `/api/v1/investor/subscription-mode`, `/api/v1/investor/dashboard`, `/api/v1/investor/status`                                                                  |
-| Current prototype-store entity    | `subscription-mode.ts`, `managed-execution-state.ts`                                                                                                           |
-| Intended GitLab backend service   | `account-intent-builder` (consumes `account.admin`)                                                                                                            |
-| Intended GitLab event/topic/table | `account.admin` actions `join_template`, `leave_template`, `pause_autopilot`, `resume_autopilot`                                                               |
-| Backend branch                    | `main`                                                                                                                                                         |
-| Backend file path                 | `apps/account-intent-builder/src/domain/processor.py:384-470`                                                                                                  |
-| **Alignment status**              | **partially aligned**                                                                                                                                          |
-| Misalignment                      | Backend has no "subscription mode" object; mode is emergent from per-account template subscriptions + autopilot state. Frontend's `SubscriptionMode = "signal" | "managed"` is a BFF-side projection. |
-| Required adapter                  | Subscribe to `account.admin` decisions per account → derive `mode` per-account.                                                                                |
-| Required test fixture             | `account.admin {join_template, pause_autopilot, resume_autopilot, leave_template}` → `SubscriptionMode` flip table.                                            |
-| SEC 203A-2(e) risk                | medium                                                                                                                                                         |
-| Blocks Surface 4?                 | No                                                                                                                                                             |
-| Blocks Phase 2.5 merge?           | No                                                                                                                                                             |
-| Blocks production?                | Yes (BFF must read real backend events)                                                                                                                        |
-| Owner                             | ReFi BFF + product                                                                                                                                             |
+| Current frontend route | `/us/app/home`, `/us/app/recommendations` |
+| Current BFF route | `/api/v1/investor/subscription-mode`, `/api/v1/investor/dashboard`, `/api/v1/investor/status` |
+| Current prototype-store entity | `subscription-mode.ts`, `managed-execution-state.ts` |
+| Intended GitLab backend service | `account-intent-builder` (consumes `account.admin`) |
+| Intended GitLab event/topic/table | `account.admin` actions `join_template`, `leave_template`, `pause_autopilot`, `resume_autopilot` |
+| Backend branch | `main` |
+| Backend file path | `apps/account-intent-builder/src/domain/processor.py:384-470` |
+| **Alignment status** | **partially aligned** |
+| Misalignment | Backend has no "subscription mode" object; mode is emergent from per-account template subscriptions + autopilot state. Frontend's `SubscriptionMode = "signal" | "managed"` is a BFF-side projection. |
+| Required adapter | Subscribe to `account.admin` decisions per account → derive `mode` per-account. |
+| Required test fixture | `account.admin {join_template, pause_autopilot, resume_autopilot, leave_template}` → `SubscriptionMode` flip table. |
+| SEC 203A-2(e) risk | medium |
+| Blocks Surface 4? | No |
+| Blocks Phase 2.5 merge? | No |
+| Blocks production? | Yes (BFF must read real backend events) |
+| Owner | ReFi BFF + product |
 
 ---
 
@@ -73,24 +73,24 @@ Alignment status legend:
 
 ### Surface 3 — Recommendation detail
 
-| Field                             | Value                                                                                                                                                                                        |
+| Field | Value |
 | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Current frontend route            | `/us/app/recommendations/[id]`                                                                                                                                                               |
-| Current BFF route                 | `/api/v1/investor/recommendations/[id]`                                                                                                                                                      |
-| Current prototype-store entity    | `recommendation-projection.ts`, `decision-record.ts`, `exception-review.ts`                                                                                                                  |
-| Intended GitLab backend service   | `risk-engine` (risk decision + reasons) + `account-intent-builder` (intent context)                                                                                                          |
-| Intended GitLab event/topic/table | `risk.approved` OR `risk.rejected` + `account.intent.ready`                                                                                                                                  |
-| Backend branch                    | `main`                                                                                                                                                                                       |
-| Backend file path                 | `apps/risk-engine/src/decision_builder.py`, `apps/risk-engine/src/models.py:132-144` (`RiskDecision`)                                                                                        |
-| **Alignment status**              | **partially aligned (with critical ternary-vs-binary mismatch)**                                                                                                                             |
-| Misalignment                      | Backend `RiskDecision.decision` is binary (`approved                                                                                                                                         | rejected`); frontend `automation_eligibility.status` is ternary (`ALLOW | REVIEW | DENY`). Reason codes (`LEVERAGE_LIMIT`, `SINGLE_NAME_CONC_LIMIT`, `SECTOR_CONC_LIMIT`, `VAR_LIMIT`) need investor-facing-label mapping that does not exist yet. |
-| Required adapter                  | Map `risk.approved → ALLOW`; `risk.rejected + retry_hint → REVIEW`; `risk.rejected + hard reason → DENY`; no response → `UNAVAILABLE`. Define the recoverable-vs-hard partition with Daniel. |
-| Required test fixture             | One case per `RiskReason.code` showing the resulting `automation_eligibility.status` and `data-eligibility` attribute.                                                                       |
-| SEC 203A-2(e) risk                | **critical** (this is the fail-closed gate)                                                                                                                                                  |
-| Blocks Surface 4?                 | No (§A + §B + §C + §D guarantee structural boundary today)                                                                                                                                   |
-| Blocks Phase 2.5 merge?           | No                                                                                                                                                                                           |
-| Blocks production?                | Yes                                                                                                                                                                                          |
-| Owner                             | ReFi BFF + Daniel (reason-code-to-verdict mapping requires both)                                                                                                                             |
+| Current frontend route | `/us/app/recommendations/[id]` |
+| Current BFF route | `/api/v1/investor/recommendations/[id]` |
+| Current prototype-store entity | `recommendation-projection.ts`, `decision-record.ts`, `exception-review.ts` |
+| Intended GitLab backend service | `risk-engine` (risk decision + reasons) + `account-intent-builder` (intent context) |
+| Intended GitLab event/topic/table | `risk.approved` OR `risk.rejected` + `account.intent.ready` |
+| Backend branch | `main` |
+| Backend file path | `apps/risk-engine/src/decision_builder.py`, `apps/risk-engine/src/models.py:132-144` (`RiskDecision`) |
+| **Alignment status** | **partially aligned (with critical ternary-vs-binary mismatch)** |
+| Misalignment | Backend `RiskDecision.decision` is binary (`approved                                                                                                                                         | rejected`); frontend `automation_eligibility.status` is ternary (`ALLOW | REVIEW | DENY`). Reason codes (`LEVERAGE_LIMIT`, `SINGLE_NAME_CONC_LIMIT`, `SECTOR_CONC_LIMIT`, `VAR_LIMIT`) need investor-facing-label mapping that does not exist yet. |
+| Required adapter | Map `risk.approved → ALLOW`; `risk.rejected + retry_hint → REVIEW`; `risk.rejected + hard reason → DENY`; no response → `UNAVAILABLE`. Define the recoverable-vs-hard partition with Daniel. |
+| Required test fixture | One case per `RiskReason.code` showing the resulting `automation_eligibility.status` and `data-eligibility` attribute. |
+| SEC 203A-2(e) risk | **critical** (this is the fail-closed gate) |
+| Blocks Surface 4? | No (§A + §B + §C + §D guarantee structural boundary today) |
+| Blocks Phase 2.5 merge? | No |
+| Blocks production? | Yes |
+| Owner | ReFi BFF + Daniel (reason-code-to-verdict mapping requires both) |
 
 ---
 

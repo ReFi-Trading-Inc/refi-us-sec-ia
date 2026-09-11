@@ -281,20 +281,10 @@ export interface AccountIntentProjection {
   template_version: string;
   action_id: string; // PE action this intent came from
   intent_kind:
-    | "rebalance"
-    | "join"
-    | "leave"
-    | "liquidate"
-    | "preference_change"
-    | string;
+    "rebalance" | "join" | "leave" | "liquidate" | "preference_change" | string;
   ts: string;
   status:
-    | "ready"
-    | "approved"
-    | "rejected"
-    | "executed"
-    | "expired"
-    | "blocked";
+    "ready" | "approved" | "rejected" | "executed" | "expired" | "blocked";
   blocked_reason?: string;
   legs_hash: string;
   correlation_id: string;
@@ -315,12 +305,7 @@ export interface AccountIntentLegProjection {
   source_streams: StreamId[]; // lineage display
   stream_contributions?: Record<StreamId, number>;
   status:
-    | "ready"
-    | "approved"
-    | "rejected"
-    | "executed"
-    | "expired"
-    | "blocked";
+    "ready" | "approved" | "rejected" | "executed" | "expired" | "blocked";
   template_id: string;
   template_version: string;
   action_id: string;
@@ -653,10 +638,7 @@ export interface RecordAccessLog {
   actor_auth_id: string; // session-derived investor identity
   route: string; // BFF route path; never a raw Admin Portal route
   resource_kind:
-    | "audit_packet"
-    | "record_artifact"
-    | "trace"
-    | "consent_evidence";
+    "audit_packet" | "record_artifact" | "trace" | "consent_evidence";
   resource_ref: string; // record_id / packet_id / etc.
   at: string;
   ip_hash?: string;

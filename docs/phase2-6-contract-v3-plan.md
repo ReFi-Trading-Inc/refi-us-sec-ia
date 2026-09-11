@@ -122,12 +122,7 @@ interface AccountIntentLegProjection {
   source_streams: string[]; // stream lineage for advisory display
   stream_contributions?: Record<string, number>;
   status:
-    | "ready"
-    | "approved"
-    | "rejected"
-    | "executed"
-    | "expired"
-    | "blocked";
+    "ready" | "approved" | "rejected" | "executed" | "expired" | "blocked";
   template_id: string;
   template_version: string;
   action_id: string; // PE action this intent came from

@@ -310,11 +310,7 @@ interface RecommendationProjection {
    * this enum directly.
    */
   recommendation_type:
-    | "open_long"
-    | "open_short"
-    | "close_long"
-    | "close_short"
-    | "hold";
+    "open_long" | "open_short" | "close_long" | "close_short" | "hold";
 
   advisory_context: {
     summary: string;
@@ -353,15 +349,9 @@ interface EligibilityCheck {
   profile_status: "complete" | "incomplete" | "outdated";
   disclosure_ack_status: "current" | "missing_acks" | "outdated";
   broker_connection_status:
-    | "connected_fresh"
-    | "connected_stale"
-    | "disconnected"
-    | "pending";
+    "connected_fresh" | "connected_stale" | "disconnected" | "pending";
   position_concentration_status:
-    | "within_limits"
-    | "near_limit"
-    | "over_limit"
-    | "unknown";
+    "within_limits" | "near_limit" | "over_limit" | "unknown";
   signal_freshness_status: "fresh" | "stale" | "expired";
   checked_at: string;
 }

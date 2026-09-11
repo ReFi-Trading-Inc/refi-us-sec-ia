@@ -36,5 +36,5 @@
     "session cookies",
     "invitation tokens"
   ],
-  "_kyc_cip_model": "Initial Alpha KYC/CIP model: Alpaca-owned brokerage onboarding (founder decision 2026-09-10). No separate KYC provider; no provider id or integration identifier is invented \u2014 the Alpaca/backend binding will be recorded here once Daniel supplies it (packet A3/A4/K1)."
+  "_kyc_cip_model": "Initial Alpha KYC/CIP policy decision: Alpaca-owned brokerage KYC/CIP (founder, 2026-09-10) \u2014 COMPLETE as a decision. Alpaca onboarding boundary and KYC/CIP integration: DANIEL DEPENDENCY (boundary TBD). No separate KYC provider; no provider id or integration identifier is invented; the binding is recorded here once Daniel supplies it."
 }

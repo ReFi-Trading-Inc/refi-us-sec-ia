@@ -47,7 +47,7 @@ Deferred (decided-as-deferred, not open questions): investor `liquidate_all` and
 
 - **Status:** DECIDED (founder, 2026-09-10; Option 1)
 - **Resolution:** ReFi integrates no separate identity-verification provider (Persona/Socure/Veriff/Alloy/other) for the initial Alpha. Stytch owns authentication; ReFi owns eligibility, advisory profile, disclosures, consent and internal closed-Alpha admission; Alpaca owns brokerage KYC/CIP and account approval; Daniel's backend owns account ownership, credential custody, account truth, `AccountAuthorization`, risk, execution, fills, reconciliation. Alpaca approval ≠ `AccountAuthorization`; Stytch login ≠ KYC; Alpha admission ≠ brokerage KYC. Supersedes the 2026-09-04 "frontend-owned KYC provider lifecycle, provider unselected" note and the 2026-08-17 "`compliance-adapter` owns the KYC-provider exchange" resolution for the initial Alpha.
-- **Consequence:** alpha.3 exposes no Alpaca onboarding/status; the integration model (investor self-opens Alpaca account vs Broker API) is a Daniel dependency (packet A1–A9, K1–K2).
+- **Consequence:** alpha.3 exposes no Alpaca onboarding/status; the Alpaca account/KYC integration boundary is TBD and a Daniel dependency (packet, Alpaca block); no frontend runtime state is introduced until it is bound.
 - **Priority:** Critical
 - **Owner:** Zeshan (decision) · Daniel (binding)
 - **Doc:** docs/releases/2026-09-signal/connected-dev/decision-kyc-model.md

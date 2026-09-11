@@ -24,9 +24,7 @@ type DanielLiveSignalDoc = {
 type DanielAssetStatusDoc = {
   _id: string; // symbol
   status:
-    | "Ready for Inference"
-    | "Needs Model Update"
-    | "Inference in Progress";
+    "Ready for Inference" | "Needs Model Update" | "Inference in Progress";
   last_prediction_ts: number; // UNIX seconds
   last_status_update: string; // ISO-8601
 };

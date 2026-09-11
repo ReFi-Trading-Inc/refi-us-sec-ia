@@ -305,6 +305,10 @@ export class SocureKycProvider implements KycProviderAdapter {
         providerWorkflowVersion: response.workflow_version ?? null,
         providerDecision: outcome.providerDecision,
         providerDecisionFinal: outcome.final,
+        providerEvaluationStatus:
+          response.eval_status ?? response.status ?? null,
+        docvRequired:
+          next.evidence.docvRequired || outcome.docvTransactionToken !== null,
         evaluationCreatedAt: next.evidence.evaluationCreatedAt ?? at,
         completedAt: outcome.final ? at : null,
         reviewReason: outcome.reviewReason,

@@ -70,21 +70,21 @@ Each surface row records: current name, new name (if changed), status, backend a
 
 ## Surface 4 — Automation Center → **Account Controls Center**
 
-| Field                   | Value                                                                                                                                                                                                                                                                                                             |
+| Field | Value |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------ |
-| Phase 2.5 name          | Automation Center / Execution Policy                                                                                                                                                                                                                                                                              |
-| Phase 2.6 name          | **Account Controls Center**                                                                                                                                                                                                                                                                                       |
-| Status                  | **major reframing — `ExecutionPolicy` does not exist**                                                                                                                                                                                                                                                            |
-| Backend anchor          | `AccountPrefs` (write), `RiskLimits` (read-only display), `UserConsents` (acceptance flow), `TradingControlStates` (read-only); new `AccountPrefsHistory` (Phase 2.6 scope)                                                                                                                                       |
-| Frontend anchor         | `apps/web/app/us/app/settings/automation/page.tsx` — to be rewritten                                                                                                                                                                                                                                              |
-| BFF route impact        | **Drop** `/api/v1/investor/execution-policy`, `/execution-policy/draft`, `/execution-policy/activate`. **Add** `/api/v1/investor/account-prefs` (GET, PATCH), `/api/v1/investor/account-prefs/history` (GET), `/api/v1/investor/consents` (GET, POST acceptance), `/api/v1/investor/risk-limits` (GET, read-only) |
-| Prototype-store impact  | **Delete** `execution-policy.ts`, `execution-policy-draft.ts`. **Add** `account-prefs-history.ts` ledger entity. `managed-execution-state.ts` reshapes against `TradingControlStates`                                                                                                                             |
-| Stale assumptions       | Entire surface                                                                                                                                                                                                                                                                                                    | (GAP-SURFACE4-009) |
-| Required docs update    | `phase2-6-account-prefs-history-options.md` + Contract V3 §4 (AccountPrefs / Consent / History objects)                                                                                                                                                                                                           |
-| Required type update    | Drop `ExecutionPolicy*` types from `packages/api-clients/src/generated/api*`; drop `useExecutionPolicy*` hooks; add `AccountPrefs*` hooks                                                                                                                                                                         |
-| Required test update    | `automation-center.spec.ts` — full rewrite for the reframed surface; new `account-prefs-history.spec.ts`                                                                                                                                                                                                          |
-| Implementation blocked? | **Yes — design-track blocked on Daniel ACL + AccountPrefs History agreement; implementation blocked on PR-B + PR-D + PR-E**                                                                                                                                                                                       |
-| Blocker reason          | New scope `GAP-PREFS-HISTORY-001` + `GAP-ACL-005`                                                                                                                                                                                                                                                                 |
+| Phase 2.5 name | Automation Center / Execution Policy |
+| Phase 2.6 name | **Account Controls Center** |
+| Status | **major reframing — `ExecutionPolicy` does not exist** |
+| Backend anchor | `AccountPrefs` (write), `RiskLimits` (read-only display), `UserConsents` (acceptance flow), `TradingControlStates` (read-only); new `AccountPrefsHistory` (Phase 2.6 scope) |
+| Frontend anchor | `apps/web/app/us/app/settings/automation/page.tsx` — to be rewritten |
+| BFF route impact | **Drop** `/api/v1/investor/execution-policy`, `/execution-policy/draft`, `/execution-policy/activate`. **Add** `/api/v1/investor/account-prefs` (GET, PATCH), `/api/v1/investor/account-prefs/history` (GET), `/api/v1/investor/consents` (GET, POST acceptance), `/api/v1/investor/risk-limits` (GET, read-only) |
+| Prototype-store impact | **Delete** `execution-policy.ts`, `execution-policy-draft.ts`. **Add** `account-prefs-history.ts` ledger entity. `managed-execution-state.ts` reshapes against `TradingControlStates` |
+| Stale assumptions | Entire surface | (GAP-SURFACE4-009) |
+| Required docs update | `phase2-6-account-prefs-history-options.md` + Contract V3 §4 (AccountPrefs / Consent / History objects) |
+| Required type update | Drop `ExecutionPolicy*` types from `packages/api-clients/src/generated/api*`; drop `useExecutionPolicy*` hooks; add `AccountPrefs*` hooks |
+| Required test update | `automation-center.spec.ts` — full rewrite for the reframed surface; new `account-prefs-history.spec.ts` |
+| Implementation blocked? | **Yes — design-track blocked on Daniel ACL + AccountPrefs History agreement; implementation blocked on PR-B + PR-D + PR-E** |
+| Blocker reason | New scope `GAP-PREFS-HISTORY-001` + `GAP-ACL-005` |
 
 ---
 

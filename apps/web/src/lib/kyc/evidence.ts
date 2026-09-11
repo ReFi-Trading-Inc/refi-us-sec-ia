@@ -56,6 +56,10 @@ export interface KycEvidenceRecord {
   providerDecision: KycProviderDecision | null;
   /** Whether the latest decision is final (webhook / closed) or interim (paused for step-up). */
   providerDecisionFinal: boolean;
+  /** Provider evaluation status as delivered (e.g. evaluation_paused / evaluation_completed / CLOSED). Coarse; never a score. */
+  providerEvaluationStatus: string | null;
+  /** True once a document step-up was required for this evaluation. */
+  docvRequired: boolean;
   /** ReFi-owned mapped lifecycle state. */
   refiState: KycLifecycleState;
   identityVerification: KycComponentStatus;
@@ -86,6 +90,8 @@ export function emptyEvidence(
     providerWorkflowVersion: null,
     providerDecision: null,
     providerDecisionFinal: false,
+    providerEvaluationStatus: null,
+    docvRequired: false,
     refiState,
     identityVerification: "not_evaluated",
     fraud: "not_evaluated",

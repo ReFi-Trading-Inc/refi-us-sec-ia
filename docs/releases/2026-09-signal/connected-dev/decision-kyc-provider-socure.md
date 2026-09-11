@@ -66,4 +66,4 @@ OpenAPI specs and help-center pages, 2026-09-10). Nothing was invented beyond th
 
 ## What remains for live acceptance (Socure account dependency)
 
-Sandbox account creation (support@socure.com), API key (server, Secret Manager), SDK key (`NEXT_PUBLIC_SOCURE_SDK_KEY`), workflow name, webhook endpoint registration with its Bearer/Basic credential (mirrored into `SOCURE_WEBHOOK_SECRET`) and subscription to `evaluation_completed`; then `@socure-inc/device-risk-sdk` installation and initialisation in the browser; then sandbox acceptance runs (ACCEPT / REJECT / REVIEW+DocV / webhook) recorded as evidence.
+Sandbox account creation (support@socure.com), API key (server, Secret Manager), SDK key (`NEXT_PUBLIC_SOCURE_SDK_KEY`), workflow name, webhook endpoint registration with its Bearer credential (mirrored into `SOCURE_WEBHOOK_BEARER_TOKEN`) and subscription to `evaluation_completed`; then `@socure-inc/device-risk-sdk` installation and initialisation in the browser; then sandbox acceptance runs (ACCEPT / REJECT / REVIEW+DocV / webhook) recorded as evidence.

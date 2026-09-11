@@ -57,6 +57,8 @@ export interface KycEvaluationRecord {
     key: string;
     phase: "submitting" | "answered" | "failed";
     at: string;
+    /** The customer-defined request id sent to the provider for this submission. */
+    providerRequestId?: string;
   } | null;
   docv: {
     /** Provider DocV transaction token — needed by the browser SDK for THIS user only. */
@@ -204,6 +206,8 @@ export interface WebhookApplication {
  */
 export async function applyFinalProviderDecision(args: {
   eventId: string;
+  /** The provider's echo of OUR request id (`data.id`); must match the record. */
+  providerRequestId: string;
   providerEvaluationId: string;
   providerDecision: KycProviderDecision;
   mapped: { refiState: KycLifecycleState; final: boolean };
@@ -234,7 +238,8 @@ export async function applyFinalProviderDecision(args: {
   const record = await records().get(authId);
   if (
     !record ||
-    record.evidence.providerEvaluationId !== args.providerEvaluationId
+    record.evidence.providerEvaluationId !== args.providerEvaluationId ||
+    record.evidence.providerRequestId !== args.providerRequestId
   ) {
     return note("evaluation_mismatch", null);
   }

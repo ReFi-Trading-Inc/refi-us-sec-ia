@@ -37,18 +37,44 @@ export class SocureProviderError extends Error {
   }
 }
 
-/** Classify an HTTP status from the Evaluation API (body already discarded). */
+/**
+ * Classify an HTTP status (and, when present, the spec `Error.code`) from
+ * the Evaluation API. The body is never retained beyond the code.
+ */
 export function classifySocureHttpStatus(
   status: number,
   retryAfterSeconds: number | null = null,
+  code: string | null = null,
 ): SocureProviderError {
+  switch (code) {
+    case "AUTHENTICATION_FAILED":
+    case "PERMISSION_DENIED":
+    case "WORKFLOW_NOT_FOUND":
+    case "WORKFLOW_NOT_PUBLISHED":
+      return new SocureProviderError("auth_config", status, null, code);
+    case "INVALID_REQUEST":
+    case "INVALID_PAYLOAD":
+    case "INVALID_ID":
+    case "INVALID_FRAUD_TYPE":
+    case "CUSTOMER_METADATA_TOO_LARGE":
+      return new SocureProviderError("invalid_request", status, null, code);
+    case "INTERNAL_ERROR":
+      return new SocureProviderError(
+        "provider_unavailable",
+        status,
+        retryAfterSeconds,
+        code,
+      );
+    default:
+      break;
+  }
   if (status === 401 || status === 403) {
     return new SocureProviderError("auth_config", status);
   }
   if (status === 429) {
     return new SocureProviderError("rate_limited", status, retryAfterSeconds);
   }
-  if (status === 400 || status === 404 || status === 422) {
+  if (status === 400 || status === 404 || status === 413 || status === 422) {
     return new SocureProviderError("invalid_request", status);
   }
   if (status >= 500) {

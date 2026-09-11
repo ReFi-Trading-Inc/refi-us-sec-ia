@@ -13,7 +13,7 @@
 import { getServerEnv } from "../../config/env";
 import { classifySocureHttpStatus, SocureProviderError } from "./errors";
 import type { FakeSocureScript } from "./fixtures";
-import type { SocureEvaluationRequest } from "./schemas";
+import { socureErrorBodySchema, type SocureEvaluationRequest } from "./schemas";
 
 export interface SocureRawResponse {
   status: number;
@@ -176,5 +176,10 @@ export class FakeSocureClient implements SocureClientLike {
 /** Translate a raw transport answer into either a body to validate or a classified error. */
 export function rawToBodyOrThrow(raw: SocureRawResponse): unknown {
   if (raw.status >= 200 && raw.status < 300) return raw.body;
-  throw classifySocureHttpStatus(raw.status, raw.retryAfterSeconds);
+  const parsed = socureErrorBodySchema.safeParse(raw.body);
+  throw classifySocureHttpStatus(
+    raw.status,
+    raw.retryAfterSeconds,
+    parsed.success ? (parsed.data.code ?? null) : null,
+  );
 }

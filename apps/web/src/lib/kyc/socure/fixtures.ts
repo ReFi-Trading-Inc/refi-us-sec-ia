@@ -34,21 +34,46 @@ export const FIXTURE_INDIVIDUAL: SocureIndividual = {
 export const RESPONSE_ACCEPT = {
   decision: "ACCEPT",
   status: "CLOSED",
+  eval_status: "evaluation_completed",
   eval_id: FIXTURE_EVAL_ID_ACCEPT,
+  workflow: "kyc-fraud-watchlist-docv-fixture",
+  workflow_version: "1.0.0",
+  environment_name: "Sandbox",
+  score: 12,
+  reason_codes: ["fixture_reason_not_for_users"],
 } as const;
 
 export const RESPONSE_REJECT = {
   decision: "REJECT",
   status: "CLOSED",
+  eval_status: "evaluation_completed",
   eval_id: FIXTURE_EVAL_ID_REJECT,
+  environment_name: "Sandbox",
+  score: 91,
   tags: ["fixture_tag_not_for_users"],
+  reason_codes: ["fixture_reason_not_for_users"],
+  decision_tags: ["fixture_decision_tag"],
+} as const;
+
+/** Wrong environment echoed back: refused as malformed (never applied). */
+export const RESPONSE_ACCEPT_WRONG_ENV = {
+  ...RESPONSE_ACCEPT,
+  environment_name: "Production",
+} as const;
+
+export const ERROR_BODY_WORKFLOW_NOT_FOUND = {
+  error: "Not Found",
+  code: "WORKFLOW_NOT_FOUND",
+  message: "fixture",
 } as const;
 
 /** Guide step 4 shape: REVIEW + evaluation_paused + DocV token in data_enrichments. */
 export const RESPONSE_REVIEW_DOCV_PAUSED = {
   decision: "REVIEW",
   eval_status: "evaluation_paused",
+  status: "OPEN",
   eval_id: FIXTURE_EVAL_ID_REVIEW,
+  environment_name: "Sandbox",
   data_enrichments: [
     { response: { data: { other: "ignored" } } },
     {
@@ -74,43 +99,52 @@ export const RESPONSE_MALFORMED = {
   eval_id: 42,
 } as const;
 
-export const WEBHOOK_ACCEPT = {
-  event_type: "evaluation_completed",
-  data: {
-    id: FIXTURE_WEBHOOK_EVENT_ID,
-    eval_id: FIXTURE_EVAL_ID_REVIEW,
-    eval_status: "evaluation_completed",
-    decision: "ACCEPT",
-  },
-} as const;
+/**
+ * Webhook envelopes per the RiskOS™ webhooks spec: `event_id` (delivery id),
+ * `event_at`, `event_type`, `data.id` (OUR request id — supplied by the
+ * test from the stored record), `data.eval_id`, `data.decision`.
+ */
+export function webhookEvent(args: {
+  eventId: string;
+  requestId: string;
+  evalId?: string;
+  decision?: "ACCEPT" | "REJECT" | "REVIEW";
+  eventType?: string;
+  environment?: "Sandbox" | "Production";
+}): Record<string, unknown> {
+  const eventType = args.eventType ?? "evaluation_completed";
+  return {
+    event_id: args.eventId,
+    event_at: "2026-09-10T00:00:00.000Z",
+    event_type: eventType,
+    data: {
+      id: args.requestId,
+      workflow: "kyc-fraud-watchlist-docv-fixture",
+      workflow_id: "673dd085-3daf-4c6c-be67-d399933a9fec",
+      workflow_version: "1.0.0",
+      eval_id: args.evalId ?? FIXTURE_EVAL_ID_REVIEW,
+      eval_start_time: "2026-09-10T00:00:00.000Z",
+      eval_end_time: "2026-09-10T00:00:05.000Z",
+      decision: args.decision ?? "ACCEPT",
+      decision_at: "2026-09-10T00:00:05.000Z",
+      status: "CLOSED",
+      sub_status: "fixture",
+      score: 7,
+      eval_source: "API",
+      ...(eventType === "evaluation_completed"
+        ? { evaluation_status: "evaluation_completed" }
+        : { eval_status: eventType }),
+      environment_name: args.environment ?? "Sandbox",
+      reason_codes: ["fixture_reason_not_for_users"],
+      tags: ["fixture_tag_not_for_users"],
+      notes: "fixture notes never stored",
+      review_queues: ["Default Queue"],
+      data_enrichments: [],
+    },
+  };
+}
 
-export const WEBHOOK_REJECT = {
-  event_type: "evaluation_completed",
-  data: {
-    id: "550e8400-e29b-41d4-a716-446655440001",
-    eval_id: FIXTURE_EVAL_ID_REVIEW,
-    eval_status: "evaluation_completed",
-    decision: "REJECT",
-  },
-} as const;
-
-export const WEBHOOK_UNKNOWN_EVAL = {
-  event_type: "evaluation_completed",
-  data: {
-    id: "550e8400-e29b-41d4-a716-446655440002",
-    eval_id: "99999999-9999-9999-9999-999999999999",
-    eval_status: "evaluation_completed",
-    decision: "ACCEPT",
-  },
-} as const;
-
-export const WEBHOOK_OTHER_EVENT = {
-  event_type: "evaluation_started",
-  data: {
-    id: "550e8400-e29b-41d4-a716-446655440003",
-    eval_id: FIXTURE_EVAL_ID_REVIEW,
-  },
-} as const;
+export const WEBHOOK_UNKNOWN_EVAL_ID = "99999999-9999-9999-9999-999999999999";
 
 /** Transport-level scripts for the fake client. */
 export type FakeSocureScript =

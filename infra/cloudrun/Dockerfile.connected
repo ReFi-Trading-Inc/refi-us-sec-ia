@@ -1,5 +1,6 @@
 FROM node:22-alpine AS builder
 WORKDIR /app
+RUN apk add --no-cache git
 RUN corepack enable pnpm
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/web/package.json ./apps/web/
@@ -8,6 +9,10 @@ COPY packages/ui/package.json ./packages/ui/
 COPY packages/config/package.json ./packages/config/
 RUN pnpm install --frozen-lockfile
 COPY . .
+# Cloud Build checkout is an archive; the Dockerfile-specific ignore excludes .git.
+# Contract checks use git ls-files: index this exact build context locally.
+# No remote, commit, credential or Git metadata is copied into the runner.
+RUN git init -q && git add .
 ARG APP_ORIGIN
 ENV NEXT_PUBLIC_API_BASE_URL=$APP_ORIGIN \
     NEXT_PUBLIC_REFI_ENV=staging \

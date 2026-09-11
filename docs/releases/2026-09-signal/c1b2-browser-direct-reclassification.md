@@ -401,6 +401,12 @@ none of these mutations may run before it. Full reconciliation:
 
 | Rows 15, 16, 24 — `GET /v1/brokers/account`, `GET /v1/brokers/positions`, `GET /v1/strategies/current` (+ preference read/write) | Demo slice 2 (`demo/data-adapter`) | **implemented, in review** — `GET /api/v1/investor/portfolio` reads `getAccountValuation`, `listAccountValuations` (bounded), `listAccountPositions`, `listAccountMemberships`, `getTemplate`, `getAccountPreferences` through the frozen client with server-derived account scope; `PATCH /api/v1/investor/preferences` writes exactly the four IB-06 fields via the dedicated `updateAccountPreferences` PATCH (If-Match, Idempotency-Key, never `/actions`). Home and Portfolio pages render reconciled backend truth; the client-side synthetic simulation is deleted. Legacy `useBrokerAccount`/`useBrokerPositions`/`useStrategy` hooks are retired in the follow-up dead-code pass once the account page's remaining broker reads move (row 11). Row 20 follow-up: all 16 `AccountRecord` variants now render read-only (rebaseline §7). Simulator/demo evidence only. |
 
+> **Superseded in part 2026-09-10.** The founder selected Option 1 for the
+> initial US Alpha: **Alpaca-owned brokerage KYC/CIP**. No separate provider
+> will be selected or integrated; the provider-neutral lifecycle below survives
+> only as an investor-facing projection over Alpaca onboarding. See
+> `connected-dev/decision-kyc-model.md`. The paragraph is retained as history.
+
 **Product decision — public U.S. KYC architecture (Zeshan, 2026-09-04).** The
 U.S. application surface is public (the Alpha itself stays closed and
 human-approved — see the next decision). The frontend/BFF owns the KYC provider

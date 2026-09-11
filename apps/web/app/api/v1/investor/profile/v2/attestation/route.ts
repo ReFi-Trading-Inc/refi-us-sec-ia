@@ -33,9 +33,10 @@ import {
 } from "../../../../../../../src/lib/investor-api/account-scope";
 import {
   getKycProvider,
+  kycEvidenceForAttestation,
   KycProviderUnavailableError,
-  mockKycProvenance,
   type KycEvidenceProvenance,
+  type TrustedKycEvidence,
 } from "../../../../../../../src/lib/kyc";
 import { ASSESSMENT_POLICY_VERSION } from "../../../../../../../src/lib/sec203a/investor-profile-engine";
 import {
@@ -61,12 +62,13 @@ export const GET = bffRead({
 
 async function kycEvidenceFor(
   authId: string,
-): Promise<KycEvidenceProvenance | null> {
+): Promise<KycEvidenceProvenance | TrustedKycEvidence | null> {
   try {
     const provider = getKycProvider();
-    const session = await provider.getSession({ authId });
-    // Provenance travels with the values: the mapping refuses `source: "mock"`.
-    return mockKycProvenance(session, provider.kind);
+    // Provenance travels with the values: mock → refused by the mapping;
+    // a final decision from the production adapter → trusted evidence;
+    // anything non-final → null (nothing to attest yet).
+    return await kycEvidenceForAttestation(provider, { authId });
   } catch (err) {
     if (err instanceof KycProviderUnavailableError) return null;
     throw err;

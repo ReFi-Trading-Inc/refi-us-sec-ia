@@ -121,16 +121,17 @@ export function freshKycEvaluation(
   correlationId = "kyc",
 ): KycEvaluationRecord {
   const at = nowIso();
+  const referenceId = `refi-kyc-${crypto.randomUUID()}`;
   return {
     authId,
-    referenceId: `refi-kyc-${crypto.randomUUID()}`,
+    referenceId,
     state: "not_started",
     startedAt: null,
     updatedAt: at,
     history: [
       { state: "not_started", at, correlationId, provenance: "system" },
     ],
-    evidence: emptyEvidence(provider, "not_started"),
+    evidence: { ...emptyEvidence(provider, "not_started"), referenceId },
     submission: null,
     docv: null,
     lastProviderError: null,
@@ -350,6 +351,13 @@ export async function getWebhookEvent(
   eventId: string,
 ): Promise<KycWebhookEventRecord | null> {
   return webhookEvents().get(eventId);
+}
+
+/** TEST ONLY: drop a provider-evaluation index entry regardless of record state. */
+export async function clearEvaluationIndexForTests(
+  providerEvaluationId: string,
+): Promise<void> {
+  await evalIndex().delete(providerEvaluationId);
 }
 
 /** TEST ONLY: forget a user's record (and its index entry). */

@@ -28,6 +28,7 @@
  */
 import type { components } from "@refi/api-clients/generated/investor-api.gen";
 import type { NormalizedIdentityInput } from "./identity-input";
+import type { KycEvidenceRecord } from "./evidence";
 
 /** The lifecycle states the product flow needs. Not a vendor enum. */
 export const KYC_LIFECYCLE_STATES = [
@@ -96,6 +97,8 @@ export interface KycProviderAdapter {
    * finished capture — which is NOT the decision (the provider's
    * asynchronous final result is).
    */
+  /** The provider-neutral evidence record behind the journey (server-only; feeds the attestation). */
+  evidenceRecord?(subject: KycSubject): Promise<KycEvidenceRecord | null>;
   stepUpToken?(subject: KycSubject): Promise<string | null>;
   markStepUpCaptured?(
     subject: KycSubject,

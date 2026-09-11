@@ -28,18 +28,25 @@ run gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$
 run gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$SA" --role roles/logging.logWriter
 
 # 4. Secrets — values are entered at the prompt (generated fresh; never production values)
-for s in socure-api-key-sandbox socure-webhook-bearer-sandbox sandbox-session-secret sandbox-ip-hash-secret sandbox-eligibility-jwt-secret sandbox-session-jwt-secret; do
+# 4a. Socure secrets: CONTAINERS ONLY (no versions). Phase 2 — the founder adds real versions
+#     through Secret Manager; no placeholder value is ever created (it could satisfy validation).
+for s in socure-api-key-sandbox socure-webhook-bearer-sandbox; do
   run gcloud secrets create "$s" --replication-policy automatic --project "$PROJECT"
-  echo "+ (enter value interactively) gcloud secrets versions add $s --data-file=- --project $PROJECT"
   run gcloud secrets add-iam-policy-binding "$s" --member "serviceAccount:$SA" --role roles/secretmanager.secretAccessor --project "$PROJECT"
 done
-echo "Generate ReFi secrets with: openssl rand -base64 48 ; webhook bearer: openssl rand -base64 48 ; Socure API key from the RiskOS dashboard."
+# 4b. ReFi-owned secrets: generated fresh at apply time (never production values), one version each.
+for s in sandbox-session-secret sandbox-ip-hash-secret sandbox-eligibility-jwt-secret sandbox-session-jwt-secret; do
+  run gcloud secrets create "$s" --replication-policy automatic --project "$PROJECT"
+  if [ "${APPLY:-0}" = "1" ]; then openssl rand -base64 48 | tr -d '\n' | gcloud secrets versions add "$s" --data-file=- --project "$PROJECT"; else echo "+ openssl rand -base64 48 | gcloud secrets versions add $s --data-file=- --project $PROJECT"; fi
+  run gcloud secrets add-iam-policy-binding "$s" --member "serviceAccount:$SA" --role roles/secretmanager.secretAccessor --project "$PROJECT"
+done
+echo "Phase 2 (founder, outside chat): Socure API key from the RiskOS dashboard; webhook Bearer = UUIDv4 via uuidgen; add as secret versions; then switch service.yaml to REFI_KYC_PROVIDER=socure with the two secret refs, workflow name and public SDK key."
 
 # 5. Build the image (staging tier constants at build time)
 run gcloud builds submit --config infra/gcp/socure-sandbox/cloudbuild.sandbox.yaml --project "$PROJECT" .
 
 # 6. Deploy the service from the manifest (replace REPLACE_* placeholders first)
 run gcloud run services replace infra/gcp/socure-sandbox/service.yaml --project "$PROJECT" --region "$REGION"
-run gcloud run services add-iam-policy-binding socure-sandbox-web --member allUsers --role roles/run.invoker --project "$PROJECT" --region "$REGION"
-run gcloud run services describe socure-sandbox-web --project "$PROJECT" --region "$REGION" --format "value(status.url)"
+run gcloud run services add-iam-policy-binding refi-socure-sandbox --member allUsers --role roles/run.invoker --project "$PROJECT" --region "$REGION"
+run gcloud run services describe refi-socure-sandbox --project "$PROJECT" --region "$REGION" --format "value(status.url)"
 echo "Webhook URL = <status.url>/api/webhooks/kyc/provider (register in RiskOS with the Bearer credential)."

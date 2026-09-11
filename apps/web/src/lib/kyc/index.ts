@@ -63,3 +63,4 @@ export function getMockKycControls(): MockKycProvider | null {
 export * from "./provider";
 export * from "./provenance";
 export * from "./evidence";
+export * from "./identity-input";

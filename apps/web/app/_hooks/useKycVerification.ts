@@ -36,6 +36,44 @@ export interface KycVerificationView {
   adapter: string | null;
   session: KycVerificationSession | null;
   reason?: "provider_unconfigured";
+  /** The adapter evaluates identity data collected by ReFi's own form. */
+  collectsIdentity?: boolean;
+}
+
+/** Browser payload for the same-origin evaluation route. Strict on the server. */
+export interface KycIdentityFormInput {
+  submissionKey: string;
+  diSessionToken: string;
+  givenName: string;
+  familyName: string;
+  dateOfBirth: string;
+  email?: string;
+  phoneNumber?: string;
+  nationalId?: string;
+  address: {
+    line1: string;
+    line2?: string;
+    locality: string;
+    region: string;
+    postalCode: string;
+    country: "US";
+  };
+  consentToVerification: true;
+}
+
+export interface KycEvaluationResult {
+  result:
+    | "evaluated"
+    | "reused"
+    | "already_terminal"
+    | "submission_in_flight"
+    | "provider_error"
+    | "not_evaluating";
+  session: KycVerificationSession | null;
+  stepUpRequired: boolean;
+  retryable?: boolean;
+  retryAfterSeconds?: number | null;
+  reason?: string;
 }
 
 const QUERY_KEY = ["investor", "kyc", "verification"] as const;
@@ -85,6 +123,20 @@ export function useKycVerification(options?: {
       const state = query.state.data?.session?.state;
       if (state === undefined) return intervalMs;
       return isTerminalKycState(state) ? false : intervalMs;
+    },
+  });
+}
+
+export function useSubmitKycEvaluation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: KycIdentityFormInput) =>
+      postJson<KycEvaluationResult>(
+        `${BASE.replace(/\/verification$/, "")}/evaluation`,
+        input,
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
     },
   });
 }

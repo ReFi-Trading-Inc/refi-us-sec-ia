@@ -71,7 +71,7 @@ export const ERROR_BODY_WORKFLOW_NOT_FOUND = {
 export const RESPONSE_REVIEW_DOCV_PAUSED = {
   decision: "REVIEW",
   eval_status: "evaluation_paused",
-  status: "OPEN",
+  status: "ON_HOLD",
   eval_id: FIXTURE_EVAL_ID_REVIEW,
   environment_name: "Sandbox",
   data_enrichments: [

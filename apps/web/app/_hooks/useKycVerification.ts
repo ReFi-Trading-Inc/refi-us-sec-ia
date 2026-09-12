@@ -167,6 +167,25 @@ export function useCompleteKycStepUp() {
   });
 }
 
+/**
+ * User-initiated provider reconciliation for a non-terminal journey (page
+ * resumed, DocV capture finished or errored). BFF-only; bounded server-side.
+ */
+export function useReconcileKyc() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      postJson<{
+        ok: boolean;
+        outcome?: string;
+        session?: KycVerificationSession;
+      }>(`${BASE.replace(/\/verification$/, "")}/reconcile`, {}),
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: QUERY_KEY });
+    },
+  });
+}
+
 export function useSubmitKycEvaluation() {
   const qc = useQueryClient();
   return useMutation({

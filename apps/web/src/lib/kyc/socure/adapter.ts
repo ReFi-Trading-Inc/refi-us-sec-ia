@@ -15,6 +15,10 @@
  * `REFI_KYC_PROVIDER=socure` with complete configuration; tests use
  * `FakeSocureClient`.
  */
+import {
+  extractSocureCertificationDetail,
+  type SocureCertificationDetail,
+} from "./certification-detail";
 import { emitKycSignal } from "../../observability/kyc-signals";
 import {
   applyFinalProviderDecision,
@@ -28,7 +32,8 @@ import {
 } from "../../prototype-store/entities/kyc-evaluation";
 import { getServerEnv } from "../../config/env";
 import type { NormalizedIdentityInput } from "../identity-input";
-import type { KycEvidenceRecord } from "../evidence";
+import type { KycEvidenceRecord, KycProviderDecision } from "../evidence";
+import type { KycLifecycleState } from "../provider";
 import {
   TERMINAL_KYC_STATES,
   type KycIdentityEvaluationOutcome,
@@ -60,6 +65,11 @@ import {
 export const SOCURE_ADAPTER_KIND = "socure" as const;
 /** Same-origin continuation: the ReFi-owned identity form (no provider URL). */
 export const SOCURE_CONTINUE_PATH = "/us/onboarding/kyc" as const;
+
+/** Bounded reconciliation backoff: 30 s, 2 min, 10 min, 30 min, then hourly. */
+const RECONCILE_BACKOFF_MS = [
+  30_000, 120_000, 600_000, 1_800_000, 3_600_000,
+] as const;
 
 function view(record: KycEvaluationRecord): KycVerificationSession {
   return {
@@ -288,6 +298,11 @@ export class SocureKycProvider implements KycProviderAdapter {
     );
     next = {
       ...next,
+      providerDetail: extractSocureCertificationDetail(
+        response,
+        "provider_evaluation",
+        at,
+      ),
       submission: { key: submissionKey, phase: "answered", at },
       docv:
         outcome.docvTransactionToken !== null
@@ -504,15 +519,174 @@ export class SocureKycProvider implements KycProviderAdapter {
       return { handled: false, reason: "environment_mismatch" };
     }
     const mapped = mapSocureWebhookDecision(completed.data);
-    const applied = await applyFinalProviderDecision({
+    const applied = await this.finalizeProviderResult({
+      source: "provider_webhook",
       eventId: completed.data.event_id,
       providerRequestId: completed.data.data.id,
       providerEvaluationId: completed.data.data.eval_id,
       providerDecision: mapped.providerDecision,
       mapped: { refiState: mapped.refiState, final: mapped.final },
+      detail: extractSocureCertificationDetail(
+        completed.data.data,
+        "provider_webhook",
+        new Date().toISOString(),
+      ),
       correlationId,
     });
     return { handled: true, ...applied };
+  }
+
+  /**
+   * THE single finalization path. Webhook deliveries and GET reconciliation
+   * both arrive here with a validated, normalized provider result; the
+   * durable, transactional apply (idempotency, conflict protection, event
+   * audit) is identical for both sources.
+   */
+  private finalizeProviderResult(args: {
+    source: "provider_webhook" | "provider_reconciliation";
+    eventId: string;
+    providerRequestId: string;
+    providerEvaluationId: string;
+    providerDecision: KycProviderDecision;
+    mapped: { refiState: KycLifecycleState; final: boolean };
+    detail: SocureCertificationDetail;
+    correlationId: string;
+  }): Promise<WebhookApplication> {
+    return applyFinalProviderDecision({
+      eventId: args.eventId,
+      providerRequestId: args.providerRequestId,
+      providerEvaluationId: args.providerEvaluationId,
+      providerDecision: args.providerDecision,
+      mapped: args.mapped,
+      correlationId: args.correlationId,
+      detail: args.detail,
+    });
+  }
+
+  /**
+   * Bounded provider reconciliation (`GET /api/evaluation/{eval_id}`, no
+   * inputs). Runs only for a non-terminal record that has a provider
+   * evaluation, and only when its backoff window has elapsed. A terminal
+   * provider result is finalized through `finalizeProviderResult` with a
+   * deterministic synthetic event id, so a later webhook for the same result
+   * is `idempotent_same_result` and a conflicting one is `conflict_flagged`.
+   * A still-paused result keeps the state; a provider error is recorded as
+   * retryable and never becomes a rejection.
+   */
+  async reconcile(
+    subject: KycSubject,
+    correlationId: string,
+  ): Promise<{
+    session: KycVerificationSession;
+    outcome:
+      | "finalized"
+      | "still_pending"
+      | "already_terminal"
+      | "nothing_to_reconcile"
+      | "not_due"
+      | "provider_error";
+  }> {
+    const current = await this.load(subject.authId, correlationId);
+    if (TERMINAL_KYC_STATES.has(current.state)) {
+      return { session: view(current), outcome: "already_terminal" };
+    }
+    const evalId = current.evidence.providerEvaluationId;
+    const requestId = current.evidence.providerRequestId;
+    if (!evalId || !requestId) {
+      return { session: view(current), outcome: "nothing_to_reconcile" };
+    }
+    const now = Date.now();
+    const rc = current.reconcile ?? {
+      attempts: 0,
+      lastAt: null,
+      notBefore: null,
+      lastOutcome: null,
+    };
+    if (rc.notBefore && Date.parse(rc.notBefore) > now) {
+      return { session: view(current), outcome: "not_due" };
+    }
+    const note = async (
+      outcome: string,
+      backoffMs: number,
+    ): Promise<KycEvaluationRecord> => {
+      const latest = (await getKycEvaluation(subject.authId)) ?? current;
+      const next: KycEvaluationRecord = {
+        ...latest,
+        reconcile: {
+          attempts: rc.attempts + 1,
+          lastAt: new Date(now).toISOString(),
+          notBefore: new Date(now + backoffMs).toISOString(),
+          lastOutcome: outcome,
+        },
+      };
+      await putKycEvaluation(next);
+      return next;
+    };
+    const backoff =
+      RECONCILE_BACKOFF_MS[
+        Math.min(rc.attempts, RECONCILE_BACKOFF_MS.length - 1)
+      ] ?? 3_600_000;
+    let raw;
+    try {
+      raw = await this.clientFactory().getEvaluation(evalId, {
+        correlationId,
+      });
+    } catch (err) {
+      const rec = await note(
+        err instanceof SocureProviderError ? err.kind : "unknown",
+        backoff,
+      );
+      return { session: view(rec), outcome: "provider_error" };
+    }
+    let parsed;
+    try {
+      parsed = socureEvaluationResponseSchema.safeParse(rawToBodyOrThrow(raw));
+    } catch (err) {
+      const rec = await note(
+        err instanceof SocureProviderError ? err.kind : "unknown",
+        backoff,
+      );
+      return { session: view(rec), outcome: "provider_error" };
+    }
+    if (!parsed.success) {
+      const rec = await note("malformed_response", backoff);
+      return { session: view(rec), outcome: "provider_error" };
+    }
+    const response = parsed.data;
+    const env = getServerEnv();
+    if (
+      response.environment_name !== undefined &&
+      response.environment_name.toLowerCase() !== env.SOCURE_ENV
+    ) {
+      const rec = await note("environment_mismatch", backoff);
+      return { session: view(rec), outcome: "provider_error" };
+    }
+    if (response.eval_id !== evalId) {
+      const rec = await note("evaluation_mismatch", backoff);
+      return { session: view(rec), outcome: "provider_error" };
+    }
+    const outcome = mapSocureEvaluation(response);
+    if (!outcome.final) {
+      const rec = await note("still_pending", backoff);
+      return { session: view(rec), outcome: "still_pending" };
+    }
+    const at = new Date().toISOString();
+    const applied = await this.finalizeProviderResult({
+      source: "provider_reconciliation",
+      eventId: `reconcile:${evalId}:${outcome.providerDecision}`,
+      providerRequestId: requestId,
+      providerEvaluationId: evalId,
+      providerDecision: outcome.providerDecision,
+      mapped: { refiState: outcome.refiState, final: true },
+      detail: extractSocureCertificationDetail(
+        response,
+        "provider_reconciliation",
+        at,
+      ),
+      correlationId,
+    });
+    const rec = await note(`finalized:${applied.outcome}`, 0);
+    return { session: view(rec), outcome: "finalized" };
   }
 
   /** Correlation helper for the webhook route (no user creation). */

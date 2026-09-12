@@ -9,13 +9,14 @@
  * profile step happens when the lifecycle reaches `passed` — never from the
  * backend policy projection (`getKycStatus` is a different domain).
  */
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Card, CardContent, StatusBanner } from "@ui/components";
 import { KycIdentityForm } from "./_components/KycIdentityForm";
 import { KycDocumentStepUp } from "./_components/KycDocumentStepUp";
 import { kycCopy } from "../../_content/app-copy";
 import {
+  useReconcileKyc,
   KYC_LIFECYCLE_STATES,
   isTerminalKycState,
   useAdvanceMockKycVerification,
@@ -45,6 +46,7 @@ export default function OnboardingKycPage() {
   const start = useStartKycVerification();
   const advance = useAdvanceMockKycVerification();
   const reset = useResetMockKycVerification();
+  const reconcile = useReconcileKyc();
 
   const view = verification.data;
   const state: KycLifecycleState = view?.session?.state ?? "not_started";
@@ -60,6 +62,25 @@ export default function OnboardingKycPage() {
     if (state !== "passed") return;
     router.replace("/us/onboarding/investor-profile");
   }, [state, router]);
+
+  // Resumed/refreshed with a non-terminal journey: ask the BFF to reconcile
+  // with the provider once (bounded server-side; a missed final webhook is
+  // recovered here). Never decides anything in the browser.
+  const reconciledFor = useRef<string | null>(null);
+  useEffect(() => {
+    const ref = view?.session?.referenceId ?? null;
+    if (ref === null || view?.collectsIdentity !== true) return;
+    if (
+      !["in_progress", "additional_info_required", "under_review"].includes(
+        state,
+      )
+    )
+      return;
+    if (reconciledFor.current === ref) return;
+    reconciledFor.current = ref;
+    reconcile.mutate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view?.session?.referenceId, view?.collectsIdentity, state]);
 
   const unavailable = view !== undefined && !view.available;
   const collectsIdentity = view?.collectsIdentity === true;

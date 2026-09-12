@@ -61,6 +61,7 @@ export const SIGNAL_ALLOWED_ACTIONS = [
   "startKycVerification",
   "submitKycEvaluation",
   "completeKycStepUp",
+  "reconcileKycEvaluation",
   "advanceMockKycVerification",
 ] as const;
 
@@ -109,6 +110,7 @@ export const AUTOMATED_ALPHA_ALLOWED_ACTIONS = [
   "startKycVerification", //         frontend-owned adapter lifecycle
   "submitKycEvaluation", //          identity data → configured adapter (ReFi-owned KYC)
   "completeKycStepUp", //            capture finished → under_review (not a decision)
+  "reconcileKycEvaluation", //       provider reconciliation, same finalization as webhook
   "submitComplianceAttestation", //  createComplianceProfileAttestation
   "syncBrokerConnection", //         syncBrokerageConnection
   "rotateBrokerCredentials", //      rotateBrokerageCredentials

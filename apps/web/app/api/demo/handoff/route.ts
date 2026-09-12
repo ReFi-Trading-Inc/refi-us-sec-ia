@@ -81,6 +81,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
 
   const now = Math.floor(Date.now() / 1000);
   // Every claim below is in the claim route's strict schema; nothing else.
+  if (!env.ALPHA_HANDOFF_ISSUER || !env.ALPHA_HANDOFF_AUDIENCE) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   const token = await new SignJWT({
     progressSnapshotId: `demo-snapshot-${crypto.randomUUID()}`,
     completedArenas: [

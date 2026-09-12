@@ -213,6 +213,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   // Verify signature + iss/aud/exp/alg. jose enforces exp automatically and
   // rejects any algorithm outside `algorithms`; pinning ES256 matches §2.2.
   const env = getServerEnv();
+  // The handoff capability fails closed without its real configuration
+  // (optional at the schema level so unrelated runtime profiles never need it).
+  if (
+    !env.ALPHA_HANDOFF_PUBLIC_KEY_JWK ||
+    !env.ALPHA_HANDOFF_ISSUER ||
+    !env.ALPHA_HANDOFF_AUDIENCE
+  ) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
   let payload: unknown;
   try {
     const jwk = JSON.parse(env.ALPHA_HANDOFF_PUBLIC_KEY_JWK) as Record<

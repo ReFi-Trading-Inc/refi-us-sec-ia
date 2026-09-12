@@ -29,9 +29,34 @@ let initialized: { sdkKey: string } | null = null;
 let sdkPromise: Promise<SocureDiSdkLike> | null = null;
 let initCount = 0;
 
+/**
+ * The pinned SDK ships a UMD bundle whose `module.exports` IS the
+ * `SigmaDeviceManager` class (its `.d.ts` declares a named export that does
+ * not exist at runtime — observed in the Sandbox on 2026-09-12). Accept the
+ * class wherever the bundler interop puts it, and prove it by its statics.
+ */
+export function resolveSigmaDeviceManager(mod: unknown): SocureDiSdkLike {
+  const candidates: unknown[] = [];
+  if (typeof mod === "object" && mod !== null) {
+    const m = mod as { SigmaDeviceManager?: unknown; default?: unknown };
+    candidates.push(m.SigmaDeviceManager, m.default);
+  }
+  candidates.push(mod);
+  for (const c of candidates) {
+    if (
+      (typeof c === "function" || (typeof c === "object" && c !== null)) &&
+      typeof (c as { initialize?: unknown }).initialize === "function" &&
+      typeof (c as { getSessionToken?: unknown }).getSessionToken === "function"
+    ) {
+      return c as SocureDiSdkLike;
+    }
+  }
+  throw new Error("device-risk-sdk: SigmaDeviceManager not found in module");
+}
+
 const realLoader: Loader = async () => {
-  const mod = await import("@socure-inc/device-risk-sdk");
-  return mod.SigmaDeviceManager;
+  const mod: unknown = await import("@socure-inc/device-risk-sdk");
+  return resolveSigmaDeviceManager(mod);
 };
 
 /** Test seam: inject a fake SDK and reset the once-only state. */

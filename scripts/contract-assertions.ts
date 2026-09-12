@@ -6824,6 +6824,30 @@ await section(
         "SDK pinned exactly",
       );
       const di = await import("../apps/web/app/_lib/kyc/socure-di.ts");
+      {
+        // The real pinned package: module.exports IS the class (UMD), so the
+        // resolver must find `initialize`/`getSessionToken` on the module
+        // itself, on `.default`, or on `.SigmaDeviceManager`.
+        const { createRequire: cr } = await import("node:module");
+        const realSdk: unknown = cr(
+          join(process.cwd(), "apps/web/package.json"),
+        )("@socure-inc/device-risk-sdk");
+        const resolved = di.resolveSigmaDeviceManager(realSdk);
+        assert.equal(typeof resolved.initialize, "function");
+        assert.equal(typeof resolved.getSessionToken, "function");
+        const stub = { initialize() {}, getSessionToken: async () => "t" };
+        assert.equal(di.resolveSigmaDeviceManager({ default: stub }), stub);
+        assert.equal(
+          di.resolveSigmaDeviceManager({ SigmaDeviceManager: stub }),
+          stub,
+        );
+        assert.equal(di.resolveSigmaDeviceManager(stub), stub);
+        assert.throws(
+          () => di.resolveSigmaDeviceManager({ other: 1 }),
+          /SigmaDeviceManager not found/,
+          "a module without the manager statics is refused",
+        );
+      }
       let inits = 0;
       const fake = {
         initialize: (c: { sdkKey: string }) => {

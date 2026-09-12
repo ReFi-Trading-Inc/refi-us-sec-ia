@@ -6877,7 +6877,33 @@ await section(
         const viaClass = di.resolveSigmaDeviceManager(FakeManager);
         viaClass.initialize({ sdkKey: "k3" });
         assert.equal(await viaClass.getSessionToken(), "tok-k3");
-        FakeManager.instance = undefined;
+        assert.equal(
+          FakeManager.instance,
+          undefined,
+          "the class path also uses the private host",
+        );
+        // The bundler may hand the class back frozen (observed in the Sandbox).
+        class FrozenManager {
+          static instance: { token: string } | undefined;
+          static initialize(cfg: { sdkKey: string }): void {
+            if (!this.instance) this.instance = { token: `tok-${cfg.sdkKey}` };
+          }
+          static getSessionToken(): Promise<string> {
+            return this.instance
+              ? Promise.resolve(this.instance.token)
+              : Promise.reject(new Error("not init"));
+          }
+        }
+        Object.freeze(FrozenManager);
+        const viaFrozen = di.resolveSigmaDeviceManager({
+          default: FrozenManager,
+        });
+        viaFrozen.initialize({ sdkKey: "k4" });
+        assert.equal(
+          await viaFrozen.getSessionToken(),
+          "tok-k4",
+          "a frozen class still yields a token",
+        );
         assert.throws(
           () => di.resolveSigmaDeviceManager({ other: 1 }),
           /SigmaDeviceManager not found/,

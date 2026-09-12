@@ -7179,6 +7179,36 @@ await section(
           "none",
           "verification ping persists nothing",
         );
+        for (const eventType of [
+          "evaluation_completed",
+          "evaluation_paused",
+        ] as const) {
+          const ping = fx.dashboardVerificationPing(eventType);
+          const r = await post(ping, auth);
+          assert.ok(
+            r.status >= 200 && r.status < 300,
+            `RiskOS full-envelope verification delivery (${eventType}) acknowledged 2xx, got ${String(r.status)}`,
+          );
+          assert.equal(
+            (await post(ping)).status,
+            401,
+            "full-envelope delivery still needs the credential",
+          );
+          const withBogusEnv = {
+            ...ping,
+            data: { ...(ping.data as object), environment_name: "Staging" },
+          };
+          assert.equal(
+            (await post(withBogusEnv, auth)).status,
+            400,
+            "non-enum environment_name is still rejected",
+          );
+        }
+        assert.equal(
+          (await entity.getKycEvaluation(subject.authId))?.status ?? "none",
+          "none",
+          "verification deliveries never touch a user record",
+        );
         assert.equal(
           (
             await post(

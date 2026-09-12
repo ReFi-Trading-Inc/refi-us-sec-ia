@@ -211,3 +211,41 @@ export const SCRIPT_429: FakeSocureScript = {
 export const SCRIPT_503: FakeSocureScript = { kind: "http", status: 503 };
 export const SCRIPT_401: FakeSocureScript = { kind: "http", status: 401 };
 export const SCRIPT_400: FakeSocureScript = { kind: "http", status: 400 };
+
+/**
+ * RiskOS dashboard "Continue To Test" verification delivery, exactly the
+ * key structure observed on the Sandbox endpoint on 2026-09-12 (values are
+ * fixtures; the real ping's `environment_name` is the empty string).
+ * `event_type` is the only difference between the two pings.
+ */
+export function dashboardVerificationPing(
+  eventType: "evaluation_completed" | "evaluation_paused",
+  eventId: string = crypto.randomUUID(),
+): Record<string, unknown> {
+  return {
+    event_id: eventId,
+    event_at: "2026-09-12T06:18:09.351234567Z",
+    event_type: eventType,
+    data: {
+      id: "verify-ping1",
+      workflow: "consumer_onboarding",
+      workflow_id: "673dd085-3daf-4c6c-be67-d399933a9fec",
+      workflow_version: "1.0.0",
+      eval_id: crypto.randomUUID(),
+      eval_at: "2026-09-12T06:18:09.351234567Z",
+      eval_source: "API",
+      decision: "ACCEPT",
+      decision_at: "2026-09-12T06:18:09.351234567Z",
+      decision_tags: ["fixture"],
+      status: "OPEN",
+      sub_status: "fixture-stat",
+      evaluation_status: "evaluation_completed",
+      environment_name: "",
+      notes: "fixture-no",
+      review_queues: ["fixture"],
+      tags: ["fixture"],
+      reason_codes: ["fixture"],
+      third_party_executions: [{ name: "fixture" }],
+    },
+  };
+}

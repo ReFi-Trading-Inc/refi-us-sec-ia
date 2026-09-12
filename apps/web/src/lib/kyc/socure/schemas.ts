@@ -115,6 +115,16 @@ const uuidLike = z.string().min(8).max(128);
  */
 export const SOCURE_CASE_STATUSES = ["OPEN", "ON_HOLD", "CLOSED"] as const;
 export const SOCURE_ENVIRONMENT_NAMES = ["Sandbox", "Production"] as const;
+/**
+ * `environment_name` as delivered. RiskOS dashboard verification pings
+ * (observed 2026-09-12, Sandbox) send the full event envelope with
+ * `environment_name: ""`; an empty string is "not provided", never a value.
+ * Any other non-enum string is still rejected.
+ */
+const environmentNameField = z.preprocess(
+  (v) => (v === "" ? undefined : v),
+  z.enum(SOCURE_ENVIRONMENT_NAMES).optional(),
+);
 
 export const socureEvaluationResponseSchema = z
   .object({
@@ -127,7 +137,7 @@ export const socureEvaluationResponseSchema = z
     status: z.enum(SOCURE_CASE_STATUSES).optional(),
     sub_status: z.string().max(128).optional(),
     eval_status: z.string().max(64).optional(),
-    environment_name: z.enum(SOCURE_ENVIRONMENT_NAMES).optional(),
+    environment_name: environmentNameField,
     /** Informational risk data — parsed to be discarded; never persisted, never shown. */
     score: z.number().optional(),
     reason_codes: z.array(z.string().max(200)).max(500).optional(),
@@ -236,7 +246,7 @@ export const socureWebhookEventSchema = z
         decision: z.enum(SOCURE_DECISIONS).optional(),
         eval_status: z.string().max(64).optional(),
         evaluation_status: z.string().max(64).optional(),
-        environment_name: z.enum(SOCURE_ENVIRONMENT_NAMES).optional(),
+        environment_name: environmentNameField,
       })
       .loose(),
   })
@@ -255,7 +265,7 @@ export const socureEvaluationCompletedEventSchema = z
         eval_id: uuidLike,
         decision: z.enum(SOCURE_DECISIONS),
         evaluation_status: z.literal(SOCURE_EVAL_STATUS_COMPLETED).optional(),
-        environment_name: z.enum(SOCURE_ENVIRONMENT_NAMES).optional(),
+        environment_name: environmentNameField,
         status: z.enum(SOCURE_CASE_STATUSES).optional(),
         sub_status: z.string().max(128).optional(),
         /** Parsed to be discarded — never persisted, never shown. */

@@ -7456,6 +7456,43 @@ await section(
         await entity.resetKycEvaluationForTests(subject.authId);
       });
       await withEnv(
+        {
+          ...SOCURE_OK,
+          SOCURE_WEBHOOK_ENFORCE_SENDER_IP: "1",
+          REFI_TRUST_PROXY_HOST: "1",
+        },
+        async () => {
+          // Behind the trusted edge only the LAST X-Forwarded-For entry counts.
+          const auth = { authorization: `Bearer ${SECRET}` };
+          const body = { hello: 1 };
+          const send = async (h: Record<string, string>) =>
+            (await post(body, { ...auth, ...h })).status;
+          assert.equal(
+            await send({ "x-forwarded-for": "3.218.138.162, 203.0.113.9" }),
+            403,
+            "forged first entry does not satisfy the allowlist behind a trusted edge",
+          );
+          assert.equal(
+            await send({
+              "x-real-ip": "3.218.138.162",
+              "x-forwarded-for": "203.0.113.9",
+            }),
+            403,
+            "client-supplied X-Real-IP is ignored behind a trusted edge",
+          );
+          assert.equal(
+            await send({ "x-forwarded-for": "203.0.113.9, 3.218.138.162" }),
+            400,
+            "edge-appended documented sender passes the IP gate (then fails schema)",
+          );
+          assert.equal(
+            await send({}),
+            403,
+            "no forwarded address behind a trusted edge is refused when enforced",
+          );
+        },
+      );
+      await withEnv(
         { ...SOCURE_OK, SOCURE_WEBHOOK_ENFORCE_SENDER_IP: "1" },
         async () => {
           const auth = { authorization: `Bearer ${SECRET}` };

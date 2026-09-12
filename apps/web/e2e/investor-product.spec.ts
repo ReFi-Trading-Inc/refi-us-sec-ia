@@ -85,3 +85,21 @@ test.describe("investor product on the production tier", () => {
     expect(storage.session.toLowerCase()).not.toContain("api_key");
   });
 });
+
+/**
+ * Rendered capture of the production fail-closed state.
+ *
+ * The demo lane captures the walkable journey; this is the one state that only
+ * exists when no adapter is bound, so it can only be photographed here.
+ * Generated on demand — the image is a build artifact under test-results/ and
+ * is deliberately not committed.
+ */
+test("capture the backend-unavailable state", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/us/product/brokerage");
+  await expect(page.getByTestId("backend-unavailable")).toBeVisible();
+  await page.screenshot({
+    path: testInfo.outputPath("06-backend-unavailable.png"),
+    fullPage: true,
+  });
+});

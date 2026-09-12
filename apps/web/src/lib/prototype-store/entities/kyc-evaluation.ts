@@ -338,6 +338,16 @@ export async function applyFinalProviderDecision(args: {
   });
   const outcome = decided.outcome;
   if (outcome === "duplicate_event") {
+    // Losing concurrent delivery (or a replay after a crash between the
+    // transaction and the marker write): keep the audit complete without
+    // ever overwriting the winner's recorded outcome.
+    await webhookEvents().putIfAbsent(args.eventId, {
+      eventId: args.eventId,
+      providerEvaluationId: args.providerEvaluationId,
+      providerDecision: args.providerDecision,
+      receivedAt,
+      outcome: "duplicate_event",
+    });
     return { outcome, record: applied.value };
   }
   if (outcome === "evaluation_mismatch") return note(outcome, null);

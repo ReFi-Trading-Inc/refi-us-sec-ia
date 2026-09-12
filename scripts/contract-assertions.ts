@@ -6461,6 +6461,12 @@ await section(
           1,
           "the event id is referenced exactly once",
         );
+        // The audit marker belongs to the winner and is never overwritten.
+        assert.equal(
+          (await entity.getWebhookEvent(eventId))?.outcome,
+          "applied",
+          "one event consumption recorded, losers never overwrite it",
+        );
         // A later replay (marker present) is still a duplicate.
         const later = await p.applyWebhook(event, "cc-later");
         assert.equal(later.handled && later.outcome, "duplicate_event");

@@ -57,7 +57,7 @@ spec:
         - name: SOCURE_API_BASE_URL
           value: https://riskos.sandbox.socure.com
         - name: SOCURE_WEBHOOK_ENFORCE_SENDER_IP
-          value: '0'
+          value: '1'
         - name: REFI_BACKING__KYC_EVALUATION
           value: durable
         - name: REFI_BACKING__KYC_WEBHOOK_EVENT

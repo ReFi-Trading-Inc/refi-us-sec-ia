@@ -13,8 +13,8 @@ type Shape = Record<string, string>;
 
 function kindOf(v: unknown): string {
   if (v === null) return "null";
-  if (Array.isArray(v)) return `array(${v.length})`;
-  if (typeof v === "string") return `string(${v.length})`;
+  if (Array.isArray(v)) return `array(${String(v.length)})`;
+  if (typeof v === "string") return `string(${String(v.length)})`;
   if (typeof v === "object") return "object";
   return typeof v;
 }

@@ -132,6 +132,19 @@ export function durableKvStore<T>(name: string): KVStore<T> {
       });
       return out;
     },
+    async update(key, decide) {
+      const ref = client().collection(collectionName).doc(safeKey(key));
+      // Firestore transaction: the read is locked to the write; on contention
+      // the SDK retries the whole function, so exactly one decision lands.
+      return client().runTransaction(async (tx) => {
+        const snap = await tx.get(ref);
+        const current = snap.exists ? (snap.data() as T) : null;
+        const next = decide(current);
+        if (next === null) return { value: current, written: false };
+        tx.set(ref, next as Record<string, unknown>);
+        return { value: next, written: true };
+      });
+    },
     async delete(key) {
       await client().collection(collectionName).doc(safeKey(key)).delete();
     },
@@ -159,6 +172,11 @@ export function durableAppendOnlyStore<T>(name: string): AppendOnlyStore<T> {
 }
 
 /** Test-only: drop the cached client (e.g. between emulator test cases). */
+/** Test seam: inject a stand-in Firestore client (transaction semantics are exercised against it). */
+export function __setDurableClientForTests(fake: Firestore | null): void {
+  cachedClient = fake;
+}
+
 export function __resetDurableClientForTests(): void {
   cachedClient = null;
 }

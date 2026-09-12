@@ -26,6 +26,20 @@ export interface KVStore<T> {
   putIfAbsent(key: string, value: T): Promise<boolean>;
   list(filterPrefix?: string): Promise<Array<{ key: string; value: T }>>;
   delete(key: string): Promise<void>;
+  /**
+   * Atomic read-modify-write ("transactional transition"). `decide` sees the
+   * current value (or null) and returns the next value, or null to leave the
+   * record untouched. Exactly one caller's decision is applied per key at a
+   * time: the durable driver runs it inside a Firestore transaction (retried
+   * by the SDK on contention); the prototype driver serialises through an
+   * exclusive per-key lock file so concurrent processes on the same
+   * filesystem observe the same semantics. This is the primitive for
+   * security/compliance transitions (Alpha admission).
+   */
+  update(
+    key: string,
+    decide: (current: T | null) => T | null,
+  ): Promise<{ value: T | null; written: boolean }>;
 }
 
 export interface AppendOnlyStore<T> {

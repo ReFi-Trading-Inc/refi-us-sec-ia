@@ -6412,6 +6412,72 @@ await section(
   );
 
   await section(
+    "socure: webhook concurrency — the same final event delivered concurrently applies exactly once (store.update transaction); one history entry, one reference, the rest are duplicate_event",
+    async () => {
+      await withEnv({ ...SOCURE_OK }, async () => {
+        await entity.resetKycEvaluationForTests(subjectB.authId);
+        await entity.clearEvaluationIndexForTests(fx.FIXTURE_EVAL_ID_REVIEW);
+        const fake = new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV);
+        const p = freshProvider(fake);
+        await p.evaluate({
+          subject: subjectB,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "cc1",
+          correlationId: "cc",
+        });
+        const reqB = (await entity.getKycEvaluation(subjectB.authId))!.evidence
+          .providerRequestId!;
+        await p.markDocvCaptured(subjectB, "cc-cap");
+        const eventId = "550e8400-e29b-41d4-a716-4466554400c0";
+        const event = fx.webhookEvent({
+          requestId: reqB,
+          eventId,
+          decision: "ACCEPT",
+        });
+        const results = await Promise.all(
+          [1, 2, 3, 4, 5].map((i) => p.applyWebhook(event, `cc-${String(i)}`)),
+        );
+        const outcomes = results.map((r) => (r.handled ? r.outcome : r.reason));
+        assert.equal(
+          outcomes.filter((o) => o === "applied").length,
+          1,
+          `exactly one applied, got ${JSON.stringify(outcomes)}`,
+        );
+        assert.equal(
+          outcomes.filter((o) => o === "duplicate_event").length,
+          4,
+          "the concurrent rest are duplicates",
+        );
+        const rec = (await entity.getKycEvaluation(subjectB.authId))!;
+        assert.equal(rec.state, "passed");
+        assert.equal(
+          rec.history.filter((h) => h.state === "passed").length,
+          1,
+          "one terminal history entry",
+        );
+        assert.equal(
+          rec.evidence.providerReferenceIds.filter((x) => x === eventId).length,
+          1,
+          "the event id is referenced exactly once",
+        );
+        // The audit marker belongs to the winner and is never overwritten.
+        assert.equal(
+          (await entity.getWebhookEvent(eventId))?.outcome,
+          "applied",
+          "one event consumption recorded, losers never overwrite it",
+        );
+        // A later replay (marker present) is still a duplicate.
+        const later = await p.applyWebhook(event, "cc-later");
+        assert.equal(later.handled && later.outcome, "duplicate_event");
+        // Leave the shared fixture evaluation id free for the next sections.
+        await entity.resetKycEvaluationForTests(subjectB.authId);
+        await entity.clearEvaluationIndexForTests(fx.FIXTURE_EVAL_ID_REVIEW);
+      });
+    },
+  );
+
+  await section(
     "socure: webhook idempotency — event_id once; same final result safe; conflict flagged; unknown eval creates nothing; request-id mismatch refused (no reassignment); no terminal regression; REJECT never silently becomes VERIFIED; wrong environment refused",
     async () => {
       await withEnv({ ...SOCURE_OK }, async () => {

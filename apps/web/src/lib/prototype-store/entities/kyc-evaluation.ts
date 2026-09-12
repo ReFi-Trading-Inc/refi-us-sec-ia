@@ -221,6 +221,7 @@ export async function applyFinalProviderDecision(args: {
   correlationId: string;
 }): Promise<WebhookApplication> {
   const receivedAt = nowIso();
+  // Fast path: an event marker already durably written → duplicate.
   const seen = await webhookEvents().get(args.eventId);
   if (seen) return { outcome: "duplicate_event", record: null };
 
@@ -242,95 +243,115 @@ export async function applyFinalProviderDecision(args: {
     args.providerEvaluationId,
   );
   if (authId === null) return note("unknown_evaluation", null);
-  const record = await records().get(authId);
-  if (
-    !record ||
-    record.evidence.providerEvaluationId !== args.providerEvaluationId ||
-    record.evidence.providerRequestId !== args.providerRequestId
-  ) {
-    return note("evaluation_mismatch", null);
-  }
 
-  if (TERMINAL_KYC_STATES.has(record.state)) {
-    const sameResult =
-      (record.state === "passed" && args.providerDecision === "accept") ||
-      (record.state === "failed" && args.providerDecision === "reject");
-    if (sameResult) {
-      const next = {
-        ...record,
-        evidence: {
-          ...record.evidence,
-          providerReferenceIds: [
-            ...record.evidence.providerReferenceIds,
-            args.eventId,
-          ],
-        },
-      };
-      await records().put(authId, next);
-      return note("idempotent_same_result", next);
+  // The decision is taken INSIDE the store's transactional transition so two
+  // concurrent deliveries of the same event (same instance or different
+  // instances) cannot both apply: the event id is recorded on the record
+  // itself, and the second decision sees it and writes nothing.
+  const decided: { outcome: KycWebhookEventRecord["outcome"] } = {
+    outcome: "evaluation_mismatch",
+  };
+  const applied = await records().update(authId, (record) => {
+    if (
+      !record ||
+      record.evidence.providerEvaluationId !== args.providerEvaluationId ||
+      record.evidence.providerRequestId !== args.providerRequestId
+    ) {
+      decided.outcome = "evaluation_mismatch";
+      return null;
     }
-    if (args.providerDecision === "review") {
-      // Stale interim state after a final decision: ignored, never a regression.
-      return note("stale_ignored", record);
+    if (record.evidence.providerReferenceIds.includes(args.eventId)) {
+      decided.outcome = "duplicate_event";
+      return null;
     }
-    const next: KycEvaluationRecord = {
-      ...record,
-      conflict: {
-        providerDecision: args.providerDecision,
-        eventId: args.eventId,
-        at: receivedAt,
-      },
+    const withRef = (r: KycEvaluationRecord): KycEvaluationRecord => ({
+      ...r,
       evidence: {
-        ...record.evidence,
+        ...r.evidence,
         providerReferenceIds: [
-          ...record.evidence.providerReferenceIds,
+          ...r.evidence.providerReferenceIds,
           args.eventId,
         ],
       },
-      meta: makePrototypeMeta(args.correlationId),
-    };
-    await records().put(authId, next);
-    return note("conflict_flagged", next);
-  }
-
-  const docvOccurred = record.docv !== null;
-  let next = transition(
-    record,
-    args.mapped.refiState,
-    args.correlationId,
-    "provider_webhook",
-    { eventId: args.eventId, providerDecision: args.providerDecision },
-  );
-  next = {
-    ...next,
-    docv:
-      next.docv && docvOccurred
-        ? {
-            ...next.docv,
-            captureCompletedAt: next.docv.captureCompletedAt ?? receivedAt,
-          }
-        : next.docv,
-    evidence: {
-      ...next.evidence,
-      providerDecision: args.providerDecision,
-      providerDecisionFinal: args.mapped.final,
-      providerEvaluationStatus: "evaluation_completed",
-      docvRequired: next.evidence.docvRequired || docvOccurred,
-      completedAt: args.mapped.final ? receivedAt : null,
-      providerReferenceIds: [
-        ...next.evidence.providerReferenceIds,
-        args.eventId,
-      ],
-      decisionProvenance: "provider_webhook",
-      ...deriveComponentStatuses({
+    });
+    if (TERMINAL_KYC_STATES.has(record.state)) {
+      const sameResult =
+        (record.state === "passed" && args.providerDecision === "accept") ||
+        (record.state === "failed" && args.providerDecision === "reject");
+      if (sameResult) {
+        decided.outcome = "idempotent_same_result";
+        return withRef(record);
+      }
+      if (args.providerDecision === "review") {
+        // Stale interim state after a final decision: ignored, never a regression.
+        decided.outcome = "stale_ignored";
+        return null;
+      }
+      decided.outcome = "conflict_flagged";
+      return {
+        ...withRef(record),
+        conflict: {
+          providerDecision: args.providerDecision,
+          eventId: args.eventId,
+          at: receivedAt,
+        },
+        meta: makePrototypeMeta(args.correlationId),
+      };
+    }
+    const docvOccurred = record.docv !== null;
+    const next = transition(
+      record,
+      args.mapped.refiState,
+      args.correlationId,
+      "provider_webhook",
+      { eventId: args.eventId, providerDecision: args.providerDecision },
+    );
+    decided.outcome = "applied";
+    return {
+      ...next,
+      docv:
+        next.docv && docvOccurred
+          ? {
+              ...next.docv,
+              captureCompletedAt: next.docv.captureCompletedAt ?? receivedAt,
+            }
+          : next.docv,
+      evidence: {
+        ...next.evidence,
         providerDecision: args.providerDecision,
-        final: args.mapped.final,
-        docvOccurred,
-      }),
-    },
-  };
-  await records().put(authId, next);
-  return note("applied", next);
+        providerDecisionFinal: args.mapped.final,
+        providerEvaluationStatus: "evaluation_completed",
+        docvRequired: next.evidence.docvRequired || docvOccurred,
+        completedAt: args.mapped.final ? receivedAt : null,
+        providerReferenceIds: [
+          ...next.evidence.providerReferenceIds,
+          args.eventId,
+        ],
+        decisionProvenance: "provider_webhook",
+        ...deriveComponentStatuses({
+          providerDecision: args.providerDecision,
+          final: args.mapped.final,
+          docvOccurred,
+        }),
+      },
+    };
+  });
+  const outcome = decided.outcome;
+  if (outcome === "duplicate_event") {
+    // Losing concurrent delivery (or a replay after a crash between the
+    // transaction and the marker write): keep the audit complete without
+    // ever overwriting the winner's recorded outcome.
+    await webhookEvents().putIfAbsent(args.eventId, {
+      eventId: args.eventId,
+      providerEvaluationId: args.providerEvaluationId,
+      providerDecision: args.providerDecision,
+      receivedAt,
+      outcome: "duplicate_event",
+    });
+    return { outcome, record: applied.value };
+  }
+  if (outcome === "evaluation_mismatch") return note(outcome, null);
+  return note(outcome, applied.value);
 }
 
 /** Audit a delivery that is not acted on (paused / failed / case events). Idempotent on event id. */

@@ -7975,7 +7975,8 @@ await section(
       for (const f of files) {
         const code = read(f).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
         assert.ok(
-          !/console\.(log|info|warn|error|debug)\s*\(/.test(code),
+          !/console\.(log|info|warn|error|debug)\s*\(/.test(code) &&
+            !/process\.(stdout|stderr)\.write/.test(code),
           `${f}: no console logging`,
         );
         const withoutAuthHeader = code

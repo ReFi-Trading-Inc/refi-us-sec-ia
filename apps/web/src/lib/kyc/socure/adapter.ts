@@ -15,6 +15,7 @@
  * `REFI_KYC_PROVIDER=socure` with complete configuration; tests use
  * `FakeSocureClient`.
  */
+import { emitKycSignal } from "../../observability/kyc-signals";
 import {
   applyFinalProviderDecision,
   findAuthIdByProviderEvaluation,
@@ -358,6 +359,7 @@ export class SocureKycProvider implements KycProviderAdapter {
       },
     };
     await putKycEvaluation(next);
+    emitKycSignal("kyc.provider.error", { kind: e.kind });
     return {
       ok: false,
       reason: "provider_error",

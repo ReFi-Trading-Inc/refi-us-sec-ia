@@ -21,6 +21,8 @@ class ReleaseTests(unittest.TestCase):
         before = {"status": {"traffic": [{"revisionName": "prior", "percent": 100}]}}
         candidate = {"status": {"traffic": [*before["status"]["traffic"],
                      {"tag": "candidate", "revisionName": revision, "url": "https://candidate.invalid"}]}}
+        candidate["status"].update(latestReadyRevisionName=revision, latestCreatedRevisionName=revision)
+        candidate["spec"] = {"template": {"spec": {"containers": [{"image": release.IMAGE + "@sha256:" + "c" * 64}]}}}
         after = {"status": {"traffic": [{"revisionName": revision, "percent": 100}]}}
         def check(origin):
             if (failure == "candidate" and origin.endswith("candidate.invalid")) or (

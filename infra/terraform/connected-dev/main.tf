@@ -247,7 +247,7 @@ resource "google_cloud_run_v2_service" "frontend" {
   depends_on = [google_secret_manager_secret_iam_member.runtime]
   # CI owns releases; Terraform owns runtime configuration and IAM.
   lifecycle {
-    ignore_changes = [template[0].containers[0].image, traffic]
+    ignore_changes = [template[0].containers[0].image, traffic, client, client_version]
   }
 }
 
@@ -276,7 +276,7 @@ resource "google_cloud_run_v2_job" "runtime_probe" {
   location            = local.region
   deletion_protection = false
   lifecycle {
-    ignore_changes = [template[0].template[0].containers[0].image]
+    ignore_changes = [template[0].template[0].containers[0].image, client, client_version]
   }
   template {
     template {

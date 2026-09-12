@@ -152,12 +152,19 @@ def main():
         if not re.fullmatch(r"sha256:[a-f0-9]{64}", digest):
             raise ValueError("Registry did not return a valid immutable digest")
         image = IMAGE + "@" + digest
-        revision = SERVICE + "-ci-" + build_id[:20]
-        record.update(image=image, revision=revision, previous_traffic=previous_traffic)
+        record.update(image=image, previous_traffic=previous_traffic)
         put_object(f"attempts/{build_id}.json", record)
         gcloud("run", "services", "update", SERVICE, "--region", REGION, "--image", image,
-               "--no-traffic", "--tag=candidate", "--revision-suffix=ci-" + build_id[:20])
+               "--no-traffic", "--tag=candidate")
         candidate = describe_service()
+        # Let Cloud Run generate names. An explicit template revision would
+        # conflict with later Terraform-owned runtime configuration updates.
+        revision = candidate["status"]["latestReadyRevisionName"]
+        if revision != candidate["status"]["latestCreatedRevisionName"] or (
+                candidate["spec"]["template"]["spec"]["containers"][0]["image"] != image):
+            raise ValueError("Ready candidate does not match the requested image")
+        record["revision"] = revision
+        put_object(f"attempts/{build_id}.json", record)
         candidate_url = next(target["url"] for target in candidate["status"]["traffic"]
                              if target.get("tag") == "candidate" and target.get("revisionName") == revision)
         if traffic_revisions(candidate) != previous_traffic:

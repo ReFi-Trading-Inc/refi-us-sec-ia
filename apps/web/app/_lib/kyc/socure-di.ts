@@ -46,8 +46,8 @@ let initCount = 0;
  * not exist at runtime — observed in the Sandbox on 2026-09-12). Bundler
  * CJS interop may hand back the class, or a (frozen) namespace object whose
  * `initialize` / `getSessionToken` getters return the statics unbound. The
- * statics only use `this.instance`, so both are called against one stable
- * host object: the class itself when we have it, otherwise a private holder.
+ * statics only use `this.instance`, so both are called against one stable,
+ * private, extensible host object (never the class: it may be frozen).
  * Calling them on the namespace would throw on `this.instance = …` AFTER the
  * SDK session had already started (observed: DI traffic, no token).
  */
@@ -68,7 +68,11 @@ export function resolveSigmaDeviceManager(mod: unknown): SocureDiSdkLike {
         initialize: (cfg: Parameters<SocureDiSdkLike["initialize"]>[0]) => void;
         getSessionToken: () => Promise<string>;
       };
-      const host: object = typeof c === "function" ? c : {};
+      // Always a private, extensible holder: the bundler can hand the class
+      // back non-extensible (observed 2026-09-12: "Cannot add property
+      // instance, object is not extensible"), and the statics only ever
+      // read/write `this.instance`.
+      const host: object = {};
       return {
         initialize: (cfg) => {
           statics.initialize.call(host, cfg);

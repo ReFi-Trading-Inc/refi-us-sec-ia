@@ -6835,13 +6835,49 @@ await section(
         const resolved = di.resolveSigmaDeviceManager(realSdk);
         assert.equal(typeof resolved.initialize, "function");
         assert.equal(typeof resolved.getSessionToken, "function");
-        const stub = { initialize() {}, getSessionToken: async () => "t" };
-        assert.equal(di.resolveSigmaDeviceManager({ default: stub }), stub);
+        // A class whose statics depend on `this.instance`, exactly like the
+        // SDK, exposed three ways: directly, as `.default`, and as a frozen
+        // interop namespace with unbound getters (the Turbopack CJS case).
+        class FakeManager {
+          static instance: { token: string } | undefined;
+          static initialize(cfg: { sdkKey: string }): void {
+            if (!this.instance) this.instance = { token: `tok-${cfg.sdkKey}` };
+          }
+          static getSessionToken(): Promise<string> {
+            if (!this.instance) return Promise.reject(new Error("not init"));
+            return Promise.resolve(this.instance.token);
+          }
+        }
+        const viaDefault = di.resolveSigmaDeviceManager({
+          default: FakeManager,
+        });
+        viaDefault.initialize({ sdkKey: "k1" });
+        assert.equal(await viaDefault.getSessionToken(), "tok-k1");
+        FakeManager.instance = undefined;
+        const namespace = Object.freeze({
+          get initialize() {
+            return FakeManager.initialize;
+          },
+          get getSessionToken() {
+            return FakeManager.getSessionToken;
+          },
+        });
+        const viaNamespace = di.resolveSigmaDeviceManager(namespace);
+        viaNamespace.initialize({ sdkKey: "k2" });
         assert.equal(
-          di.resolveSigmaDeviceManager({ SigmaDeviceManager: stub }),
-          stub,
+          await viaNamespace.getSessionToken(),
+          "tok-k2",
+          "frozen interop namespace: statics run against a stable host",
         );
-        assert.equal(di.resolveSigmaDeviceManager(stub), stub);
+        assert.equal(
+          FakeManager.instance,
+          undefined,
+          "the namespace path never touched the class's own state",
+        );
+        const viaClass = di.resolveSigmaDeviceManager(FakeManager);
+        viaClass.initialize({ sdkKey: "k3" });
+        assert.equal(await viaClass.getSessionToken(), "tok-k3");
+        FakeManager.instance = undefined;
         assert.throws(
           () => di.resolveSigmaDeviceManager({ other: 1 }),
           /SigmaDeviceManager not found/,

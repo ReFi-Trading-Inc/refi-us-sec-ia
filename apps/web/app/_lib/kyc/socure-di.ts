@@ -32,8 +32,13 @@ let initCount = 0;
 /**
  * The pinned SDK ships a UMD bundle whose `module.exports` IS the
  * `SigmaDeviceManager` class (its `.d.ts` declares a named export that does
- * not exist at runtime — observed in the Sandbox on 2026-09-12). Accept the
- * class wherever the bundler interop puts it, and prove it by its statics.
+ * not exist at runtime — observed in the Sandbox on 2026-09-12). Bundler
+ * CJS interop may hand back the class, or a (frozen) namespace object whose
+ * `initialize` / `getSessionToken` getters return the statics unbound. The
+ * statics only use `this.instance`, so both are called against one stable
+ * host object: the class itself when we have it, otherwise a private holder.
+ * Calling them on the namespace would throw on `this.instance = …` AFTER the
+ * SDK session had already started (observed: DI traffic, no token).
  */
 export function resolveSigmaDeviceManager(mod: unknown): SocureDiSdkLike {
   const candidates: unknown[] = [];
@@ -48,7 +53,17 @@ export function resolveSigmaDeviceManager(mod: unknown): SocureDiSdkLike {
       typeof (c as { initialize?: unknown }).initialize === "function" &&
       typeof (c as { getSessionToken?: unknown }).getSessionToken === "function"
     ) {
-      return c as SocureDiSdkLike;
+      const statics = c as {
+        initialize: (cfg: Parameters<SocureDiSdkLike["initialize"]>[0]) => void;
+        getSessionToken: () => Promise<string>;
+      };
+      const host: object = typeof c === "function" ? c : {};
+      return {
+        initialize: (cfg) => {
+          statics.initialize.call(host, cfg);
+        },
+        getSessionToken: () => statics.getSessionToken.call(host),
+      };
     }
   }
   throw new Error("device-risk-sdk: SigmaDeviceManager not found in module");

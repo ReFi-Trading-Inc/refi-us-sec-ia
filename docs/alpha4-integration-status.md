@@ -105,10 +105,12 @@ uses a higher durable sequence. Real connected withdrawal/hold tests remain open
    Billing/trial-start authority stays deferred; the agreed duration default is
    configurable three calendar months.
 4. **Durable profile/submission state:** decision identity is durable, but existing
-   profile-v2 answers/assessment/submission modules still use prototype storage.
-   Move integration persistence through a tested concurrent-safe adapter before
-   claiming Cloud Run onboarding/restart acceptance. Do not change questionnaire
-   evaluation or simply flip versioned writes to Firestore without atomicity.
+   profile-v2 answers/assessments directly use prototype storage. Submission records
+   already select Firestore in this deployment; their state transitions and newest-
+   acknowledged pointer still use non-atomic read/modify/write. Add tested atomic
+   transitions and a durable profile adapter before claiming multi-instance
+   onboarding/restart acceptance. Do not change questionnaire evaluation or simply
+   flip versioned writes to Firestore without atomicity.
 5. **UI handoff:** select paper/live explicitly, retain logical IDs across retries
    for allocation and maintenance controls, use exact new recommendation/funding
    fields and handle pending/refused outcomes. No new screen or provider flow was
@@ -131,7 +133,22 @@ accepted through real authentication. Follow the unchecked gates in the roadmap.
   event delivery. Browser dependencies installed locally; no real credentials used.
 - 7 deployment-controller tests; current package validate/self-test; alpha.2/3
   archived package validation; exact comparison with backend alpha.4: passed.
-- Backend commit `28ade7a6` on GitLab `integration/refinity-dev`: 95 focused API,
-  authentication/security and funding-contract tests passed. Pushed, not deployed.
+- Backend commit `28ade7a6` on GitLab `integration/refinity-dev`: all 180 Investor
+  API regression tests passed (including the 95 focused API/security/funding tests).
+  Pushed, not deployed.
 - No trades, provider requests, live-user acceptance or runtime fixture activation
   are implied by these results. Deployment outcome is recorded separately below.
+
+## Deployed frontend checkpoint — September 12, 2026 UTC
+
+- Code commit `09842e4bac758238c652b616950c227f5f9522d9`, Cloud Build
+  `0122dd1d-1c9d-4634-b5c4-240ea9b88487`: **SUCCESS**. Documentation-only follow-up
+  commits do not redeploy this artifact.
+- `refi-frontend-integration-00009-tad` serves 100% of the isolated service traffic.
+  Origin: `https://refi-frontend-integration-182665799543.us-west1.run.app`.
+- `/api/health` and both distinct JWKS endpoints return 200; anonymous dashboard
+  and session calls return 401. The release pipeline also passed its native
+  runtime identity, named Firestore and KMS probe before promotion.
+- Authentication remains `unconfigured`, remote backend calls remain off, and
+  development KYC is not activated. This is a verified deployment of the integration
+  code, **not** verified connected user admission/trading.

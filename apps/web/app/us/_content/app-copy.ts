@@ -341,6 +341,27 @@ export const kycCopy = {
       "To finish verifying your identity, photograph a government-issued ID and take a selfie. This takes about two minutes.",
     launch: "Start document verification",
     launching: "Opening…",
+    progress: {
+      handoff_pending: "Waiting for your phone — scan the code to continue.",
+      capture: "Capturing your document…",
+      uploading: "Uploading…",
+      processing: "Processing your capture…",
+      unknown: "Verification in progress…",
+    },
+    submitted:
+      "Verification submitted — processing. This page updates automatically.",
+    errors: {
+      launch_config:
+        "Document verification could not be started. Please try again.",
+      upload: "Your documents could not be uploaded. Please try again.",
+      interrupted: "Document verification was interrupted. You can restart it.",
+      consent_declined:
+        "Document verification was not completed. You can restart it.",
+      transient:
+        "A connection problem interrupted document verification. Please try again.",
+      unknown: "Document verification did not complete. Please try again.",
+      duplicate_launch: "Document verification is already open.",
+    },
     captured:
       "Thanks — your documents were submitted. Verification is under review; we'll update this page automatically.",
     unavailable:

@@ -9,10 +9,15 @@
  */
 import { useState } from "react";
 import { Button, StatusBanner } from "@ui/components";
-import { launchDocumentCapture } from "../../../../_lib/kyc/docv-sdk";
+import {
+  launchDocumentCapture,
+  type DocvErrorKind,
+  type DocvProgressStage,
+} from "../../../../_lib/kyc/docv-sdk";
 import {
   useCompleteKycStepUp,
   useKycStepUp,
+  useReconcileKyc,
 } from "../../../../_hooks/useKycVerification";
 import { kycCopy } from "../../../_content/app-copy";
 
@@ -22,9 +27,14 @@ export function KycDocumentStepUp() {
   const copy = kycCopy.stepUp;
   const stepUp = useKycStepUp(true);
   const complete = useCompleteKycStepUp();
+  const reconcile = useReconcileKyc();
   const [phase, setPhase] = useState<
     "idle" | "launching" | "open" | "captured" | "error" | "unavailable"
   >("idle");
+  const [stage, setStage] = useState<DocvProgressStage | null>(null);
+  const [errorKind, setErrorKind] = useState<
+    DocvErrorKind | "duplicate_launch" | null
+  >(null);
 
   const launch = async () => {
     const token = stepUp.data?.token;
@@ -34,18 +44,40 @@ export function KycDocumentStepUp() {
       sdkKey: process.env["NEXT_PUBLIC_SOCURE_SDK_KEY"],
       transactionToken: token,
       containerSelector: `#${CONTAINER_ID}`,
+      onProgress: (s) => {
+        setStage(s);
+      },
+      // Capture/upload finished: "submitted — processing". Never verification.
+      // Tell the BFF "captured", then ask it to reconcile with the provider.
       onCaptured: () => {
         setPhase("captured");
-        complete.mutate();
+        setStage(null);
+        complete.mutate(undefined, {
+          onSettled: () => {
+            reconcile.mutate();
+          },
+        });
       },
-      onError: () => {
+      // Classified error, never a rejection. Terminal-capable outcomes may let
+      // the provider finalize on its side, so reconcile after them.
+      onError: (e) => {
         setPhase("error");
+        setStage(null);
+        setErrorKind(e.kind);
+        if (e.terminalCapable) reconcile.mutate();
       },
     });
     if (!result.ok) {
-      setPhase(
-        result.reason === "sdk_key_unconfigured" ? "unavailable" : "error",
-      );
+      if (result.reason === "sdk_key_unconfigured") {
+        setPhase("unavailable");
+      } else {
+        setPhase("error");
+        setErrorKind(
+          result.reason === "duplicate_launch"
+            ? "duplicate_launch"
+            : "launch_config",
+        );
+      }
       return;
     }
     setPhase("open");
@@ -61,10 +93,20 @@ export function KycDocumentStepUp() {
         <StatusBanner variant="warning">{copy.unavailable}</StatusBanner>
       )}
       {phase === "error" && (
-        <StatusBanner variant="warning">{copy.error}</StatusBanner>
+        <StatusBanner variant="warning">
+          {errorKind ? copy.errors[errorKind] : copy.error}
+        </StatusBanner>
       )}
       {phase === "captured" && (
-        <StatusBanner variant="info">{copy.captured}</StatusBanner>
+        <StatusBanner variant="info">{copy.submitted}</StatusBanner>
+      )}
+      {phase === "open" && stage && (
+        <p
+          className="text-xs text-charcoal-500"
+          data-testid="kyc-step-up-progress"
+        >
+          {copy.progress[stage]}
+        </p>
       )}
       {(phase === "idle" || phase === "error") && (
         <div>

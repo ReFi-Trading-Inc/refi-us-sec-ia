@@ -879,6 +879,7 @@ await section(
         "joinTemplate",
         "leaveTemplate",
         "previewAllocation",
+        "reconcileKycEvaluation",
         "refreshProfile",
         "resolveException",
         "rotateBrokerCredentials",
@@ -5607,6 +5608,10 @@ await section(
     fx.FIXTURE_INDIVIDUAL.di_session_token,
   ];
   const noPii = (value: unknown, label: string) => {
+    // Applicant PII is forbidden EVERYWHERE, including the Restricted
+    // providerDetail. Provider risk keys (score/tags/reason codes) are
+    // forbidden everywhere EXCEPT the Restricted providerDetail (certification
+    // retention, founder 2026-09-12), which stays server-side by construction.
     const text = JSON.stringify(value);
     for (const v of PII_VALUES) {
       assert.ok(
@@ -5614,9 +5619,13 @@ await section(
         `${label} must not contain applicant PII (${v.slice(0, 4)}…)`,
       );
     }
+    const withoutDetail =
+      typeof value === "object" && value !== null && "providerDetail" in value
+        ? JSON.stringify({ ...(value as object), providerDetail: undefined })
+        : text;
     for (const k of evidence.KYC_EVIDENCE_FORBIDDEN_KEYS) {
       assert.ok(
-        !new RegExp(`"${k}"\\s*:`).test(text),
+        !new RegExp(`"${k}"\\s*:`).test(withoutDetail),
         `${label} must not carry key ${k}`,
       );
     }
@@ -6327,11 +6336,28 @@ await section(
           fake.requests[0]!.request.id,
         );
         assert.equal(recA.evidence.providerWorkflowVersion, "1.0.0");
+        // Certification retention (founder 2026-09-12): scores / reason codes are
+        // retained ONLY as the Restricted normalized providerDetail; the evidence
+        // record, session view and attestation never carry them.
         assert.ok(
-          !JSON.stringify(recA).includes("fixture_reason_not_for_users") &&
-            !/"score"/.test(JSON.stringify(recA)),
-          "score/reason codes are never persisted",
+          !JSON.stringify(recA.evidence).includes(
+            "fixture_reason_not_for_users",
+          ) && !/"score"/.test(JSON.stringify(recA.evidence)),
+          "evidence record never carries score/reason codes",
         );
+        assert.equal(recA.providerDetail?.evalId, fx.FIXTURE_EVAL_ID_ACCEPT);
+        assert.ok(
+          recA.providerDetail?.reasonCodes.includes(
+            "fixture_reason_not_for_users",
+          ),
+          "providerDetail retains reason codes (Restricted, server-side)",
+        );
+        assert.equal(
+          typeof recA.providerDetail?.score,
+          "number",
+          "providerDetail retains the top-level score",
+        );
+        assert.equal(recA.providerDetail?.source, "provider_evaluation");
         assert.equal(recA.evidence.providerDecision, "accept");
         assert.equal(recA.evidence.providerDecisionFinal, true);
         assert.equal(recA.evidence.decisionProvenance, "provider_evaluation");
@@ -6372,8 +6398,12 @@ await section(
         assert.equal(rej.ok && rej.session.state, "failed");
         const recB = (await entity.getKycEvaluation(subjectB.authId))!;
         assert.ok(
-          !JSON.stringify(recB).includes("fixture_tag_not_for_users"),
-          "provider tags are never persisted",
+          !JSON.stringify(recB.evidence).includes("fixture_tag_not_for_users"),
+          "provider tags never reach the evidence record (Restricted providerDetail only)",
+        );
+        assert.ok(
+          recB.providerDetail?.tags.includes("fixture_tag_not_for_users"),
+          "providerDetail retains routing tags for certification",
         );
         noPii(recB, "evaluation record (REJECT)");
         // failed is retryable with a NEW evaluation → REVIEW with DocV
@@ -6527,6 +6557,565 @@ await section(
         assert.equal(!inflight.ok && inflight.reason, "submission_in_flight");
         assert.equal(fake.requests.length, 1);
       });
+    },
+  );
+
+  await section(
+    "docv sdk seam: explicit onProgress/onSuccess/onError; launch failures are operational (sdk unavailable, invalid token, launch throws, duplicate launch); onError is classified and never a decision; nothing in the browser path infers KYC from a callback",
+    async () => {
+      const docv = await import("../apps/web/app/_lib/kyc/docv-sdk.ts");
+      const calls: unknown[] = [];
+      let handlers: Record<string, (e: unknown) => void> = {};
+      docv.setDocvSdkForTests({
+        launch: (_k, _t, _c, config) => {
+          calls.push(config);
+          handlers = config as Record<string, (e: unknown) => void>;
+        },
+      });
+      const events: string[] = [];
+      const base = {
+        sdkKey: "public-sdk-key-fixture",
+        containerSelector: "#websdk",
+        onProgress: (st: string) => events.push(`progress:${st}`),
+        onCaptured: () => events.push("captured"),
+        onError: (e: { kind: string; terminalCapable: boolean }) =>
+          events.push(`error:${e.kind}:${String(e.terminalCapable)}`),
+      };
+      assert.deepEqual(
+        await docv.launchDocumentCapture({
+          ...base,
+          sdkKey: undefined,
+          transactionToken: "tok-1",
+        }),
+        { ok: false, reason: "sdk_key_unconfigured" },
+      );
+      assert.deepEqual(
+        await docv.launchDocumentCapture({ ...base, transactionToken: "  " }),
+        { ok: false, reason: "invalid_token" },
+      );
+      assert.deepEqual(
+        await docv.launchDocumentCapture({
+          ...base,
+          transactionToken: "tok-1",
+        }),
+        { ok: true },
+      );
+      assert.deepEqual(
+        await docv.launchDocumentCapture({
+          ...base,
+          transactionToken: "tok-1",
+        }),
+        { ok: false, reason: "duplicate_launch" },
+        "a second launch for the same token while one is open is refused",
+      );
+      assert.equal(typeof handlers["onProgress"], "function");
+      assert.equal(typeof handlers["onSuccess"], "function");
+      assert.equal(typeof handlers["onError"], "function");
+      handlers["onProgress"]?.({ status: "WAITING_FOR_MOBILE", qr: true });
+      handlers["onProgress"]?.({ status: "UPLOADING" });
+      handlers["onSuccess"]?.({ status: "SESSION_COMPLETE" });
+      assert.deepEqual(events, [
+        "progress:handoff_pending",
+        "progress:uploading",
+        "captured",
+      ]);
+      assert.deepEqual(
+        await docv.launchDocumentCapture({
+          ...base,
+          transactionToken: "tok-1",
+        }),
+        { ok: true },
+        "after completion the token may be relaunched (retry)",
+      );
+      handlers["onError"]?.({ status: "CONSENT_DECLINED" });
+      handlers["onError"]?.({ message: "network error" });
+      assert.deepEqual(events.slice(-2), [
+        "error:consent_declined:true",
+        "error:transient:false",
+      ]);
+      docv.setDocvSdkForTests({
+        launch: () => {
+          throw new Error("boom");
+        },
+      });
+      assert.deepEqual(
+        await docv.launchDocumentCapture({
+          ...base,
+          transactionToken: "tok-2",
+        }),
+        { ok: false, reason: "sdk_error" },
+      );
+      docv.setDocvSdkForTests(null);
+      assert.deepEqual(
+        await docv.launchDocumentCapture({
+          ...base,
+          transactionToken: "tok-3",
+        }),
+        { ok: false, reason: "sdk_load_failed" },
+        "no SDK (server/no bundle) is an operational failure",
+      );
+      const comp = read(
+        "apps/web/app/us/onboarding/kyc/_components/KycDocumentStepUp.tsx",
+      );
+      assert.ok(
+        /onProgress:/.test(comp) &&
+          /onCaptured:/.test(comp) &&
+          /onError:/.test(comp),
+        "component wires all three handlers",
+      );
+      assert.ok(
+        !/passed|verified|admit/i.test(
+          comp.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""),
+        ),
+        "component never sets or infers a verification/admission outcome",
+      );
+      assert.ok(
+        /reconcile\.mutate\(\)/.test(comp),
+        "capture completion and terminal-capable errors trigger BFF reconciliation",
+      );
+      const page = read("apps/web/app/us/onboarding/kyc/page.tsx");
+      assert.ok(
+        /useReconcileKyc\(\)/.test(page) && /reconciledFor/.test(page),
+        "a resumed non-terminal journey reconciles once",
+      );
+      const hooks = read("apps/web/app/_hooks/useKycVerification.ts");
+      assert.ok(
+        /\/reconcile`/.test(hooks) && !/socure|riskos/i.test(hooks),
+        "the browser reconciles only through the BFF",
+      );
+    },
+  );
+
+  await section(
+    "socure: nullability — informational fields may be null/absent (score, notes, sub_status, tags, reason codes, timestamps, empty environment) and a failed enrichment (`response: null`) never makes a valid evaluation unparseable; authority fields (eval_id, decision, event_id, event_type, data) stay strict",
+    async () => {
+      const sch = await import("../apps/web/src/lib/kyc/socure/schemas.ts");
+      const base = {
+        eval_id: fx.FIXTURE_EVAL_ID_ACCEPT,
+        decision: "ACCEPT",
+        status: "CLOSED",
+        eval_status: "evaluation_completed",
+      };
+      const sparse = {
+        ...base,
+        score: null,
+        notes: null,
+        sub_status: null,
+        tags: null,
+        reason_codes: null,
+        decision_tags: null,
+        review_queues: null,
+        eval_at: null,
+        decision_at: null,
+        workflow_id: null,
+        environment_name: "",
+        data_enrichments: [
+          {
+            enrichment_name: "Socure Email Risk",
+            enrichment_provider: "Socure",
+            response: null,
+          },
+          {
+            enrichment_name: "Socure Verify",
+            response: { data: { kyc: { reasonCodes: ["R123"], score: 0.42 } } },
+          },
+          {
+            enrichment_name: null,
+            enrichment_provider: null,
+            response: { data: null },
+          },
+        ],
+      };
+      const ok = sch.socureEvaluationResponseSchema.safeParse(sparse);
+      assert.ok(ok.success, "sparse/nullable evaluation parses");
+      assert.ok(
+        sch.socureEvaluationResponseSchema.safeParse(base).success,
+        "absent optional fields parse",
+      );
+      const m = await import("../apps/web/src/lib/kyc/socure/mapping.ts");
+      assert.equal(
+        m.mapSocureEvaluation(ok.success ? ok.data : (base as never)).refiState,
+        "passed",
+        "evaluated by decision, not by enrichment presence",
+      );
+      for (const [label, bad] of [
+        ["missing eval_id", { decision: "ACCEPT" }],
+        ["missing decision", { eval_id: fx.FIXTURE_EVAL_ID_ACCEPT }],
+        ["decision not an enum", { ...base, decision: "MAYBE" }],
+        ["environment not an enum", { ...base, environment_name: "Staging" }],
+        ["score not a number", { ...base, score: "high" }],
+      ] as const) {
+        assert.ok(
+          !sch.socureEvaluationResponseSchema.safeParse(bad).success,
+          `${label} is still rejected`,
+        );
+      }
+      const cert =
+        await import("../apps/web/src/lib/kyc/socure/certification-detail.ts");
+      const detail = cert.extractSocureCertificationDetail(
+        ok.success ? ok.data : (base as never),
+        "provider_evaluation",
+        "2026-09-12T00:00:00.000Z",
+      );
+      assert.equal(detail.score, null);
+      assert.deepEqual(detail.reasonCodes, []);
+      assert.equal(detail.enrichments.length, 3);
+      assert.equal(
+        detail.enrichments[0]?.failed,
+        true,
+        "null enrichment output recorded as failed, not fatal",
+      );
+      assert.deepEqual(detail.enrichments[1]?.reasonCodes, ["R123"]);
+      assert.equal(detail.enrichments[1]?.scores[0]?.value, 0.42);
+      assert.equal(detail.enrichments[1]?.scores[0]?.name, "data.kyc.score");
+      // Webhook: informational fields null/absent still parse; authority stays strict.
+      const wh = fx.dashboardVerificationPing("evaluation_completed") as Record<
+        string,
+        unknown
+      >;
+      const whData = {
+        ...(wh.data as object),
+        score: null,
+        notes: null,
+        tags: null,
+        reason_codes: null,
+        sub_status: null,
+        data_enrichments: [{ response: null }],
+      };
+      assert.ok(
+        sch.socureEvaluationCompletedEventSchema.safeParse({
+          ...wh,
+          data: whData,
+        }).success,
+        "webhook with null informational fields parses",
+      );
+      assert.ok(
+        !sch.socureEvaluationCompletedEventSchema.safeParse({
+          ...wh,
+          event_id: undefined,
+        }).success,
+        "webhook without event_id refused",
+      );
+      assert.ok(
+        !sch.socureEvaluationCompletedEventSchema.safeParse({
+          ...wh,
+          data: { ...whData, eval_id: undefined },
+        }).success,
+        "webhook without eval_id refused",
+      );
+      assert.ok(
+        !sch.socureEvaluationCompletedEventSchema.safeParse({
+          ...wh,
+          data: { ...whData, decision: null },
+        }).success,
+        "webhook with null decision refused",
+      );
+    },
+  );
+
+  await section(
+    "socure: certification retention boundary — providerDetail (scores/reason codes/tags) is Restricted: on the record only; never in the session view, the evidence record, the attestation evidence, or the reconcile/webhook responses; never applicant PII",
+    async () => {
+      await withEnv({ ...SOCURE_OK }, async () => {
+        await entity.resetKycEvaluationForTests(subjectA.authId);
+        await entity.clearEvaluationIndexForTests(fx.FIXTURE_EVAL_ID_ACCEPT);
+        const fake = new client.FakeSocureClient(fx.SCRIPT_ACCEPT);
+        const p = freshProvider(fake);
+        const out = await p.evaluate({
+          subject: subjectA,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "ret-1",
+          correlationId: "ret",
+        });
+        assert.ok(out.ok);
+        const rec = (await entity.getKycEvaluation(subjectA.authId))!;
+        assert.equal(rec.providerDetail?.score, 12);
+        const outText = JSON.stringify(out);
+        const viewText = JSON.stringify(await p.getSession(subjectA));
+        const evText = JSON.stringify(await p.evidenceRecord!(subjectA));
+        const att =
+          await import("../apps/web/src/lib/kyc/attestation-evidence.ts");
+        const attText = JSON.stringify(
+          await att.kycEvidenceForAttestation(p, subjectA),
+        );
+        for (const [label, text] of [
+          ["evaluate outcome", outText],
+          ["session view", viewText],
+          ["evidence record", evText],
+          ["attestation evidence", attText],
+        ] as const) {
+          assert.ok(
+            !/providerDetail|reasonCodes|fixture_reason_not_for_users|"score"/.test(
+              text,
+            ),
+            `${label} never carries Restricted provider detail`,
+          );
+        }
+        for (const v of PII_VALUES)
+          assert.ok(
+            !JSON.stringify(rec.providerDetail).includes(v),
+            "providerDetail never carries applicant PII",
+          );
+        const src = read("apps/web/src/lib/kyc/socure/adapter.ts");
+        assert.ok(
+          /function view\(record: KycEvaluationRecord\)[\s\S]*?referenceId: record\.referenceId/.test(
+            src,
+          ) &&
+            !/\.\.\.record,\s*\}/.test(
+              src.slice(
+                src.indexOf("function view("),
+                src.indexOf("function view(") + 400,
+              ),
+            ),
+          "the session view is built field by field, never by spreading the record",
+        );
+        await entity.resetKycEvaluationForTests(subjectA.authId);
+        await entity.clearEvaluationIndexForTests(fx.FIXTURE_EVAL_ID_ACCEPT);
+      });
+    },
+  );
+
+  await section(
+    "socure: missed-webhook reconciliation (scenario M) — GET /api/evaluation/{eval_id} finalizes a non-terminal journey through the SAME path as a webhook; a later webhook is idempotent (no duplicate history/evidence); paused stays paused; outage is retryable and bounded; REJECT finalizes as failed; terminal/no-eval are no-ops; browser never calls the provider",
+    async () => {
+      await withEnv({ ...SOCURE_OK }, async () => {
+        const reset = async () => {
+          for (const a of [subjectA, subjectB])
+            await entity.resetKycEvaluationForTests(a.authId);
+          for (const id of [
+            fx.FIXTURE_EVAL_ID_REVIEW,
+            fx.FIXTURE_EVAL_ID_ACCEPT,
+            fx.FIXTURE_EVAL_ID_REJECT,
+          ])
+            await entity.clearEvaluationIndexForTests(id);
+        };
+        const start = async (
+          p: SocureKycProvider,
+          subject: { authId: string },
+        ) => {
+          await p.evaluate({
+            subject,
+            individual: fx.FIXTURE_INDIVIDUAL,
+            consentTimestamp: CONSENT_AT,
+            submissionKey: `m-${subject.authId}`,
+            correlationId: "m",
+          });
+          await p.markDocvCaptured(subject, "m-cap");
+          const r = (await entity.getKycEvaluation(subject.authId))!;
+          assert.equal(
+            r.state,
+            "under_review",
+            "non-terminal, DocV capture reported, no webhook yet",
+          );
+          return r;
+        };
+        const asGet = (body: Record<string, unknown>) => ({
+          kind: "json" as const,
+          status: 200,
+          body: { ...body, eval_id: fx.FIXTURE_EVAL_ID_REVIEW },
+        });
+        // 1–5: no webhook; GET returns terminal ACCEPT; reconcile → same final state as a webhook would produce.
+        await reset();
+        const fake = new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV);
+        const p = freshProvider(fake);
+        const before = await start(p, subjectA);
+        assert.equal(before.evidence.providerDecisionFinal, false);
+        fake.scriptGet(asGet(fx.RESPONSE_ACCEPT));
+        const r1 = await p.reconcile(subjectA, "m-1");
+        assert.equal(r1.outcome, "finalized");
+        assert.equal(fake.getRequests.length, 1);
+        assert.equal(fake.getRequests[0]?.evalId, fx.FIXTURE_EVAL_ID_REVIEW);
+        const after = (await entity.getKycEvaluation(subjectA.authId))!;
+        assert.equal(after.state, "passed");
+        assert.equal(after.evidence.providerDecision, "accept");
+        assert.equal(after.evidence.providerDecisionFinal, true);
+        assert.equal(
+          after.evidence.decisionProvenance,
+          "provider_webhook",
+          "reconciliation finalizes through the webhook finalization path",
+        );
+        assert.equal(after.providerDetail?.source, "provider_reconciliation");
+        assert.equal(
+          after.history.filter((h) => h.state === "passed").length,
+          1,
+        );
+        const passedAt = after.history.find((h) => h.state === "passed")?.at;
+        assert.ok(
+          (
+            await entity.getWebhookEvent(
+              `reconcile:${fx.FIXTURE_EVAL_ID_REVIEW}:accept`,
+            )
+          )?.outcome === "applied",
+          "reconciliation is audited as a consumed synthetic event",
+        );
+        // 6–7: the real webhook arrives later → idempotent, no duplicate state/history.
+        const late = await p.applyWebhook(
+          fx.webhookEvent({
+            requestId: before.evidence.providerRequestId!,
+            eventId: "550e8400-e29b-41d4-a716-4466554400ea",
+            evalId: fx.FIXTURE_EVAL_ID_REVIEW,
+            decision: "ACCEPT",
+          }),
+          "m-wh",
+        );
+        assert.equal(late.handled && late.outcome, "idempotent_same_result");
+        const after2 = (await entity.getKycEvaluation(subjectA.authId))!;
+        assert.equal(
+          after2.history.filter((h) => h.state === "passed").length,
+          1,
+          "no duplicate history",
+        );
+        assert.equal(
+          after2.history.find((h) => h.state === "passed")?.at,
+          passedAt,
+          "terminal entry unchanged",
+        );
+        assert.equal(after2.evidence.providerDecisionFinal, true);
+        assert.equal(
+          after2.evidence.completedAt,
+          after.evidence.completedAt,
+          "evidence not re-finalized",
+        );
+        const again = await p.reconcile(subjectA, "m-2");
+        assert.equal(again.outcome, "already_terminal");
+        assert.equal(
+          fake.getRequests.length,
+          1,
+          "terminal journeys never call the provider",
+        );
+        // Same-decision conflict protection still applies to reconciliation: a later REJECT webhook is flagged, state protected.
+        const conflict = await p.applyWebhook(
+          fx.webhookEvent({
+            requestId: before.evidence.providerRequestId!,
+            eventId: "550e8400-e29b-41d4-a716-4466554400eb",
+            evalId: fx.FIXTURE_EVAL_ID_REVIEW,
+            decision: "REJECT",
+          }),
+          "m-c",
+        );
+        assert.equal(conflict.handled && conflict.outcome, "conflict_flagged");
+        assert.equal(
+          (await entity.getKycEvaluation(subjectA.authId))!.state,
+          "passed",
+        );
+        // Rules: still paused → still_pending, state unchanged.
+        await reset();
+        const fake2 = new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV);
+        const p2 = freshProvider(fake2);
+        await start(p2, subjectA);
+        fake2.scriptGet(asGet(fx.RESPONSE_REVIEW_DOCV_PAUSED));
+        assert.equal(
+          (await p2.reconcile(subjectA, "m-p")).outcome,
+          "still_pending",
+        );
+        assert.equal(
+          (await entity.getKycEvaluation(subjectA.authId))!.state,
+          "under_review",
+        );
+        // Outage → provider_error, retryable, state unchanged; immediately after → not_due (bounded backoff).
+        fake2.scriptGet(fx.SCRIPT_503);
+        const rec3 = (await entity.getKycEvaluation(subjectA.authId))!;
+        await entity.putKycEvaluation({ ...rec3, reconcile: null });
+        assert.equal(
+          (await p2.reconcile(subjectA, "m-o")).outcome,
+          "provider_error",
+        );
+        const rec4 = (await entity.getKycEvaluation(subjectA.authId))!;
+        assert.equal(
+          rec4.state,
+          "under_review",
+          "an outage never becomes a rejection",
+        );
+        assert.equal(rec4.reconcile?.lastOutcome, "provider_unavailable");
+        assert.ok(
+          rec4.reconcile?.notBefore &&
+            Date.parse(rec4.reconcile.notBefore) > Date.now(),
+          "backoff recorded",
+        );
+        assert.equal((await p2.reconcile(subjectA, "m-o2")).outcome, "not_due");
+        assert.equal(
+          fake2.getRequests.length,
+          2,
+          "not_due does not call the provider",
+        );
+        // Wrong environment → provider_error, state unchanged.
+        await entity.putKycEvaluation({
+          ...(await entity.getKycEvaluation(subjectA.authId))!,
+          reconcile: null,
+        });
+        fake2.scriptGet(asGet(fx.RESPONSE_ACCEPT_WRONG_ENV));
+        assert.equal(
+          (await p2.reconcile(subjectA, "m-e")).outcome,
+          "provider_error",
+        );
+        assert.equal(
+          (await entity.getKycEvaluation(subjectA.authId))!.state,
+          "under_review",
+        );
+        // REJECT via GET → failed, exactly like a REJECT webhook.
+        await entity.putKycEvaluation({
+          ...(await entity.getKycEvaluation(subjectA.authId))!,
+          reconcile: null,
+        });
+        fake2.scriptGet(asGet(fx.RESPONSE_REJECT));
+        assert.equal(
+          (await p2.reconcile(subjectA, "m-r")).outcome,
+          "finalized",
+        );
+        const rej = (await entity.getKycEvaluation(subjectA.authId))!;
+        assert.equal(rej.state, "failed");
+        assert.equal(rej.evidence.providerDecision, "reject");
+        assert.equal(rej.providerDetail?.tags[0], "fixture_tag_not_for_users");
+        // No evaluation yet → nothing_to_reconcile, no provider call.
+        await reset();
+        const fake3 = new client.FakeSocureClient();
+        const p3 = freshProvider(fake3);
+        assert.equal(
+          (await p3.reconcile(subjectB, "m-n")).outcome,
+          "nothing_to_reconcile",
+        );
+        assert.equal(fake3.getRequests.length, 0);
+        await reset();
+      });
+      // Single finalization path + client contract, by source.
+      const adapterSrc = read("apps/web/src/lib/kyc/socure/adapter.ts").replace(
+        /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+        "",
+      );
+      assert.equal(
+        (adapterSrc.match(/applyFinalProviderDecision\(/g) ?? []).length,
+        1,
+        "exactly one call site of the durable apply: finalizeProviderResult",
+      );
+      assert.equal(
+        (adapterSrc.match(/this\.finalizeProviderResult\(/g) ?? []).length,
+        2,
+        "webhook and reconciliation both finalize through it",
+      );
+      const clientSrc = read("apps/web/src/lib/kyc/socure/client.ts").replace(
+        /\/\*[\s\S]*?\*\/|\/\/.*$/gm,
+        "",
+      );
+      assert.ok(
+        /getEvaluation: \(evalId, opts\) =>[\s\S]*?"GET",[\s\S]*?\$\{SOCURE_EVALUATION_PATH\}\/\$\{encodeURIComponent\(evalId\)\}/.test(
+          clientSrc,
+        ),
+        "GET /api/evaluation/{eval_id} through the same request builder (version header, timeout)",
+      );
+      assert.ok(
+        !/include_input/.test(clientSrc),
+        "include_input is never sent (documented default false: no identity inputs)",
+      );
+      const routeSrc = read(
+        "apps/web/app/api/v1/investor/kyc/reconcile/route.ts",
+      );
+      assert.ok(
+        /bffMutate/.test(routeSrc) &&
+          /action: "reconcileKycEvaluation"/.test(routeSrc) &&
+          !/socure|riskos|fetch\(/i.test(routeSrc),
+        "reconcile is a BFF-only, session-scoped route with no provider reach of its own",
+      );
     },
   );
 

@@ -108,9 +108,9 @@ describe("LIVE is blocked by capability authority", () => {
         liveUnavailableReason: null,
       }),
     ).toEqual({ selectable: true });
-    expect(() =>
-      assertEnvironmentSelectable("live", ALPHA_CAPABILITIES),
-    ).toThrow(EnvironmentNotSelectableError);
+    expect(() => {
+      assertEnvironmentSelectable("live", ALPHA_CAPABILITIES);
+    }).toThrow(EnvironmentNotSelectableError);
   });
 });
 

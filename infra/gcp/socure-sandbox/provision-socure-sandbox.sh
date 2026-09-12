@@ -57,7 +57,7 @@ run gcloud storage buckets add-iam-policy-binding "gs://${PROJECT}_cloudbuild" -
 SHORT_SHA="$(git rev-parse --short=7 HEAD)"
 if [ "${APPLY:-0}" = "1" ]; then PROJECT_NUMBER="$(gcloud projects describe "$PROJECT" --format 'value(projectNumber)')"; else PROJECT_NUMBER="PROJECT_NUMBER"; fi
 SERVICE_URL="https://refi-socure-sandbox-${PROJECT_NUMBER}.${REGION}.run.app"
-run gcloud builds submit --config infra/gcp/socure-sandbox/cloudbuild.sandbox.yaml --project "$PROJECT" --service-account "projects/$PROJECT/serviceAccounts/$BUILD_SA" --substitutions "SHORT_SHA=${SHORT_SHA},_PUBLIC_BASE_URL=${SERVICE_URL}" .
+run gcloud builds submit --config infra/gcp/socure-sandbox/cloudbuild.sandbox.yaml --project "$PROJECT" --service-account "projects/$PROJECT/serviceAccounts/$BUILD_SA" --substitutions "SHORT_SHA=${SHORT_SHA},_PUBLIC_BASE_URL=${SERVICE_URL},_SOCURE_SDK_KEY=${SOCURE_SDK_KEY:-}" .
 
 # 6. Deploy the service from a rendered copy of the manifest (image tag = SHORT_SHA)
 RENDERED="$(mktemp -t socure-sandbox-service.XXXXXX).yaml"

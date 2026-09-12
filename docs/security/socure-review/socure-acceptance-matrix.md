@@ -1,6 +1,6 @@
 # Socure Sandbox acceptance matrix and evidence schema
 
-Status: IN PROGRESS — A PASS 2026-09-12 (`sandbox-acceptance-scenario-a-2026-09-12.md`); B, C BLOCKED on Socure-provided REVIEW/REJECT sandbox scenarios; D–L not yet run. Automatic Alpha admission is not evaluated in any scenario while PR F/G are held.
+Status 2026-09-12: A PASS; B, C BLOCKED (Socure test input required); D, E PASS — FIXTURE DRIVEN; F, I, K PASS; G PASS (event-level); H PASS — FIXTURE DRIVEN; J PASS — DURABILITY PATH; L PASS — SHARED DURABLE STORE PROVEN. Interim: SOCURE SANDBOX CORE ACCEPT PATH PASSED — DOCV/REJECT PROVIDER CASES PENDING. Evidence: `sandbox-acceptance-scenario-a-2026-09-12.md`, `sandbox-acceptance-scenarios-d-l-2026-09-12.md`. Open defect PR #134 (DATA INTEGRITY, concurrent same-event apply). Automatic Alpha admission is not evaluated in any scenario while PR F/G are held.
 
 ## Evidence to retain per scenario
 

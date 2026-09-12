@@ -6,6 +6,21 @@ teams. The `integration/refinity-dev` branch was created from `main` at
 is tracked in [the connected deployment guide](../infra/cloudrun/CONNECTED_DEV.md);
 branch creation is not connected user acceptance.
 
+**Current executable frontend queue:** [integration-roadmap.md](integration-roadmap.md).
+September 12 update: alpha.4 is vendored/verified but the running client still
+selects alpha.3 until the first adoption slice. GCP hosting/branch CI/CD is
+verified; login and backend binding are separate remaining gates.
+
+**Owner-approved development exception:** Daniel may implement the isolated,
+server-only, named-test-user KYC-pass source specified in roadmap step 2. It
+must retain explicit simulated provenance and exercise normal attestation/
+admission machinery without weakening real provider trust, profile evaluation,
+identity, consent or trading controls. Necessary narrow integration adapters are
+in scope; actual Socure/provider/webhook/DocV flows and UI remain Zeshan's. No
+blanket mock pass or real-provider certification is authorized. The exception
+is not implemented merely by documenting it and must be disabled/retired for
+real-user acceptance. Other ownership boundaries below remain unchanged.
+
 ## Names and environments
 
 **Refi Trading is the public-facing company/product name**, including what users
@@ -145,10 +160,12 @@ frontend team is not being asked to migrate hosting before continuing UI/KYC.
 
 ## Milestones and final merge
 
-Daniel's detailed engineering queue is `FI-001..FI-010` in ReFinity's
-`docs/planning/frontend_contract_delivery_alignment_checklist.md`. This shared
-agreement is not a competing checklist; a backend checkout is not required to
-understand the ownership and merge rules here.
+Follow [the current frontend integration checklist](integration-roadmap.md),
+which maps the work to `FI-001..FI-010` in ReFinity's
+`docs/planning/frontend_contract_delivery_alignment_checklist.md`. The frontend
+view stages already-issued alpha.4 adoption before future contract additions.
+This shared agreement is not a competing checklist; a backend checkout is not
+required to understand the ownership, implementation order or merge rules here.
 
 Deliver tested contract/client integration and the real connected Dev boundary
 first. Distinguish local tests, real authenticated HTTP/SSE checks and authorized

@@ -1,5 +1,12 @@
 # Vendored Investor API contract package
 
+**New integration target: [alpha.4](v1.1.0-alpha.4/README.md), copied and
+verified September 12.** Start at [README.md](README.md) and [TARGET.json](TARGET.json).
+The table below records the **currently selected alpha.3 client**, not the
+latest backend release. Selection changes with adapters/tests at step 1 of
+[the integration checklist](../../../../docs/integration-roadmap.md).
+Do not edit either immutable bundle or mistake copying for client activation.
+
 | Field                                  | Value                                                                           |
 | -------------------------------------- | ------------------------------------------------------------------------------- |
 | Contract version                       | `v1.1.0-alpha.3` (supersedes `v1.1.0-alpha.2`)                                  |

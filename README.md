@@ -98,9 +98,12 @@ since been superseded by the working agreement and decisions summarized here.
 ### Still to complete
 
 - **Contract adoption:** this checkout actually imports/generates
-  `v1.1.0-alpha.3`; the backend's currently issued package is alpha.4, with
-  funding assessments and corrected recommendation responses. Daniel will
-  integrate the verified current/successor package and its client adapters.
+  `v1.1.0-alpha.3`; **the complete alpha.4 package is now copied and verified**
+  under `packages/api-clients/contracts/investor-api/v1.1.0-alpha.4/`.
+  [TARGET.json](packages/api-clients/contracts/investor-api/TARGET.json) identifies
+  it; CURRENT.json still follows the existing client until atomic adoption.
+  Follow [the ordered integration checklist](docs/integration-roadmap.md), starting
+  with client/validator/funding/recommendation adaptation—not another package copy.
   The new membership/admission/error corrections are not already delivered.
 - **Backend-owned membership/admission:** replace legacy onboarding/cohort
   ambiguity with independent canonical reads. The existing setup gate also
@@ -113,9 +116,14 @@ since been superseded by the working agreement and decisions summarized here.
   from retries of saved previews, update recommendation mappings, remove the
   silent five-page/500-position retrieval limit, and complete funding-notice
   and activity delivery.
-- **Connected runtime:** provision/configure the separate GCP frontend service,
-  exact service identity, signing/trust, durable non-KYC integration state and
-  real authenticated HTTP/SSE acceptance.
+- **Connected runtime:** GCP hosting, branch CI/CD, native runtime identity,
+  durable non-KYC state and KMS signing are verified. Finish real Stytch login,
+  exact backend trust binding and authenticated HTTP/SSE acceptance; do not
+  reprovision the existing service.
+- **Development KYC:** an owner-approved, allowlisted simulated-pass source is
+  planned for integration testing (not yet implemented). It substitutes only
+  provider evaluation, not real login, profile evaluation, consents or trading
+  gates. Real Socure/provider flows remain Zeshan's work and a final acceptance gate.
 - **Joint acceptance:** finish basic real KYC and the integrated user experience,
   then the agreed two-positive/one-negative campaign and final combined release.
   Positive trading tests require real separate Alpaca Paper accounts and
@@ -136,10 +144,12 @@ because their integration acceptance remains open.
 | Connected GCP runtime and cross-system integration verification                                  | Daniel/Refinity team                           |
 | Shared-file conflicts, interface changes and final combined acceptance                           | Both teams, with each reviewing its owned area |
 
-Daniel's detailed queue is `FI-001..FI-010` in the backend repository's
-`docs/planning/frontend_contract_delivery_alignment_checklist.md`. It prioritizes
-contract/BFF integration and the connected Dev boundary, followed by entitlement
-and remaining Alpha release gates. This README is an overview, not another queue.
+**Work from [docs/integration-roadmap.md](docs/integration-roadmap.md), in numbered
+order.** It is the frontend execution view of backend `FI-001..FI-010` in
+`docs/planning/frontend_contract_delivery_alignment_checklist.md`, updated for
+completed hosting, immediate alpha.4 adoption and the development KYC exception.
+The backend specification still owns backend implementation/ATD release gates.
+This README is an overview, not another queue.
 
 Follow [the full working agreement](docs/integration-collaboration.md) for exact
 scope and milestones. Refinity will not redesign screens, modify KYC decisions,

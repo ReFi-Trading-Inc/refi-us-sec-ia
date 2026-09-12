@@ -1,5 +1,14 @@
 # US Alpha go-live readiness checklist
 
+> Historical game/acquisition-funnel checklist, **not the current backend
+> integration queue or current deployment inventory**. Use
+> [integration-roadmap.md](integration-roadmap.md) for automated SP500 Alpha,
+> alpha.4 adoption, the development KYC exception and connected acceptance.
+> Old Admin Portal proxy/Signal-first requirements and deployment status below
+> are superseded for that scope. Frontend/compliance owners retain their own
+> product-launch review; this document does not authorize our team to change
+> the game, UI, KYC policy or public deployment.
+
 Status of the game→shell alpha funnel against a US SEC-registered-adviser
 launch. **Counsel owns the final gate** — the ⚖️ items are legal determinations,
 not engineering tasks. Nothing here is legal advice.

@@ -1,0 +1,10 @@
+{
+  "contract_version": "v1.1.0-alpha.4",
+  "package_path": "v1.1.0-alpha.4",
+  "package_content_sha256": "a6db935b6a398bff00a7ccee4cb268ee565249bbd75c23e36594c9f6b698e7c3",
+  "backend_checkout_revision": "07ae53bee3dbfd436206f9fd2a41b1fc6e28605c",
+  "backend_source_path": "contracts/frontend/v1.1.0-alpha.4",
+  "status": "vendored_verified_pending_client_adoption",
+  "active_client_version": "v1.1.0-alpha.3",
+  "connected_alpha_verified": false
+}

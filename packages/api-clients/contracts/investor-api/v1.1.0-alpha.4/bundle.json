@@ -1,0 +1,72 @@
+{
+  "artifacts": [
+    {
+      "path": "FUNDING.md",
+      "sha256": "e3106e1952c23e59c79ae18e267ee9fc817747eb04978eabdb96f7796d12467a"
+    },
+    {
+      "path": "INTEGRATION.md",
+      "sha256": "a304e44f7dab6fc8f4a59c16b1c9f9bb64acda3975218a109aa29578685071fe"
+    },
+    {
+      "path": "MIGRATION.md",
+      "sha256": "8652ed19be2a68e323635af22be2320c6ef32d6af117c8f0e1b111b5e8c84516"
+    },
+    {
+      "path": "README.md",
+      "sha256": "1226deea9bb103b1aa0f26c18970228482262b1ce1a9c8e00ae63cadc0818bc5"
+    },
+    {
+      "path": "capabilities.json",
+      "sha256": "ebc2634b3bd9ee89d0ed793e9b73195ce0d1f7c1b3489ad04429ee6f966b8d58"
+    },
+    {
+      "path": "connection.dev.json",
+      "sha256": "d597c3e94016fdf82acf3ee7b61f038c427be06fbcc52d8a379d6298222bc802"
+    },
+    {
+      "path": "contract.json",
+      "sha256": "47b670f366b09280fe90c0e01d53f7d616f8d145ca823c314f9dbae060a11be3"
+    },
+    {
+      "path": "examples.json",
+      "sha256": "bb58f2c5e299345fe798b9f248096e11283f3e4caa5b0376ffa1e407f92c744d"
+    },
+    {
+      "path": "openapi.json",
+      "sha256": "815db15b69005be9c2d4b62ae67022805e06c4e732c653d3c164dc1aad762a00"
+    },
+    {
+      "path": "schemas.json",
+      "sha256": "ef2148fba33575e853768ff5df466d577826b517fcd3973c39b27c4d06b89654"
+    },
+    {
+      "path": "tools/conformance.py",
+      "sha256": "56f19301862b22b073b0048a139b8c4895adeb228228f03042cfc6120f16333e"
+    }
+  ],
+  "connected_alpha_verified": false,
+  "contract_implemented": true,
+  "contract_version": "v1.1.0-alpha.4",
+  "generator": {
+    "path": "scripts/contracts/build_investor_alpha4_handoff.py",
+    "version": "2"
+  },
+  "package_content_sha256": "a6db935b6a398bff00a7ccee4cb268ee565249bbd75c23e36594c9f6b698e7c3",
+  "package_id": "v1.1.0-alpha.4-frontend-handoff",
+  "readiness_states": {
+    "backend_connected_release_ready": false,
+    "backend_services_provisioned": true,
+    "connected_alpaca_verified": false,
+    "connected_alpha_verified": false,
+    "external_trust_bound": false,
+    "frontend_contract_ready": true
+  },
+  "schema_version": "2.0",
+  "source": {
+    "path": "contracts/frontend/investor-api-v1.1.0-alpha.4.json",
+    "revision": "47b670f366b09280fe90c0e01d53f7d616f8d145ca823c314f9dbae060a11be3",
+    "revision_kind": "contract_content_sha256",
+    "sha256": "47b670f366b09280fe90c0e01d53f7d616f8d145ca823c314f9dbae060a11be3"
+  }
+}

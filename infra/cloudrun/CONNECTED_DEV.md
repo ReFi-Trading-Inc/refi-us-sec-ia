@@ -147,6 +147,10 @@ The initial hosting configuration is **not an admitted Alpha release**:
   and approved redirects are still required; no KYC/provider behavior changed.
   Register the isolated Stytch callback exactly as
   `https://refi-frontend-integration-182665799543.us-west1.run.app/us/auth/callback`.
+  The owner subsequently authorized a narrowly scoped development KYC-pass source;
+  [roadmap step 2](../../docs/integration-roadmap.md#2-fi-003d--implement-the-development-only-kyc-acceptance-source)
+  specifies its boundaries. It is not implemented/enabled yet, does not simulate
+  Stytch login, and does not certify real KYC or permit broad mock controls.
 - `REFI_INVESTOR_API_ALLOW_REMOTE=0` remains until the actual runtime identity,
   bridge issuer/audience/JWKS, redirects and Investor assertion JWKS are explicitly
   bound through backend ATD-046. No broad IAM or frontend admission is granted.

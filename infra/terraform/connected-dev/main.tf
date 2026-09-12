@@ -246,6 +246,9 @@ resource "google_cloud_run_v2_service" "frontend" {
   }
   depends_on = [google_secret_manager_secret_iam_member.runtime]
   # CI owns releases; Terraform owns runtime configuration and IAM.
+  # Do not ignore template.revision: a later config edit must not reuse an
+  # immutable CLI revision. A post-CI plan can clear this generated-name field;
+  # see CONNECTED_DEV.md before treating that metadata-only diff as a rollout.
   lifecycle {
     ignore_changes = [template[0].containers[0].image, traffic, client, client_version]
   }

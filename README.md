@@ -274,7 +274,8 @@ scans, production-artifact E2E lanes and a build. It is not a configured connect
 GCP deployment pipeline. The separate [Cloud Build integration-branch pipeline](infra/cloudrun/CONNECTED_DEV.md#automatic-branch-deployment)
 builds, checks and deploys only `integration/refinity-dev` to the isolated Dev
 service; it does not change main checks or Vercel. Do not infer a passing current run from old test counts,
-this README or simulator results. No suites were rerun for this documentation update.
+this README or simulator results. The deployment guide records the dated live
+verification; GitHub/Cloud Build checks show results for subsequent commits.
 
 ## Repository layout
 

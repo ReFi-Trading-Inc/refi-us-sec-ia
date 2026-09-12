@@ -205,3 +205,56 @@ binding and FI-009 user-connected acceptance remain open.
 References: [named Firestore databases and scoped IAM](https://docs.cloud.google.com/firestore/native/docs/manage-databases),
 [Cloud Run HTTPS addresses](https://docs.cloud.google.com/run/docs/triggering/https-request),
 [dedicated Cloud Build identities](https://docs.cloud.google.com/build/docs/securing-builds/configure-user-specified-service-accounts).
+
+## CI/CD verification — September 11–12, 2026
+
+- GitHub App installation `161007339`; connection `refi-frontend-github` COMPLETE.
+  Its authorization secret grants accessor only to Google's Cloud Build service
+  agent. The temporary project-level Secret Manager Admin binding was removed.
+- Trigger `a5480318-871a-4cfd-b0ca-d49ccc64bad2` is enabled, exact integration
+  branch only. Actual pushes create the GitHub check
+  `refi-frontend-integration (refinity-dev)`, linked to the Google build result.
+- First end-to-end success: source `e02f302b4e28938e8651862a1f0a6197c30292db`,
+  build `c210472e-5382-4165-b8af-88bb484006dc`, GitHub check SUCCESS.
+  Probe executions `refi-frontend-runtime-check-4hrg6` (write/atomicity) and
+  `refi-frontend-runtime-check-f47nh` (independent read) both succeeded.
+  Candidate HTTP checks passed at zero traffic, then promotion and normal-origin
+  checks passed. Previous revision `refi-frontend-integration-00002-44h` remains
+  available for rollback.
+- Final source `639a9a2888f92f768beebb23980ba7d0a7cc9e3f`, automatic build
+  `c236414c-00ad-44c9-926a-fbf667ed1a63`: SUCCESS. Verified serving revision
+  `refi-frontend-integration-00005-lut`, digest
+  `sha256:0b74a785854506fb89cb0ebadb48a779db787acc5cd045c184f2623ebf17d549`.
+  Both packaged runtime executions (`refi-frontend-runtime-check-mmg8d` write,
+  `refi-frontend-runtime-check-mfwpv` read) succeeded. Candidate and promoted
+  origin checks passed, and the versioned current-release receipt was written.
+- Seven release-control unit tests pass, including no promotion after candidate
+  failure, rollback after failed public verification, stale-build refusal and
+  owned-generation lock cleanup. They also pass inside the actual Google CLI
+  image. Candidate failure/rollback scenarios are unit-level fault injection;
+  successful deployment, native runtime checks and HTTP boundaries are real.
+- Deployment-identity permission checks confirm frontend/probe update and job
+  execution permissions, with **no `run.services.update` on `investor-api`**.
+- Build-context correction: Git is installed only in the builder and a local
+  source index supports existing contract checks. The Dockerfile-specific ignore
+  excludes checkout metadata, local secrets/state and generated build caches.
+- The deployment CLI image is digest-pinned. Its bundled Python uses Google's
+  packaged CA bundle via `SSL_CERT_FILE`; real HTTPS was verified locally with
+  certificate validation enabled. Initial build-environment failures stopped
+  before any service change; the successful run above supersedes them.
+
+CI owns only image/traffic releases and CLI client metadata. Cloud Run generates
+revision names; Terraform retains runtime configuration ownership and does not
+ignore environment, identity, secrets, scaling or networking changes. Actual
+current source/image/revision is always the versioned `current.json` receipt,
+cross-checked with the service's serving traffic, not the bootstrap tfvars.
+
+Post-release Terraform review: **no image, traffic, IAM or runtime-configuration
+drift**. Google CLI still records the generated `template.revision` name, so
+Terraform proposes clearing that one field to its unset configuration. This is
+not a rollback request; no apply was performed just to normalize that metadata.
+Do not hide the entire template or ignore its revision field: doing so can pin an
+immutable old revision when a real runtime setting changes. Review this known
+one-field normalization alongside the next actual infrastructure change. Such a
+change must be verified and promoted explicitly; image CI does not auto-apply
+Terraform configuration.

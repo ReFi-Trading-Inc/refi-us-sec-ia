@@ -7,9 +7,11 @@ is tracked in [the connected deployment guide](../infra/cloudrun/CONNECTED_DEV.m
 branch creation is not connected user acceptance.
 
 **Current executable frontend queue:** [integration-roadmap.md](integration-roadmap.md).
-September 12 update: alpha.4 is vendored/verified but the running client still
-selects alpha.3 until the first adoption slice. GCP hosting/branch CI/CD is
-verified; login and backend binding are separate remaining gates.
+September 12 update: the client now selects alpha.4, old packages are archived,
+and the isolated GCP integration deployment is verified. Login and backend
+binding remain separate gates; see [implementation status](alpha4-integration-status.md).
+Main through `866fc11` is incorporated into the integration branch. This imports
+Zeshan's work without merging our branch into main or retargeting his deployments.
 
 **Owner-approved development exception:** Daniel may implement the isolated,
 server-only, named-test-user KYC-pass source specified in roadmap step 2. It

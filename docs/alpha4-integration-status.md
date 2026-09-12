@@ -152,3 +152,15 @@ accepted through real authentication. Follow the unchecked gates in the roadmap.
 - Authentication remains `unconfigured`, remote backend calls remain off, and
   development KYC is not activated. This is a verified deployment of the integration
   code, **not** verified connected user admission/trading.
+
+## Main synchronization — September 12, 2026 UTC
+
+Imported frontend main through `866fc11` into `integration/refinity-dev`, retaining
+our alpha.4 implementation and isolated GCP configuration. Local backup branch
+`backup/integration-before-main-6aae367` retains the exact pre-merge state.
+The shared contract assertions merged cleanly and retain both sets of checks.
+A pre-existing test-fixture typing issue was corrected; no provider flow was
+rewritten. Both package/web typechecks, 369 client tests, full contract assertions,
+boundary/deployment checks and 22 production-build Chromium tests passed.
+KYC browser tests use the local mock, not Socure acceptance. No Socure provisioning
+script was executed, and main and the separate GitLab backend were not modified.

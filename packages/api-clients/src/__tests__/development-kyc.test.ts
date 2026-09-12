@@ -86,10 +86,16 @@ describe("explicit development KYC boundary", () => {
         rows.delete(key);
       },
     };
-    const current = structuredClone(
+    const fixture = structuredClone(
       examples.responses.ComplianceProfileAttestationEnvelope,
     );
-    current.data.kyc.provider = "refinity-dev-kyc-fixture-v1";
+    const current = {
+      ...fixture,
+      data: {
+        ...fixture.data,
+        kyc: { ...fixture.data.kyc, provider: "refinity-dev-kyc-fixture-v1" },
+      },
+    };
     const call = vi.fn(async (operation: string) => ({
       status: 201,
       data: current,

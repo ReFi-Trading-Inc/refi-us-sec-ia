@@ -48,6 +48,14 @@ export function setSocureClientForTests(client: SocureClientLike | null): void {
 }
 
 export const SOCURE_EVALUATION_PATH = "/api/evaluation" as const;
+/**
+ * Pinned RiskOS™ API version (founder decision 2026-09-11). Omitting the
+ * header would select the provider's current default; a compliance
+ * integration must not drift with a provider default. The ONLY place this
+ * string lives; every RiskOS request sends it.
+ */
+export const SOCURE_API_VERSION = "2025-01-01.orion" as const;
+export const SOCURE_API_VERSION_HEADER = "X-API-Version" as const;
 export const SOCURE_REQUEST_TIMEOUT_MS = 15_000;
 
 export function getSocureClient(): SocureClientLike {
@@ -87,6 +95,7 @@ export function getSocureClient(): SocureClientLike {
             Authorization: `Bearer ${apiKey}`,
             "Content-Type": "application/json",
             Accept: "application/json",
+            [SOCURE_API_VERSION_HEADER]: SOCURE_API_VERSION,
             "X-Correlation-Id": opts.correlationId,
           },
           body: JSON.stringify(request),

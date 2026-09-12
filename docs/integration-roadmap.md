@@ -50,8 +50,8 @@ Spanner/broker access, manual admission setter or second automation toggle.
 ## Completed preparation — do not repeat
 
 - [x] FI-001: integration branch created from shared main `b3e7a1a`; ownership
-      and bidirectional merge procedure documented. At this audit branch HEAD is
-      `f061a8e`; newer `main` changes exist through `866fc11` and are not merged yet.
+      and bidirectional merge procedure documented. Main through `866fc11` is now
+      incorporated into the integration branch, retaining our alpha.4 and GCP work.
 - [x] FI-008 hosting subset: `refi-frontend-integration`, native runtime
       `refi-frontend-runtime@refinity-dev.iam.gserviceaccount.com`, Google subject
       `104683840377279941448`, named durable store and distinct KMS signers verified.
@@ -66,9 +66,10 @@ Spanner/broker access, manual admission setter or second automation toggle.
 
 ### 1. FI-005A — adopt the already-issued alpha.4 client
 
-- [x] Rechecked branches/upstream. Owner now explicitly requests **no main merge**;
-      both repositories use `integration/refinity-dev`. Main through `866fc11` was
-      inspected, not merged. Preserve Zeshan’s provider work and deployment targets.
+- [x] Rechecked branches/upstream. **Do not merge our work into main**; both
+      repositories use `integration/refinity-dev`. With owner approval, frontend
+      main through `866fc11` was merged into our integration branch. Preserve
+      Zeshan’s provider work and deployment targets; backend GitLab is untouched.
 - [x] Read package MIGRATION/FUNDING and inspect
       `packages/api-clients/src/investor-api/{package,validation,client,errors}.ts`,
       `packages/api-clients/package.json`, package tests, and

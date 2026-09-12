@@ -1,6 +1,6 @@
 # Socure Sandbox acceptance matrix and evidence schema
 
-Status: NOT RUN (credentials pending). Automatic Alpha admission is not evaluated in any scenario while PR F/G are held.
+Status: IN PROGRESS — A PASS 2026-09-12 (`sandbox-acceptance-scenario-a-2026-09-12.md`); B, C BLOCKED on Socure-provided REVIEW/REJECT sandbox scenarios; D–L not yet run. Automatic Alpha admission is not evaluated in any scenario while PR F/G are held.
 
 ## Evidence to retain per scenario
 
@@ -8,7 +8,7 @@ ReFi request id (`refi-kyc-req-…`) · Socure `eval_id` · workflow name/versio
 
 | Scenario                                                      | Trigger                                           | Expected ReFi outcome                                                                                                                      | Evidence                                                |
 | ------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
-| A Immediate ACCEPT                                            | synthetic accept identity                         | `passed` (KYC_VERIFIED); evidence record final, provenance `provider_evaluation`; trusted attestation evidence available; **no admission** | request id, eval_id, state, timestamps, redaction check |
+| A Immediate ACCEPT — **PASS 2026-09-12**                      | synthetic accept identity                         | `passed` (KYC_VERIFIED); evidence record final, provenance `provider_evaluation`; trusted attestation evidence available; **no admission** | request id, eval_id, state, timestamps, redaction check |
 | B REVIEW → DocV → ACCEPT                                      | synthetic review identity                         | `additional_info_required` → step-up token for owner only → capture → `under_review` → webhook `evaluation_completed` ACCEPT → `passed`    | + event_id, DocV required = yes                         |
 | C REJECT                                                      | synthetic reject identity                         | `failed` (KYC_REJECTED); support path shown; nothing economic                                                                              | request id, eval_id, state                              |
 | D 429                                                         | rate-limit trigger                                | `provider_error`, `retryable: true`, state `in_progress`; not a rejection                                                                  | response, state                                         |

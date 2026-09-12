@@ -7111,6 +7111,34 @@ await section(
           400,
           "unknown eventName is not a ping",
         );
+        {
+          const diag =
+            await import("../apps/web/src/lib/kyc/socure/webhook-diagnostics");
+          const marker = ["SEC", "RET-VAL", "UE-9f8e7d6c"].join("");
+          const ssnLike = ["123", "45", "6789"].join("-");
+          const tokenLike = ["tok", "abc123456"].join("_");
+          const leaky = {
+            event_id: marker,
+            data: { ssn: ssnLike, nested: { token: tokenLike } },
+          };
+          const sch = await import("../apps/web/src/lib/kyc/socure/schemas.ts");
+          const parsed = sch.socureWebhookEventSchema.safeParse(leaky);
+          assert.ok(!parsed.success);
+          const text = JSON.stringify(
+            diag.describeWebhookRejection(leaky, parsed.error, "corr-1"),
+          );
+          for (const v of [marker, ssnLike, tokenLike, "9f8e7d6c"]) {
+            assert.ok(
+              !text.includes(v),
+              `diagnostic never carries values (${v})`,
+            );
+          }
+          assert.ok(
+            text.includes('"data.ssn":"string(11)"') &&
+              text.includes('"path":"event_type"'),
+            "diagnostic carries key shape and issue paths",
+          );
+        }
         assert.equal(
           (await post({ eventName: "evaluation_completed", data: {} }, auth))
             .status,

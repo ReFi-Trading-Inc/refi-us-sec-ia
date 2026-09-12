@@ -29,6 +29,7 @@ import {
   verifySocureWebhookAuthorization,
 } from "../../../../../src/lib/kyc/socure/webhook-auth";
 import { socureWebhookEventSchema } from "../../../../../src/lib/kyc/socure/schemas";
+import { describeWebhookRejection } from "../../../../../src/lib/kyc/socure/webhook-diagnostics";
 import { noteIgnoredWebhookEvent } from "../../../../../src/lib/prototype-store/entities/kyc-evaluation";
 import { createRateLimiter } from "../../../../_lib/rateLimit";
 
@@ -113,7 +114,18 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const generic = socureWebhookEventSchema.safeParse(payload);
   if (!generic.success) {
-    return NextResponse.json({ error: "Malformed" }, { status: 400 });
+    // Structure-only diagnostic (no values) for the authenticated sender.
+    return NextResponse.json(
+      {
+        error: "Malformed",
+        diagnostic: describeWebhookRejection(
+          payload,
+          generic.error,
+          correlationId,
+        ),
+      },
+      { status: 400 },
+    );
   }
   const provider = getKycProvider();
   if (!(provider instanceof SocureKycProvider)) {

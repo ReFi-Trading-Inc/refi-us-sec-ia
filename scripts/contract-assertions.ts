@@ -7095,6 +7095,34 @@ await section(
           "no credential",
         );
         assert.equal(
+          (await post({ eventName: "evaluation_completed" })).status,
+          401,
+          "verification ping still needs the credential",
+        );
+        for (const eventName of ["evaluation_completed", "evaluation_paused"]) {
+          assert.equal(
+            (await post({ eventName }, auth)).status,
+            200,
+            `RiskOS dashboard verification ping (${eventName}) acknowledged`,
+          );
+        }
+        assert.equal(
+          (await post({ eventName: "something_else" }, auth)).status,
+          400,
+          "unknown eventName is not a ping",
+        );
+        assert.equal(
+          (await post({ eventName: "evaluation_completed", data: {} }, auth))
+            .status,
+          400,
+          "eventName plus envelope fields is not a ping",
+        );
+        assert.equal(
+          (await entity.getKycEvaluation(subject.authId))?.status ?? "none",
+          "none",
+          "verification ping persists nothing",
+        );
+        assert.equal(
           (
             await post(
               ev({ eventId: "550e8400-e29b-41d4-a716-446655440100" }),

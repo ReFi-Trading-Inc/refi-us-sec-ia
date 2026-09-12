@@ -39,11 +39,27 @@ import { createRateLimiter } from "../../../../_lib/rateLimit";
 const limiter = createRateLimiter({ windowMs: 60_000, max: 120 });
 export const MAX_WEBHOOK_BODY_BYTES = 256 * 1024;
 
-function clientIp(req: NextRequest): string {
+/**
+ * The sender address used for rate limiting and the documented-sender
+ * allowlist. Behind a trusted edge (`REFI_TRUST_PROXY_HOST=1`, Cloud Run's
+ * Google front end) the ONLY trustworthy value is the LAST entry of
+ * `X-Forwarded-For`, which the edge appends; any earlier entries and
+ * `X-Real-IP` are client-supplied and pass through unchanged (verified
+ * 2026-09-12: a request carrying a forged `X-Forwarded-For` / `X-Real-IP`
+ * was logged by Cloud Run with the real client address). Without a trusted
+ * edge the first entry is used as before.
+ */
+export function clientIp(req: NextRequest): string {
+  const xff = req.headers.get("x-forwarded-for");
+  if (process.env["REFI_TRUST_PROXY_HOST"] === "1") {
+    const entries = (xff ?? "")
+      .split(",")
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0);
+    return entries.at(-1) ?? "unknown";
+  }
   return (
-    req.headers.get("x-real-ip") ??
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown"
+    req.headers.get("x-real-ip") ?? xff?.split(",")[0]?.trim() ?? "unknown"
   );
 }
 

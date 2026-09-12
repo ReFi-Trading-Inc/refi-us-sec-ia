@@ -81,20 +81,58 @@ not bypass sign-in; the game `sub` never becomes the Investor API user id; game
 score never touches the Investor Profile (assertion: the engine, entities,
 attestation mapping, auth, and account-scope modules import no handoff data).
 
-## 6. Mint-handoff deployment audit (read-only, 2026-09-05)
+## 6. Mint-handoff — DEPLOYED 2026-09-06 (supersedes the 2026-09-05 read-only audit)
 
-| Question                                                    | Finding                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Is the Cloud Run `mint-handoff` service deployed?           | **Unknown.** `gcloud` needs an interactive re-login (`Reauthentication failed`); not run. The game repo ships `infra/terraform` for it (service `mint-handoff`, SA `refi-alpha-handoff`, region `us-central1`), which proves intent, not deployment. |
-| Documented project/service                                  | Terraform: service `mint-handoff`, Secret Manager `alpha-handoff-private-key` and `handoff-database-url`; project id is a variable, not recorded.                                                                                                    |
-| Does the current game build have `VITE_HANDOFF_URL`?        | **No.** The deployed `game.refi.trading` bundle contains the bridge ("ENTER REFI") and one Cloud Run URL (`refi-persistence-api`) but no `mint-handoff` URL and no handoff string.                                                                   |
-| Mode                                                        | **LINK mode** (`HANDOFF_MODE = HANDOFF_URL ? 'MINTED' : 'LINK'`): the bridge navigates to the marketing site; no token is minted.                                                                                                                    |
-| Private signing key configured?                             | **Unknown** (Secret Manager not readable from here).                                                                                                                                                                                                 |
-| Does the shell demo tier have the corresponding public JWK? | **No demo tier exists yet.** Production holds `ALPHA_HANDOFF_PUBLIC_KEY_JWK` (value not readable). Whether it matches any service key is unknown.                                                                                                    |
-| `SHELL_BASE_URL`                                            | Code default `https://refi-us-sec-ia-web.vercel.app` (Terraform variable default the same); the deployed value is unknown.                                                                                                                           |
+**Decision (Zeshan, 2026-09-06):** deploy the mint service because demos may
+produce real Alpha applicants. Audit first (gcloud re-authenticated): the
+service had never been deployed — `refi-game-prod` held only Cloud Run
+`refi-persistence-api`, one image and one secret; no mint image, no signing key.
 
-Not done in this slice: deploying or re-keying the mint service, generating
-keys, or setting `VITE_HANDOFF_URL`.
+What exists now, all in GCP project `refi-game-prod`, region `us-central1`,
+mirroring the game repo's `infra/terraform` (Terraform is not installed on the
+operator machine and the repo does not ignore state files, so the same
+resources were created with `gcloud`; importing them into Terraform state is a
+follow-up):
+
+| Resource                                        | Value                                                                                                                                                                                     |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Image (Cloud Build, 28 s)                       | `us-central1-docker.pkg.dev/refi-game-prod/refi/mint-handoff:2f6b8b1` (game `main` at `2f6b8b1`)                                                                                          |
+| Cloud Run service                               | `mint-handoff`, revision `mint-handoff-00001-fs8`, `https://mint-handoff-783526040680.us-central1.run.app`                                                                                |
+| Runtime identity                                | `refi-alpha-handoff@refi-game-prod.iam.gserviceaccount.com` (secretAccessor on the two secrets only)                                                                                      |
+| Secrets                                         | `alpha-handoff-private-key` v1 (ES256 P-256 private JWK, `kid alpha-handoff-2026-09-06`); `handoff-database-url` v1 (copy of the persistence database connection string; never displayed) |
+| Env                                             | `SHELL_BASE_URL=https://bff-dev.refi.trading`, `ALLOWED_ORIGIN=https://game.refi.trading`; ingress all; invoker `allUsers` (per Terraform)                                                |
+| Shell (Vercel `refi-us-sec-ia-web`, production) | `ALPHA_HANDOFF_PUBLIC_KEY_JWK` = the matching public JWK; `FLAG_ALPHA_CLAIM_ROUTE=on`; redeployed                                                                                         |
+| Game (Vercel `refi-man-vs-machine`, production) | `VITE_HANDOFF_URL` = the service URL; redeployed — the bundle now carries it, so the bridge is in MINTED mode                                                                             |
+
+The private key exists only in Secret Manager. The public JWK was held in a
+temp file for the Vercel write and deleted. Nothing key-shaped is in either repo.
+
+**End-to-end proof (2026-09-06, throwaway session `ses_proof…`):**
+
+1. `POST /mint-handoff` from the game origin → `{ token, redirectUrl }`; header
+   `{alg: ES256, kid: alpha-handoff-2026-09-06}`; claims `iss refi-alpha`,
+   `aud refi-us-sec-ia`, `exp = iat + 600`, `intendedDestination ELIGIBILITY`,
+   progress fields zero for an unknown session; redirect base
+   `https://bff-dev.refi.trading/us/alpha-claim?token=…`.
+2. Claim on production → **201** `{ applicationRef: "player:<sub>", firstConsumption: true }`.
+3. Replay of the same token → **200** with `firstConsumption: false` (the
+   route's documented idempotent replay of the original binding; logged).
+4. Tampered signature → **401**. 5. Same token at `demo.refi.trading` → **404**
+   (`FLAG_ALPHA_CLAIM_ROUTE=off`; the demo tier never binds real applicants).
+
+**What this does and does not create.** A real player's handoff now binds an
+application record with lineage (progress snapshot, arenas, intent) on the
+production shell and routes into eligibility. It creates no account and no
+session: production has no sign-in until the identity-ccid exchange exists, so
+the funnel ends at the connect step. The game `sub` is still a browser-generated
+session id (the Firebase-verified identity branch `feat/alpha-identity-rebased`
+is unmerged), so `sub` remains lineage, never identity or admission. The mint
+endpoint accepts any caller server-side (CORS only constrains browsers; a
+foreign-origin curl was answered) — the documented identity-hardening follow-on
+(threat model G1/G6).
+
+Follow-ups: import the resources into Terraform state; merge and enable the
+verified-identity gate; key rotation path (G5) once a second `kid` is needed.
 
 ## 7. Future `joinWaitlist` seam (recorded, not wired)
 

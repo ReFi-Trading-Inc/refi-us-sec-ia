@@ -7138,6 +7138,35 @@ await section(
               text.includes('"path":"event_type"'),
             "diagnostic carries key shape and issue paths",
           );
+          const res = await post(leaky, auth);
+          assert.equal(res.status, 400);
+          const body = (await res.json()) as {
+            diagnostic?: { correlationId?: string };
+          };
+          const bodyText = JSON.stringify(body);
+          assert.ok(
+            bodyText.includes('"diagnostic"') &&
+              !bodyText.includes(ssnLike) &&
+              !bodyText.includes(tokenLike),
+            "400 body carries the structure-only diagnostic and no values",
+          );
+          const corr = body.diagnostic?.correlationId ?? "";
+          const audited = await entity.getWebhookEvent(`rejected:${corr}`);
+          assert.ok(
+            audited?.outcome === "envelope_rejected",
+            "rejected envelope audited durably under its correlation id",
+          );
+          const auditText = JSON.stringify(audited);
+          assert.ok(
+            !auditText.includes(ssnLike) && !auditText.includes(tokenLike),
+            "audit record carries no values",
+          );
+          assert.ok(
+            !JSON.stringify(await (await post(leaky)).json()).includes(
+              "diagnostic",
+            ),
+            "no diagnostic without the credential",
+          );
         }
         assert.equal(
           (await post({ eventName: "evaluation_completed", data: {} }, auth))

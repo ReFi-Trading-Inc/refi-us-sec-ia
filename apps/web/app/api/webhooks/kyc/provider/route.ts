@@ -30,7 +30,10 @@ import {
 } from "../../../../../src/lib/kyc/socure/webhook-auth";
 import { socureWebhookEventSchema } from "../../../../../src/lib/kyc/socure/schemas";
 import { describeWebhookRejection } from "../../../../../src/lib/kyc/socure/webhook-diagnostics";
-import { noteIgnoredWebhookEvent } from "../../../../../src/lib/prototype-store/entities/kyc-evaluation";
+import {
+  noteIgnoredWebhookEvent,
+  noteRejectedWebhookEnvelope,
+} from "../../../../../src/lib/prototype-store/entities/kyc-evaluation";
 import { createRateLimiter } from "../../../../_lib/rateLimit";
 
 const limiter = createRateLimiter({ windowMs: 60_000, max: 120 });
@@ -114,16 +117,16 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   }
   const generic = socureWebhookEventSchema.safeParse(payload);
   if (!generic.success) {
-    // Structure-only diagnostic (no values) for the authenticated sender.
+    // Structure-only diagnostic (no values): audited durably for the
+    // operator and returned to the credential-validated sender.
+    const diagnostic = describeWebhookRejection(
+      payload,
+      generic.error,
+      correlationId,
+    );
+    await noteRejectedWebhookEnvelope({ correlationId, diagnostic });
     return NextResponse.json(
-      {
-        error: "Malformed",
-        diagnostic: describeWebhookRejection(
-          payload,
-          generic.error,
-          correlationId,
-        ),
-      },
+      { error: "Malformed", diagnostic },
       { status: 400 },
     );
   }

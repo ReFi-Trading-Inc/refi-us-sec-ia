@@ -94,9 +94,12 @@ export interface KycWebhookEventRecord {
     | "idempotent_same_result"
     | "conflict_flagged"
     | "stale_ignored"
-    | "ignored_event_type";
+    | "ignored_event_type"
+    | "envelope_rejected";
   /** Provider event type as delivered (audit). */
   eventType?: string;
+  /** Structure-only description of a rejected envelope (never values). */
+  diagnostic?: Record<string, unknown>;
 }
 
 const HISTORY_LIMIT = 64;
@@ -347,6 +350,26 @@ export async function noteIgnoredWebhookEvent(args: {
     eventType: args.eventType,
   });
   return "recorded";
+}
+
+/**
+ * Audit a credential-validated delivery whose envelope failed the schema.
+ * Keyed by correlation id (no event id is trusted from a rejected body);
+ * `diagnostic` carries key names, value kinds and issue paths only.
+ */
+export async function noteRejectedWebhookEnvelope(args: {
+  correlationId: string;
+  diagnostic: Record<string, unknown>;
+}): Promise<void> {
+  const key = `rejected:${args.correlationId}`;
+  await webhookEvents().put(key, {
+    eventId: key,
+    providerEvaluationId: "",
+    providerDecision: null,
+    receivedAt: nowIso(),
+    outcome: "envelope_rejected",
+    diagnostic: args.diagnostic,
+  });
 }
 
 export async function getWebhookEvent(

@@ -164,3 +164,11 @@ rewritten. Both package/web typechecks, 369 client tests, full contract assertio
 boundary/deployment checks and 22 production-build Chromium tests passed.
 KYC browser tests use the local mock, not Socure acceptance. No Socure provisioning
 script was executed, and main and the separate GitLab backend were not modified.
+
+Merge commit `da938ae` passed branch Cloud Build
+`4bafcb18-6a5d-4fb8-bc01-1147634b3ce5`. The matching image digest
+`sha256:2fd66a9888173b25be0c7fdbadc2c4bea1a659d3f13d4ade1d3a2325cd0e9e57`
+is serving 100% on `refi-frontend-integration-00011-xik`. Post-promotion health
+and both JWKS endpoints returned 200; anonymous session/dashboard returned 401.
+This supersedes the earlier deployment revision above, without changing any
+login, provider-activation or connected-acceptance gate.

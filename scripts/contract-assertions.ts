@@ -6412,6 +6412,72 @@ await section(
   );
 
   await section(
+    "socure: webhook concurrency — the same final event delivered concurrently applies exactly once (store.update transaction); one history entry, one reference, the rest are duplicate_event",
+    async () => {
+      await withEnv({ ...SOCURE_OK }, async () => {
+        await entity.resetKycEvaluationForTests(subjectB.authId);
+        await entity.clearEvaluationIndexForTests(fx.FIXTURE_EVAL_ID_REVIEW);
+        const fake = new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV);
+        const p = freshProvider(fake);
+        await p.evaluate({
+          subject: subjectB,
+          individual: fx.FIXTURE_INDIVIDUAL,
+          consentTimestamp: CONSENT_AT,
+          submissionKey: "cc1",
+          correlationId: "cc",
+        });
+        const reqB = (await entity.getKycEvaluation(subjectB.authId))!.evidence
+          .providerRequestId!;
+        await p.markDocvCaptured(subjectB, "cc-cap");
+        const eventId = "550e8400-e29b-41d4-a716-4466554400c0";
+        const event = fx.webhookEvent({
+          requestId: reqB,
+          eventId,
+          decision: "ACCEPT",
+        });
+        const results = await Promise.all(
+          [1, 2, 3, 4, 5].map((i) => p.applyWebhook(event, `cc-${String(i)}`)),
+        );
+        const outcomes = results.map((r) => (r.handled ? r.outcome : r.reason));
+        assert.equal(
+          outcomes.filter((o) => o === "applied").length,
+          1,
+          `exactly one applied, got ${JSON.stringify(outcomes)}`,
+        );
+        assert.equal(
+          outcomes.filter((o) => o === "duplicate_event").length,
+          4,
+          "the concurrent rest are duplicates",
+        );
+        const rec = (await entity.getKycEvaluation(subjectB.authId))!;
+        assert.equal(rec.state, "passed");
+        assert.equal(
+          rec.history.filter((h) => h.state === "passed").length,
+          1,
+          "one terminal history entry",
+        );
+        assert.equal(
+          rec.evidence.providerReferenceIds.filter((x) => x === eventId).length,
+          1,
+          "the event id is referenced exactly once",
+        );
+        // The audit marker belongs to the winner and is never overwritten.
+        assert.equal(
+          (await entity.getWebhookEvent(eventId))?.outcome,
+          "applied",
+          "one event consumption recorded, losers never overwrite it",
+        );
+        // A later replay (marker present) is still a duplicate.
+        const later = await p.applyWebhook(event, "cc-later");
+        assert.equal(later.handled && later.outcome, "duplicate_event");
+        // Leave the shared fixture evaluation id free for the next sections.
+        await entity.resetKycEvaluationForTests(subjectB.authId);
+        await entity.clearEvaluationIndexForTests(fx.FIXTURE_EVAL_ID_REVIEW);
+      });
+    },
+  );
+
+  await section(
     "socure: webhook idempotency — event_id once; same final result safe; conflict flagged; unknown eval creates nothing; request-id mismatch refused (no reassignment); no terminal regression; REJECT never silently becomes VERIFIED; wrong environment refused",
     async () => {
       await withEnv({ ...SOCURE_OK }, async () => {
@@ -6824,6 +6890,92 @@ await section(
         "SDK pinned exactly",
       );
       const di = await import("../apps/web/app/_lib/kyc/socure-di.ts");
+      {
+        // The real pinned package: module.exports IS the class (UMD), so the
+        // resolver must find `initialize`/`getSessionToken` on the module
+        // itself, on `.default`, or on `.SigmaDeviceManager`.
+        const { createRequire: cr } = await import("node:module");
+        const realSdk: unknown = cr(
+          join(process.cwd(), "apps/web/package.json"),
+        )("@socure-inc/device-risk-sdk");
+        const resolved = di.resolveSigmaDeviceManager(realSdk);
+        assert.equal(typeof resolved.initialize, "function");
+        assert.equal(typeof resolved.getSessionToken, "function");
+        // A class whose statics depend on `this.instance`, exactly like the
+        // SDK, exposed three ways: directly, as `.default`, and as a frozen
+        // interop namespace with unbound getters (the Turbopack CJS case).
+        class FakeManager {
+          static instance: { token: string } | undefined;
+          static initialize(cfg: { sdkKey: string }): void {
+            if (!this.instance) this.instance = { token: `tok-${cfg.sdkKey}` };
+          }
+          static getSessionToken(): Promise<string> {
+            if (!this.instance) return Promise.reject(new Error("not init"));
+            return Promise.resolve(this.instance.token);
+          }
+        }
+        const viaDefault = di.resolveSigmaDeviceManager({
+          default: FakeManager,
+        });
+        viaDefault.initialize({ sdkKey: "k1" });
+        assert.equal(await viaDefault.getSessionToken(), "tok-k1");
+        FakeManager.instance = undefined;
+        const namespace = Object.freeze({
+          get initialize() {
+            return FakeManager.initialize;
+          },
+          get getSessionToken() {
+            return FakeManager.getSessionToken;
+          },
+        });
+        const viaNamespace = di.resolveSigmaDeviceManager(namespace);
+        viaNamespace.initialize({ sdkKey: "k2" });
+        assert.equal(
+          await viaNamespace.getSessionToken(),
+          "tok-k2",
+          "frozen interop namespace: statics run against a stable host",
+        );
+        assert.equal(
+          FakeManager.instance,
+          undefined,
+          "the namespace path never touched the class's own state",
+        );
+        const viaClass = di.resolveSigmaDeviceManager(FakeManager);
+        viaClass.initialize({ sdkKey: "k3" });
+        assert.equal(await viaClass.getSessionToken(), "tok-k3");
+        assert.equal(
+          FakeManager.instance,
+          undefined,
+          "the class path also uses the private host",
+        );
+        // The bundler may hand the class back frozen (observed in the Sandbox).
+        class FrozenManager {
+          static instance: { token: string } | undefined;
+          static initialize(cfg: { sdkKey: string }): void {
+            if (!this.instance) this.instance = { token: `tok-${cfg.sdkKey}` };
+          }
+          static getSessionToken(): Promise<string> {
+            return this.instance
+              ? Promise.resolve(this.instance.token)
+              : Promise.reject(new Error("not init"));
+          }
+        }
+        Object.freeze(FrozenManager);
+        const viaFrozen = di.resolveSigmaDeviceManager({
+          default: FrozenManager,
+        });
+        viaFrozen.initialize({ sdkKey: "k4" });
+        assert.equal(
+          await viaFrozen.getSessionToken(),
+          "tok-k4",
+          "a frozen class still yields a token",
+        );
+        assert.throws(
+          () => di.resolveSigmaDeviceManager({ other: 1 }),
+          /SigmaDeviceManager not found/,
+          "a module without the manager statics is refused",
+        );
+      }
       let inits = 0;
       const fake = {
         initialize: (c: { sdkKey: string }) => {
@@ -7095,6 +7247,121 @@ await section(
           "no credential",
         );
         assert.equal(
+          (await post({ eventName: "evaluation_completed" })).status,
+          401,
+          "verification ping still needs the credential",
+        );
+        for (const eventName of ["evaluation_completed", "evaluation_paused"]) {
+          assert.equal(
+            (await post({ eventName }, auth)).status,
+            200,
+            `RiskOS dashboard verification ping (${eventName}) acknowledged`,
+          );
+        }
+        assert.equal(
+          (await post({ eventName: "something_else" }, auth)).status,
+          400,
+          "unknown eventName is not a ping",
+        );
+        {
+          const diag =
+            await import("../apps/web/src/lib/kyc/socure/webhook-diagnostics");
+          const marker = ["SEC", "RET-VAL", "UE-9f8e7d6c"].join("");
+          const ssnLike = ["123", "45", "6789"].join("-");
+          const tokenLike = ["tok", "abc123456"].join("_");
+          const leaky = {
+            event_id: marker,
+            data: { ssn: ssnLike, nested: { token: tokenLike } },
+          };
+          const sch = await import("../apps/web/src/lib/kyc/socure/schemas.ts");
+          const parsed = sch.socureWebhookEventSchema.safeParse(leaky);
+          assert.ok(!parsed.success);
+          const text = JSON.stringify(
+            diag.describeWebhookRejection(leaky, parsed.error, "corr-1"),
+          );
+          for (const v of [marker, ssnLike, tokenLike, "9f8e7d6c"]) {
+            assert.ok(
+              !text.includes(v),
+              `diagnostic never carries values (${v})`,
+            );
+          }
+          assert.ok(
+            text.includes('"data.ssn":"string(11)"') &&
+              text.includes('"path":"event_type"'),
+            "diagnostic carries key shape and issue paths",
+          );
+          const res = await post(leaky, auth);
+          assert.equal(res.status, 400);
+          const body = (await res.json()) as {
+            diagnostic?: { correlationId?: string };
+          };
+          const bodyText = JSON.stringify(body);
+          assert.ok(
+            bodyText.includes('"diagnostic"') &&
+              !bodyText.includes(ssnLike) &&
+              !bodyText.includes(tokenLike),
+            "400 body carries the structure-only diagnostic and no values",
+          );
+          const corr = body.diagnostic?.correlationId ?? "";
+          const audited = await entity.getWebhookEvent(`rejected:${corr}`);
+          assert.ok(
+            audited?.outcome === "envelope_rejected",
+            "rejected envelope audited durably under its correlation id",
+          );
+          const auditText = JSON.stringify(audited);
+          assert.ok(
+            !auditText.includes(ssnLike) && !auditText.includes(tokenLike),
+            "audit record carries no values",
+          );
+          assert.ok(
+            !JSON.stringify(await (await post(leaky)).json()).includes(
+              "diagnostic",
+            ),
+            "no diagnostic without the credential",
+          );
+        }
+        assert.equal(
+          (await post({ eventName: "evaluation_completed", data: {} }, auth))
+            .status,
+          400,
+          "eventName plus envelope fields is not a ping",
+        );
+        assert.equal(
+          (await entity.getKycEvaluation(subject.authId))?.status ?? "none",
+          "none",
+          "verification ping persists nothing",
+        );
+        for (const eventType of [
+          "evaluation_completed",
+          "evaluation_paused",
+        ] as const) {
+          const ping = fx.dashboardVerificationPing(eventType);
+          const r = await post(ping, auth);
+          assert.ok(
+            r.status >= 200 && r.status < 300,
+            `RiskOS full-envelope verification delivery (${eventType}) acknowledged 2xx, got ${String(r.status)}`,
+          );
+          assert.equal(
+            (await post(ping)).status,
+            401,
+            "full-envelope delivery still needs the credential",
+          );
+          const withBogusEnv = {
+            ...ping,
+            data: { ...(ping.data as object), environment_name: "Staging" },
+          };
+          assert.equal(
+            (await post(withBogusEnv, auth)).status,
+            400,
+            "non-enum environment_name is still rejected",
+          );
+        }
+        assert.equal(
+          (await entity.getKycEvaluation(subject.authId))?.status ?? "none",
+          "none",
+          "verification deliveries never touch a user record",
+        );
+        assert.equal(
           (
             await post(
               ev({ eventId: "550e8400-e29b-41d4-a716-446655440100" }),
@@ -7188,6 +7455,43 @@ await section(
         kycIndex.setSocureProviderForTests(null);
         await entity.resetKycEvaluationForTests(subject.authId);
       });
+      await withEnv(
+        {
+          ...SOCURE_OK,
+          SOCURE_WEBHOOK_ENFORCE_SENDER_IP: "1",
+          REFI_TRUST_PROXY_HOST: "1",
+        },
+        async () => {
+          // Behind the trusted edge only the LAST X-Forwarded-For entry counts.
+          const auth = { authorization: `Bearer ${SECRET}` };
+          const body = { hello: 1 };
+          const send = async (h: Record<string, string>) =>
+            (await post(body, { ...auth, ...h })).status;
+          assert.equal(
+            await send({ "x-forwarded-for": "3.218.138.162, 203.0.113.9" }),
+            403,
+            "forged first entry does not satisfy the allowlist behind a trusted edge",
+          );
+          assert.equal(
+            await send({
+              "x-real-ip": "3.218.138.162",
+              "x-forwarded-for": "203.0.113.9",
+            }),
+            403,
+            "client-supplied X-Real-IP is ignored behind a trusted edge",
+          );
+          assert.equal(
+            await send({ "x-forwarded-for": "203.0.113.9, 3.218.138.162" }),
+            400,
+            "edge-appended documented sender passes the IP gate (then fails schema)",
+          );
+          assert.equal(
+            await send({}),
+            403,
+            "no forwarded address behind a trusted edge is refused when enforced",
+          );
+        },
+      );
       await withEnv(
         { ...SOCURE_OK, SOCURE_WEBHOOK_ENFORCE_SENDER_IP: "1" },
         async () => {

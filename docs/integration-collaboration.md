@@ -10,7 +10,7 @@ branch creation is not connected user acceptance.
 September 12 update: the client now selects alpha.4, old packages are archived,
 and the isolated GCP integration deployment is verified. Login and backend
 binding remain separate gates; see [implementation status](alpha4-integration-status.md).
-Main through `866fc11` is incorporated into the integration branch. This imports
+Main through `e4e5aba` is incorporated into the integration branch. This imports
 Zeshan's work without merging our branch into main or retargeting his deployments.
 
 **Owner-approved development exception:** Daniel may implement the isolated,

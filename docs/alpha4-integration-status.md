@@ -172,3 +172,33 @@ is serving 100% on `refi-frontend-integration-00011-xik`. Post-promotion health
 and both JWKS endpoints returned 200; anonymous session/dashboard returned 401.
 This supersedes the earlier deployment revision above, without changing any
 login, provider-activation or connected-acceptance gate.
+
+## Main synchronization — September 12, second update
+
+Merged main through `e4e5aba` into `integration/refinity-dev`, from `93c40ee`.
+Local backup `backup/integration-before-main-93c40ee` retains the pre-merge head.
+Incoming work includes Socure DI/webhook fixes, transactional webhook application,
+sender-IP enforcement, acceptance evidence and separate production-tier manifests.
+Those manifests are source only in this merge; no Socure provisioning script ran.
+
+The sole content conflict was sandbox YAML formatting plus sender-IP enforcement:
+retain the established formatting and main's `SOCURE_WEBHOOK_ENFORCE_SENDER_IP=1`.
+Shared Firestore now keeps both main's atomic update and our named-database/native-
+credential restrictions. Three integration test stores implement the new update
+interface; this changes test doubles only, not runtime/provider decisions.
+
+Our alpha.4 package/client, real Investor adapters, auth/signers, scoped development
+fixture, connected store and GCP deployment controls remain intact. Main's new
+fixtures are tests, not a replacement for connected responses. Backend alpha.5
+is now issued/deployed in the separate GitLab repository, but is **not adopted by
+this merge**. Coordinated client adoption is the next separate integration slice.
+The earlier backend-delivery/authority notes above are historical; current backend
+membership/admission reads and normal disconnect recovery are implemented, while
+real frontend login/credential acceptance and billing activation remain separate.
+
+Verification: web and client typechecks; 369 client tests; full contract assertions;
+boundary tripwire; route-manifest gate; connected deployment tests and seven release
+controller tests passed. After adapting the test stores, 70 affected tests passed
+again. No real provider request, broker call, user admission or trading test was
+performed. Pushing this merge uses the existing isolated Dev build trigger; its
+deployment result must be checked separately and is not implied by these local tests.

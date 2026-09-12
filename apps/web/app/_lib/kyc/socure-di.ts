@@ -26,12 +26,67 @@ type Loader = () => Promise<SocureDiSdkLike>;
 
 let testSdk: SocureDiSdkLike | null = null;
 let initialized: { sdkKey: string } | null = null;
+/** Last failure inside this wrapper: error name + message only (never PII). */
+let lastFailure: string | null = null;
+export function socureDiLastFailure(): string | null {
+  return lastFailure;
+}
+function noteFailure(stage: string, e: unknown): void {
+  const err = e as { name?: unknown; message?: unknown } | null;
+  const name = typeof err?.name === "string" ? err.name : typeof e;
+  const message = typeof err?.message === "string" ? err.message : "";
+  lastFailure = `${stage}:${name}:${message}`.slice(0, 200);
+}
 let sdkPromise: Promise<SocureDiSdkLike> | null = null;
 let initCount = 0;
 
+/**
+ * The pinned SDK ships a UMD bundle whose `module.exports` IS the
+ * `SigmaDeviceManager` class (its `.d.ts` declares a named export that does
+ * not exist at runtime — observed in the Sandbox on 2026-09-12). Bundler
+ * CJS interop may hand back the class, or a (frozen) namespace object whose
+ * `initialize` / `getSessionToken` getters return the statics unbound. The
+ * statics only use `this.instance`, so both are called against one stable,
+ * private, extensible host object (never the class: it may be frozen).
+ * Calling them on the namespace would throw on `this.instance = …` AFTER the
+ * SDK session had already started (observed: DI traffic, no token).
+ */
+export function resolveSigmaDeviceManager(mod: unknown): SocureDiSdkLike {
+  const candidates: unknown[] = [];
+  if (typeof mod === "object" && mod !== null) {
+    const m = mod as { SigmaDeviceManager?: unknown; default?: unknown };
+    candidates.push(m.SigmaDeviceManager, m.default);
+  }
+  candidates.push(mod);
+  for (const c of candidates) {
+    if (
+      (typeof c === "function" || (typeof c === "object" && c !== null)) &&
+      typeof (c as { initialize?: unknown }).initialize === "function" &&
+      typeof (c as { getSessionToken?: unknown }).getSessionToken === "function"
+    ) {
+      const statics = c as {
+        initialize: (cfg: Parameters<SocureDiSdkLike["initialize"]>[0]) => void;
+        getSessionToken: () => Promise<string>;
+      };
+      // Always a private, extensible holder: the bundler can hand the class
+      // back non-extensible (observed 2026-09-12: "Cannot add property
+      // instance, object is not extensible"), and the statics only ever
+      // read/write `this.instance`.
+      const host: object = {};
+      return {
+        initialize: (cfg) => {
+          statics.initialize.call(host, cfg);
+        },
+        getSessionToken: () => statics.getSessionToken.call(host),
+      };
+    }
+  }
+  throw new Error("device-risk-sdk: SigmaDeviceManager not found in module");
+}
+
 const realLoader: Loader = async () => {
-  const mod = await import("@socure-inc/device-risk-sdk");
-  return mod.SigmaDeviceManager;
+  const mod: unknown = await import("@socure-inc/device-risk-sdk");
+  return resolveSigmaDeviceManager(mod);
 };
 
 /** Test seam: inject a fake SDK and reset the once-only state. */
@@ -71,7 +126,8 @@ export async function ensureSocureDiInitialized(
     initialized = { sdkKey };
     initCount += 1;
     return "initialized";
-  } catch {
+  } catch (e) {
+    noteFailure("initialize", e);
     return "sdk_error";
   }
 }
@@ -82,7 +138,8 @@ export async function socureDiSessionToken(): Promise<string | null> {
   try {
     const token = await (await sdk()).getSessionToken();
     return typeof token === "string" && token.length > 0 ? token : null;
-  } catch {
+  } catch (e) {
+    noteFailure("getSessionToken", e);
     return null;
   }
 }

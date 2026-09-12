@@ -34,6 +34,13 @@ function setup() {
   for (const [key, value] of Object.entries(config)) vi.stubEnv(key, value);
   const rows = new Map<string, DevelopmentKycRecord>();
   const store: KVStore<DevelopmentKycRecord> = {
+    update: async (key, decide) => {
+      const current = rows.get(key) ?? null;
+      const next = decide(current);
+      if (next === null) return { value: current, written: false };
+      rows.set(key, next);
+      return { value: next, written: true };
+    },
     get: async (key) => rows.get(key) ?? null,
     put: async (key, value) => {
       rows.set(key, value);
@@ -72,6 +79,13 @@ describe("explicit development KYC boundary", () => {
     vi.stubEnv("REFI_INTEGRATION_KYC_MODE", "withdraw");
     const rows = new Map<string, DevelopmentWithdrawal>();
     const store: KVStore<DevelopmentWithdrawal> = {
+      update: async (key, decide) => {
+        const current = rows.get(key) ?? null;
+        const next = decide(current);
+        if (next === null) return { value: current, written: false };
+        rows.set(key, next);
+        return { value: next, written: true };
+      },
       get: async (key) => rows.get(key) ?? null,
       put: async (key, value) => {
         rows.set(key, value);

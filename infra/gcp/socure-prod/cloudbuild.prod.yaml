@@ -1,5 +1,5 @@
 # Cloud Build: staging-tier image for the Socure Sandbox acceptance service (PROPOSAL; not run).
-#   gcloud builds submit --config infra/gcp/socure-sandbox/cloudbuild.sandbox.yaml --project refi-socure-sandbox .
+#   gcloud builds submit --config infra/gcp/socure-prod/cloudbuild.prod.yaml --project refi-socure-prod .
 steps:
   - name: gcr.io/cloud-builders/docker
     args:
@@ -23,8 +23,8 @@ images:
   - ${_IMAGE}:${SHORT_SHA}
   - ${_IMAGE}:latest
 substitutions:
-  _IMAGE: us-central1-docker.pkg.dev/refi-socure-sandbox/refi/refi-socure-sandbox
-  _PUBLIC_BASE_URL: https://refi-socure-sandbox-PROJECT_NUMBER.us-central1.run.app
+  _IMAGE: us-central1-docker.pkg.dev/refi-socure-prod/refi/refi-socure-prod
+  _PUBLIC_BASE_URL: https://refi-socure-prod-PROJECT_NUMBER.us-central1.run.app
   # Public Sandbox SDK key (browser-visible by design); pass at submit time, never the API key.
   _SOCURE_SDK_KEY: ""
 options:

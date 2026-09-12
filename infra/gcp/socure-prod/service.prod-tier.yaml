@@ -1,16 +1,12 @@
-# Cloud Run service — Socure Sandbox acceptance (PROPOSAL; apply only after founder approval):
-#   gcloud run services replace infra/gcp/socure-sandbox/service.yaml --project refi-socure-sandbox --region us-central1
-# PHASE 1 (infrastructure only): the provider is DARK — REFI_KYC_PROVIDER=unconfigured and NO Socure
-#   secret references, so no placeholder value can satisfy configuration validation.
-# PHASE 2 (separate founder step after real Secret Manager versions exist): set REFI_KYC_PROVIDER=socure and add
-#   - SOCURE_API_KEY            ← secretKeyRef socure-api-key-sandbox:latest
-#   - SOCURE_WEBHOOK_BEARER_TOKEN ← secretKeyRef socure-webhook-bearer-sandbox:latest (UUIDv4)
-#   - SOCURE_WORKFLOW_NAME, NEXT_PUBLIC_SOCURE_SDK_KEY as plain env
-# maxScale 2 on purpose: correctness comes from Firestore, not single-instance semantics.
+# Cloud Run service — Socure PRODUCTION environment on the PROD APP TIER (PROPOSAL; apply after founder review):
+#   gcloud run services replace infra/gcp/socure-prod/service.prod-tier.yaml --project refi-socure-prod --region us-central1
+# Still DARK: REFI_KYC_PROVIDER=unconfigured, no Socure secret references, no SDK key, no workflow, no traffic.
+# Requires: image built with cloudbuild.prod-tier.yaml (NEXT_PUBLIC_REFI_ENV=prod + real public constants) and a
+#   real version in prod-alpha-handoff-public-jwk. Boot fails closed if any prod-tier value is missing.
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
-  name: refi-socure-sandbox
+  name: refi-socure-prod
   annotations:
     run.googleapis.com/ingress: all
 spec:
@@ -20,11 +16,11 @@ spec:
         autoscaling.knative.dev/minScale: "0"
         autoscaling.knative.dev/maxScale: "2"
     spec:
-      serviceAccountName: socure-sandbox-runtime@refi-socure-sandbox.iam.gserviceaccount.com
+      serviceAccountName: socure-prod-runtime@refi-socure-prod.iam.gserviceaccount.com
       containerConcurrency: 80
       timeoutSeconds: 60
       containers:
-        - image: us-central1-docker.pkg.dev/refi-socure-sandbox/refi/refi-socure-sandbox:REPLACE_TAG
+        - image: us-central1-docker.pkg.dev/refi-socure-prod/refi/refi-socure-prod:REPLACE_TAG
           ports:
             - containerPort: 3000
           resources:
@@ -33,9 +29,9 @@ spec:
               memory: 1Gi
           env:
             - name: REFI_ENV
-              value: staging
+              value: prod
             - name: NEXT_PUBLIC_REFI_ENV
-              value: staging
+              value: prod
             - name: REFI_DATA_ADAPTER
               value: live
             - name: REFI_TRUST_PROXY_HOST
@@ -53,9 +49,9 @@ spec:
             - name: REFI_KYC_MOCK_CONTROLS
               value: "0"
             - name: SOCURE_ENV
-              value: sandbox
+              value: production
             - name: SOCURE_API_BASE_URL
-              value: https://riskos.sandbox.socure.com
+              value: https://riskos.socure.com
             - name: SOCURE_WEBHOOK_ENFORCE_SENDER_IP
               value: "1"
             - name: REFI_BACKING__KYC_EVALUATION
@@ -63,30 +59,39 @@ spec:
             - name: REFI_BACKING__KYC_WEBHOOK_EVENT
               value: durable
             - name: GCP_PROJECT_ID
-              value: refi-socure-sandbox
+              value: refi-socure-prod
             - name: ALPHA_HANDOFF_ISSUER
-              value: refi-alpha-sandbox
+              value: refi-alpha
             - name: ALPHA_HANDOFF_AUDIENCE
-              value: refi-socure-sandbox
+              value: refi-us-sec-ia
+            - name: REFI_RELEASE_STAGE
+              value: signal
+            - name: BFF_ASSERTION_ISSUER
+              value: urn:refinity:bff:prod
+            - name: INVESTOR_API_AUDIENCE
+              value: urn:refinity:investor-api:prod
             - name: ALPHA_HANDOFF_PUBLIC_KEY_JWK
-              value: REPLACE_SANDBOX_THROWAWAY_PUBLIC_JWK
+              valueFrom:
+                secretKeyRef:
+                  name: prod-alpha-handoff-public-jwk
+                  key: latest
             - name: SESSION_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: sandbox-session-secret
+                  name: prod-session-secret
                   key: latest
             - name: IP_HASH_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: sandbox-ip-hash-secret
+                  name: prod-ip-hash-secret
                   key: latest
             - name: ELIGIBILITY_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: sandbox-eligibility-jwt-secret
+                  name: prod-eligibility-jwt-secret
                   key: latest
             - name: SESSION_JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: sandbox-session-jwt-secret
+                  name: prod-session-jwt-secret
                   key: latest

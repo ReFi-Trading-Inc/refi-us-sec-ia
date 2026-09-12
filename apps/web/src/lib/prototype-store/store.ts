@@ -62,6 +62,68 @@ export interface KVStore<T> {
   putIfAbsent(key: string, value: T): Promise<boolean>;
   list(filterPrefix?: string): Promise<Array<{ key: string; value: T }>>;
   delete(key: string): Promise<void>;
+  update(
+    key: string,
+    decide: (current: T | null) => T | null,
+  ): Promise<{ value: T | null; written: boolean }>;
+}
+
+// Per-key exclusive lock for `update`: an O_EXCL lock file that any process
+// on the same filesystem must acquire, plus an in-process promise chain so
+// concurrent callers in one process never even race for the file. A lock
+// older than LOCK_STALE_MS is treated as abandoned (crashed holder).
+const LOCK_STALE_MS = 10_000;
+const LOCK_RETRY_MS = 5;
+const inProcessChains = new Map<string, Promise<unknown>>();
+
+async function withKeyLock<R>(
+  lockPath: string,
+  fn: () => Promise<R>,
+): Promise<R> {
+  const prev = inProcessChains.get(lockPath) ?? Promise.resolve();
+  let release!: () => void;
+  const mine = new Promise<void>((r) => {
+    release = r;
+  });
+  inProcessChains.set(
+    lockPath,
+    prev.then(() => mine),
+  );
+  await prev;
+  try {
+    const deadline = Date.now() + LOCK_STALE_MS * 2;
+    for (;;) {
+      try {
+        const h = await fs.open(lockPath, "wx");
+        await h.writeFile(String(process.pid));
+        await h.close();
+        break;
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+        try {
+          const st = await fs.stat(lockPath);
+          if (Date.now() - st.mtimeMs > LOCK_STALE_MS) {
+            await fs.unlink(lockPath).catch(() => undefined);
+            continue;
+          }
+        } catch {
+          continue;
+        }
+        if (Date.now() > deadline)
+          throw new Error(`kv lock timeout: ${lockPath}`);
+        await new Promise((r) => setTimeout(r, LOCK_RETRY_MS));
+      }
+    }
+    try {
+      return await fn();
+    } finally {
+      await fs.unlink(lockPath).catch(() => undefined);
+    }
+  } finally {
+    release();
+    if (inProcessChains.get(lockPath) === prev.then(() => mine))
+      inProcessChains.delete(lockPath);
+  }
 }
 
 export function kvStore<T>(name: string): KVStore<T> {
@@ -124,6 +186,21 @@ export function kvStore<T>(name: string): KVStore<T> {
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
       }
+    },
+    async update(key, decide) {
+      const p = await writablePathFor(key);
+      return withKeyLock(`${p}.lock`, async () => {
+        let current: T | null = null;
+        try {
+          current = JSON.parse(await fs.readFile(p, "utf8")) as T;
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+        }
+        const next = decide(current);
+        if (next === null) return { value: current, written: false };
+        await atomicWrite(p, JSON.stringify(next, null, 2));
+        return { value: next, written: true };
+      });
     },
   };
 }

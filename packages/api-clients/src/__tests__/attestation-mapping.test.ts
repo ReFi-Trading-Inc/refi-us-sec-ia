@@ -159,6 +159,13 @@ const NOT_FIT: InvestorProfileAnswers = {
 test("durable decision identity supersedes fixture/provider history without changing answers and survives concurrent retry", async () => {
   const rows = new Map<string, DecisionIdentity>();
   const store: KVStore<DecisionIdentity> = {
+    update: async (key, decide) => {
+      const current = rows.get(key) ?? null;
+      const next = decide(current);
+      if (next === null) return { value: current, written: false };
+      rows.set(key, next);
+      return { value: next, written: true };
+    },
     get: async (key) => rows.get(key) ?? null,
     put: async (key, value) => {
       rows.set(key, value);

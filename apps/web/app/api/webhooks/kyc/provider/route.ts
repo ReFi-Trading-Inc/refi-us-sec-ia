@@ -29,17 +29,61 @@ import {
   verifySocureWebhookAuthorization,
 } from "../../../../../src/lib/kyc/socure/webhook-auth";
 import { socureWebhookEventSchema } from "../../../../../src/lib/kyc/socure/schemas";
-import { noteIgnoredWebhookEvent } from "../../../../../src/lib/prototype-store/entities/kyc-evaluation";
+import { describeWebhookRejection } from "../../../../../src/lib/kyc/socure/webhook-diagnostics";
+import {
+  noteIgnoredWebhookEvent,
+  noteRejectedWebhookEnvelope,
+} from "../../../../../src/lib/prototype-store/entities/kyc-evaluation";
 import { createRateLimiter } from "../../../../_lib/rateLimit";
 
 const limiter = createRateLimiter({ windowMs: 60_000, max: 120 });
 export const MAX_WEBHOOK_BODY_BYTES = 256 * 1024;
 
-function clientIp(req: NextRequest): string {
+/**
+ * The sender address used for rate limiting and the documented-sender
+ * allowlist. Behind a trusted edge (`REFI_TRUST_PROXY_HOST=1`, Cloud Run's
+ * Google front end) the ONLY trustworthy value is the LAST entry of
+ * `X-Forwarded-For`, which the edge appends; any earlier entries and
+ * `X-Real-IP` are client-supplied and pass through unchanged (verified
+ * 2026-09-12: a request carrying a forged `X-Forwarded-For` / `X-Real-IP`
+ * was logged by Cloud Run with the real client address). Without a trusted
+ * edge the first entry is used as before.
+ */
+export function clientIp(req: NextRequest): string {
+  const xff = req.headers.get("x-forwarded-for");
+  if (process.env["REFI_TRUST_PROXY_HOST"] === "1") {
+    const entries = (xff ?? "")
+      .split(",")
+      .map((e) => e.trim())
+      .filter((e) => e.length > 0);
+    return entries.at(-1) ?? "unknown";
+  }
   return (
-    req.headers.get("x-real-ip") ??
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    "unknown"
+    req.headers.get("x-real-ip") ?? xff?.split(",")[0]?.trim() ?? "unknown"
+  );
+}
+
+const VERIFICATION_PING_EVENTS = new Set([
+  "evaluation_completed",
+  "evaluation_paused",
+]);
+
+/** Dashboard verification ping: only `eventName`, no envelope fields at all. */
+function isRiskOsVerificationPing(payload: unknown): boolean {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    return false;
+  }
+  const keys = Object.keys(payload);
+  const eventName = (payload as { eventName?: unknown }).eventName;
+  return (
+    keys.length === 1 &&
+    keys[0] === "eventName" &&
+    typeof eventName === "string" &&
+    VERIFICATION_PING_EVENTS.has(eventName)
   );
 }
 
@@ -81,9 +125,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   } catch {
     return NextResponse.json({ error: "Malformed" }, { status: 400 });
   }
+  if (isRiskOsVerificationPing(payload)) {
+    // RiskOS "Continue To Test" sends an authenticated bare
+    // `{ "eventName": "<event>" }` before it will save a webhook. It carries
+    // no event envelope, so nothing is persisted; acknowledge and stop.
+    return NextResponse.json({ ok: true }, { status: 200 });
+  }
   const generic = socureWebhookEventSchema.safeParse(payload);
   if (!generic.success) {
-    return NextResponse.json({ error: "Malformed" }, { status: 400 });
+    // Structure-only diagnostic (no values): audited durably for the
+    // operator and returned to the credential-validated sender.
+    const diagnostic = describeWebhookRejection(
+      payload,
+      generic.error,
+      correlationId,
+    );
+    await noteRejectedWebhookEnvelope({ correlationId, diagnostic });
+    return NextResponse.json(
+      { error: "Malformed", diagnostic },
+      { status: 400 },
+    );
   }
   const provider = getKycProvider();
   if (!(provider instanceof SocureKycProvider)) {

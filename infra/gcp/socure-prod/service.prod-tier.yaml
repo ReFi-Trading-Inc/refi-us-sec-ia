@@ -1,8 +1,10 @@
 # Cloud Run service — Socure PRODUCTION environment on the PROD APP TIER (PROPOSAL; apply after founder review):
 #   gcloud run services replace infra/gcp/socure-prod/service.prod-tier.yaml --project refi-socure-prod --region us-central1
 # Still DARK: REFI_KYC_PROVIDER=unconfigured, no Socure secret references, no SDK key, no workflow, no traffic.
-# Requires: image built with cloudbuild.prod-tier.yaml (NEXT_PUBLIC_REFI_ENV=prod + real public constants) and a
-#   real version in prod-alpha-handoff-public-jwk. Boot fails closed if any prod-tier value is missing.
+# Requires: image built with cloudbuild.prod-tier.yaml (NEXT_PUBLIC_REFI_ENV=prod). REFI_RUNTIME_PROFILE=socure_kyc
+#   validates only what the KYC surface needs: no WalletConnect, PostHog, Sentry, game handoff or connected
+#   investor-API configuration is required, and none is set (no dummy values). Sender-IP enforcement stays 0
+#   until the genuine Sandbox delivery proof passes.
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -34,6 +36,8 @@ spec:
           value: prod
         - name: REFI_DATA_ADAPTER
           value: live
+        - name: REFI_RUNTIME_PROFILE
+          value: socure_kyc
         - name: REFI_TRUST_PROXY_HOST
           value: '1'
         - name: REFI_AUTH_PROVIDER
@@ -53,28 +57,13 @@ spec:
         - name: SOCURE_API_BASE_URL
           value: https://riskos.socure.com
         - name: SOCURE_WEBHOOK_ENFORCE_SENDER_IP
-          value: '1'
+          value: '0'
         - name: REFI_BACKING__KYC_EVALUATION
           value: durable
         - name: REFI_BACKING__KYC_WEBHOOK_EVENT
           value: durable
         - name: GCP_PROJECT_ID
           value: refi-socure-prod
-        - name: ALPHA_HANDOFF_ISSUER
-          value: refi-alpha
-        - name: ALPHA_HANDOFF_AUDIENCE
-          value: refi-us-sec-ia
-        - name: REFI_RELEASE_STAGE
-          value: signal
-        - name: BFF_ASSERTION_ISSUER
-          value: urn:refinity:bff:prod
-        - name: INVESTOR_API_AUDIENCE
-          value: urn:refinity:investor-api:prod
-        - name: ALPHA_HANDOFF_PUBLIC_KEY_JWK
-          valueFrom:
-            secretKeyRef:
-              name: prod-alpha-handoff-public-jwk
-              key: latest
         - name: SESSION_SECRET
           valueFrom:
             secretKeyRef:

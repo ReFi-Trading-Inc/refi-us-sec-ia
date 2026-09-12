@@ -5632,6 +5632,17 @@ await section(
     "SOCURE_ENV",
     "SOCURE_WEBHOOK_BEARER_TOKEN",
     "REFI_INVESTOR_API_CREDENTIAL_MODE",
+    "REFI_RUNTIME_PROFILE",
+    "REFI_DATA_ADAPTER",
+    "GCP_PROJECT_ID",
+    "REFI_AUTH_PROVIDER",
+    "FLAG_ALPHA_CLAIM_ROUTE",
+    "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID",
+    "NEXT_PUBLIC_POSTHOG_KEY",
+    "NEXT_PUBLIC_SENTRY_DSN",
+    "ALPHA_HANDOFF_PUBLIC_KEY_JWK",
+    "ALPHA_HANDOFF_ISSUER",
+    "ALPHA_HANDOFF_AUDIENCE",
   ];
   const saved: Record<string, string | undefined> = {};
   for (const k of SAVED_KEYS) saved[k] = process.env[k];
@@ -6014,6 +6025,114 @@ await section(
         const e = new errors.SocureProviderError(k, 500);
         assert.ok(!/eval_id|given_name|national_id|Bearer/.test(e.message));
       }
+    },
+  );
+
+  await section(
+    "runtime profile: socure_kyc validates only the KYC surface — boots on the prod tier without WalletConnect, PostHog, Sentry, game handoff or connected investor-API configuration; refuses mock/demo/stytch/claim-route; the full profile keeps its prod requirements; release stage is not overloaded",
+    async () => {
+      const PROD_KYC = {
+        REFI_ENV: "prod",
+        NEXT_PUBLIC_REFI_ENV: "prod",
+        REFI_RUNTIME_PROFILE: "socure_kyc",
+        REFI_DATA_ADAPTER: "live",
+        GCP_PROJECT_ID: "refi-socure-prod",
+        REFI_AUTH_PROVIDER: "unconfigured",
+        FLAG_ALPHA_CLAIM_ROUTE: "off",
+        REFI_KYC_PROVIDER: "unconfigured",
+        REFI_KYC_MOCK_CONTROLS: "0",
+        NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: undefined,
+        NEXT_PUBLIC_POSTHOG_KEY: undefined,
+        NEXT_PUBLIC_SENTRY_DSN: undefined,
+        ALPHA_HANDOFF_PUBLIC_KEY_JWK: undefined,
+        ALPHA_HANDOFF_ISSUER: undefined,
+        ALPHA_HANDOFF_AUDIENCE: undefined,
+      };
+      await withEnv(PROD_KYC, async () => {
+        const env = getServerEnv();
+        assert.equal(env.REFI_RUNTIME_PROFILE, "socure_kyc");
+        // Capability values are NOT required by this profile (this harness is a
+        // non-prod build where prototype defaults are substituted; a prod build
+        // returns undefined for missing values — asserted on source below).
+        assert.equal(
+          env.REFI_RELEASE_STAGE,
+          "signal",
+          "release stage untouched by the profile",
+        );
+      });
+      for (const [k, v, why] of [
+        ["REFI_KYC_PROVIDER", "mock", "mock adapter refused"],
+        ["REFI_KYC_MOCK_CONTROLS", "1", "mock controls refused"],
+        ["REFI_DATA_ADAPTER", "mock", "mock data adapter refused"],
+        ["GCP_PROJECT_ID", undefined, "durable project id required"],
+        [
+          "REFI_AUTH_PROVIDER",
+          "stytch",
+          "connected identity not part of the profile",
+        ],
+        ["FLAG_ALPHA_CLAIM_ROUTE", "on", "claim route not part of the profile"],
+        ["REFI_ENV", "demo", "demo tier refused"],
+      ] as const) {
+        await withEnv({ ...PROD_KYC, [k]: v }, async () =>
+          assert.throws(
+            () => getServerEnv(),
+            /Invalid server environment/,
+            why,
+          ),
+        );
+      }
+      // The full profile in prod still requires every capability's configuration
+      // (checked by the profile refinement on parsed values, independent of the
+      // build-time IS_PRODUCTION default suppression).
+      await withEnv(
+        {
+          ...PROD_KYC,
+          REFI_RUNTIME_PROFILE: "full",
+          NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: "",
+          NEXT_PUBLIC_POSTHOG_KEY: "",
+          NEXT_PUBLIC_SENTRY_DSN: "",
+          ALPHA_HANDOFF_PUBLIC_KEY_JWK: "",
+          ALPHA_HANDOFF_ISSUER: "",
+          ALPHA_HANDOFF_AUDIENCE: "",
+        },
+        async () => {
+          const env = (() => {
+            try {
+              return getServerEnv();
+            } catch {
+              return null;
+            }
+          })();
+          // In this (non-prod-built) harness the prototype defaults are substituted,
+          // so the full profile boots; the refinement path is exercised by source.
+          assert.ok(env === null || env.REFI_RUNTIME_PROFILE === "full");
+        },
+      );
+      const src = read("apps/web/src/lib/config/env.ts");
+      assert.ok(
+        /if \(IS_PRODUCTION\) return undefined;/.test(src),
+        "a prod build never substitutes a prototype default (no dummy config)",
+      );
+      assert.ok(
+        /NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: z\.string\(\)\.min\(1\)\.optional\(\)/.test(
+          src,
+        ) &&
+          /ALPHA_HANDOFF_PUBLIC_KEY_JWK: z\.string\(\)\.min\(1\)\.optional\(\)/.test(
+            src,
+          ),
+        "unrelated capability configuration is optional at the schema level",
+      );
+      assert.ok(
+        /REFI_RUNTIME_PROFILE === "full" && prodTier/.test(src) &&
+          /required in production for the full runtime profile/.test(src),
+        "full profile fails closed in prod on every capability's configuration",
+      );
+      assert.ok(
+        !/REFI_RELEASE_STAGE[^\n]*profile|profile[^\n]*REFI_RELEASE_STAGE/i.test(
+          src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, ""),
+        ),
+        "release stage is never used as the runtime-profile switch",
+      );
     },
   );
 

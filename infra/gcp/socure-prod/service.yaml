@@ -1,0 +1,93 @@
+# Cloud Run service — Socure PRODUCTION environment (PROPOSAL; apply only after founder approval):
+#   gcloud run services replace infra/gcp/socure-prod/service.yaml --project refi-socure-prod --region us-central1
+# DARK: REFI_KYC_PROVIDER=unconfigured, NO Socure secret references, no SDK key, no workflow — no Production traffic
+#   is possible from this revision. SOCURE_ENV=production + https://riskos.socure.com are pinned so a later
+#   activation cannot accidentally target the sandbox host.
+# APP TIER: REFI_ENV / NEXT_PUBLIC_REFI_ENV stay "staging" for now — the "prod" tier refuses every prototype
+#   default and needs real values for subsystems outside Socure (WalletConnect, PostHog, Sentry, alpha handoff
+#   JWK, BFF signing). Switching the tier is a separate, later change.
+# ACTIVATION (separate founder directive): production API key + UUIDv4 webhook Bearer as Secret Manager versions,
+#   REFI_KYC_PROVIDER=socure, SOCURE_WORKFLOW_NAME, NEXT_PUBLIC_SOCURE_SDK_KEY at build, webhook registration.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: refi-socure-prod
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: '0'
+        autoscaling.knative.dev/maxScale: '2'
+    spec:
+      serviceAccountName: socure-prod-runtime@refi-socure-prod.iam.gserviceaccount.com
+      containerConcurrency: 80
+      timeoutSeconds: 60
+      containers:
+      - image: us-central1-docker.pkg.dev/refi-socure-prod/refi/refi-socure-prod:REPLACE_TAG
+        ports:
+        - containerPort: 3000
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        env:
+        - name: REFI_ENV
+          value: staging
+        - name: NEXT_PUBLIC_REFI_ENV
+          value: staging
+        - name: REFI_DATA_ADAPTER
+          value: live
+        - name: REFI_TRUST_PROXY_HOST
+          value: '1'
+        - name: REFI_AUTH_PROVIDER
+          value: unconfigured
+        - name: REFI_INVESTOR_API_MODE
+          value: client
+        - name: REFI_INVESTOR_API_ALLOW_REMOTE
+          value: '0'
+        - name: FLAG_ALPHA_CLAIM_ROUTE
+          value: 'off'
+        - name: REFI_KYC_PROVIDER
+          value: unconfigured
+        - name: REFI_KYC_MOCK_CONTROLS
+          value: '0'
+        - name: SOCURE_ENV
+          value: production
+        - name: SOCURE_API_BASE_URL
+          value: https://riskos.socure.com
+        - name: SOCURE_WEBHOOK_ENFORCE_SENDER_IP
+          value: '0'
+        - name: REFI_BACKING__KYC_EVALUATION
+          value: durable
+        - name: REFI_BACKING__KYC_WEBHOOK_EVENT
+          value: durable
+        - name: GCP_PROJECT_ID
+          value: refi-socure-prod
+        - name: ALPHA_HANDOFF_ISSUER
+          value: refi-alpha-prod
+        - name: ALPHA_HANDOFF_AUDIENCE
+          value: refi-socure-prod
+        - name: ALPHA_HANDOFF_PUBLIC_KEY_JWK
+          value: REPLACE_PROD_THROWAWAY_PUBLIC_JWK
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: prod-session-secret
+              key: latest
+        - name: IP_HASH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: prod-ip-hash-secret
+              key: latest
+        - name: ELIGIBILITY_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: prod-eligibility-jwt-secret
+              key: latest
+        - name: SESSION_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: prod-session-jwt-secret
+              key: latest

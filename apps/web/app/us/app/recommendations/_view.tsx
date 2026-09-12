@@ -11,6 +11,7 @@ import { appCopy } from "../../_content/app-copy";
 type BadgeTone = "active" | "warning" | "neutral";
 
 export function formatDateTime(iso: string): string {
+  if (!Number.isFinite(Date.parse(iso))) return "—";
   return new Date(iso).toLocaleString("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -18,13 +19,15 @@ export function formatDateTime(iso: string): string {
 }
 
 export function statusTone(status: RecommendationStatus): BadgeTone {
-  switch (status) {
+  switch (status.toUpperCase()) {
     case "CURRENT":
       return "active";
     case "BLOCKED":
     case "EXPIRED":
       return "warning";
     case "SUPERSEDED":
+      return "neutral";
+    default:
       return "neutral";
   }
 }
@@ -36,6 +39,8 @@ export function freshnessTone(status: FreshnessStatus): BadgeTone {
     case "stale":
     case "expired":
       return "warning";
+    default:
+      return "neutral";
   }
 }
 

@@ -23,14 +23,14 @@
  * `listAccounts` under the user assertion). No browser value names an
  * account, and every path parameter below is that resolved id.
  *
- * Every mutation carries a deterministic Idempotency-Key derived from the
- * account and the exact economic parameters (never random), so a retry of
- * the same submission is an upstream replay and a different submission is a
- * different key. Mutations are never retried here.
+ * Every mutation carries a key derived from its account and caller-retained
+ * logical operation ID. Identical recovery reuses that ID; a deliberate new
+ * action uses a new ID. The backend rejects changed bodies under the same key.
+ * Mutations are never automatically retried here.
  */
-import { createHash } from "node:crypto";
 import type { OperationResponse } from "@refi/api-clients/investor-api";
 import type { InvestorApiReadClient } from "./demo-client";
+import { operationKey } from "./operation-identity";
 
 export type AllocationPreview =
   OperationResponse<"createAllocationPreview">["data"];
@@ -54,16 +54,10 @@ export function isEconomicAction(
   return (ECONOMIC_ACTIONS as readonly string[]).includes(action);
 }
 
-function key(parts: readonly string[]): string {
-  return createHash("sha256")
-    .update(parts.join("|"))
-    .digest("hex")
-    .slice(0, 64);
-}
-
 // ─── Allocation preview (non-economic) ──────────────────────────────────────
 
 export interface AllocationPreviewInput {
+  operationId: string;
   templateId: string;
   allocationPercent: string;
 }
@@ -72,7 +66,7 @@ export function previewIdempotencyKey(
   accountId: string,
   input: AllocationPreviewInput,
 ): string {
-  return key(["preview", accountId, input.templateId, input.allocationPercent]);
+  return operationKey("preview", accountId, input.operationId);
 }
 
 export async function previewAllocation(
@@ -94,6 +88,7 @@ export async function previewAllocation(
 // ─── Account actions (join / update economic; leave disengagement) ──────────
 
 export interface AccountActionInput {
+  operationId: string;
   action: AccountActionVerb;
   templateId: string;
   /** Required by the economic verbs; absent on leave_template. */
@@ -115,14 +110,7 @@ export function actionIdempotencyKey(
   accountId: string,
   input: AccountActionInput,
 ): string {
-  return key([
-    "action",
-    accountId,
-    input.action,
-    input.templateId,
-    input.allocationPercent ?? "",
-    input.allocationPreviewId ?? "",
-  ]);
+  return operationKey("account-action", accountId, input.operationId);
 }
 
 export async function submitAccountAction(

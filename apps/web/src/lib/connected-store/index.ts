@@ -40,6 +40,8 @@ export const CONNECTED_ENTITIES = [
   "exchange-attempt",
   "subject-map",
   "subject-map-reverse",
+  "development-kyc",
+  "attestation-decision",
 ] as const;
 export type ConnectedEntity = (typeof CONNECTED_ENTITIES)[number];
 

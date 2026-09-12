@@ -7719,14 +7719,17 @@ await section(
         ),
         "mapping module must not reference the submit operation in code",
       );
-      // The type excludes `eligible`; the string never appears as a trading value.
+      // Automated Alpha maps the trusted provider/profile result; legacy modes
+      // remain pending. Neither mapping is backend admission/authorization.
       assert.ok(
-        /Exclude<\s*TradingEligibility,\s*"eligible"\s*>/.test(src),
-        "trading_eligibility `eligible` must be unrepresentable",
+        /automatedAlpha && profileStatus === "eligible" && kycStatus === "passed"/.test(
+          src,
+        ),
+        "eligible requires automated Alpha, eligible profile and passed trusted KYC",
       );
       assert.ok(
-        /expires_at: null/.test(src),
-        "expiry is undecided (§20 #6) — the builder must send null, not invent a duration",
+        /expires_at: development\?\.expiresAt \?\? null/.test(src),
+        "only the explicit short-lived Dev fixture sets an expiry; real policy remains unchanged",
       );
       assert.ok(
         /KYC_EVIDENCE_MOCK/.test(src) && /KYC_PROVENANCE_UNTRUSTED/.test(src),
@@ -7776,8 +7779,8 @@ await section(
       );
       assert.deepEqual(
         submitters,
-        [SUBMISSION_MODULE],
-        "only the designated submission module may submit an attestation",
+        [SUBMISSION_MODULE, "apps/web/src/lib/integration-dev/kyc-pass.ts"],
+        "only the consent-checked chain and scoped Dev withdrawal may submit attestations",
       );
     },
   );
@@ -8077,7 +8080,7 @@ await section(
       ]);
       const schemas = JSON.parse(
         read(
-          "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/schemas.json",
+          "packages/api-clients/contracts/investor-api/v1.1.0-alpha.4/schemas.json",
         ),
       ) as {
         $defs: Record<
@@ -8142,7 +8145,12 @@ await section(
       for (const f of [...walk("apps/web/app"), ...walk("apps/web/src")]) {
         // The designated step-6 submission chain is the one permitted caller
         // (asserted exactly in the attestation-mapping section above).
-        if (f === "apps/web/src/lib/compliance/attestation-submission.ts") {
+        if (
+          [
+            "apps/web/src/lib/compliance/attestation-submission.ts",
+            "apps/web/src/lib/integration-dev/kyc-pass.ts",
+          ].includes(f)
+        ) {
           continue;
         }
         const src = stripComments(read(f));
@@ -8900,12 +8908,12 @@ await section(
         read("apps/web/app/api/v1/investor/broker/connection/route.ts"),
       );
       assert.ok(
-        /environment:\s*z\.literal\("paper"\)/.test(route),
-        "environment must be the literal paper",
+        /environment:\s*z\.enum\(\["paper", "live"\]\)/.test(route),
+        "environment must be an explicit fixed-host selection",
       );
       assert.ok(
-        /\^PK\[A-Z0-9\]\{18\}\$/.test(route),
-        "only PK (paper) key ids parse",
+        route.includes("(PK|AK)"),
+        "direct Trading API key shape accepts paper and live without changing hosts",
       );
       assert.ok(
         /action:\s*"connectBroker"/.test(route),
@@ -10523,7 +10531,9 @@ await section(
           );
         }
         assert.deepEqual([...cs.CONNECTED_ENTITIES].sort(), [
+          "attestation-decision",
           "bridge-assertion-jti",
+          "development-kyc",
           "exchange-attempt",
           "identity-result-jti",
           "login-consumed",
@@ -14469,7 +14479,7 @@ await section(
     readFileSync(
       join(
         REPO_ROOT,
-        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/examples.json",
+        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.4/examples.json",
       ),
       "utf8",
     ),
@@ -14648,6 +14658,7 @@ await section(
   }
   const econ = (action: "join_template" | "update_allocation") => ({
     action,
+    operationId: "operation_preview_0001",
     templateId: "template_us_sp500_following_v1",
     allocationPercent: "0.25",
     allocationPreviewId: "preview_alpha_0001",
@@ -14711,6 +14722,7 @@ await section(
           k,
           actions.actionIdempotencyKey(OWNED, {
             ...econ(action),
+            operationId: "operation_action_new",
             allocationPercent: "0.30",
           }),
         );
@@ -14729,6 +14741,7 @@ await section(
       const { client, ops, posts } = upstreamBk({ authorization: "DENIED" });
       const out = await actions.submitAccountAction(client, OWNED, {
         action: "leave_template",
+        operationId: "operation_leave_0001",
         templateId: "template_us_sp500_following_v1",
       });
       assert.equal(out.kind, "accepted");
@@ -14741,6 +14754,7 @@ await section(
       });
       const p = upstreamBk({ authorization: "DENIED" });
       const preview = await actions.previewAllocation(p.client, OWNED, {
+        operationId: "operation_preview_0001",
         templateId: "template_us_sp500_following_v1",
         allocationPercent: "0.25",
       });
@@ -14759,6 +14773,7 @@ await section(
       assert.equal(
         p.posts()[0]?.headers.get("Idempotency-Key"),
         actions.previewIdempotencyKey(OWNED, {
+          operationId: "operation_preview_0001",
           templateId: "template_us_sp500_following_v1",
           allocationPercent: "0.25",
         }),
@@ -14800,16 +14815,23 @@ await section(
       ] as const) {
         const { client, posts } = upstreamBk({});
         const r = await maint.rotateBrokerageCredentials(client, OWNED, id, {
+          operationId: "operation_rotate_0001",
           apiKeyId: "PK" + "A".repeat(18),
           apiSecretKey: "s".repeat(40),
         });
         assert.deepEqual(r, { kind: "connection_out_of_scope", reason });
-        const s = await maint.syncBrokerageConnection(client, OWNED, id);
+        const s = await maint.syncBrokerageConnection(
+          client,
+          OWNED,
+          id,
+          "operation_sync_0001",
+        );
         assert.deepEqual(s, { kind: "connection_out_of_scope", reason });
         assert.equal(posts().length, 0);
       }
       const { client, posts, seen } = upstreamBk({});
       const rot = await maint.rotateBrokerageCredentials(client, OWNED, CONN, {
+        operationId: "operation_rotate_0001",
         apiKeyId: "PK" + "A".repeat(18),
         apiSecretKey: "s".repeat(40),
       });
@@ -14830,22 +14852,22 @@ await section(
       });
       assert.equal(
         post.headers.get("Idempotency-Key"),
-        maint.rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18)),
+        maint.rotationIdempotencyKey(OWNED, CONN, "operation_rotate_0001"),
       );
       assert.equal(
-        maint.rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18)),
-        maint.rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18)),
+        maint.rotationIdempotencyKey(OWNED, CONN, "operation_rotate_0001"),
+        maint.rotationIdempotencyKey(OWNED, CONN, "operation_rotate_0001"),
       );
       assert.ok(
         !maint
-          .rotationIdempotencyKey(OWNED, CONN, "PK" + "A".repeat(18))
+          .rotationIdempotencyKey(OWNED, CONN, "operation_rotate_0001")
           .includes("s".repeat(10)),
       );
       const sync = await maint.syncBrokerageConnection(
         client,
         OWNED,
         CONN,
-        () => 1_700_000_000_000,
+        "operation_sync_0001",
       );
       assert.equal(sync.kind, "accepted");
       const sp = posts()[1]!;
@@ -14853,16 +14875,16 @@ await section(
       assert.equal(sp.body, undefined, "sync has no body");
       assert.equal(
         sp.headers.get("Idempotency-Key"),
-        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_000_000),
+        maint.syncIdempotencyKey(OWNED, CONN, "operation_sync_0001"),
       );
       assert.equal(
-        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_000_000),
-        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_030_000),
-        "same minute replays",
+        maint.syncIdempotencyKey(OWNED, CONN, "operation_sync_0001"),
+        maint.syncIdempotencyKey(OWNED, CONN, "operation_sync_0001"),
+        "the same logical action replays across time",
       );
       assert.notEqual(
-        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_000_000),
-        maint.syncIdempotencyKey(OWNED, CONN, () => 1_700_000_120_000),
+        maint.syncIdempotencyKey(OWNED, CONN, "operation_sync_0001"),
+        maint.syncIdempotencyKey(OWNED, CONN, "operation_sync_0002"),
       );
       assert.ok(
         seen.every((s) => !s.url.includes(OTHER)),
@@ -14894,6 +14916,7 @@ await section(
               ? {}
               : { cookie: `us_session_v1=${token}` }),
             "content-type": "application/json",
+            "Idempotency-Key": "operation_route_test_0001",
           },
           body: JSON.stringify(body),
         });
@@ -15077,7 +15100,7 @@ await section(
     readFileSync(
       join(
         REPO_ROOT,
-        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/examples.json",
+        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.4/examples.json",
       ),
       "utf8",
     ),
@@ -15260,6 +15283,7 @@ await section(
       seenTu.length = 0;
       const input = {
         action: "join_template" as const,
+        operationId: "operation_owned_test_0001",
         templateId: "template_us_sp500_following_v1",
         allocationPercent: "0.25",
         allocationPreviewId: "preview_alpha_0001",
@@ -15287,6 +15311,7 @@ await section(
         clientFor("A"),
         USERS.A.account,
         USERS.B.conn,
+        "operation_sync_cross_01",
       );
       assert.deepEqual(cross, {
         kind: "connection_out_of_scope",
@@ -15300,6 +15325,7 @@ await section(
         clientFor("A"),
         USERS.A.account,
         USERS.A.conn,
+        "operation_sync_owned_01",
       );
       assert.equal(own.kind, "accepted");
       // Nothing under B's assertion happened at all in this section.
@@ -15491,7 +15517,7 @@ await section(
     readFileSync(
       join(
         REPO_ROOT,
-        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.3/examples.json",
+        "packages/api-clients/contracts/investor-api/v1.1.0-alpha.4/examples.json",
       ),
       "utf8",
     ),

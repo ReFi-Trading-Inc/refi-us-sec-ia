@@ -97,21 +97,18 @@ since been superseded by the working agreement and decisions summarized here.
 
 ### Still to complete
 
-- **Contract adoption:** this checkout actually imports/generates
-  `v1.1.0-alpha.3`; **the complete alpha.4 package is now copied and verified**
-  under `packages/api-clients/contracts/investor-api/v1.1.0-alpha.4/`.
-  [TARGET.json](packages/api-clients/contracts/investor-api/TARGET.json) identifies
-  it; CURRENT.json still follows the existing client until atomic adoption.
-  Follow [the ordered integration checklist](docs/integration-roadmap.md), starting
-  with client/validator/funding/recommendation adaptation—not another package copy.
-  The new membership/admission/error corrections are not already delivered.
+- **Contract adoption is implemented:** client, validators, generation and
+  CURRENT.json select `v1.1.0-alpha.4`; old bundles are archived unchanged.
+  See [implementation status](docs/alpha4-integration-status.md) and the
+  [ordered checklist](docs/integration-roadmap.md) for remaining connected gates.
+  Independent membership/admission contracts are not already delivered.
 - **Backend-owned membership/admission:** replace legacy onboarding/cohort
   ambiguity with independent canonical reads. The existing setup gate also
   needs frontend-owned adaptation for “connect Alpaca later.”
 - **Broker and command reliability:** complete backend disconnect/credential
   retirement and BFF error/retry handling. The current BFF broker input is
-  paper-only; explicit paper/live server support and the frontend selector
-  must align without enabling unauthorized live trading.
+  explicit paper/live; the frontend selector remains UI-owned. This does not
+  enable unapproved live trading.
 - **Preview and account-data correctness:** distinguish fresh preview requests
   from retries of saved previews, update recommendation mappings, remove the
   silent five-page/500-position retrieval limit, and complete funding-notice

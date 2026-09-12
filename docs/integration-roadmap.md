@@ -35,9 +35,9 @@ Spanner/broker access, manual admission setter or second automation toggle.
   stay separate. Vercel, game/demo, other projects and public DNS stay unchanged.
 - Latest issued contract: **alpha.4**, content hash
   `a6db935b6a398bff00a7ccee4cb268ee565249bbd75c23e36594c9f6b698e7c3`.
-  It is copied/verified here, **not selected by the running client yet**.
-  `TARGET.json` identifies the new target; current imports/generation and
-  `CURRENT.json` remain alpha.3 until step 1 passes.
+  Client imports, generation, validation and CURRENT/TARGET now select alpha.4.
+  Old versions are archived unchanged. Connected acceptance is still open; see
+  [implementation status and exact remaining gates](alpha4-integration-status.md).
 - Alpha.4 does **not** contain the new independent cohort-membership/admission/
   commercial-entitlement contracts proposed at backend FI-002/003/010. Backend
   owns implementing those and issuing any necessary successor. Do not invent
@@ -66,23 +66,23 @@ Spanner/broker access, manual admission setter or second automation toggle.
 
 ### 1. FI-005A — adopt the already-issued alpha.4 client
 
-- [ ] Recheck branch status/upstream changes; merge reviewed `main` work at a
-      coherent boundary without altering provider logic. Preserve Zeshan's Socure
-      fixes/sandbox; do not run his deployment scripts or change their targets.
-- [ ] Read package MIGRATION/FUNDING and inspect
+- [x] Rechecked branches/upstream. Owner now explicitly requests **no main merge**;
+      both repositories use `integration/refinity-dev`. Main through `866fc11` was
+      inspected, not merged. Preserve Zeshan’s provider work and deployment targets.
+- [x] Read package MIGRATION/FUNDING and inspect
       `packages/api-clients/src/investor-api/{package,validation,client,errors}.ts`,
       `packages/api-clients/package.json`, package tests, and
       `apps/web/src/lib/investor-api/{upstream-state,recommendations,account-actions}.ts`.
       Update generation/import/version/hash pins, validators and CURRENT/TARGET
       metadata together; preserve validated `error.continuation` already implemented.
-- [ ] Update actual recommendation mappings: list `RecommendationSummary` vs
+- [x] Update actual recommendation mappings: list `RecommendationSummary` vs
       detail `Recommendation`, lineage/summary/content/lifecycle statuses and
       timestamps. Remove assumptions of obsolete `status`, `freshness` and
       `estimated_turnover_percent`. Turnover is a decimal fraction. Do not fabricate
       old fields or treat `execution_eligible=false` as disabled account automation.
       Expose truthful server views; hand any required presentation adaptation to
       Zeshan without editing his screens or returning placeholder success values.
-- [ ] Carry nullable `funding_assessment` through preview/recommendation server
+- [x] Carry nullable `funding_assessment` through preview/recommendation server
       responses. Preserve exact decimal strings, provenance and null semantics.
       Update alpha.3-era fixtures/assertions and conformance tests, preserving
       historic-package integrity tests. Archive old versions only with their test/
@@ -94,19 +94,23 @@ endpoints exist; do not wait to fix already-known funding/recommendation reads.
 
 ### 2. FI-003D — implement the development-only KYC acceptance source
 
-- [ ] Inspect existing `apps/web/src/lib/kyc/{provider,provenance,index}.ts`,
+Source/local tests are implemented; activation, backend deployment and real
+withdrawal/independent-hold acceptance remain unchecked. Use the exact scope and
+retirement procedure in [implementation status](alpha4-integration-status.md).
+
+- [x] Inspect existing `apps/web/src/lib/kyc/{provider,provenance,index}.ts`,
       `src/lib/compliance/{attestation-mapping,attestation-submission}.ts`, server
       environment validation and related contract assertions. Existing generic mock
       evidence is intentionally rejected; setting `REFI_KYC_PROVIDER=mock` alone
       does not implement this requirement.
-- [ ] Add a separate, server-only development fixture boundary, proposed path
+- [x] Add a separate, server-only development fixture boundary, proposed path
       `apps/web/src/lib/integration-dev/kyc-pass.ts`. Proposed controls are
-      `REFI_INTEGRATION_KYC_MODE=off|test_pass` (default off) and a server-only exact
+      `REFI_INTEGRATION_KYC_MODE=off|test_pass|withdraw` (default off) and a server-only exact
       test-subject allowlist. Require project `refinity-dev`, the isolated integration
       service/runtime identity and a named test user. Missing/wrong scope refuses
       startup or fixture creation; never infer permission from `REFI_ENV=staging`
       (that is this frontend's security tier, not a Google project).
-- [ ] Emit the package's normalized `kyc.status=passed` through an explicitly
+- [x] Emit the package's normalized `kyc.status=passed` through an explicitly
       labelled development evidence path. Retain reproducible fixture evidence,
       stable IDs and hash, developer-fixture provider/reference labels, decision
       version and monotonic sequence. Do not label it Socure or production-provider
@@ -118,7 +122,7 @@ endpoints exist; do not wait to fix already-known funding/recommendation reads.
       evidence in this scope. Any backend allowance must enforce the same Dev/test
       boundary, not accept fixture provenance for ordinary users or future prod.
       Do not globally suppress the existing mock-provenance assertions.
-- [ ] KYC pass is **not** an investor-profile pass: retain existing questionnaire
+- [x] KYC pass is **not** an investor-profile pass: retain existing questionnaire
       evaluation, pending/ineligible/review states and original evidence. It does not
       grant consent, membership, admission, payment, AccountAuthorization, brokerage
       readiness or execution scope. Use real authenticated test subjects and an
@@ -202,7 +206,11 @@ works. KYC simulation does not close the real-login or backend-binding gate.
 
 ### 6. FI-006 — complete broker and portfolio command integration
 
-- [ ] Update non-KYC `src/lib/investor-api/{brokerage-connection,
+Logical action IDs, transient credentials and explicit environment adapters are
+implemented locally. Unchecked items below retain connected/restart/UI-consumer
+acceptance; they are not instructions to redo the completed adapter code.
+
+- [x] Update non-KYC `src/lib/investor-api/{brokerage-connection,
 brokerage-maintenance,account-actions,acknowledgment}.ts` and their BFF handlers.
       Explicit paper/live value goes to the backend's fixed host selection, not an
       arbitrary URL. UI selector remains Zeshan's work. Do not open Alpaca Broker API
@@ -226,10 +234,13 @@ account; do not reset the backend's ongoing owner account to test onboarding.
 
 ### 7. FI-007 — complete account reads, funding notices and activity
 
-- [ ] Fix `portfolio.ts`/`pagination.ts` five-page/500-position truncation.
+Funding projection, pagination and event renewal adapters are implemented. Final
+checks below still require connected ownership/cursor/session acceptance.
+
+- [x] Fix `portfolio.ts`/`pagination.ts` five-page/500-position truncation.
       Return all 503+ holdings through bounded pagination or explicit continuation;
       do not discard a truncation flag. Check connection and membership pages too.
-- [ ] Preserve canonical valuation/position decimals and freshness. Follow
+- [x] Preserve canonical valuation/position decimals and freshness. Follow
       FUNDING.md for available allocated capital, required capital/equity, shortfall,
       limiting constituents and broker vs additional user minimums. SUFFICIENT does
       not override other gates; INCOMPLETE/null never means sufficient or zero.

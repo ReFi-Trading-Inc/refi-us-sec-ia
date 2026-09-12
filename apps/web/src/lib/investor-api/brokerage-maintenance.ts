@@ -13,13 +13,14 @@
  * Rotation is the second credential-bearing request in the app (after
  * connect): the paper key pair passes through as arguments into the one
  * upstream call and is never retained, hashed, logged or echoed. The
- * Idempotency-Key is derived from the key ID only, never the secret.
+ * Idempotency-Key is derived from a retained logical operation ID, never keys.
  */
-import { createHash } from "node:crypto";
+import { operationKey } from "./operation-identity";
 import type { OperationResponse } from "@refi/api-clients/investor-api";
 import type { InvestorApiReadClient } from "./demo-client";
 import {
   projectBrokerageConnection,
+  listOwnedBrokerageConnections,
   type BrokerageConnectionView,
 } from "./brokerage-connection";
 
@@ -28,7 +29,8 @@ export type BrokerageSyncReceipt =
 export const CONNECTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/;
 
 export type ConnectionScopeOutcome =
-  { kind: "owned" } | { kind: "not_owned" | "terminal" | "malformed" };
+  | { kind: "owned"; environment: "paper" | "live" | null }
+  | { kind: "not_owned" | "terminal" | "malformed" };
 
 /** The named connection must be one of THIS account's non-terminal connections. */
 export async function assertConnectionInScope(
@@ -37,13 +39,8 @@ export async function assertConnectionInScope(
   connectionId: string,
 ): Promise<ConnectionScopeOutcome> {
   if (!CONNECTION_ID_PATTERN.test(connectionId)) return { kind: "malformed" };
-  const res = await client.call("listBrokerageConnections", {
-    path: { account_id: accountId },
-    query: { page_size: 20 },
-  });
-  const match = res.data.data.items.find(
-    (c) => c.connection_id === connectionId,
-  );
+  const items = await listOwnedBrokerageConnections(client, accountId);
+  const match = items.find((c) => c.connection_id === connectionId);
   if (!match) return { kind: "not_owned" };
   if (
     match.connection_status === "DISCONNECTED" ||
@@ -51,17 +48,11 @@ export async function assertConnectionInScope(
   ) {
     return { kind: "terminal" };
   }
-  return { kind: "owned" };
-}
-
-function key(parts: readonly string[]): string {
-  return createHash("sha256")
-    .update(parts.join("|"))
-    .digest("hex")
-    .slice(0, 64);
+  return { kind: "owned", environment: match.account_environment };
 }
 
 export interface RotateCredentialsInput {
+  operationId: string;
   apiKeyId: string;
   apiSecretKey: string;
 }
@@ -69,9 +60,9 @@ export interface RotateCredentialsInput {
 export function rotationIdempotencyKey(
   accountId: string,
   connectionId: string,
-  apiKeyId: string,
+  operationId: string,
 ): string {
-  return key(["rotate", accountId, connectionId, apiKeyId]);
+  return operationKey("rotate", accountId, operationId, connectionId);
 }
 
 export type MaintenanceOutcome<T> =
@@ -91,12 +82,20 @@ export async function rotateBrokerageCredentials(
   if (scope.kind !== "owned") {
     return { kind: "connection_out_of_scope", reason: scope.kind };
   }
+  // A rotation cannot change hosts. Reject a key for the other environment
+  // before sending credentials; connect a different account explicitly instead.
+  if (
+    !scope.environment ||
+    !input.apiKeyId.startsWith(scope.environment === "paper" ? "PK" : "AK")
+  ) {
+    return { kind: "connection_out_of_scope", reason: "malformed" };
+  }
   const res = await client.call("rotateBrokerageCredentials", {
     path: { account_id: accountId, connection_id: connectionId },
     idempotencyKey: rotationIdempotencyKey(
       accountId,
       connectionId,
-      input.apiKeyId,
+      input.operationId,
     ),
     body: {
       credentials: { api_key: input.apiKeyId, api_secret: input.apiSecretKey },
@@ -110,27 +109,22 @@ export async function rotateBrokerageCredentials(
 }
 
 /**
- * Sync requests have no body; the key is bucketed to the minute so a burst
- * of retries replays upstream while a later request is a new run.
+ * Sync requests retain the same logical ID across retries, even after a minute
+ * or process restart. A deliberately new sync uses a new ID.
  */
 export function syncIdempotencyKey(
   accountId: string,
   connectionId: string,
-  now: () => number = Date.now,
+  operationId: string,
 ): string {
-  return key([
-    "sync",
-    accountId,
-    connectionId,
-    String(Math.floor(now() / 60_000)),
-  ]);
+  return operationKey("sync", accountId, operationId, connectionId);
 }
 
 export async function syncBrokerageConnection(
   client: InvestorApiReadClient,
   accountId: string,
   connectionId: string,
-  now: () => number = Date.now,
+  operationId: string,
 ): Promise<MaintenanceOutcome<BrokerageSyncReceipt>> {
   const scope = await assertConnectionInScope(client, accountId, connectionId);
   if (scope.kind !== "owned") {
@@ -138,7 +132,7 @@ export async function syncBrokerageConnection(
   }
   const res = await client.call("syncBrokerageConnection", {
     path: { account_id: accountId, connection_id: connectionId },
-    idempotencyKey: syncIdempotencyKey(accountId, connectionId, now),
+    idempotencyKey: syncIdempotencyKey(accountId, connectionId, operationId),
   });
   return {
     kind: "accepted",

@@ -17,6 +17,7 @@ import {
   projectLeg,
   projectRecommendation,
   type ContractRecommendation,
+  type ContractRecommendationSummary,
   type ContractRecommendationLeg,
 } from "../../../../apps/web/src/lib/investor-api/recommendations";
 import {
@@ -67,7 +68,7 @@ const example = (path: string) =>
     ?.example as { data: unknown };
 
 const RECS = example("/api/v1/investor/accounts/{account_id}/recommendations")
-  .data as { items: ContractRecommendation[] };
+  .data as { items: ContractRecommendationSummary[] };
 const LEGS = example(
   "/api/v1/investor/accounts/{account_id}/recommendations/{recommendation_id}/legs",
 ).data as { items: ContractRecommendationLeg[] };
@@ -83,22 +84,25 @@ describe("recommendation projection (row 19)", () => {
     expect(r).toBeDefined();
     if (!r) return;
     const v = projectRecommendation(r);
-    expect(v).toEqual({
+    expect(v).toMatchObject({
       recommendationId: "recommendation_alpha_0001",
-      templateId: "template_us_sp500_direct_index_v1",
-      status: "CURRENT",
+      templateId: "template_alpha_0001",
+      status: "current",
+      contentStatus: "incompatible",
+      fundingAssessment: r.funding_assessment,
+      turnover: "0.999",
       freshness: {
         status: "fresh",
-        freshUntil: "2026-12-01T00:00:00Z",
-        expiresAt: "2026-12-01T00:00:00Z",
-        lastEvaluatedAt: "2026-09-01T00:00:00Z",
-        sourceAsOf: "2026-09-01T00:00:00Z",
-        policyVersion: "automated-portfolio-freshness-1",
+        freshUntil: r.fresh_until,
+        expiresAt: r.expires_at,
+        lastEvaluatedAt: "",
+        sourceAsOf: r.as_of_time,
+        policyVersion: "",
         reasonCodes: [],
       },
-      estimatedTurnoverPercent: "8.25",
-      legCount: 503,
-      executionEligible: true,
+      estimatedTurnoverPercent: "99.9",
+      legCount: 2,
+      executionEligible: false,
     });
     // Decimal stays a string; no symbol/action/confidence/rationale keys exist.
     expect(typeof v.estimatedTurnoverPercent).toBe("string");

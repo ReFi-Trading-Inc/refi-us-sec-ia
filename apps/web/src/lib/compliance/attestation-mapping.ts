@@ -30,6 +30,11 @@
  *    (`../kyc/provenance`): a provider label is metadata, never proof.
  */
 import { createHash } from "node:crypto";
+import {
+  isDevelopmentKycEvidence,
+  developmentKycScope,
+  type DevelopmentKycEvidence,
+} from "../integration-dev/kyc-pass";
 import type { components } from "@refi/api-clients/generated/investor-api.gen";
 import { stableSerialize } from "../sec203a/canonical-json";
 import { ASSESSMENT_POLICY_VERSION } from "../sec203a/investor-profile-engine";
@@ -59,7 +64,7 @@ export type TradingEligibility =
  * `decision_version` — that is the assessment policy version (checklist:
  * "frontend_policy_version").
  */
-export const ATTESTATION_MAPPING_VERSION = "attestation-mapping-v1";
+export const ATTESTATION_MAPPING_VERSION = "attestation-mapping-v2";
 
 /** Contract constant (`schema_version` const "1.0"). */
 export const ATTESTATION_SCHEMA_VERSION: ComplianceProfileAttestationRequest["schema_version"] =
@@ -69,16 +74,12 @@ export const ATTESTATION_SCHEMA_VERSION: ComplianceProfileAttestationRequest["sc
 export const SUPPORTED_QUESTIONNAIRE_VERSION = 2 as const;
 
 /**
- * `trading_eligibility` values this mapping can EVER emit. `eligible` is
- * deliberately not representable: execution authority is behind D-LAUNCH-06
- * and the Managed gates (spec §10, §21 slice 4; Ship Contract Signal
- * no-execution boundary). A future change here is a D-LAUNCH-06 decision,
- * not an implementation detail.
+ * Automated Alpha may attest eligible only with eligible profile + trusted
+ * passed KYC (or the separately scoped Dev fixture). Legacy read-only modes
+ * remain pending. This is evidence, not AccountAuthorization or permission to
+ * bypass independent backend holds, membership, consent or brokerage checks.
  */
-export type EmittableTradingEligibility = Exclude<
-  TradingEligibility,
-  "eligible"
->;
+export type EmittableTradingEligibility = TradingEligibility;
 
 /**
  * `investor_profile.status` values this mapping emits. `expired` and
@@ -105,6 +106,8 @@ export const ATTESTATION_BLOCK_REASONS = [
 export type AttestationBlockReason = (typeof ATTESTATION_BLOCK_REASONS)[number];
 
 export interface AttestationEvidenceInput {
+  /** Server-only durable sequence allocation; independent of answer version. */
+  decisionIdentity?: { sequence: number; effectiveAt: string };
   /** Backend account id the attestation will be written under. */
   accountId: string;
   /** The immutable v2 answers version (prototype-store record fields). */
@@ -122,7 +125,10 @@ export interface AttestationEvidenceInput {
    * boundary — see `../kyc/provenance`. Mock provenance and any structurally
    * similar object are refused.
    */
-  kyc: KycEvidenceProvenance | TrustedKycEvidence | null;
+  kyc:
+    KycEvidenceProvenance | TrustedKycEvidence | DevelopmentKycEvidence | null;
+  /** Set by the server's automated_alpha release policy, never browser input. */
+  automatedAlpha?: boolean;
   /**
    * Recomputes the answers snapshot hash so a tampered or mismatched record
    * can never be attested. Injected (not imported) so this module stays free
@@ -141,6 +147,12 @@ export interface AttestationEvidenceDocument {
   answers: InvestorProfileAnswers;
   assessment: InvestorProfileAssessment;
   kyc: AttestationKyc;
+  development_fixture?: {
+    subject: string;
+    generation: number;
+    issued_at: string;
+    expires_at: string;
+  };
 }
 
 export type BuildAttestationResult =
@@ -163,12 +175,21 @@ export type BuildAttestationResult =
  * the evidence may be attested.
  */
 export function kycEvidenceBlock(
-  kyc: KycEvidenceProvenance | TrustedKycEvidence | null,
+  kyc:
+    KycEvidenceProvenance | TrustedKycEvidence | DevelopmentKycEvidence | null,
 ): Extract<
   AttestationBlockReason,
   "KYC_EVIDENCE_MISSING" | "KYC_EVIDENCE_MOCK" | "KYC_PROVENANCE_UNTRUSTED"
 > | null {
   if (kyc === null) return "KYC_EVIDENCE_MISSING";
+  if (isDevelopmentKycEvidence(kyc)) {
+    if (
+      developmentKycScope(kyc.subject, kyc.accountId) !== kyc.generation ||
+      Date.parse(kyc.expiresAt) <= Date.now()
+    )
+      return "KYC_PROVENANCE_UNTRUSTED";
+    return null;
+  }
   if (kyc.source === "mock") return "KYC_EVIDENCE_MOCK";
   if (!isTrustedKycEvidence(kyc)) return "KYC_PROVENANCE_UNTRUSTED";
   return null;
@@ -220,7 +241,12 @@ function riskBandSlug(band: RiskBand): string {
  */
 export function deriveTradingEligibility(
   profileStatus: EmittableInvestorProfileStatus,
+  automatedAlpha = false,
+  kycStatus?: string,
 ): EmittableTradingEligibility {
+  if (automatedAlpha && kycStatus === "failed") return "ineligible";
+  if (automatedAlpha && profileStatus === "eligible" && kycStatus === "passed")
+    return "eligible";
   return profileStatus === "ineligible" ? "ineligible" : "pending";
 }
 
@@ -304,12 +330,36 @@ export function buildComplianceProfileAttestationRequest(
   if (!isRfc3339WithZone(assessment.assessedAt)) {
     blocked.push("EFFECTIVE_AT_INVALID");
   }
-  if (blocked.length > 0 || !isTrustedKycEvidence(kyc)) {
+  const development = isDevelopmentKycEvidence(kyc) ? kyc : null;
+  if (
+    development &&
+    (development.accountId !== accountId ||
+      development.profileVersion !== answersVersion.profileVersion)
+  )
+    blocked.push("KYC_PROVENANCE_UNTRUSTED");
+  if (
+    blocked.length > 0 ||
+    (!isTrustedKycEvidence(kyc) && !isDevelopmentKycEvidence(kyc))
+  ) {
     return { ok: false, blocked };
   }
 
   const decisionVersion = assessment.assessmentPolicyVersion;
-  const decisionSequence = answersVersion.profileVersion;
+  const decisionSequence =
+    development?.decisionSequence ??
+    input.decisionIdentity?.sequence ??
+    answersVersion.profileVersion;
+  if (
+    !Number.isSafeInteger(decisionSequence) ||
+    decisionSequence < 1 ||
+    decisionSequence > 2147483647
+  )
+    return { ok: false, blocked: ["PROFILE_VERSION_INVALID"] };
+  if (
+    input.decisionIdentity &&
+    !isRfc3339WithZone(input.decisionIdentity.effectiveAt)
+  )
+    return { ok: false, blocked: ["EFFECTIVE_AT_INVALID"] };
   const profileStatus = deriveInvestorProfileStatus(assessment);
 
   const evidence: AttestationEvidenceDocument = {
@@ -322,6 +372,16 @@ export function buildComplianceProfileAttestationRequest(
     answers: answersVersion.answers,
     assessment,
     kyc: kyc.normalized,
+    ...(development
+      ? {
+          development_fixture: {
+            subject: development.subject,
+            generation: development.generation,
+            issued_at: development.issuedAt,
+            expires_at: development.expiresAt,
+          },
+        }
+      : {}),
   };
   const evidenceCanonical = stableSerialize(evidence);
 
@@ -337,18 +397,25 @@ export function buildComplianceProfileAttestationRequest(
     kyc: kyc.normalized,
     investor_profile: {
       status: profileStatus,
-      profile_version: String(decisionSequence),
+      profile_version: String(answersVersion.profileVersion),
       questionnaire_version: String(
         answersVersion.answers.questionnaireVersion,
       ),
       risk_band: deriveRiskBandLabel(assessment),
     },
-    trading_eligibility: deriveTradingEligibility(profileStatus),
-    effective_at: assessment.assessedAt,
+    trading_eligibility: deriveTradingEligibility(
+      profileStatus,
+      input.automatedAlpha,
+      kyc.normalized.status,
+    ),
+    effective_at:
+      development?.issuedAt ??
+      input.decisionIdentity?.effectiveAt ??
+      assessment.assessedAt,
     // Refresh frequency / expiry is counsel register §20 #6 — undecided. The
     // contract permits null; Daniel's legacy AdvisoryProfile projection will
     // not represent an attestation without an expiry (documented in the ledger).
-    expires_at: null,
+    expires_at: development?.expiresAt ?? null,
     evidence_sha256: sha256Hex(evidenceCanonical),
   };
 

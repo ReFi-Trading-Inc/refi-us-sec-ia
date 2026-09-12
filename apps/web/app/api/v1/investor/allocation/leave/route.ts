@@ -8,6 +8,7 @@
  * retry; the backend owns every resulting execution decision.
  */
 import { z } from "zod";
+import { operationIdFrom } from "../../../../../../src/lib/investor-api/operation-identity";
 import { bffMutate } from "../../../../../../src/lib/bff/handler";
 import {
   OPAQUE_ID_PATTERN,
@@ -30,12 +31,20 @@ export const POST = bffMutate<Body>({
   source: "backend",
   parse: (body) => bodySchema.parse(body),
   apply: async (ctx) => {
+    const operationId = operationIdFrom(ctx.req.headers);
+    if (!operationId)
+      return {
+        refuse: "bad_request",
+        message:
+          "A stable Idempotency-Key is required; reuse it only for the same action.",
+      };
     const scope = await clientAndScopeOrRefusal(ctx.auth);
     if ("refusal" in scope) return scope.refusal;
     const { client } = scope;
     let outcome;
     try {
       outcome = await submitAccountAction(client, scope.accountId, {
+        operationId,
         action: "leave_template",
         templateId: ctx.input.templateId,
       });

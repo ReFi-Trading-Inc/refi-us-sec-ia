@@ -2,7 +2,7 @@
  * @refi/api-clients/investor-api — SERVER-ONLY entry point.
  *
  * Typed client, derived routes, and contract validation for Daniel's
- * v1.1.0-alpha.3 Investor API package. Never import this from browser code;
+ * v1.1.0-alpha.4 Investor API package. Never import this from browser code;
  * the BFF is the browser's boundary.
  */
 export {

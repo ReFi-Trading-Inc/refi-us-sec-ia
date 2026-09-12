@@ -142,11 +142,11 @@ interface Prefs {
 
 interface RecSpec {
   id: string;
-  status: S["Recommendation"]["status"];
+  status: "CURRENT" | "SUPERSEDED" | "BLOCKED" | "EXPIRED";
   createdAt: number;
   turnover: number;
   executionEligible: boolean;
-  freshness: S["Recommendation"]["freshness"]["freshness_status"];
+  freshness: string;
   reasonCodes: string[];
   /** Seed shifts the leg deltas so consecutive recommendations differ. */
   seed: number;
@@ -867,21 +867,84 @@ function recommendation(w: World, rec: RecSpec): S["Recommendation"] {
   const created = rec.createdAt;
   return {
     recommendation_id: rec.id,
-    account_id: accountOf(w),
-    template_id: w.templateId,
-    status: rec.status,
-    execution_eligible: rec.executionEligible,
+    content_status: rec.status === "BLOCKED" ? "incompatible" : "ready",
+    lifecycle_status: rec.status,
+    execution_eligible: false,
     leg_count: legsFor(w, rec).length,
-    estimated_turnover_percent: dec(rec.turnover),
-    freshness: {
-      source_as_of: iso(created - 60 * 60_000),
-      last_evaluated_at: iso(created),
-      fresh_until: iso(created + 5 * DAY),
-      expires_at: iso(created + 14 * DAY),
-      freshness_status: rec.freshness,
-      freshness_policy_version: "automated-portfolio-freshness-1",
-      freshness_reason_codes: rec.reasonCodes,
+    as_of_time: iso(created - 60 * 60_000),
+    fresh_until: iso(created + 5 * DAY),
+    expires_at: iso(created + 14 * DAY),
+    freshness_status: rec.freshness,
+    reason_codes: rec.reasonCodes,
+    created_at: iso(created),
+    updated_at: iso(created),
+    currency: "USD",
+    funding_assessment: null,
+    state_version: 1,
+    supersedes_recommendation_id: null,
+    lineage: {
+      template_id: w.templateId,
+      build_run_id: "build_demo_0001",
+      portfolio_version_id: "portfolio_demo_0001",
+      target_version: "1",
+      target_fingerprint: "demo",
+      membership_fingerprint: "demo",
+      preference_fingerprint: "demo",
+      authorization_fingerprint: "demo",
+      account_snapshot_id: "snapshot_demo_0090",
+      valuation_fingerprint: "demo",
+      price_set_id: "prices_demo_0001",
+      price_set_fingerprint: "demo",
+      input_fingerprint: "demo",
+      output_fingerprint: "demo",
+      policy_version: "demo-only",
+      rounding_policy_version: "demo-only",
+      membership_version: 1,
+      preference_version: w.prefs.version,
+      authorization_state_version: 1,
     },
+    summary: {
+      equity: dec(equityAt(w, created)),
+      starting_cash: "0",
+      investable_equity: "0",
+      reserved_cash: "0",
+      gross_change_notional: "0",
+      net_change_notional: "0",
+      buy_notional: "0",
+      sell_notional: "0",
+      post_cash: "0",
+      residual_cash: "0",
+      target_cash_weight: "0",
+      coverage_weight: "1",
+      uncovered_weight: "0",
+      excluded_weight: "0",
+      suppressed_weight: "0",
+      turnover: dec(rec.turnover / 100, 8),
+      tracking_difference_weight: "0",
+    },
+  };
+}
+
+function recommendationSummary(
+  w: World,
+  rec: RecSpec,
+): S["RecommendationSummary"] {
+  const {
+    lineage,
+    summary,
+    state_version: _version,
+    updated_at: _updated,
+    supersedes_recommendation_id: _supersedes,
+    ...common
+  } = recommendation(w, rec);
+  return {
+    ...common,
+    equity: summary.equity,
+    residual_cash: summary.residual_cash,
+    coverage_weight: summary.coverage_weight,
+    tracking_difference_weight: summary.tracking_difference_weight,
+    turnover: summary.turnover,
+    output_fingerprint: lineage.output_fingerprint,
   };
 }
 
@@ -1377,7 +1440,7 @@ export class DemoInvestorApiClient implements InvestorApiReadClient {
           data: page(
             [...w.recs]
               .sort((a, b) => b.createdAt - a.createdAt)
-              .map((r) => recommendation(w, r)),
+              .map((r) => recommendationSummary(w, r)),
             q,
           ),
         };

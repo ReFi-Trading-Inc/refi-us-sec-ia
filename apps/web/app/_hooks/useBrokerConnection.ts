@@ -8,6 +8,7 @@
  * are gone (C1b-2 rows 10–16).
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 import type { BrokerageConnectionView } from "@lib/investor-api/brokerage-connection";
 
 export type { BrokerageConnectionView };
@@ -54,7 +55,7 @@ export function useBrokerConnection(options?: {
 }
 
 export interface ConnectBrokerInput {
-  environment: "paper";
+  environment: "paper" | "live";
   apiKeyId: string;
   apiSecretKey: string;
 }
@@ -71,11 +72,28 @@ export class ConnectBrokerError extends Error {
 
 export function useConnectBroker() {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: ConnectBrokerInput) => {
+  const transient = useRef<ConnectBrokerInput | null>(null);
+  const inFlight = useRef(false);
+  const storageKey = "refi:pending-broker-connect-operation";
+  const mutation = useMutation({
+    retry: false,
+    gcTime: 0,
+    mutationFn: async () => {
+      const input = transient.current;
+      transient.current = null;
+      if (!input)
+        throw new Error("Broker credentials must be supplied for this attempt");
+      // Persist only an opaque operation ID, never credentials. Recovery after
+      // reload supplies the same pair again; backend rejects changed bodies.
+      const operationId =
+        sessionStorage.getItem(storageKey) ?? crypto.randomUUID();
+      sessionStorage.setItem(storageKey, operationId);
       const res = await fetch(BASE, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "Idempotency-Key": operationId,
+        },
         credentials: "include",
         body: JSON.stringify(input),
       });
@@ -92,7 +110,35 @@ export function useConnectBroker() {
       return body.data.connection;
     },
     onSuccess: async () => {
+      sessionStorage.removeItem(storageKey);
       await qc.invalidateQueries({ queryKey: BROKER_CONNECTION_QUERY_KEY });
     },
+    onSettled: () => {
+      inFlight.current = false;
+      transient.current = null;
+    },
   });
+  return {
+    ...mutation,
+    // Never put credentials in React Query's durable mutation variables.
+    mutateAsync: (input: ConnectBrokerInput) => {
+      if (inFlight.current)
+        return Promise.reject(new Error("Connection attempt already pending"));
+      inFlight.current = true;
+      transient.current = input;
+      return mutation.mutateAsync();
+    },
+    mutate: (input: ConnectBrokerInput) => {
+      if (inFlight.current) return;
+      inFlight.current = true;
+      transient.current = input;
+      mutation.mutate();
+    },
+    // A deliberate changed-credential attempt is different from retry recovery.
+    resetOperation: () => {
+      if (inFlight.current) return;
+      sessionStorage.removeItem(storageKey);
+      mutation.reset();
+    },
+  };
 }

@@ -34,10 +34,12 @@ export function eventSourceFromClient(
         stream.cancel("client disconnected");
       };
       signal.addEventListener("abort", onAbort, { once: true });
+      if (signal.aborted) onAbort();
       try {
         for await (const frame of stream.events) yield frame.event;
       } finally {
         signal.removeEventListener("abort", onAbort);
+        stream.cancel("subscription finished");
       }
     },
   };

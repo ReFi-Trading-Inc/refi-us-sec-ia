@@ -8,6 +8,7 @@
  * hashed, echoed or reused; Idempotency-Key from the key ID only.
  */
 import { z } from "zod";
+import { operationIdFrom } from "../../../../../../../../src/lib/investor-api/operation-identity";
 import { bffMutate } from "../../../../../../../../src/lib/bff/handler";
 import { rotateBrokerageCredentials } from "../../../../../../../../src/lib/investor-api/brokerage-maintenance";
 import {
@@ -15,15 +16,20 @@ import {
   upstreamRefusal,
 } from "../../../../../../../../src/lib/investor-api/mutation-route";
 
-const PAPER_KEY_ID = /^PK[A-Z0-9]{18}$/;
+const PAPER_KEY_ID = /^(PK|AK)[A-Z0-9]{18}$/;
 const SECRET = /^[A-Za-z0-9]{40}$/;
 const bodySchema = z
   .object({
-    environment: z.literal("paper"),
+    environment: z.enum(["paper", "live"]),
     apiKeyId: z.string().regex(PAPER_KEY_ID),
     apiSecretKey: z.string().regex(SECRET),
   })
-  .strict();
+  .strict()
+  .refine(
+    (input) =>
+      input.apiKeyId.startsWith(input.environment === "paper" ? "PK" : "AK"),
+    { message: "API key and selected account environment disagree" },
+  );
 type Body = z.infer<typeof bodySchema>;
 
 function connectionIdFromUrl(url: string): string {
@@ -36,6 +42,13 @@ export const POST = bffMutate<Body>({
   source: "backend",
   parse: (body) => bodySchema.parse(body),
   apply: async (ctx) => {
+    const operationId = operationIdFrom(ctx.req.headers);
+    if (!operationId)
+      return {
+        refuse: "bad_request",
+        message:
+          "A stable Idempotency-Key is required; reuse it only for the same action.",
+      };
     const scope = await clientAndScopeOrRefusal(ctx.auth);
     if ("refusal" in scope) return scope.refusal;
     const { client } = scope;
@@ -45,7 +58,11 @@ export const POST = bffMutate<Body>({
         client,
         scope.accountId,
         connectionIdFromUrl(ctx.req.url),
-        { apiKeyId: ctx.input.apiKeyId, apiSecretKey: ctx.input.apiSecretKey },
+        {
+          apiKeyId: ctx.input.apiKeyId,
+          apiSecretKey: ctx.input.apiSecretKey,
+          operationId,
+        },
       );
     } catch (err) {
       return upstreamRefusal(err);

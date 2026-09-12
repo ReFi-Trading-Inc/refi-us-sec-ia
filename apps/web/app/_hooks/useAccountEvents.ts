@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { AccountEvent } from "@lib/investor-api/events";
+import { useAuth } from "../_providers/auth/AuthProvider";
 
 export type LiveConnection = "connecting" | "live" | "reconnecting" | "closed";
 
@@ -47,12 +48,21 @@ const QUERY_KEYS_FOR_EVENT: Record<string, ReadonlyArray<readonly string[]>> = {
   "account_intent.updated": [["investor", "activity"]],
   "risk_decision.updated": [["investor", "activity"]],
   "execution_plan.updated": [["investor", "activity"]],
+  "compliance_profile_attestation.updated": [["investor"]],
+  "consent.updated": [["investor"]],
+  "brokerage_connection.updated": [["investor"]],
+  "brokerage_sync.updated": [["investor"]],
+  "allocation.updated": [["investor"]],
+  "action_receipt.updated": [["investor"]],
+  "trading_control.updated": [["investor"]],
 };
 
 export function useAccountEvents(
   options: { enabled?: boolean; onEvent?: (e: LiveEventView) => void } = {},
 ) {
-  const enabled = options.enabled ?? true;
+  const auth = useAuth();
+  const enabled = (options.enabled ?? true) && auth.status === "authenticated";
+  const scope = `${auth.authId ?? ""}:${auth.accountId ?? ""}`;
   const qc = useQueryClient();
   const [connection, setConnection] = useState<LiveConnection>("connecting");
   const [recent, setRecent] = useState<LiveEventView[]>([]);
@@ -62,6 +72,7 @@ export function useAccountEvents(
   });
 
   useEffect(() => {
+    setRecent([]);
     if (
       !enabled ||
       typeof window === "undefined" ||
@@ -73,6 +84,9 @@ export function useAccountEvents(
     });
     es.onopen = () => {
       setConnection("live");
+      // Includes reconnect after expired cursors/auth renewal: recover canonical
+      // reads even when no new event arrives to invalidate a stale cache.
+      void qc.invalidateQueries({ queryKey: ["investor"] });
     };
     es.onerror = () => {
       setConnection((c) => (c === "closed" ? c : "reconnecting"));
@@ -92,28 +106,28 @@ export function useAccountEvents(
         occurredAt: ev.occurred_at,
         reasonCodes: [...ev.data.reason_codes],
       };
-      setRecent((prev) => [view, ...prev].slice(0, 12));
+      setRecent((prev) =>
+        [view, ...prev.filter((item) => item.eventId !== view.eventId)].slice(
+          0,
+          12,
+        ),
+      );
       for (const key of QUERY_KEYS_FOR_EVENT[ev.event_type] ?? []) {
         void qc.invalidateQueries({ queryKey: [...key] });
       }
       onEventRef.current?.(view);
     };
-    for (const type of Object.keys(QUERY_KEYS_FOR_EVENT).concat([
-      "compliance_profile_attestation.updated",
-      "consent.updated",
-      "brokerage_connection.updated",
-      "brokerage_sync.updated",
-      "allocation.updated",
-      "action_receipt.updated",
-      "trading_control.updated",
-    ])) {
+    es.addEventListener("upstream", () => {
+      void qc.invalidateQueries({ queryKey: ["investor"] });
+    });
+    for (const type of Object.keys(QUERY_KEYS_FOR_EVENT)) {
       es.addEventListener(type, handler as EventListener);
     }
     return () => {
       setConnection("closed");
       es.close();
     };
-  }, [enabled, qc]);
+  }, [enabled, qc, scope]);
 
   return { connection, recent };
 }

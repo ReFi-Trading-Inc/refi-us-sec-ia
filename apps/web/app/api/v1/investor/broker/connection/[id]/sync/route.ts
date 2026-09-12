@@ -5,6 +5,7 @@
  * path is built). Idempotency-Key bucketed per minute; no retry.
  */
 import { bffMutate } from "../../../../../../../../src/lib/bff/handler";
+import { operationIdFrom } from "../../../../../../../../src/lib/investor-api/operation-identity";
 import { syncBrokerageConnection } from "../../../../../../../../src/lib/investor-api/brokerage-maintenance";
 import {
   clientAndScopeOrRefusal,
@@ -20,6 +21,13 @@ export const POST = bffMutate<undefined>({
   action: "syncBrokerConnection",
   source: "backend",
   apply: async (ctx) => {
+    const operationId = operationIdFrom(ctx.req.headers);
+    if (!operationId)
+      return {
+        refuse: "bad_request",
+        message:
+          "A stable Idempotency-Key is required; reuse it only for the same action.",
+      };
     const scope = await clientAndScopeOrRefusal(ctx.auth);
     if ("refusal" in scope) return scope.refusal;
     const { client } = scope;
@@ -29,6 +37,7 @@ export const POST = bffMutate<undefined>({
         client,
         scope.accountId,
         connectionIdFromUrl(ctx.req.url),
+        operationId,
       );
     } catch (err) {
       return upstreamRefusal(err);

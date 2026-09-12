@@ -1,5 +1,5 @@
 /**
- * v1.1.0-alpha.3 adoption (Daniel, issued 2026-09-09; vendored 2026-09-10).
+ * v1.1.0-alpha.4 adoption (Daniel, issued 2026-09-09; vendored 2026-09-10).
  *
  * MIGRATION.md: same 41 operations/paths/fields/JWT semantics; error profiles
  * broadened (413, 422, cursor codes, `preference_mutation` with the
@@ -69,11 +69,14 @@ function clientAnswering(status: number, body: unknown) {
 }
 
 describe("alpha.3 package selection", () => {
-  it("selects v1.1.0-alpha.3 and keeps the 41 operations, auth policies and paths of alpha.2", () => {
-    expect(CONTRACT_VERSION).toBe("v1.1.0-alpha.3");
+  it("selects v1.1.0-alpha.4 and keeps the 41 operations, auth policies and paths of alpha.2", () => {
+    expect(CONTRACT_VERSION).toBe("v1.1.0-alpha.4");
     const old = JSON.parse(
       readFileSync(
-        join(ROOT, "contracts/investor-api/v1.1.0-alpha.2/contract.json"),
+        join(
+          ROOT,
+          "contracts/investor-api/archive/v1.1.0-alpha.2/contract.json",
+        ),
         "utf8",
       ),
     ) as typeof CONTRACT_DOCUMENT;
@@ -112,7 +115,7 @@ describe("alpha.3 package selection", () => {
   });
 
   it("the archived alpha.2 copy is still byte-identical to its own bundle.json (issued history, untouched)", () => {
-    const dir = join(ROOT, "contracts/investor-api/v1.1.0-alpha.2");
+    const dir = join(ROOT, "contracts/investor-api/archive/v1.1.0-alpha.2");
     const bundle = JSON.parse(
       readFileSync(join(dir, "bundle.json"), "utf8"),
     ) as {
@@ -267,11 +270,11 @@ describe("contract selection (founder mandate 2026-09-10)", () => {
       package_content_sha256: string;
       archive_status: string;
     };
-    expect(current.contract_version).toBe("v1.1.0-alpha.3");
-    expect(current.package_path).toBe("v1.1.0-alpha.3");
+    expect(current.contract_version).toBe("v1.1.0-alpha.4");
+    expect(current.package_path).toBe("v1.1.0-alpha.4");
     expect(current.archive_status).toBe("superseded_reference_only");
     expect(current.package_content_sha256).toBe(
-      "5eca1200f6af807093ea0986f835235e2da478b69478e621fd54954ba1d77608",
+      "a6db935b6a398bff00a7ccee4cb268ee565249bbd75c23e36594c9f6b698e7c3",
     );
     expect(current.package_content_sha256).toBe(
       (
@@ -314,7 +317,7 @@ describe("contract selection (founder mandate 2026-09-10)", () => {
       for (const m of code.matchAll(
         /from\s+["']([^"']*contracts\/investor-api\/[^"']+)["']/g,
       )) {
-        expect(m[1], relative(ROOT2, f)).toContain("/v1.1.0-alpha.3/");
+        expect(m[1], relative(ROOT2, f)).toContain("/v1.1.0-alpha.4/");
       }
     }
   });

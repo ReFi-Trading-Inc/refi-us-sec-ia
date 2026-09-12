@@ -37,6 +37,7 @@
  * authorization projection into frontend state.
  */
 import { createHash } from "node:crypto";
+import { isDevelopmentKycEvidence } from "../integration-dev/kyc-pass";
 import {
   InvestorApiError,
   InvestorApiTransportError,
@@ -48,7 +49,7 @@ import {
   type EffectiveDisclosure,
 } from "../investor-api/disclosure-consent";
 import {
-  collectPages,
+  collectComplete,
   CONTRACT_MAX_PAGE_SIZE,
 } from "../investor-api/pagination";
 import {
@@ -169,15 +170,12 @@ export function missingConsents(
 async function listActiveConsents(
   client: InvestorApiReadClient,
 ): Promise<ConsentReceiptItem[]> {
-  const { items } = await collectPages(
-    async (cursor) => {
-      const res = await client.call("listConsents", {
-        query: { page_size: CONTRACT_MAX_PAGE_SIZE, cursor },
-      });
-      return { items: res.data.data.items, page: res.data.data.page };
-    },
-    { maxPages: MAX_PAGES },
-  );
+  const items = await collectComplete(async (cursor) => {
+    const res = await client.call("listConsents", {
+      query: { page_size: CONTRACT_MAX_PAGE_SIZE, cursor },
+    });
+    return { items: res.data.data.items, page: res.data.data.page };
+  }, MAX_PAGES);
   return items;
 }
 
@@ -195,7 +193,10 @@ export async function submitComplianceProfileAttestation(
   const attestationId = deriveAttestationId(
     accountId,
     args.evidence.assessment.assessmentPolicyVersion,
-    args.evidence.answersVersion.profileVersion,
+    isDevelopmentKycEvidence(args.evidence.kyc)
+      ? args.evidence.kyc.decisionSequence
+      : (args.evidence.decisionIdentity?.sequence ??
+          args.evidence.answersVersion.profileVersion),
   );
 
   // 1. disclosure delivered

@@ -5,6 +5,7 @@
  * and a percent, never an account. Deterministic Idempotency-Key; no retry.
  */
 import { z } from "zod";
+import { operationIdFrom } from "../../../../../../src/lib/investor-api/operation-identity";
 import { bffMutate } from "../../../../../../src/lib/bff/handler";
 import {
   ALLOCATION_PERCENT_PATTERN,
@@ -29,11 +30,21 @@ export const POST = bffMutate<Body>({
   source: "backend",
   parse: (body) => bodySchema.parse(body),
   apply: async (ctx) => {
+    const operationId = operationIdFrom(ctx.req.headers);
+    if (!operationId)
+      return {
+        refuse: "bad_request",
+        message:
+          "A stable Idempotency-Key is required; reuse it only for the same action.",
+      };
     const scope = await clientAndScopeOrRefusal(ctx.auth);
     if ("refusal" in scope) return scope.refusal;
     const { client } = scope;
     try {
-      const out = await previewAllocation(client, scope.accountId, ctx.input);
+      const out = await previewAllocation(client, scope.accountId, {
+        ...ctx.input,
+        operationId,
+      });
       return {
         data: {
           ok: true,

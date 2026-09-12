@@ -14,7 +14,10 @@
  *        credentials, and nothing here calls Alpaca. Live keys are refused by
  *        schema (`environment` is the literal "paper"; D-LAUNCH-07 is OPEN).
  */
-import { createHash } from "node:crypto";
+import {
+  operationIdFrom,
+  operationKey,
+} from "@lib/investor-api/operation-identity";
 import { z } from "zod";
 import { bffMutate, bffRead } from "@lib/bff/handler";
 import { InvestorApiError } from "@refi/api-clients/investor-api";
@@ -31,16 +34,21 @@ import {
 
 // Alpaca API Key IDs are 20-char uppercase alphanumerics; PAPER keys start
 // with PK. A live key (AK…) never parses here.
-const PAPER_KEY_ID = /^PK[A-Z0-9]{18}$/;
+const PAPER_KEY_ID = /^(PK|AK)[A-Z0-9]{18}$/;
 const SECRET = /^[A-Za-z0-9]{40}$/;
 
 const bodySchema = z
   .object({
-    environment: z.literal("paper"),
+    environment: z.enum(["paper", "live"]),
     apiKeyId: z.string().regex(PAPER_KEY_ID),
     apiSecretKey: z.string().regex(SECRET),
   })
-  .strict();
+  .strict()
+  .refine(
+    (input) =>
+      input.apiKeyId.startsWith(input.environment === "paper" ? "PK" : "AK"),
+    { message: "API key and selected account environment disagree" },
+  );
 type Body = z.infer<typeof bodySchema>;
 
 export const GET = bffRead({
@@ -67,6 +75,13 @@ export const POST = bffMutate<Body>({
   source: "backend",
   parse: (body) => bodySchema.parse(body),
   apply: async (ctx) => {
+    const operationId = operationIdFrom(ctx.req.headers);
+    if (!operationId)
+      return {
+        refuse: "bad_request",
+        message:
+          "A stable Idempotency-Key is required; reuse it only for the same action.",
+      };
     const client = investorApiClientFor(ctx.auth);
     let accountId: string;
     try {
@@ -81,10 +96,7 @@ export const POST = bffMutate<Body>({
     }
     // Deterministic per (account, key id, environment) so a retry of the same
     // submission is idempotent upstream. The secret is never part of the key.
-    const idempotencyKey = createHash("sha256")
-      .update(`${accountId}|${ctx.input.apiKeyId}|paper`)
-      .digest("hex")
-      .slice(0, 64);
+    const idempotencyKey = operationKey("connect", accountId, operationId);
     try {
       // Forwarded ONCE through connectBrokerage; the response is the status
       // projection and never the credentials. Backend errors (including a
@@ -93,6 +105,7 @@ export const POST = bffMutate<Body>({
         client,
         accountId,
         {
+          environment: ctx.input.environment,
           apiKeyId: ctx.input.apiKeyId,
           apiSecretKey: ctx.input.apiSecretKey,
         },

@@ -68,6 +68,7 @@ function fakeClient(authorization: string, reasonCodes: string[] = []) {
 }
 
 const INPUT = {
+  environment: "paper" as const,
   apiKeyId: "PKTESTFIXTURE0000001",
   apiSecretKey: "testFixtureSecret".padEnd(40, "0"),
 };

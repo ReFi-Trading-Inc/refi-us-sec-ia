@@ -42,6 +42,18 @@ export interface CollectedPages<T> {
   nextCursor: string | null;
 }
 
+/** Account truth/ownership must be complete; a cap is an explicit error. */
+export async function collectComplete<T>(
+  fetchPage: (
+    cursor: string | undefined,
+  ) => Promise<{ items: T[]; page: ContractPage }>,
+  maxPages = 20,
+): Promise<T[]> {
+  const result = await collectPages(fetchPage, { maxPages });
+  if (result.truncated) throw new PaginationError("page_cap_exceeded");
+  return result.items;
+}
+
 /**
  * Collect up to `maxPages` pages. Stops when `has_more` is false. If the cap
  * is reached with more remaining, returns `truncated: true` and the cursor to

@@ -1,5 +1,5 @@
 /**
- * Signal recommendations — browser → same-origin BFF → frozen v1.1.0-alpha.3
+ * Recommendations — browser → same-origin BFF → frozen v1.1.0-alpha.4
  * client → Daniel's deterministic loopback simulator. No browser-side route
  * mock: the legacy `/v1/recommendations` interception is gone with the hook
  * it faked. Simulator evidence only — never a connected refinity-dev claim.
@@ -39,12 +39,12 @@ test.describe("Recommendations — Signal user", () => {
     });
     const card = page.getByTestId("recommendation-card").first();
     await expect(card).toBeVisible();
-    await expect(card).toHaveAttribute("data-rec-status", "CURRENT");
+    await expect(card).toHaveAttribute("data-rec-status", "current");
     await expect(card.getByTestId("recommendation-template")).toHaveText(
-      "template_us_sp500_direct_index_v1",
+      "template_alpha_0001",
     );
-    await expect(card).toContainText("8.25%");
-    await expect(card).toContainText("503");
+    await expect(card).toContainText("99.9%");
+    await expect(card).toContainText("2");
     await expect(card).toContainText(/fresh/i);
     // Retired flat fields are not fabricated.
     await expect(card).not.toContainText(/confidence/i);
@@ -82,7 +82,7 @@ test.describe("Recommendations — Signal user", () => {
     );
 
     await expect(page.getByTestId("recommendation-detail-heading")).toHaveText(
-      "template_us_sp500_direct_index_v1",
+      "template_alpha_0001",
     );
     await expect(
       page.getByTestId("recommendation-execution-eligibility"),

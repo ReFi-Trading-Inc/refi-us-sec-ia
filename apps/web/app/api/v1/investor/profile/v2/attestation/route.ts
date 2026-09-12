@@ -18,6 +18,12 @@
  */
 import { bffMutate, bffRead } from "../../../../../../../src/lib/bff/handler";
 import {
+  developmentKycEvidence,
+  withdrawDevelopmentKyc,
+} from "../../../../../../../src/lib/integration-dev/kyc-pass";
+import { getServerEnv } from "../../../../../../../src/lib/config/env";
+import { assignDecisionIdentity } from "../../../../../../../src/lib/compliance/decision-sequence";
+import {
   ContractVersionMismatchError,
   InvestorApiTransportError,
 } from "@refi/api-clients/investor-api";
@@ -48,15 +54,25 @@ import {
 import { listAttestationSubmissions } from "../../../../../../../src/lib/prototype-store/entities/attestation-submission";
 import { submitComplianceProfileAttestation } from "../../../../../../../src/lib/compliance/attestation-submission";
 import { CONTRACT_VERSION } from "../../../../../../../src/lib/investor-api/upstream-state";
+import { classifyUpstream } from "../../../../../../../src/lib/investor-api/upstream-state";
 import type { AttestationEvidenceInput } from "../../../../../../../src/lib/compliance/attestation-mapping";
 
 export const GET = bffRead({
   source: "prototype-bff",
   fetch: async (ctx) => {
-    if (!ctx.auth?.accountId) return { submissions: [] };
-    return {
-      submissions: await listAttestationSubmissions(ctx.auth.accountId),
-    };
+    if (!ctx.auth) return { submissions: [] };
+    try {
+      const accountId = await resolveAccountScope(
+        investorApiClientFor(ctx.auth),
+        ctx.auth,
+      );
+      return {
+        submissions: await listAttestationSubmissions(accountId),
+        upstream: { state: "ok" },
+      };
+    } catch (err) {
+      return { submissions: [], upstream: classifyUpstream(err) };
+    }
   },
 });
 
@@ -83,8 +99,7 @@ export const POST = bffMutate<undefined>({
     let accountId: string;
     try {
       client = investorApiClientFor(ctx.auth);
-      accountId =
-        ctx.auth.accountId ?? (await resolveAccountScope(client, ctx.auth));
+      accountId = await resolveAccountScope(client, ctx.auth);
     } catch (err) {
       if (err instanceof AccountScopeError) {
         return {
@@ -97,6 +112,18 @@ export const POST = bffMutate<undefined>({
       return unavailable(err);
     }
 
+    if (process.env["REFI_INTEGRATION_KYC_MODE"] === "withdraw") {
+      const out = await withdrawDevelopmentKyc(
+        client,
+        ctx.auth.authId,
+        accountId,
+      );
+      return {
+        data: { ok: true, attestation: out.data.data, simulatedKyc: true },
+        status: out.status,
+        references: [`attestation:${out.data.data.attestation_id}`],
+      };
+    }
     const version = await latestProfileVersion(accountId);
     const answers =
       version > 0 ? await getProfileAnswers(accountId, version) : null;
@@ -123,7 +150,13 @@ export const POST = bffMutate<undefined>({
         answerSnapshotHash: answers.answerSnapshotHash,
       },
       assessment: assessment.assessment,
-      kyc: await kycEvidenceFor(ctx.auth.authId),
+      kyc:
+        (await developmentKycEvidence(client, {
+          subject: ctx.auth.authId,
+          accountId,
+          profileVersion: answers.profileVersion,
+        })) ?? (await kycEvidenceFor(ctx.auth.authId)),
+      automatedAlpha: getServerEnv().REFI_RELEASE_STAGE === "automated_alpha",
       recomputeAnswerSnapshotHash: answersSnapshotHash,
     };
 
@@ -131,7 +164,11 @@ export const POST = bffMutate<undefined>({
     try {
       outcome = await submitComplianceProfileAttestation(client, {
         accountId,
-        evidence,
+        evidence:
+          getServerEnv().REFI_INVESTOR_API_CREDENTIAL_MODE ===
+          "native-cloud-run"
+            ? await assignDecisionIdentity(client, evidence)
+            : evidence,
         correlationId: ctx.correlationId,
       });
     } catch (err) {

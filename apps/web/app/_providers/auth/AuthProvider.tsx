@@ -12,7 +12,14 @@
  * package lands (GAP-IDENTITY-018); wallets are optional linked identifiers,
  * never the login, and never appear here.
  */
-import { createContext, useCallback, useContext, useMemo } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useEffect,
+  useRef,
+} from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -55,6 +62,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     staleTime: 30_000,
     retry: false,
   });
+  const lastScope = useRef<string | undefined>(undefined);
+  const scope = sessionQuery.data
+    ? `${sessionQuery.data.authId}:${sessionQuery.data.accountId ?? ""}`
+    : "";
+  useEffect(() => {
+    if (sessionQuery.isPending) return;
+    if (lastScope.current !== undefined && lastScope.current !== scope) {
+      // Session itself stays present. Drop all other account views and pending
+      // browser operation identity when ownership changes or login disappears.
+      qc.removeQueries({
+        predicate: (q) =>
+          q.queryKey[0] === "investor" && q.queryKey[1] !== "session",
+      });
+      sessionStorage.removeItem("refi:pending-broker-connect-operation");
+    }
+    lastScope.current = scope;
+  }, [qc, scope, sessionQuery.isPending]);
 
   const signOut = useCallback(async () => {
     try {
@@ -63,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         credentials: "include",
       });
     } finally {
+      sessionStorage.removeItem("refi:pending-broker-connect-operation");
       qc.clear();
       router.replace("/us");
     }

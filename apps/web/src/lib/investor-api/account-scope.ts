@@ -15,7 +15,7 @@
  */
 import type { AuthContext } from "../bff/auth";
 import type { InvestorApiReadClient } from "./demo-client";
-import { collectPages, CONTRACT_MAX_PAGE_SIZE } from "./pagination";
+import { collectComplete, CONTRACT_MAX_PAGE_SIZE } from "./pagination";
 
 export class AccountScopeError extends Error {
   constructor(readonly reason: "no_account" | "ambiguous_account") {
@@ -30,15 +30,12 @@ export async function resolveAccountScope(
   client: InvestorApiReadClient,
   auth: Pick<AuthContext, "accountId">,
 ): Promise<string> {
-  const { items } = await collectPages(
-    async (cursor) => {
-      const res = await client.call("listAccounts", {
-        query: { page_size: CONTRACT_MAX_PAGE_SIZE, cursor },
-      });
-      return { items: res.data.data.items, page: res.data.data.page };
-    },
-    { maxPages: MAX_ACCOUNT_PAGES },
-  );
+  const items = await collectComplete(async (cursor) => {
+    const res = await client.call("listAccounts", {
+      query: { page_size: CONTRACT_MAX_PAGE_SIZE, cursor },
+    });
+    return { items: res.data.data.items, page: res.data.data.page };
+  }, MAX_ACCOUNT_PAGES);
   const ids = [...new Set(items.map((a) => a.account_id))];
   if (auth.accountId !== undefined && ids.includes(auth.accountId)) {
     return auth.accountId;

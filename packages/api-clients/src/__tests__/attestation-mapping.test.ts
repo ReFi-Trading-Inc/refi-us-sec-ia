@@ -37,6 +37,11 @@ import {
 } from "../../../../apps/web/src/lib/compliance/attestation-mapping";
 import type { AttestationKyc } from "../../../../apps/web/src/lib/kyc/provider";
 import {
+  assignDecisionIdentity,
+  type DecisionIdentity,
+} from "../../../../apps/web/src/lib/compliance/decision-sequence";
+import type { KVStore } from "../../../../apps/web/src/lib/store/types";
+import {
   establishTrustedKycProvenance,
   isTrustedKycEvidence,
   mockKycProvenance,
@@ -150,6 +155,52 @@ const NOT_FIT: InvestorProfileAnswers = {
   goal: "near_term_reserve",
   horizon: "1_3y",
 };
+
+test("durable decision identity supersedes fixture/provider history without changing answers and survives concurrent retry", async () => {
+  const rows = new Map<string, DecisionIdentity>();
+  const store: KVStore<DecisionIdentity> = {
+    get: async (key) => rows.get(key) ?? null,
+    put: async (key, value) => {
+      rows.set(key, value);
+    },
+    putIfAbsent: async (key, value) => {
+      if (rows.has(key)) return false;
+      rows.set(key, value);
+      return true;
+    },
+    list: async () => [...rows].map(([key, value]) => ({ key, value })),
+    delete: async (key) => {
+      rows.delete(key);
+    },
+  };
+  const client = {
+    call: async () => ({ data: { data: { decision_sequence: 42 } } }),
+  } as never;
+  const input = inputFor(baseline(), { automatedAlpha: true });
+  const [a, b] = await Promise.all([
+    assignDecisionIdentity(client, input, store),
+    assignDecisionIdentity(client, input, store),
+  ]);
+  expect(a.decisionIdentity).toEqual(b.decisionIdentity);
+  expect(a.decisionIdentity?.sequence).toBeGreaterThan(42);
+  const built = buildComplianceProfileAttestationRequest(a);
+  expect(built.ok).toBe(true);
+  if (!built.ok) return;
+  expect(built.request.investor_profile.profile_version).toBe("1");
+  expect(
+    problemsAgainst("ComplianceProfileAttestationRequest", built.request),
+  ).toEqual([]);
+  const retry = await assignDecisionIdentity(client, input, store);
+  expect(buildComplianceProfileAttestationRequest(retry)).toEqual(built);
+  const changed = await assignDecisionIdentity(
+    client,
+    { ...input, automatedAlpha: false },
+    store,
+  );
+  expect(changed.decisionIdentity?.sequence).toBeGreaterThan(
+    a.decisionIdentity!.sequence,
+  );
+});
 const NEEDS_CLARIFICATION: InvestorProfileAnswers = {
   ...baseline(),
   goal: undefined,
@@ -413,7 +464,10 @@ describe("ledger: KYC evidence gate (D — provider-blocked) — trust is explic
         submitters.push(f);
       }
     }
-    expect(submitters).toEqual([SUBMISSION_MODULE]);
+    expect(submitters).toEqual([
+      SUBMISSION_MODULE,
+      join(root, "src/lib/integration-dev/kyc-pass.ts"),
+    ]);
   });
 });
 

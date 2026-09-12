@@ -9,7 +9,11 @@
  */
 import type { OperationResponse } from "@refi/api-clients/investor-api";
 import type { InvestorApiReadClient } from "./demo-client";
-import { collectPages, CONTRACT_MAX_PAGE_SIZE } from "./pagination";
+import {
+  collectPages,
+  collectComplete,
+  CONTRACT_MAX_PAGE_SIZE,
+} from "./pagination";
 
 type Valuation = OperationResponse<"getAccountValuation">["data"];
 type Position =
@@ -72,13 +76,14 @@ export interface PreferencesView {
 export interface PortfolioView {
   valuation: ValuationView;
   history: ValuationPointView[];
+  historyPage: { hasMore: boolean; nextCursor: string | null };
   positions: PositionView[];
   memberships: MembershipView[];
   preferences: PreferencesView;
 }
 
 export const VALUATION_HISTORY_MAX_PAGES = 1;
-export const POSITIONS_MAX_PAGES = 5;
+export const POSITIONS_MAX_PAGES = 20;
 
 export function projectValuation(v: Valuation): ValuationView {
   return {
@@ -138,26 +143,26 @@ export async function getPortfolio(
         },
         { maxPages: VALUATION_HISTORY_MAX_PAGES },
       ),
-      collectPages(
-        async (cursor) => {
-          const res = await client.call("listAccountPositions", {
-            path: { account_id: accountId },
-            query: { page_size: CONTRACT_MAX_PAGE_SIZE, cursor },
-          });
-          return { items: res.data.data.items, page: res.data.data.page };
-        },
-        { maxPages: POSITIONS_MAX_PAGES },
-      ),
-      client.call("listAccountMemberships", {
-        path: { account_id: accountId },
-        query: { page_size: CONTRACT_MAX_PAGE_SIZE },
+      collectComplete(async (cursor) => {
+        const res = await client.call("listAccountPositions", {
+          path: { account_id: accountId },
+          query: { page_size: CONTRACT_MAX_PAGE_SIZE, cursor },
+        });
+        return { items: res.data.data.items, page: res.data.data.page };
+      }, POSITIONS_MAX_PAGES),
+      collectComplete(async (cursor) => {
+        const res = await client.call("listAccountMemberships", {
+          path: { account_id: accountId },
+          query: { page_size: CONTRACT_MAX_PAGE_SIZE, cursor },
+        });
+        return { items: res.data.data.items, page: res.data.data.page };
       }),
       client.call("getAccountPreferences", { path: { account_id: accountId } }),
     ],
   );
 
   const templates = new Map<string, Template>();
-  for (const m of memberships.data.data.items) {
+  for (const m of memberships) {
     if (!templates.has(m.template_id)) {
       try {
         const t = await client.call("getTemplate", {
@@ -175,10 +180,11 @@ export async function getPortfolio(
     history: history.items
       .map((v) => ({ asOf: v.as_of_time, equity: v.equity }))
       .sort((a, b) => a.asOf.localeCompare(b.asOf)),
-    positions: positions.items
+    historyPage: { hasMore: history.truncated, nextCursor: history.nextCursor },
+    positions: positions
       .map(projectPosition)
       .sort((a, b) => Number(b.marketValue) - Number(a.marketValue)),
-    memberships: memberships.data.data.items.map((m) => ({
+    memberships: memberships.map((m) => ({
       templateId: m.template_id,
       templateName: templates.get(m.template_id)?.name ?? null,
       constituentCount: templates.get(m.template_id)?.constituent_count ?? null,

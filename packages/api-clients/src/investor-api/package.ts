@@ -1,7 +1,7 @@
 /**
  * Pins for the vendored Investor API contract package.
  *
- * The package under `contracts/investor-api/v1.1.0-alpha.3/` is Daniel's
+ * The package under `contracts/investor-api/v1.1.0-alpha.4/` is Daniel's
  * frontend integration handoff (issued 2026-09-09, supersedes alpha.2),
  * vendored byte-for-byte (see `contracts/investor-api/PACKAGE.md`). alpha.2
  * stays vendored as issued history; nothing imports it. This module is the only place that
@@ -10,14 +10,14 @@
  *
  * Server-only. Nothing here may reach a browser bundle.
  */
-import bundle from "../../contracts/investor-api/v1.1.0-alpha.3/bundle.json";
-import contract from "../../contracts/investor-api/v1.1.0-alpha.3/contract.json";
+import bundle from "../../contracts/investor-api/v1.1.0-alpha.4/bundle.json";
+import contract from "../../contracts/investor-api/v1.1.0-alpha.4/contract.json";
 
-export const CONTRACT_VERSION = "v1.1.0-alpha.3" as const;
+export const CONTRACT_VERSION = "v1.1.0-alpha.4" as const;
 
 /** Relative to the package root (`packages/api-clients`). */
 export const CONTRACT_PACKAGE_DIR =
-  "contracts/investor-api/v1.1.0-alpha.3" as const;
+  "contracts/investor-api/v1.1.0-alpha.4" as const;
 
 export const PACKAGE_CONTENT_SHA256 = bundle.package_content_sha256;
 export const SOURCE_CONTRACT_SHA256 = bundle.source.sha256;

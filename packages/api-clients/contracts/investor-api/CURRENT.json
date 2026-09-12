@@ -1,11 +1,9 @@
 {
-  "contract_version": "v1.1.0-alpha.3",
-  "package_path": "v1.1.0-alpha.3",
-  "package_content_sha256": "5eca1200f6af807093ea0986f835235e2da478b69478e621fd54954ba1d77608",
-  "migration": "v1.1.0-alpha.3/MIGRATION.md",
-  "integration": "v1.1.0-alpha.3/INTEGRATION.md",
-  "release_record": "releases/v1.1.0-alpha.3.json",
-  "connection_preparation": "connection.preparation.json",
+  "contract_version": "v1.1.0-alpha.4",
+  "package_path": "v1.1.0-alpha.4",
+  "package_content_sha256": "a6db935b6a398bff00a7ccee4cb268ee565249bbd75c23e36594c9f6b698e7c3",
+  "migration": "v1.1.0-alpha.4/MIGRATION.md",
+  "integration": "v1.1.0-alpha.4/INTEGRATION.md",
   "archive_path": "archive",
   "archive_status": "superseded_reference_only",
   "connected_alpha_verified": false

@@ -10,6 +10,7 @@
  */
 import type { OperationResponse } from "@refi/api-clients/investor-api";
 import type { InvestorApiReadClient } from "./demo-client";
+import { collectComplete, CONTRACT_MAX_PAGE_SIZE } from "./pagination";
 
 export type ContractBrokerageConnection =
   OperationResponse<"getBrokerageConnection">["data"];
@@ -53,11 +54,7 @@ export async function getBrokerageConnection(
   client: InvestorApiReadClient,
   accountId: string,
 ): Promise<BrokerageConnectionView | null> {
-  const res = await client.call("listBrokerageConnections", {
-    path: { account_id: accountId },
-    query: { page_size: 20 },
-  });
-  const items = res.data.data.items;
+  const items = await listOwnedBrokerageConnections(client, accountId);
   const live =
     items.find(
       (c) =>
@@ -67,9 +64,23 @@ export async function getBrokerageConnection(
   return live ? projectBrokerageConnection(live) : null;
 }
 
+export async function listOwnedBrokerageConnections(
+  client: InvestorApiReadClient,
+  accountId: string,
+) {
+  return collectComplete(async (cursor) => {
+    const res = await client.call("listBrokerageConnections", {
+      path: { account_id: accountId },
+      query: { page_size: CONTRACT_MAX_PAGE_SIZE, cursor },
+    });
+    return { items: res.data.data.items, page: res.data.data.page };
+  });
+}
+
 // ─── The canonical connection mutation ──────────────────────────────────────
 
 export interface ConnectBrokerageInput {
+  environment: "paper" | "live";
   apiKeyId: string;
   apiSecretKey: string;
 }
@@ -111,7 +122,7 @@ export async function connectBrokerage(
     path: { account_id: accountId },
     body: {
       broker: "alpaca",
-      account_environment: "paper",
+      account_environment: input.environment,
       credentials: {
         api_key: input.apiKeyId,
         api_secret: input.apiSecretKey,

@@ -67,13 +67,14 @@ test.describe("Broker onboarding", () => {
     }
   });
 
-  test("the BFF refuses a live Alpaca key and a non-paper environment by shape; nothing reaches the contract", async ({
+  test("the BFF refuses keys that disagree with the selected environment; nothing reaches the contract", async ({
     page,
   }) => {
     await page.goto("/us/onboarding/broker");
     const H = {
       "content-type": "application/json",
       origin: "http://localhost:3000",
+      "Idempotency-Key": "broker_test_operation_0001",
     };
     const live = await page.request.post("/api/v1/investor/broker/connection", {
       headers: H,

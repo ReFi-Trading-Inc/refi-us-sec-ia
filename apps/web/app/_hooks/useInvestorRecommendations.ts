@@ -15,10 +15,14 @@ import type {
   RecommendationSummaryView,
 } from "@lib/investor-api/recommendations";
 import type { UpstreamState } from "@lib/investor-api/upstream-state";
+import type { FundingNotice } from "@lib/investor-api/funding-notices";
 
 export interface RecommendationsListView {
   items: RecommendationSummaryView[];
   truncated: boolean;
+  nextCursor?: string | null;
+  fundingNotices?: FundingNotice[];
+  fundingComplete?: boolean;
   upstream: UpstreamState;
 }
 export interface RecommendationDetailResponse {

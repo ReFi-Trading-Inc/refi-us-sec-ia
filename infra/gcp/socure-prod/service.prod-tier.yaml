@@ -1,0 +1,97 @@
+# Cloud Run service — Socure PRODUCTION environment on the PROD APP TIER (PROPOSAL; apply after founder review):
+#   gcloud run services replace infra/gcp/socure-prod/service.prod-tier.yaml --project refi-socure-prod --region us-central1
+# Still DARK: REFI_KYC_PROVIDER=unconfigured, no Socure secret references, no SDK key, no workflow, no traffic.
+# Requires: image built with cloudbuild.prod-tier.yaml (NEXT_PUBLIC_REFI_ENV=prod + real public constants) and a
+#   real version in prod-alpha-handoff-public-jwk. Boot fails closed if any prod-tier value is missing.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: refi-socure-prod
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: '0'
+        autoscaling.knative.dev/maxScale: '2'
+    spec:
+      serviceAccountName: socure-prod-runtime@refi-socure-prod.iam.gserviceaccount.com
+      containerConcurrency: 80
+      timeoutSeconds: 60
+      containers:
+      - image: us-central1-docker.pkg.dev/refi-socure-prod/refi/refi-socure-prod:REPLACE_TAG
+        ports:
+        - containerPort: 3000
+        resources:
+          limits:
+            cpu: '1'
+            memory: 1Gi
+        env:
+        - name: REFI_ENV
+          value: prod
+        - name: NEXT_PUBLIC_REFI_ENV
+          value: prod
+        - name: REFI_DATA_ADAPTER
+          value: live
+        - name: REFI_TRUST_PROXY_HOST
+          value: '1'
+        - name: REFI_AUTH_PROVIDER
+          value: unconfigured
+        - name: REFI_INVESTOR_API_MODE
+          value: client
+        - name: REFI_INVESTOR_API_ALLOW_REMOTE
+          value: '0'
+        - name: FLAG_ALPHA_CLAIM_ROUTE
+          value: 'off'
+        - name: REFI_KYC_PROVIDER
+          value: unconfigured
+        - name: REFI_KYC_MOCK_CONTROLS
+          value: '0'
+        - name: SOCURE_ENV
+          value: production
+        - name: SOCURE_API_BASE_URL
+          value: https://riskos.socure.com
+        - name: SOCURE_WEBHOOK_ENFORCE_SENDER_IP
+          value: '0'
+        - name: REFI_BACKING__KYC_EVALUATION
+          value: durable
+        - name: REFI_BACKING__KYC_WEBHOOK_EVENT
+          value: durable
+        - name: GCP_PROJECT_ID
+          value: refi-socure-prod
+        - name: ALPHA_HANDOFF_ISSUER
+          value: refi-alpha
+        - name: ALPHA_HANDOFF_AUDIENCE
+          value: refi-us-sec-ia
+        - name: REFI_RELEASE_STAGE
+          value: signal
+        - name: BFF_ASSERTION_ISSUER
+          value: urn:refinity:bff:prod
+        - name: INVESTOR_API_AUDIENCE
+          value: urn:refinity:investor-api:prod
+        - name: ALPHA_HANDOFF_PUBLIC_KEY_JWK
+          valueFrom:
+            secretKeyRef:
+              name: prod-alpha-handoff-public-jwk
+              key: latest
+        - name: SESSION_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: prod-session-secret
+              key: latest
+        - name: IP_HASH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: prod-ip-hash-secret
+              key: latest
+        - name: ELIGIBILITY_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: prod-eligibility-jwt-secret
+              key: latest
+        - name: SESSION_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: prod-session-jwt-secret
+              key: latest

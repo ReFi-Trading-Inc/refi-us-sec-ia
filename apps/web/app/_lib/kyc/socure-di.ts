@@ -26,17 +26,6 @@ type Loader = () => Promise<SocureDiSdkLike>;
 
 let testSdk: SocureDiSdkLike | null = null;
 let initialized: { sdkKey: string } | null = null;
-/** Last failure inside this wrapper: error name + message only (never PII). */
-let lastFailure: string | null = null;
-export function socureDiLastFailure(): string | null {
-  return lastFailure;
-}
-function noteFailure(stage: string, e: unknown): void {
-  const err = e as { name?: unknown; message?: unknown } | null;
-  const name = typeof err?.name === "string" ? err.name : typeof e;
-  const message = typeof err?.message === "string" ? err.message : "";
-  lastFailure = `${stage}:${name}:${message}`.slice(0, 200);
-}
 let sdkPromise: Promise<SocureDiSdkLike> | null = null;
 let initCount = 0;
 
@@ -126,8 +115,7 @@ export async function ensureSocureDiInitialized(
     initialized = { sdkKey };
     initCount += 1;
     return "initialized";
-  } catch (e) {
-    noteFailure("initialize", e);
+  } catch {
     return "sdk_error";
   }
 }
@@ -138,8 +126,7 @@ export async function socureDiSessionToken(): Promise<string | null> {
   try {
     const token = await (await sdk()).getSessionToken();
     return typeof token === "string" && token.length > 0 ? token : null;
-  } catch (e) {
-    noteFailure("getSessionToken", e);
+  } catch {
     return null;
   }
 }

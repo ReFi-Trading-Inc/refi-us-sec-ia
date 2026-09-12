@@ -94,9 +94,6 @@ export function KycIdentityForm() {
     consent: false,
   });
   const [diProblem, setDiProblem] = useState<string | null>(null);
-  // Wrapper failure reason (error name/message only, never identity data);
-  // rendered as a DOM attribute for operators, never as user-visible text.
-  const [diDetail, setDiDetail] = useState<string | null>(null);
   // Device intelligence is scoped to this funnel: initialise once on mount.
   useEffect(() => {
     void prepareDiSession();
@@ -128,7 +125,6 @@ export function KycIdentityForm() {
     const di = await getDiSessionToken();
     if (!di.ok) {
       setDiProblem(copy.diUnavailable);
-      setDiDetail(`${di.reason}|${di.detail}`);
       return;
     }
     const input: KycIdentityFormInput = {
@@ -295,11 +291,7 @@ export function KycIdentityForm() {
         <span>{copy.consent}</span>
       </label>
       {invalid && <StatusBanner variant="error">{copy.invalid}</StatusBanner>}
-      {diProblem && (
-        <div data-di-detail={diDetail ?? undefined}>
-          <StatusBanner variant="warning">{diProblem}</StatusBanner>
-        </div>
-      )}
+      {diProblem && <StatusBanner variant="warning">{diProblem}</StatusBanner>}
       {result?.result === "provider_error" && (
         <StatusBanner variant="warning">{copy.providerError}</StatusBanner>
       )}

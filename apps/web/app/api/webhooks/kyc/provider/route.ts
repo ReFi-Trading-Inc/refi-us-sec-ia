@@ -43,6 +43,30 @@ function clientIp(req: NextRequest): string {
   );
 }
 
+const VERIFICATION_PING_EVENTS = new Set([
+  "evaluation_completed",
+  "evaluation_paused",
+]);
+
+/** Dashboard verification ping: only `eventName`, no envelope fields at all. */
+function isRiskOsVerificationPing(payload: unknown): boolean {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    return false;
+  }
+  const keys = Object.keys(payload);
+  const eventName = (payload as { eventName?: unknown }).eventName;
+  return (
+    keys.length === 1 &&
+    keys[0] === "eventName" &&
+    typeof eventName === "string" &&
+    VERIFICATION_PING_EVENTS.has(eventName)
+  );
+}
+
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const correlationId = correlationIdFrom(req);
   const env = getServerEnv();
@@ -80,6 +104,12 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     payload = JSON.parse(text);
   } catch {
     return NextResponse.json({ error: "Malformed" }, { status: 400 });
+  }
+  if (isRiskOsVerificationPing(payload)) {
+    // RiskOS "Continue To Test" sends an authenticated bare
+    // `{ "eventName": "<event>" }` before it will save a webhook. It carries
+    // no event envelope, so nothing is persisted; acknowledge and stop.
+    return NextResponse.json({ ok: true }, { status: 200 });
   }
   const generic = socureWebhookEventSchema.safeParse(payload);
   if (!generic.success) {

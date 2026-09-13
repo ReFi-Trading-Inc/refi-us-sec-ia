@@ -101,19 +101,58 @@ backup/restore. The requirement is disciplined data evolution, not SQL.
 ## 3. Open PRs affecting admission / onboarding / backend boundaries
 
 Certification of admission (§41/§42) is blocked until this is reconciled (§6 of
-the sequencing decision). Classification is deferred to after 2026-09-16.
+the sequencing decision). Classification is deferred to after 2026-09-16, with
+the exception of #114/#115, whose status is settled below.
 
-| PR   | Base ← Head                                                   | Boundary               | Note                                                                                                                                                                                                    |
-| ---- | ------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| #115 | `kyc/socure-f-admission` ← `kyc/socure-g-admission-hardening` | **admission**          | PR G: positive cohort gate, atomic store transition, shared re-evaluation. Stacked on #114.                                                                                                             |
-| #114 | `kyc/socure-e-attestation-docs` ← `kyc/socure-f-admission`    | **admission**          | PR F: automatic Alpha admission on final trusted KYC ACCEPT. **Targets a stale base**: PR E (#113) is already merged to main, but the branch still exists, so this pair sits on an already-merged base. |
-| #43  | `main` ← `integrate/phase2-6-pr-d`                            | backend contract       | DRAFT, Dan-gated, "do not merge yet". Last updated 2026-07-24.                                                                                                                                          |
-| #7   | `main` ← `phase2-6-pr-d-account-prefs-history-contract`       | backend contract       | AccountPrefs history contract.                                                                                                                                                                          |
-| #14  | `main` ← `phase2-6-orderidmap-domain`                         | backend/trading domain | OrderIdMap domain types + controlled-upsert entity.                                                                                                                                                     |
-| #98  | `main` ← `connected-dev/gcp-boundary-and-status`              | platform/IAM           | GCP boundary provisioning, IAM, phase status (docs).                                                                                                                                                    |
-| #93  | `main` ← `ci/deploy-script-dotenv-escapes`                    | deployment             | Cloud Run env conversion fix.                                                                                                                                                                           |
-| #84  | `main` ← `docs/mint-handoff-deployed`                         | demo/deployment        | Deployment proof record (docs).                                                                                                                                                                         |
-| #77  | `main` ← `design/alignment-scope`                             | **design system**      | "adopt design-system tokens with a WCAG AA gate (slice 1)". Potentially conflicts with the frozen design decisions in `docs/investor-product-design-decisions.md` — review before either lands.         |
+### #114 / #115 — `PRESUMPTIVELY SUPERSEDED — DO NOT RETARGET`
+
+These are **not** merely stacked on a stale base. Their _authority model_ is
+superseded.
+
+PR F (#114) explicitly describes ReFi as owning the automatic closed-Alpha
+admission policy, and PR G (#115) hardens that model. Daniel subsequently
+confirmed the opposite split:
+
+- **backend** owns canonical closed-Alpha admission;
+- **frontend** owns the Socure integration, evaluates the
+  questionnaire/compliance, and submits trusted normalized KYC/compliance
+  evidence;
+- **backend** combines identity, membership, required consents, trusted
+  compliance evidence and independent holds;
+- **backend** persists canonical admission state, reasons and provenance;
+- **frontend** owns no parallel canonical admission state and has no
+  `set admitted` authority.
+
+So the defect is ownership, not targeting. Retargeting or rebasing these onto
+`main` would reintroduce a frontend-owned canonical admission implementation
+that the confirmed architecture forbids.
+
+**Post-freeze action (after 2026-09-16):**
+
+1. inspect for reusable tests and invariants only — deterministic prerequisite
+   matrices, fail-closed state treatment, evidence provenance,
+   concurrency/idempotency tests, re-evaluation tests, durability patterns;
+2. classify each reusable piece independently;
+3. close the obsolete frontend-owned admission implementation;
+4. do **not** merge or transplant canonical frontend admission authority.
+
+No frontend-owned canonical admission implementation may survive merely because
+its tests are good. Reusable invariants must be re-homed against the
+backend-owned model, not carried over with their authority attached.
+
+**Do not alter either PR during the demo freeze.**
+
+| PR   | Base ← Head                                                   | Boundary               | Note                                                                                                                                                                                                                                              |
+| ---- | ------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #115 | `kyc/socure-f-admission` ← `kyc/socure-g-admission-hardening` | **admission**          | PR G: hardens the superseded frontend-owned admission model. `PRESUMPTIVELY SUPERSEDED — DO NOT RETARGET` (see above).                                                                                                                            |
+| #114 | `kyc/socure-e-attestation-docs` ← `kyc/socure-f-admission`    | **admission**          | PR F: ReFi-owned automatic Alpha admission on final trusted KYC ACCEPT — conflicts with the confirmed backend-owned model. `PRESUMPTIVELY SUPERSEDED — DO NOT RETARGET` (see above). Also on a stale base: PR E (#113) is already merged to main. |
+| #43  | `main` ← `integrate/phase2-6-pr-d`                            | backend contract       | DRAFT, Dan-gated, "do not merge yet". Last updated 2026-07-24.                                                                                                                                                                                    |
+| #7   | `main` ← `phase2-6-pr-d-account-prefs-history-contract`       | backend contract       | AccountPrefs history contract.                                                                                                                                                                                                                    |
+| #14  | `main` ← `phase2-6-orderidmap-domain`                         | backend/trading domain | OrderIdMap domain types + controlled-upsert entity.                                                                                                                                                                                               |
+| #98  | `main` ← `connected-dev/gcp-boundary-and-status`              | platform/IAM           | GCP boundary provisioning, IAM, phase status (docs).                                                                                                                                                                                              |
+| #93  | `main` ← `ci/deploy-script-dotenv-escapes`                    | deployment             | Cloud Run env conversion fix.                                                                                                                                                                                                                     |
+| #84  | `main` ← `docs/mint-handoff-deployed`                         | demo/deployment        | Deployment proof record (docs).                                                                                                                                                                                                                   |
+| #77  | `main` ← `design/alignment-scope`                             | **design system**      | "adopt design-system tokens with a WCAG AA gate (slice 1)". Potentially conflicts with the frozen design decisions in `docs/investor-product-design-decisions.md` — review before either lands.                                                   |
 
 ---
 
@@ -124,7 +163,11 @@ the sequencing decision). Classification is deferred to after 2026-09-16.
 1. Commercial entitlement / Stripe subsystem missing (`BLOCKED — FOUNDER DECISION REQUIRED` on billing policy before implementation).
 2. Canonical trading-eligibility policy unresolved (`BLOCKED — DANIEL CONTRACT DECISION REQUIRED`, and dependent on 1).
 3. `AccountAuthorization` backend shape and enforcement require Daniel (`BLOCKED — DANIEL CONTRACT DECISION REQUIRED`).
-4. Admission repository state requires reconciliation (see §3 above).
+4. Admission repository state requires reconciliation: #114/#115 are
+   `PRESUMPTIVELY SUPERSEDED — DO NOT RETARGET`, because they implement a
+   frontend-owned canonical admission authority that Daniel's confirmed model
+   places in the backend. They must be decomposed — reusable invariants
+   recovered, obsolete authority closed — not retargeted (see §3 above).
 5. Platform deployment + monitoring certification incomplete.
 6. Formal handoff package not yet built.
 7. Only portions of investor-product behaviour are certified, and all of it is

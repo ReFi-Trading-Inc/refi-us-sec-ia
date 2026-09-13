@@ -10,9 +10,12 @@
  *   - `AccountAuthorization.status` — account authorization.
  * Neither backend word is presented as human Alpha admission (the operator
  * write that records admission is outside the public Investor API). There is
- * no activate verb: the contract has none (C1b-2 row 26 → C). The only action
- * is a link to the dashboard, offered solely when the pure `setupGate` says
- * the backend reports READY + AUTHORIZED and the steps are complete.
+ * no activate verb: the contract has none (C1b-2 row 26 → C).
+ *
+ * The gate now expresses two separate decisions, matching the lifecycle:
+ * general account access does NOT require a brokerage connection or
+ * `AUTHORIZED` — an investor may legitimately defer brokerage — while
+ * economic actions (strategy subscription, allocation) do.
  */
 import Link from "next/link";
 import { Badge, Card, CardContent, StatusBanner } from "@ui/components";
@@ -148,8 +151,13 @@ export default function OnboardingSetupPage() {
         </CardContent>
       </Card>
 
-      {gate.dashboard ? (
-        <div className="flex flex-col gap-2">
+      {gate.accountAccess ? (
+        <div
+          className="flex flex-col gap-2"
+          data-testid="setup-gate"
+          data-account-access="true"
+          data-economic-reason={gate.economicActionsReason}
+        >
           <Link
             href="/us/app/home"
             className="inline-flex items-center justify-center rounded-md bg-mint-400 px-4 py-2 text-sm font-medium text-charcoal-950 hover:bg-mint-300 transition-colors"
@@ -158,12 +166,35 @@ export default function OnboardingSetupPage() {
             {setup.dashboardCta}
           </Link>
           <p className="text-xs text-charcoal-500">{setup.dashboardNote}</p>
+
+          {/* The account is open; strategy actions are separately gated. The
+              commonest reason is simply that brokerage was deferred, which is
+              a permitted place to pause — so this is a next step, not a
+              refusal. */}
+          {!gate.economicActions && s && (
+            <StatusBanner
+              variant={
+                gate.economicActionsReason === "authorization_denied" ||
+                gate.economicActionsReason === "authorization_suspended"
+                  ? "warning"
+                  : "info"
+              }
+              data-testid="setup-economic-gate"
+            >
+              {steps.broker
+                ? setup.gate[
+                    gate.economicActionsReason as keyof typeof setup.gate
+                  ]
+                : setup.economicPendingNote}
+            </StatusBanner>
+          )}
         </div>
       ) : (
         <div
           className="flex flex-col gap-2"
           data-testid="setup-gate"
-          data-reason={gate.reason}
+          data-account-access="false"
+          data-reason={gate.accountAccessReason}
         >
           {!stepsDone && (
             <p
@@ -173,17 +204,9 @@ export default function OnboardingSetupPage() {
               {setup.finishFirst}
             </p>
           )}
-          {gate.reason !== "steps_incomplete" && s && (
-            <StatusBanner
-              variant={
-                gate.reason === "authorization_denied" ||
-                gate.reason === "authorization_suspended"
-                  ? "warning"
-                  : "info"
-              }
-              data-testid="setup-gate-copy"
-            >
-              {setup.gate[gate.reason as keyof typeof setup.gate]}
+          {s && (
+            <StatusBanner variant="info" data-testid="setup-gate-copy">
+              {setup.gate[gate.accountAccessReason as keyof typeof setup.gate]}
             </StatusBanner>
           )}
         </div>

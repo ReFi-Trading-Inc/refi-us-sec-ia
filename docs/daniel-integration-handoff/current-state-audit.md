@@ -124,10 +124,13 @@ general account access at that point.
 **Classification:** real defect in the canonical onboarding path, not in the
 temporary `/us/product/*` pages.
 
-**Constraint:** the fix is **runtime code** and is therefore blocked by the
-demo freeze through 2026-09-16 unless the founder explicitly exempts it. Its
-test is a pinned expectation, so the test changes with it — under the
-source-of-truth hierarchy, a test contradicting approved architecture is a
+**Constraint:** none. This is **work-now, deploy-later** (see §8). The fix is
+made on Lane E against `daniel-handoff/integration` and simply is not merged
+into the frozen demo release path before the freeze lifts. It needs no demo
+exemption, because a branch does not change a deployed artifact.
+
+Its test is a pinned expectation, so the test changes with it — under the
+source-of-truth hierarchy a test contradicting approved architecture is a
 **stale test, not truth**.
 
 ---
@@ -190,7 +193,9 @@ frames **Vercel as the current host** and Cloud Run as "later", and instructs
 running `terraform output -raw gcp_service_account_key_json` to paste a
 **downloaded service-account key** into Vercel. That directly contradicts the
 service-identity rule (no downloaded SA JSON keys). This README is stale and
-actively misleading; correcting it is a prerequisite for the platform lane.
+actively misleading. **Lane D immediate action:** remove this guidance.
+Connected GCP deployment uses service identity / Workload Identity / Cloud Run
+ADC — never downloaded long-lived service-account keys.
 
 ### What Terraform must own for connected Dev
 
@@ -268,11 +273,57 @@ Parallel lanes with dependency gates — **not** one serial documentation projec
 | **I** Canonical PAPER eligibility                    | One backend policy — after C/F/G/H stabilise                             | —                     |
 | **J** Integrated acceptance / security / reliability | Adversarial + two-positive/one-negative PAPER campaign                   | —                     |
 
-**Freeze interaction:** lanes **D** and **G** are independent of the demo
-surface and can run during the freeze. Lanes **A, B, C, E, F, H** modify
-runtime the demo depends on and require the freeze to lift (2026-09-16) or an
-explicit per-lane exemption. Lane G's _implementation_ is additionally gated on
-founder commercial policy; its _architecture_ is not.
+### Freeze interaction — release freeze, not engineering freeze
+
+**All of A–H may proceed now.** The September freeze applies to the **deployed
+demo / release surface**, not to the repository. A branch that changes auth or
+onboarding does not change the demo; a **merge or deployment** does. The demo
+and the Daniel US-product track are separate workstreams even where they share
+source files.
+
+Rules:
+
+1. **Do not merge runtime changes from A/B/C/E/F/H into the frozen demo release
+   path before the freeze lifts.**
+2. Lane work happens on a dedicated Daniel-track integration branch cut from
+   the certified `main` baseline: **`daniel-handoff/integration`**.
+3. Each lane is a small branch/PR targeting the integration branch — **not**
+   the deployed demo path.
+4. Protected CI remains mandatory on every lane.
+5. The `setup-gate` defect (§3) is fixed **now**, on Lane E, including replacing
+   the stale test that asserts `AUTHORIZED` is required for dashboard access.
+   No demo exemption is needed; it will not be deployed into the frozen demo.
+6. **Lane D may provision and deploy** the separate connected Dev environment in
+   `refinity-dev/us-west1` via Terraform — that is not the demo environment.
+7. Lane G may proceed with Stripe / commercial-entitlement architecture and
+   implementation, but must **not invent** unresolved trial duration, grace
+   period, cancellation or pricing policy. Those stay
+   `BLOCKED — FOUNDER DECISION REQUIRED`.
+8. No Daniel-track branch may alter the frozen game/demo deployment, demo
+   secrets, Production Socure activation, Alpaca LIVE, or real-capital
+   execution.
+9. After 2026-09-16: rebase/reconcile the integration branch against current
+   `main`, run the complete certification suite, then merge the lanes **in
+   dependency order** — never bulk-merge the integration branch blindly.
+
+```text
+frozen demo/release
+        └── no runtime deployment changes through 2026-09-16
+
+main
+        ├── docs-only corrections may land
+        └── daniel-handoff/integration
+                ├── A auth / identity
+                ├── B KYC / profile / attestation
+                ├── C membership / admission
+                ├── D Terraform / GCP connected Dev
+                ├── E onboarding convergence
+                ├── F brokerage / AccountAuthorization
+                ├── G Stripe / entitlement
+                └── H subscription / allocation
+```
+
+**Do not stop the Daniel track because the demo is frozen.**
 
 ---
 

@@ -13,44 +13,50 @@ Status vocabulary: `OPEN` · `ASKED` · `ANSWERED` · `SUPERSEDED`.
 
 ---
 
-## D-A1 — Issue membership/admission in a successor contract package
+## D-A1 — Expose membership + admission in a machine-readable package
 
 **Status:** `OPEN` · **Blocks:** Lane C, and transitively A, E, F, H
-**Corrected 2026-09-13 — there is no alpha.4.**
+**Corrected twice — see history below.**
 
-### What the earlier framing got wrong
+### Current state of fact (verified 2026-09-13)
 
-This item previously asked Daniel to "deliver the alpha.4 package", following
-`README.md:101` ("the backend's currently issued package is alpha.4"). **That
-claim is false**, confirmed by the founder and by artifact search:
+**alpha.4 exists.** It is vendored on the unmerged branch
+`integration/refinity-dev` at digest
+`a6db935b6a398bff00a7ccee4cb268ee565249bbd75c23e36594c9f6b698e7c3`, and it is
+**authenticated**: `CURRENT.json` and `bundle.json` agree, and all 11 declared
+artifact hashes were recomputed and match.
 
-- our checkout pins `v1.1.0-alpha.3`, digest `5eca1200…`;
-- Daniel's own backend checkout (`refinity-main-main-Sept-10-2026`) pins
-  **the same version and the same digest**;
-- no `alpha.4` artifact exists in any local repository or sibling checkout.
+`main` still pins alpha.3 (`5eca1200…`). Adopting alpha.4 is Lane C work — see
+[`alpha4-reconciliation.md`](alpha4-reconciliation.md).
 
-**`v1.1.0-alpha.3` is the current contract, and we are already in sync with
-it.** There is no package to chase, and the README line has been corrected.
+### The ask is NOT "deliver alpha.4"
 
-### The real ask
+**Membership and canonical admission are absent from alpha.4's
+machine-readable artifacts** — `schemas.json`, `openapi.json`,
+`capabilities.json` and `contract.json` contain neither. They appear only as
+prose in `INTEGRATION.md` (10 mentions), which describes backend admission as
+already existing and initializing account state transactionally.
 
-Membership and canonical admission are **absent from the alpha.3 package**: a
-search across its `contract.json`, `schemas.json`, `openapi.json`,
-`examples.json` and `capabilities.json` returns nothing. They appear only in
-`INTEGRATION.md` **prose**, which says backend admission already exists and
-initializes canonical account state transactionally when attestation and
-consent complete.
+So the backend **has** admission; the frontend still has **no contracted way to
+read it**, exactly as with alpha.3.
 
-So the backend **has** admission; the frontend simply has no contracted way to
-read it. What is needed is a successor package (alpha.5, or whatever he
-numbers it) exposing the projections in **D-A2** and **D-A3**, in the same
-shape as alpha.3 — `contract.json`, `schemas.json`, `openapi.json`,
-`examples.json`, `capabilities.json`, `MIGRATION.md`, plus a
-`package_content_sha256` we can pin in `CURRENT.json`.
+**Needed:** a successor package exposing the **D-A2** and **D-A3** projections
+as schema — same shape as the existing packages (`contract.json`,
+`schemas.json`, `openapi.json`, `examples.json`, `capabilities.json`,
+`MIGRATION.md`, and a `package_content_sha256` we pin in `CURRENT.json`).
 
-We will **not** transcribe either projection from `INTEGRATION.md` prose.
-Adoption stays mechanical: verify digest → migration diff → regenerate client
-→ rerun conformance.
+We will not transcribe either projection from prose. Adoption stays mechanical:
+verify digest → migration diff → regenerate client → rerun conformance.
+
+### Correction history
+
+1. Originally asked Daniel to "deliver alpha.4", per `README.md`.
+2. Re-framed 2026-09-13 to "alpha.3 is current, there is no alpha.4" after an
+   artifact search found none — **that search was truncated** and missed
+   `integration/refinity-dev`.
+3. Corrected again: alpha.4 exists and is authenticated, but **does not carry
+   membership/admission**, so the underlying blocker never changed. Only its
+   description did.
 
 ## D-A2 — ClosedAlphaMembership projection
 

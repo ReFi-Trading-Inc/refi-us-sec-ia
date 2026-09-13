@@ -95,9 +95,13 @@ function withFallback(
 
 const clientSchema = z.object({
   NEXT_PUBLIC_API_BASE_URL: z.url(),
-  NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: z.string().min(1),
-  NEXT_PUBLIC_POSTHOG_KEY: z.string().min(1),
-  NEXT_PUBLIC_SENTRY_DSN: z.url(),
+  // Capability-owned public constants. Optional at the schema level; the
+  // runtime profile refinement below requires them only where the capability
+  // that consumes them is part of the runtime (WalletConnect → wallet UI,
+  // PostHog → analytics, Sentry → observability).
+  NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: z.string().min(1).optional(),
+  NEXT_PUBLIC_POSTHOG_KEY: z.string().min(1).optional(),
+  NEXT_PUBLIC_SENTRY_DSN: z.url().optional(),
   // "demo" is the isolated founder/investor demonstration tier: simulator/
   // demo-backed, never production, never a connected-Dev claim. Client-visible
   // so the environment indicator can label it; security gates use REFI_ENV.
@@ -130,9 +134,24 @@ const serverSchemaBase = clientSchema.extend({
   REFI_DATA_ADAPTER: z.enum(["mock", "live"]).default("mock"),
   // AlphaHandoffToken verification (§2.2). Public key travels as a JWK JSON
   // string; iss/aud are pinned. Only the public half is ever read here.
-  ALPHA_HANDOFF_PUBLIC_KEY_JWK: z.string().min(1),
-  ALPHA_HANDOFF_ISSUER: z.string().min(1),
-  ALPHA_HANDOFF_AUDIENCE: z.string().min(1),
+  ALPHA_HANDOFF_PUBLIC_KEY_JWK: z.string().min(1).optional(),
+  ALPHA_HANDOFF_ISSUER: z.string().min(1).optional(),
+  ALPHA_HANDOFF_AUDIENCE: z.string().min(1).optional(),
+  /**
+   * Runtime capability profile (NOT a release stage — `REFI_RELEASE_STAGE`
+   * is the compliance/release concept and is never overloaded for this).
+   *   "full"       — the whole investor application; in prod every capability's
+   *                  configuration is required (fails closed).
+   *   "socure_kyc" — the isolated Socure KYC surface: health, KYC browser
+   *                  experience, Device Intelligence, Evaluation BFF route,
+   *                  webhook, Firestore KYC state, Secret Manager, session
+   *                  boundary. Unrelated capabilities (wallet, analytics, game
+   *                  handoff, connected investor API, trading) are disabled and
+   *                  their configuration is NOT required to boot. A disabled
+   *                  capability never gets dummy configuration; an enabled one
+   *                  fails closed without its real configuration.
+   */
+  REFI_RUNTIME_PROFILE: z.enum(["full", "socure_kyc"]).default("full"),
   // BFF→investor-api user assertion (D-017).
   //
   // ALL FOUR ARE OPTIONAL IN THE SCHEMA, deliberately. Nothing on the request
@@ -359,6 +378,62 @@ const serverSchema = serverSchemaBase.superRefine((env, ctx) => {
   const fail = (path: string, message: string) => {
     ctx.addIssue({ code: "custom", path: [path], message });
   };
+  // ── Runtime profile: validate only what the enabled surfaces require ────
+  const prodTier =
+    env.NEXT_PUBLIC_REFI_ENV === "prod" || env.REFI_ENV === "prod";
+  if (env.REFI_RUNTIME_PROFILE === "full" && prodTier) {
+    // The whole application in production: every capability is enabled, so
+    // every capability's real configuration is required (no defaults in prod).
+    for (const k of [
+      "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID",
+      "NEXT_PUBLIC_POSTHOG_KEY",
+      "NEXT_PUBLIC_SENTRY_DSN",
+      "ALPHA_HANDOFF_PUBLIC_KEY_JWK",
+      "ALPHA_HANDOFF_ISSUER",
+      "ALPHA_HANDOFF_AUDIENCE",
+    ] as const) {
+      if (!env[k])
+        fail(k, "required in production for the full runtime profile");
+    }
+  }
+  if (env.REFI_RUNTIME_PROFILE === "socure_kyc") {
+    if (env.REFI_ENV === "demo") {
+      fail(
+        "REFI_RUNTIME_PROFILE",
+        "the socure_kyc profile never runs on the demo tier",
+      );
+    }
+    if (env.REFI_DATA_ADAPTER !== "live") {
+      fail("REFI_DATA_ADAPTER", 'must be "live" for the socure_kyc profile');
+    }
+    if (
+      env.REFI_KYC_PROVIDER === "mock" ||
+      env.REFI_KYC_MOCK_CONTROLS !== "0"
+    ) {
+      fail(
+        "REFI_KYC_PROVIDER",
+        "the socure_kyc profile never runs the mock adapter or its controls",
+      );
+    }
+    if (!env.GCP_PROJECT_ID) {
+      fail(
+        "GCP_PROJECT_ID",
+        "the socure_kyc profile persists KYC state durably and needs the project id",
+      );
+    }
+    if (env.REFI_AUTH_PROVIDER === "stytch") {
+      fail(
+        "REFI_AUTH_PROVIDER",
+        "connected identity is not part of the socure_kyc profile",
+      );
+    }
+    if (process.env["FLAG_ALPHA_CLAIM_ROUTE"] === "on") {
+      fail(
+        "FLAG_ALPHA_CLAIM_ROUTE",
+        "the alpha handoff claim route is not part of the socure_kyc profile",
+      );
+    }
+  }
   // Stytch configuration is all-or-nothing on every tier, and the callback
   // must be https (Daniel: exact HTTPS redirect URIs).
   // ── Socure configuration is all-or-nothing and environment-explicit ─────
@@ -718,6 +793,7 @@ export function getServerEnv(): z.infer<typeof serverSchema> {
     ),
     BFF_ASSERTION_ALLOW_EPHEMERAL_KEY:
       process.env["BFF_ASSERTION_ALLOW_EPHEMERAL_KEY"] || undefined,
+    REFI_RUNTIME_PROFILE: process.env["REFI_RUNTIME_PROFILE"] || undefined,
     REFI_RELEASE_STAGE: withFallback(
       process.env["REFI_RELEASE_STAGE"],
       "REFI_RELEASE_STAGE",

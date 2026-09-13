@@ -104,6 +104,25 @@ export interface KycProviderAdapter {
     subject: KycSubject,
     correlationId: string,
   ): Promise<KycVerificationSession | null>;
+  /**
+   * Provider reconciliation for a non-terminal journey (missed final
+   * webhook, resumed page, DocV capture finished). Bounded and idempotent;
+   * finalizes through exactly the same path as a webhook. Never turns a
+   * provider outage into a rejection.
+   */
+  reconcile?(
+    subject: KycSubject,
+    correlationId: string,
+  ): Promise<{
+    session: KycVerificationSession;
+    outcome:
+      | "finalized"
+      | "still_pending"
+      | "already_terminal"
+      | "nothing_to_reconcile"
+      | "not_due"
+      | "provider_error";
+  }>;
 }
 
 export type KycIdentityEvaluationOutcome =

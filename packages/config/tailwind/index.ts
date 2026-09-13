@@ -47,6 +47,53 @@ export const brandTokens = {
     sans: ["var(--font-inter)", "system-ui", "sans-serif"],
     mono: ["var(--font-jetbrains-mono)", "Menlo", "monospace"],
   },
+
+  // ─── Trading-application register ─────────────────────────────────────────
+  //
+  // Source: the "ReFi.Trading Design System" canvas, `ui_kits/trading-app`
+  // (app.css) — the dense workstation surface, as distinct from the marketing
+  // site. Every key below is ADDITIVE: no existing utility changes meaning, so
+  // adding these cannot regress the marketing, portal or admin surfaces.
+  //
+  // The canvas's newer `colors_and_type.css` moves the charcoal ladder to a
+  // green-tinted terminal palette (#08110D/#12211A) and sharpens radii to
+  // 2/3px. The trading-app kit has not absorbed that yet, and this repo's
+  // palette matches the kit, so the kit's values are what we encode. Revisit
+  // together when the kit catches up.
+
+  borderRadius: {
+    // Terminal-sharp geometry. `rounded-lg` (8px) stays reserved for the
+    // landing page; nothing in the application register reaches it.
+    "app-input": "2px", // inputs, badges
+    "app-btn": "4px", // buttons, dropdowns
+    "app-card": "6px", // cards, panels, modals — the app ceiling
+  },
+
+  boxShadow: {
+    // Cards rest FLAT and elevate on hover only. No glows, no mint shadows.
+    card: "0 1px 3px rgba(0,0,0,0.30)",
+    modal: "0 4px 16px rgba(0,0,0,0.50)",
+    dropdown: "0 2px 8px rgba(0,0,0,0.40)",
+  },
+
+  fontSize: {
+    // Fixed (never fluid) workstation scale, 11-24px.
+    "app-micro": ["11px", { lineHeight: "1.3" }], // fine print, disclosures
+    "app-caption": ["12px", { lineHeight: "1.4" }], // metadata, badges
+    "app-body-sm": ["13px", { lineHeight: "1.5" }], // compact/data body
+    "app-body": ["14px", { lineHeight: "1.5" }], // prose
+    "app-h3": ["14px", { lineHeight: "1.4" }], // minor heading (600)
+    "app-h2": ["16px", { lineHeight: "1.3" }], // panel/card title (600)
+    "app-h1": ["20px", { lineHeight: "1.3" }], // section heading (700)
+    "app-value": ["24px", { lineHeight: "1.2" }], // headline financial value
+  },
+
+  transitionDuration: {
+    state: "150ms", // hover / focus / active colour
+    panel: "200ms", // panel + row movement
+    "toast-in": "300ms",
+    "toast-out": "200ms",
+  },
 } satisfies Partial<Config["theme"]>;
 
 export const sharedConfig: Omit<Config, "content"> = {

@@ -10,8 +10,32 @@ branch creation is not connected user acceptance.
 September 12 update: the client now selects alpha.4, old packages are archived,
 and the isolated GCP integration deployment is verified. Login and backend
 binding remain separate gates; see [implementation status](alpha4-integration-status.md).
-Main through `e4e5aba` is incorporated into the integration branch. This imports
+Main through `509b1f7` is incorporated into the integration branch (September 13). This imports
 Zeshan's work without merging our branch into main or retargeting his deployments.
+
+September 13 merge safeguards:
+
+- Existing alpha.4 package/client, non-KYC BFF integration, connected Terraform,
+  Cloud Build release configuration and integration-only Vercel exclusions are
+  preserved. The new Socure runtime profile defaults to `full` for our service;
+  its isolated provider deployment proposals are not applied here.
+- New `/us/product/*` screens coexist with the existing wired onboarding paths;
+  they do not replace them. Server `REFI_DATA_ADAPTER=live` now requires transport
+  even on the staging security tier used by connected Dev. Until their new
+  transport adapter is implemented, they show unavailable rather than fixtures.
+  Demo/mock environments keep Zeshan's fixture workflow and designs.
+- Both conflicting Socure production manifests retain the already-enabled
+  sender-IP enforcement while incorporating the new capability-profile proposal.
+  No provider account, domain, production service or game/demo deployment changes.
+- Main's dated handoff audits describe its baseline; use this branch's
+  `alpha4-integration-status.md` for already-integrated work. This merge does not
+  adopt another branch's unmerged work, upgrade contracts or certify real KYC.
+- Local verification: 414 client tests, contract assertions, investor-boundary,
+  route-manifest and connected-deployment checks, seven release-control tests,
+  package/web typechecks and a successful Next.js production build. Initial web
+  typechecking used stale generated route types; the build regenerated them for
+  the new product routes. No source workaround or route cast was needed.
+  A local backup ref is `backup/integration-before-main-20260913-d592c10`.
 
 **Owner-approved development exception:** Daniel may implement the isolated,
 server-only, named-test-user KYC-pass source specified in roadmap step 2. It

@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { resolveAdapterMode } from "../apps/web/src/lib/investor-product/resolve-adapter";
 import { firestoreSettings } from "../apps/web/src/lib/durable-store/store";
 
 assert.equal(firestoreSettings({}).databaseId, undefined);
@@ -31,4 +33,29 @@ for (const key of [
 }
 console.log(
   "Connected deployment settings: named database, legacy default and native-only credentials PASS",
+);
+
+assert.equal(
+  resolveAdapterMode({
+    refiEnv: "staging",
+    dataAdapter: "live",
+    configured: undefined,
+  }),
+  "transport",
+);
+assert.throws(() =>
+  resolveAdapterMode({
+    refiEnv: "staging",
+    dataAdapter: "live",
+    configured: "fixture",
+  }),
+);
+const productLayout = readFileSync(
+  "apps/web/app/us/product/layout.tsx",
+  "utf8",
+);
+assert.match(productLayout, /dataAdapter: serverEnv\.REFI_DATA_ADAPTER/);
+assert.match(productLayout, /configuredMode=\{configuredMode\}/);
+console.log(
+  "Connected product surfaces: server-owned live data forbids fixture fallback PASS",
 );

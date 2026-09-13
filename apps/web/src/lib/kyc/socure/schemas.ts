@@ -126,50 +126,75 @@ const environmentNameField = z.preprocess(
   z.enum(SOCURE_ENVIRONMENT_NAMES).optional(),
 );
 
+/**
+ * Nullability (founder 2026-09-12 §9–§10, RiskOS API docs): an enrichment that
+ * fails sets its output to `null` while the workflow continues; informational
+ * fields (score, notes, tags, reason codes, sub_status, timestamps) may be
+ * absent or null on any outcome. Authority fields stay strict: `eval_id`,
+ * `decision`, the lifecycle status fields, and for webhooks `event_id`,
+ * `event_type` and the `data` envelope.
+ */
+const nullableString = (max: number) =>
+  z.string().max(max).nullable().optional();
+const nullableStringArray = (max: number, items = 200) =>
+  z.array(z.string().max(items)).max(max).nullable().optional();
+/** One data enrichment; `response` is null when the provider/enrichment failed. */
+export const socureEnrichmentSchema = z
+  .object({
+    enrichment_name: nullableString(200),
+    enrichment_provider: nullableString(200),
+    enrichment_endpoint: nullableString(500),
+    is_source_cache: z.boolean().nullable().optional(),
+    response: z
+      .object({
+        data: z
+          .object({
+            docvTransactionToken: z
+              .string()
+              .min(1)
+              .max(4096)
+              .nullable()
+              .optional(),
+            url: z.string().max(2048).nullable().optional(),
+          })
+          .loose()
+          .nullable()
+          .optional(),
+      })
+      .loose()
+      .nullable()
+      .optional(),
+  })
+  .loose();
+export type SocureEnrichment = z.infer<typeof socureEnrichmentSchema>;
+
 export const socureEvaluationResponseSchema = z
   .object({
-    decision: z.enum(SOCURE_DECISIONS),
     eval_id: uuidLike,
-    /** Echo of our customer-defined request id. */
-    id: z.string().max(256).optional(),
-    workflow: z.string().max(200).optional(),
-    workflow_version: z.string().max(64).optional(),
-    status: z.enum(SOCURE_CASE_STATUSES).optional(),
-    sub_status: z.string().max(128).optional(),
-    eval_status: z.string().max(64).optional(),
+    decision: z.enum(SOCURE_DECISIONS),
+    /** Our customer-defined request id, echoed back. */
+    id: nullableString(256),
+    workflow: nullableString(200),
+    workflow_id: nullableString(128),
+    workflow_version: nullableString(64),
+    status: z.enum(SOCURE_CASE_STATUSES).nullable().optional(),
+    sub_status: nullableString(128),
+    eval_status: nullableString(64),
+    evaluation_status: nullableString(64),
+    eval_at: nullableString(64),
+    decision_at: nullableString(64),
+    notes: nullableString(4000),
     environment_name: environmentNameField,
-    /** Informational risk data — parsed to be discarded; never persisted, never shown. */
-    score: z.number().optional(),
-    reason_codes: z.array(z.string().max(200)).max(500).optional(),
-    decision_tags: z.array(z.string().max(200)).max(200).optional(),
-    review_queues: z.array(z.string().max(200)).max(50).optional(),
-    tags: z.array(z.string().max(200)).max(200).optional(),
+    /** Restricted provider evidence: retained server-side in normalized form only (certification). */
+    score: z.number().nullable().optional(),
+    reason_codes: nullableStringArray(500),
+    decision_tags: nullableStringArray(200),
+    review_queues: nullableStringArray(50),
+    tags: nullableStringArray(200),
     data_enrichments: z
-      .array(
-        z
-          .object({
-            enrichment_name: z.string().max(200).optional(),
-            enrichment_provider: z.string().max(200).optional(),
-            response: z
-              .object({
-                data: z
-                  .object({
-                    docvTransactionToken: z
-                      .string()
-                      .min(1)
-                      .max(4096)
-                      .optional(),
-                    url: z.url().optional(),
-                  })
-                  .loose()
-                  .optional(),
-              })
-              .loose()
-              .optional(),
-          })
-          .loose(),
-      )
+      .array(socureEnrichmentSchema)
       .max(50)
+      .nullable()
       .optional(),
   })
   .loose();
@@ -266,12 +291,25 @@ export const socureEvaluationCompletedEventSchema = z
         decision: z.enum(SOCURE_DECISIONS),
         evaluation_status: z.literal(SOCURE_EVAL_STATUS_COMPLETED).optional(),
         environment_name: environmentNameField,
-        status: z.enum(SOCURE_CASE_STATUSES).optional(),
-        sub_status: z.string().max(128).optional(),
-        /** Parsed to be discarded — never persisted, never shown. */
-        score: z.number().optional(),
-        reason_codes: z.array(z.string().max(200)).max(500).optional(),
-        tags: z.array(z.string().max(200)).max(200).optional(),
+        status: z.enum(SOCURE_CASE_STATUSES).nullable().optional(),
+        sub_status: nullableString(128),
+        workflow: nullableString(200),
+        workflow_id: nullableString(128),
+        workflow_version: nullableString(64),
+        eval_at: nullableString(64),
+        decision_at: nullableString(64),
+        notes: nullableString(4000),
+        /** Restricted provider evidence: retained server-side in normalized form only. */
+        score: z.number().nullable().optional(),
+        reason_codes: nullableStringArray(500),
+        decision_tags: nullableStringArray(200),
+        tags: nullableStringArray(200),
+        review_queues: nullableStringArray(50),
+        data_enrichments: z
+          .array(socureEnrichmentSchema)
+          .max(50)
+          .nullable()
+          .optional(),
       })
       .loose(),
   })

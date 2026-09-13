@@ -27,6 +27,15 @@ export interface SocureClientLike {
     request: SocureEvaluationRequest,
     opts: { correlationId: string },
   ): Promise<SocureRawResponse>;
+  /**
+   * `GET /api/evaluation/{eval_id}` — provider reconciliation for a missed
+   * final webhook. `include_input` is never sent (documented default false):
+   * the original identity inputs are never retrieved.
+   */
+  getEvaluation(
+    evalId: string,
+    opts: { correlationId: string },
+  ): Promise<SocureRawResponse>;
 }
 
 export class SocureUnavailableError extends Error {
@@ -75,59 +84,73 @@ export function getSocureClient(): SocureClientLike {
     );
   }
   const baseUrl = env.SOCURE_API_BASE_URL.replace(/\/+$/, "");
-  cachedClient = {
-    async evaluate(request, opts) {
-      // Genuine provider traffic. Reached only with a complete, founder-
-      // activated configuration; never from tests or from any tier without
-      // REFI_KYC_PROVIDER=socure.
-      const apiKey = getServerEnv().SOCURE_API_KEY ?? "";
-      if (apiKey.length === 0) {
-        throw new SocureUnavailableError("SOCURE_API_KEY is not configured");
-      }
-      const controller = new AbortController();
-      const timer = setTimeout(() => {
-        controller.abort();
-      }, SOCURE_REQUEST_TIMEOUT_MS);
+  const send = async (
+    method: "POST" | "GET",
+    path: string,
+    body: unknown,
+    correlationId: string,
+  ): Promise<SocureRawResponse> => {
+    // Genuine provider traffic. Reached only with a complete, founder-
+    // activated configuration; never from tests or from any tier without
+    // REFI_KYC_PROVIDER=socure.
+    const apiKey = getServerEnv().SOCURE_API_KEY ?? "";
+    if (apiKey.length === 0) {
+      throw new SocureUnavailableError("SOCURE_API_KEY is not configured");
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      controller.abort();
+    }, SOCURE_REQUEST_TIMEOUT_MS);
+    try {
+      const res = await fetch(`${baseUrl}${path}`, {
+        method,
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+          Accept: "application/json",
+          [SOCURE_API_VERSION_HEADER]: SOCURE_API_VERSION,
+          "X-Correlation-Id": correlationId,
+        },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      const retryAfter = res.headers.get("retry-after");
+      const retryAfterSeconds =
+        retryAfter !== null && /^\d+$/.test(retryAfter)
+          ? Number(retryAfter)
+          : null;
+      let parsedBody: unknown = null;
       try {
-        const res = await fetch(`${baseUrl}${SOCURE_EVALUATION_PATH}`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            Accept: "application/json",
-            [SOCURE_API_VERSION_HEADER]: SOCURE_API_VERSION,
-            "X-Correlation-Id": opts.correlationId,
-          },
-          body: JSON.stringify(request),
-          signal: controller.signal,
-          cache: "no-store",
-        });
-        const retryAfter = res.headers.get("retry-after");
-        const retryAfterSeconds =
-          retryAfter !== null && /^\d+$/.test(retryAfter)
-            ? Number(retryAfter)
-            : null;
-        let body: unknown = null;
-        try {
-          body = await res.json();
-        } catch {
-          body = null;
-        }
-        return { status: res.status, body, retryAfterSeconds };
-      } catch (err) {
-        if (err instanceof Error && err.name === "AbortError") {
-          throw new SocureProviderError("timeout", null);
-        }
-        throw new SocureProviderError(
-          "provider_unavailable",
-          null,
-          null,
-          "network",
-        );
-      } finally {
-        clearTimeout(timer);
+        parsedBody = await res.json();
+      } catch {
+        parsedBody = null;
       }
-    },
+      return { status: res.status, body: parsedBody, retryAfterSeconds };
+    } catch (err) {
+      if (err instanceof Error && err.name === "AbortError") {
+        throw new SocureProviderError("timeout", null);
+      }
+      throw new SocureProviderError(
+        "provider_unavailable",
+        null,
+        null,
+        "network",
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  cachedClient = {
+    evaluate: (request, opts) =>
+      send("POST", SOCURE_EVALUATION_PATH, request, opts.correlationId),
+    getEvaluation: (evalId, opts) =>
+      send(
+        "GET",
+        `${SOCURE_EVALUATION_PATH}/${encodeURIComponent(evalId)}`,
+        undefined,
+        opts.correlationId,
+      ),
   };
   return cachedClient;
 }
@@ -139,11 +162,30 @@ export class FakeSocureClient implements SocureClientLike {
     correlationId: string;
   }> = [];
   private queue: FakeSocureScript[] = [];
+  private getQueue: FakeSocureScript[] = [];
+  readonly getRequests: Array<{ evalId: string; correlationId: string }> = [];
   constructor(...scripts: FakeSocureScript[]) {
     this.queue = scripts;
   }
   script(...scripts: FakeSocureScript[]): void {
     this.queue.push(...scripts);
+  }
+  /** Scripts consumed by `getEvaluation` (reconciliation), in order. */
+  scriptGet(...scripts: FakeSocureScript[]): void {
+    this.getQueue.push(...scripts);
+  }
+  getEvaluation(
+    evalId: string,
+    opts: { correlationId: string },
+  ): Promise<SocureRawResponse> {
+    this.getRequests.push({ evalId, correlationId: opts.correlationId });
+    const next = this.getQueue.shift();
+    if (!next) {
+      return Promise.reject(
+        new Error("FakeSocureClient: no GET script queued"),
+      );
+    }
+    return FakeSocureClient.play(next);
   }
   evaluate(
     request: SocureEvaluationRequest,
@@ -154,6 +196,9 @@ export class FakeSocureClient implements SocureClientLike {
     if (!next) {
       return Promise.reject(new Error("FakeSocureClient: no script queued"));
     }
+    return FakeSocureClient.play(next);
+  }
+  private static play(next: FakeSocureScript): Promise<SocureRawResponse> {
     switch (next.kind) {
       case "json":
         return Promise.resolve({

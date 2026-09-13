@@ -19,3 +19,7 @@
 | Production TPS activated by Socure? | **VERIFY / ACTIVATE WITH SOCURE** | production documents 0 TPS until activated on request; no live traffic before confirmation |
 | Production workflow verified? | **VERIFY BEFORE GO-LIVE** | — |
 | API version pinned (`X-API-Version: 2025-01-01.orion`)? | **NO** | hardening PR pending review |
+
+## Production gate update — 2026-09-12 (certification hardening)
+
+Production RiskOS traffic requires ALL of: A PASS · B PASS · C PASS · D–L accepted · M PASS (missed-webhook reconciliation; fixture PASS, live repeat with B) · workflow DocV path verified (N1: done) · Capture App Sandbox flow verified (OPEN: dashboard check) · scores/reasonCodes retained (done, Restricted `providerDetail`) · response nullability hardened (done) · DocV callbacks hardened (done; live proof with B) · Production monitoring ready (done; human CRITICAL channel pending) · separate founder Production activation. See `docs/security/socure-review/socure-certification-hardening-2026-09-12.md`.

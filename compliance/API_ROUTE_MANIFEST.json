@@ -316,6 +316,16 @@
       }
     },
     {
+      "source": "apps/web/app/api/v1/investor/kyc/reconcile/route.ts",
+      "route": "/api/v1/investor/kyc/reconcile",
+      "methods": ["POST"],
+      "purpose": "Browser asks the BFF to reconcile the current subject's non-terminal KYC evaluation with the provider (reconcileKycEvaluation, BFF-only): GET /api/evaluation/{eval_id} without identity inputs, bounded backoff, finalized through the same path as a webhook. Provider outage \u2192 retryable, never a rejection. Browser never calls the provider.",
+      "owner": "investor-bff",
+      "auth": {
+        "POST": "bff-mutate"
+      }
+    },
+    {
       "source": "apps/web/app/api/v1/investor/kyc/step-up/route.ts",
       "route": "/api/v1/investor/kyc/step-up",
       "methods": ["GET"],

@@ -28,7 +28,7 @@ const DEMO_HANDOFF_PRIVATE_JWK = JSON.stringify(
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: /demo-tier\.spec\.ts/,
+  testMatch: /(demo-tier|investor-product-(demo|design))\.spec\.ts/,
   globalSetup: "./e2e/global-setup.ts",
   fullyParallel: false,
   forbidOnly: !!process.env["CI"],

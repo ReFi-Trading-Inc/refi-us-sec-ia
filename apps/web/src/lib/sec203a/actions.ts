@@ -59,6 +59,7 @@ export const InvestorActions = [
   // BFF-only: the browser reports the provider's document capture finished
   // for the current subject → under_review. Never a verification decision.
   "completeKycStepUp",
+  "reconcileKycEvaluation",
   // BFF-only TEST CONTROL for the mock adapter. Enabled solely by
   // REFI_KYC_MOCK_CONTROLS=1; answers 404 everywhere else.
   "advanceMockKycVerification",

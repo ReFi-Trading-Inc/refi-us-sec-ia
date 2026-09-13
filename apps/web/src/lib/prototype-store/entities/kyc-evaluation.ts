@@ -16,6 +16,7 @@
  * final decision is recorded as a CONFLICT for compliance follow-up and the
  * state is left unchanged.
  */
+import type { SocureCertificationDetail } from "../../kyc/socure/certification-detail";
 import { resolveKvStore } from "../../store";
 import { makePrototypeMeta, type PrototypeMeta } from "../store";
 import {
@@ -71,6 +72,19 @@ export interface KycEvaluationRecord {
     kind: string;
     retryable: boolean;
     at: string;
+  } | null;
+  /**
+   * RESTRICTED normalized provider detail (scores, reason codes, tags) kept
+   * for Socure certification. Never in the session view, evidence record,
+   * attestation, browser responses or logs.
+   */
+  providerDetail?: SocureCertificationDetail | null;
+  /** Bounded provider reconciliation state (GET /api/evaluation/{eval_id}). */
+  reconcile?: {
+    attempts: number;
+    lastAt: string | null;
+    notBefore: string | null;
+    lastOutcome: string | null;
   } | null;
   /** Set when a conflicting final decision arrived after a terminal state. */
   conflict: {
@@ -219,6 +233,8 @@ export async function applyFinalProviderDecision(args: {
   providerDecision: KycProviderDecision;
   mapped: { refiState: KycLifecycleState; final: boolean };
   correlationId: string;
+  /** Restricted normalized provider detail for certification retention. */
+  detail?: SocureCertificationDetail | null;
 }): Promise<WebhookApplication> {
   const receivedAt = nowIso();
   // Fast path: an event marker already durably written → duplicate.
@@ -309,6 +325,7 @@ export async function applyFinalProviderDecision(args: {
     decided.outcome = "applied";
     return {
       ...next,
+      providerDetail: args.detail ?? record.providerDetail ?? null,
       docv:
         next.docv && docvOccurred
           ? {

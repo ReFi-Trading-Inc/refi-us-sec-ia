@@ -30,6 +30,7 @@ import {
 } from "../../../../../src/lib/kyc/socure/webhook-auth";
 import { socureWebhookEventSchema } from "../../../../../src/lib/kyc/socure/schemas";
 import { describeWebhookRejection } from "../../../../../src/lib/kyc/socure/webhook-diagnostics";
+import { emitKycSignal } from "../../../../../src/lib/observability/kyc-signals";
 import {
   noteIgnoredWebhookEvent,
   noteRejectedWebhookEnvelope,
@@ -109,6 +110,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   );
   if (!auth.ok) {
     // Never say which part failed; never log the presented credential.
+    emitKycSignal("kyc.webhook.auth_denied");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const declared = Number(req.headers.get("content-length") ?? "0");
@@ -141,6 +143,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       correlationId,
     );
     await noteRejectedWebhookEnvelope({ correlationId, diagnostic });
+    emitKycSignal("kyc.webhook.envelope_rejected");
     return NextResponse.json(
       { error: "Malformed", diagnostic },
       { status: 400 },
@@ -173,6 +176,13 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       );
     }
     return NextResponse.json({ error: "Malformed" }, { status: 400 });
+  }
+  if (applied.outcome === "conflict_flagged") {
+    emitKycSignal("kyc.webhook.conflict_flagged");
+  } else if (applied.outcome === "unknown_evaluation") {
+    emitKycSignal("kyc.webhook.unknown_evaluation");
+  } else if (applied.outcome === "evaluation_mismatch") {
+    emitKycSignal("kyc.webhook.evaluation_mismatch");
   }
   // The durable record (event marker + state change) is written by
   // applyWebhook BEFORE this response; 2xx is returned only after that, and

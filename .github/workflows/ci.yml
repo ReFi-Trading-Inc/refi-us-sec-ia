@@ -4,7 +4,13 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    # `main` is the release path. `daniel-handoff/**` is the Daniel-track
+    # integration branch and its lane branches: those PRs are isolated from the
+    # frozen demo release path, but protected CI is mandatory on every lane, and
+    # a `pull_request` filter naming only `main` would give them NO checks at
+    # all. For a pull_request event GitHub reads this workflow from the BASE
+    # branch, which is why the filter has to live here rather than on main.
+    branches: [main, "daniel-handoff/**"]
 
 concurrency:
   group: ci-${{ github.ref }}

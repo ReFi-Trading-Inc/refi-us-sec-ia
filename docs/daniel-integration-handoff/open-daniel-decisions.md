@@ -13,24 +13,44 @@ Status vocabulary: `OPEN` · `ASKED` · `ANSWERED` · `SUPERSEDED`.
 
 ---
 
-## D-A1 — Deliver the alpha.4 contract package
+## D-A1 — Issue membership/admission in a successor contract package
 
 **Status:** `OPEN` · **Blocks:** Lane C, and transitively A, E, F, H
+**Corrected 2026-09-13 — there is no alpha.4.**
 
-This checkout imports and generates **`v1.1.0-alpha.3`**
-(`contracts/investor-api/CURRENT.json`, `connected_alpha_verified: false`). The
-issued backend package is **alpha.4**, carrying funding assessments and
-corrected recommendation responses. Only alpha.2 and alpha.3 exist in the repo.
+### What the earlier framing got wrong
 
-**Needed:** the alpha.4 package itself, in the same shape as alpha.3 —
-`contract.json`, `schemas.json`, `openapi.json`, `examples.json`,
-`capabilities.json`, `MIGRATION.md`, plus a `package_content_sha256` we can pin
-in `CURRENT.json`.
+This item previously asked Daniel to "deliver the alpha.4 package", following
+`README.md:101` ("the backend's currently issued package is alpha.4"). **That
+claim is false**, confirmed by the founder and by artifact search:
 
-**We will not** hand-transcribe alpha.4 from prose. Adoption is:
-verify digest → migration diff → regenerate client → rerun conformance.
+- our checkout pins `v1.1.0-alpha.3`, digest `5eca1200…`;
+- Daniel's own backend checkout (`refinity-main-main-Sept-10-2026`) pins
+  **the same version and the same digest**;
+- no `alpha.4` artifact exists in any local repository or sibling checkout.
 
----
+**`v1.1.0-alpha.3` is the current contract, and we are already in sync with
+it.** There is no package to chase, and the README line has been corrected.
+
+### The real ask
+
+Membership and canonical admission are **absent from the alpha.3 package**: a
+search across its `contract.json`, `schemas.json`, `openapi.json`,
+`examples.json` and `capabilities.json` returns nothing. They appear only in
+`INTEGRATION.md` **prose**, which says backend admission already exists and
+initializes canonical account state transactionally when attestation and
+consent complete.
+
+So the backend **has** admission; the frontend simply has no contracted way to
+read it. What is needed is a successor package (alpha.5, or whatever he
+numbers it) exposing the projections in **D-A2** and **D-A3**, in the same
+shape as alpha.3 — `contract.json`, `schemas.json`, `openapi.json`,
+`examples.json`, `capabilities.json`, `MIGRATION.md`, plus a
+`package_content_sha256` we can pin in `CURRENT.json`.
+
+We will **not** transcribe either projection from `INTEGRATION.md` prose.
+Adoption stays mechanical: verify digest → migration diff → regenerate client
+→ rerun conformance.
 
 ## D-A2 — ClosedAlphaMembership projection
 

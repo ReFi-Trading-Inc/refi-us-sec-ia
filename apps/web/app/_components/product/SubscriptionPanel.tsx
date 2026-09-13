@@ -82,6 +82,8 @@ export function SubscriptionPanel() {
   const [allocationTouched, setAllocationTouched] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  /** Authoritative only; null when not established. See BrokerageConnectionPanel. */
+  const [kycVerified, setKycVerified] = useState<boolean | null>(null);
 
   const retry = useCallback(() => {
     setPhase({ kind: "loading" });
@@ -102,6 +104,10 @@ export function SubscriptionPanel() {
     const live = () => !run.cancelled;
 
     void (async () => {
+      const handoff = await adapter.getHandoff();
+      if (!live()) return;
+      setKycVerified(handoff.ok ? handoff.value.kycVerified : null);
+
       const [conn, bnds, req, sub] = await Promise.all([
         adapter.getBrokerageConnection(),
         adapter.getAllocationBounds(),
@@ -211,11 +217,17 @@ export function SubscriptionPanel() {
           </AppButton>
         }
       >
-        <p>
-          Your identity verification is complete and remains on file. We could
-          not reach the account service. Nothing was lost — retry now or come
-          back later.
-        </p>
+        {kycVerified === true ? (
+          <p data-testid="unavailable-kyc-verified">
+            Your identity verification is complete. Account setup is temporarily
+            unavailable. Retry now or come back later.
+          </p>
+        ) : (
+          <p data-testid="unavailable-kyc-unknown">
+            Account setup is temporarily unavailable. Your completed onboarding
+            steps have not been changed. Retry now or come back later.
+          </p>
+        )}
       </StatusPanel>
     );
   }

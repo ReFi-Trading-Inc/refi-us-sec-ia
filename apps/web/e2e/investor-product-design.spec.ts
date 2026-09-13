@@ -14,10 +14,28 @@
  * Runs on the demo lane because the components must actually render, which
  * requires the fixture adapter.
  */
-import { test, expect, type Locator } from "@playwright/test";
+import { test, expect, type Locator, type Page } from "@playwright/test";
 
 /** Workstation-first: the design system is desktop-dense by default. */
 const DESKTOP = { width: 1440, height: 900 };
+
+const ORIGIN = "http://localhost:3000";
+
+/**
+ * Establish a demo persona session.
+ *
+ * `/us/product/*` is gated on session status, so these surfaces do not render
+ * for an anonymous visitor — that refusal is asserted on the production lane.
+ * Here we sign in first so the journey itself can be walked.
+ */
+async function signIn(page: Page): Promise<void> {
+  const res = await page.request.post("/api/demo/session", {
+    headers: { "content-type": "application/json", origin: ORIGIN },
+    data: { persona: "admitted" },
+  });
+  if (!res.ok())
+    throw new Error(`demo sign-in failed: ${String(res.status())}`);
+}
 
 async function css(el: Locator, prop: string): Promise<string> {
   return el.evaluate(
@@ -30,6 +48,7 @@ test.use({ viewport: DESKTOP });
 
 test.describe("design-system conformance", () => {
   test.beforeEach(async ({ page }) => {
+    await signIn(page);
     await page.goto("/us/product/brokerage");
     await expect(page.getByTestId("connection-panel")).toBeVisible();
   });
@@ -198,6 +217,7 @@ test.describe("design-system conformance", () => {
  */
 test.describe("rendered screens", () => {
   test("capture the investor product states", async ({ page }, testInfo) => {
+    await signIn(page);
     const shot = async (name: string) => {
       await page.screenshot({
         path: testInfo.outputPath(`${name}.png`),

@@ -106,6 +106,12 @@ export function BrokerageConnectionPanel({
   const [apiSecretKey, setApiSecretKey] = useState("");
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  /**
+   * Authoritative identity-verification state, or null when it has not been
+   * established. NEVER inferred from reaching this route, from being signed
+   * in, or from the backend being down — only the product handoff says this.
+   */
+  const [kycVerified, setKycVerified] = useState<boolean | null>(null);
 
   /** Re-enter the loading state and re-read. An event handler, not an effect. */
   const retry = useCallback(() => {
@@ -144,6 +150,14 @@ export function BrokerageConnectionPanel({
       const caps = await adapter.capabilities();
       if (!live()) return;
       setCapabilities(caps);
+
+      // Read the handoff BEFORE the connection: if the backend is down we
+      // still need to know whether we may truthfully say anything about
+      // identity verification. `kycVerified` stays null unless the projection
+      // asserts it.
+      const handoff = await adapter.getHandoff();
+      if (!live()) return;
+      setKycVerified(handoff.ok ? handoff.value.kycVerified : null);
 
       const res = await adapter.getBrokerageConnection();
       if (!live()) return;
@@ -250,6 +264,7 @@ export function BrokerageConnectionPanel({
       {phase.kind === "unavailable" && (
         <BackendUnavailablePanel
           failure={phase.failure}
+          kycVerified={kycVerified}
           onRetry={retry}
           onResumeLater={onSkip}
         />
@@ -580,10 +595,13 @@ function ConnectedActions({
  */
 function BackendUnavailablePanel({
   failure,
+  kycVerified,
   onRetry,
   onResumeLater,
 }: {
   failure: ProductFailure;
+  /** Authoritative; null when identity-verification state is not established. */
+  kycVerified: boolean | null;
   onRetry: () => void;
   onResumeLater?: () => void;
 }) {
@@ -606,11 +624,21 @@ function BackendUnavailablePanel({
         </>
       }
     >
-      <p>
-        Your identity verification is complete and remains on file. We could not
-        reach the account service to finish setting up your account. Nothing was
-        lost — you can retry now or come back later.
-      </p>
+      {kycVerified === true ? (
+        <p data-testid="unavailable-kyc-verified">
+          Your identity verification is complete. Account setup is temporarily
+          unavailable. You can retry now or come back later.
+        </p>
+      ) : (
+        // KYC state is not established — most often because the service that
+        // would report it is the same one that is down. Say what we know: the
+        // outage changed nothing. Claiming verification succeeded here would
+        // be an assertion the frontend has no authority to make.
+        <p data-testid="unavailable-kyc-unknown">
+          Account setup is temporarily unavailable. Your completed onboarding
+          steps have not been changed. You can retry now or come back later.
+        </p>
+      )}
       {failure.correlationId && (
         <p className="text-app-caption text-charcoal-200">
           Reference <span className="font-mono">{failure.correlationId}</span>

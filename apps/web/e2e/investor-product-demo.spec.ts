@@ -16,6 +16,24 @@ import { test, expect, type Page } from "@playwright/test";
 const FIXTURE_KEY = `PK${"0".repeat(18)}`;
 const FIXTURE_SECRET = "e2eFixtureSecret".padEnd(40, "0");
 
+const ORIGIN = "http://localhost:3000";
+
+/**
+ * Establish a demo persona session.
+ *
+ * `/us/product/*` is gated on session status, so these surfaces do not render
+ * for an anonymous visitor — that refusal is asserted on the production lane.
+ * Here we sign in first so the journey itself can be walked.
+ */
+async function signIn(page: Page): Promise<void> {
+  const res = await page.request.post("/api/demo/session", {
+    headers: { "content-type": "application/json", origin: ORIGIN },
+    data: { persona: "admitted" },
+  });
+  if (!res.ok())
+    throw new Error(`demo sign-in failed: ${String(res.status())}`);
+}
+
 async function connectPaper(page: Page) {
   await page.getByTestId("connect-paper").click();
   await page.getByTestId("api-key-id").fill(FIXTURE_KEY);
@@ -28,6 +46,10 @@ async function connectPaper(page: Page) {
 }
 
 test.describe("investor product journey (demo tier)", () => {
+  test.beforeEach(async ({ page }) => {
+    await signIn(page);
+  });
+
   test("PAPER is obvious and LIVE cannot be activated", async ({ page }) => {
     await page.goto("/us/product/brokerage");
 
@@ -159,5 +181,53 @@ test.describe("investor product journey (demo tier)", () => {
 
     await connectPaper(page);
     await expect(page.getByTestId("broker-account-id")).toBeVisible();
+  });
+});
+
+/**
+ * The identity-verification claim must come from the product handoff, never
+ * from being signed in or from the backend being down. These two scenarios
+ * differ ONLY in the authoritative `kycVerified` value.
+ */
+test.describe("backend unavailable — KYC copy follows authority", () => {
+  test.beforeEach(async ({ page }) => {
+    await signIn(page);
+  });
+
+  test("authoritative kycVerified=true may state verification is complete", async ({
+    page,
+  }) => {
+    await page.goto("/us/product/brokerage?scenario=backend-down");
+    await expect(page.getByTestId("backend-unavailable")).toBeVisible();
+    await expect(page.getByTestId("unavailable-kyc-verified")).toBeVisible();
+    await expect(page.getByTestId("unavailable-kyc-unknown")).toHaveCount(0);
+    await expect(page.locator("body")).toContainText(
+      "identity verification is complete",
+    );
+    // Still retryable, still not a rejection.
+    await expect(page.getByTestId("retry")).toBeVisible();
+  });
+
+  test("kycVerified=false must NOT claim verification succeeded", async ({
+    page,
+  }) => {
+    await page.goto("/us/product/brokerage?scenario=backend-down-kyc-unknown");
+    await expect(page.getByTestId("backend-unavailable")).toBeVisible();
+    await expect(page.getByTestId("unavailable-kyc-unknown")).toBeVisible();
+    await expect(page.getByTestId("unavailable-kyc-verified")).toHaveCount(0);
+
+    const body = await page.locator("body").innerText();
+    expect(body).toContain("have not been changed");
+    expect(body).not.toContain("identity verification is complete");
+  });
+
+  test("the same outage on the subscription surface behaves identically", async ({
+    page,
+  }) => {
+    await page.goto(
+      "/us/product/subscription?scenario=backend-down-kyc-unknown",
+    );
+    await expect(page.getByTestId("unavailable-kyc-unknown")).toBeVisible();
+    await expect(page.getByTestId("unavailable-kyc-verified")).toHaveCount(0);
   });
 });

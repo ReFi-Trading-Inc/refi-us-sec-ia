@@ -17,6 +17,7 @@
 import type { ReactNode } from "react";
 import { getServerEnv } from "@lib/config/env";
 import { InvestorProductProvider } from "../../_components/product/adapter-context";
+import { ProductAuthGate } from "../../_components/product/ProductAuthGate";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,9 @@ export default function ProductLayout({ children }: { children: ReactNode }) {
           id="product-main"
           className="mx-auto flex max-w-3xl flex-col gap-6 px-4 py-6 sm:px-6"
         >
-          {children}
+          {/* Session authority first: nothing investor-shaped renders, and no
+              adapter read is issued, until the viewer is known. */}
+          <ProductAuthGate>{children}</ProductAuthGate>
         </main>
       </InvestorProductProvider>
     </div>

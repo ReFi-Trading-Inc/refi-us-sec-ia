@@ -27,6 +27,7 @@
  *   down the app with a thrown configuration error at render time.
  */
 import { createContext, useContext, useMemo, type ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 import type { InvestorProductAdapter } from "@lib/investor-product/adapter";
 import {
   FixtureInvestorProductAdapter,
@@ -62,18 +63,45 @@ export interface InvestorProductContextValue {
  * the prod tier before we get here, so this cannot become a production cache.
  */
 let fixtureSingleton: FixtureInvestorProductAdapter | null = null;
+let fixtureSingletonKey: string | null = null;
 
 function getFixtureAdapter(
+  key: string,
   scenario?: Partial<FixtureScenario>,
 ): FixtureInvestorProductAdapter {
-  fixtureSingleton ??= new FixtureInvestorProductAdapter(scenario);
+  if (fixtureSingleton === null || fixtureSingletonKey !== key) {
+    fixtureSingleton = new FixtureInvestorProductAdapter(scenario);
+    fixtureSingletonKey = key;
+  }
   return fixtureSingleton;
 }
 
 /** Test seam: drop the retained fixture world. */
 export function resetFixtureAdapterForTests(): void {
   fixtureSingleton = null;
+  fixtureSingletonKey = null;
 }
+
+/**
+ * Named fixture worlds, selectable with `?scenario=` on non-production tiers.
+ *
+ * These exist so the states that are otherwise unreachable in a browser — a
+ * backend outage, and the difference between "identity verification is
+ * established" and "we do not know" — can be walked and asserted rather than
+ * only unit-tested.
+ *
+ * This is reachable ONLY in fixture mode. `resolveAdapterMode` has already
+ * refused fixtures on the prod tier before this is consulted, so no query
+ * string can alter production behaviour.
+ */
+const FIXTURE_SCENARIOS: Record<string, Partial<FixtureScenario>> = {
+  // Authoritative KYC pass, account service down (Scenario A).
+  "backend-down": { kycVerified: true, backendAvailable: false },
+  // Backend down AND identity-verification state not established.
+  "backend-down-kyc-unknown": { kycVerified: false, backendAvailable: false },
+  // Already-connected brokerage, for jumping straight to subscription.
+  connected: { startConnected: true },
+};
 
 const InvestorProductContext =
   createContext<InvestorProductContextValue | null>(null);
@@ -96,6 +124,9 @@ export function InvestorProductProvider({
   refiEnv: RefiEnv;
   configuredMode?: string;
 }) {
+  const searchParams = useSearchParams();
+  const scenarioName = searchParams.get("scenario");
+
   const value = useMemo<InvestorProductContextValue>(() => {
     const env = refiEnv;
     const mode = resolveAdapterMode({
@@ -104,8 +135,10 @@ export function InvestorProductProvider({
     });
 
     if (mode === "fixture") {
+      const named = scenarioName ? FIXTURE_SCENARIOS[scenarioName] : undefined;
+      const world = { ...named, ...scenario };
       return {
-        adapter: getFixtureAdapter(scenario),
+        adapter: getFixtureAdapter(scenarioName ?? "default", world),
         mode,
         fixtureDataVisible: fixtureDataPermitted(env),
         unavailableReason: null,
@@ -123,7 +156,7 @@ export function InvestorProductProvider({
     // `scenario` is a stable test seam; re-resolving per render would discard
     // the fixture's in-memory progress mid-journey.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refiEnv, configuredMode]);
+  }, [refiEnv, configuredMode, scenarioName]);
 
   return (
     <InvestorProductContext.Provider value={value}>

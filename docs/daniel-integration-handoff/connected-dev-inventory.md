@@ -125,46 +125,94 @@ portfolio-engine, admin-portal and others).
 
 ---
 
-## 3. Certification finding — infrastructure is not reproducible from this repo
+## 3. Provenance — SOURCE RECOVERED (corrected 2026-09-13)
 
-**The Terraform source for the 27 applied resources is not in this
-repository.** Verified:
+> **This section supersedes an incorrect finding.** The first revision of this
+> document reported the Terraform source as "not in this repository, not on any
+> remote branch" and raised `BLOCKED — SOURCE LOCATION REQUIRED`. **That was
+> wrong.** The branch search behind it was truncated by `head -40`, and
+> `integration/refinity-dev` sorts past that cut. The source was in our own
+> repository the whole time. Had it not been caught, it would have sent Daniel
+> a question we already had the answer to.
 
-- not in the working tree (`grep` for `runtime_probe` / `deploy_status` /
-  `refinity-dev-frontend` across all `*.tf` → no hits);
-- not on any remote branch (`git grep` across every `origin/*` ref → no hits);
-- not in any sibling working copy under `.../ReFi/Website/`.
+### The source
 
-So live infrastructure — including the KMS keys that sign identity assertions —
-is **applied but not source-controlled here**. The state is real Terraform
-(serial 6), so this is not dashboard drift; the configuration simply lives
-somewhere this repository cannot see.
+|              |                                                         |
+| ------------ | ------------------------------------------------------- |
+| Branch       | `origin/integration/refinity-dev`                       |
+| Tip commit   | `d592c1047e5f82a71ae20612676a3d3f16321c24` (2026-09-12) |
+| Author       | Daniel Oosthuyzen                                       |
+| Path         | `infra/terraform/connected-dev/` — `main.tf`, `cicd.tf` |
+| Build config | `infra/cloudrun/cloudbuild.connected-cicd.yaml`         |
+| Open PR      | none                                                    |
+| Divergence   | 15 commits not on `main`; `main` has 22 not on it       |
 
-**This is a platform-certification blocker.** Infrastructure that cannot be
-reproduced from source control cannot be certified, reviewed for drift, or
-safely changed.
+### Verified to correspond to the state we read
 
-**`BLOCKED — SOURCE LOCATION REQUIRED`.** Needed: the repository/path holding
-the `connected-dev` Terraform configuration whose state is
-`gs://refinity-dev-frontend-tfstate/connected-dev/default.tfstate`. Once
-located, Lane D's task is to bring it under this repository's IaC (or
-authoritatively reference it) — **not** to author a parallel configuration,
-which would produce duplicate keys and conflicting state.
+The backend block matches the inspected state object exactly:
 
-### What `infra/terraform/` is, in light of this
+```hcl
+backend "gcs" {
+  bucket = "refinity-dev-frontend-tfstate"
+  prefix = "connected-dev"
+}
+provider "google" {
+  project = "refinity-dev"
+  region  = "us-west1"
+}
+```
 
-`infra/terraform/` (Firestore + optional SA key) and
-`infra/terraform/environments/{dev,staging,prod}` are a **separate, never-applied**
-configuration, with no backend and no state. `environments/dev` defaults to
-`us-central1` with `REFI_DATA_ADAPTER = "mock"` and inline plaintext dev
-secrets. It is **not** the connected Dev environment and must not be applied
-against `refinity-dev` in its current form.
+Declared resource addresses line up with the 27 in state, including
+`google_kms_crypto_key.signing` (the two P-256 keys),
+`google_secret_manager_secret.session`, `google_service_account.runtime` /
+`.build`, `google_artifact_registry_repository.images` and
+`google_firestore_database.frontend`. `cicd.tf` carries the Cloud Run and
+Cloud Build resources.
 
----
+### Who applied it
+
+Cloud Audit Logs (admin activity) name a single principal:
+
+```text
+2026-09-11T22:45:42Z  daniel@refi.trading  storage.buckets.create
+2026-09-11T22:45:43Z  daniel@refi.trading  CreateCryptoKey        (x2)
+2026-09-11T22:45:43Z  daniel@refi.trading  CreateServiceAccount   (x2)
+2026-09-11T22:52:54Z  daniel@refi.trading  Services.CreateService (refi-frontend-integration)
+2026-09-11T23:39:22Z  daniel@refi.trading  storage.buckets.create
+```
+
+State-object generations (bucket versioning is on) show six writes in one
+session: `22:44:23` → `22:46:06` → `22:46:18` → `22:53:19` → `23:03:30` →
+`23:39:36` UTC, ending at serial 6 / 69,140 bytes.
+
+So this was applied by **Daniel, from a human identity, on 2026-09-11** — not
+by CI and not by a service account.
+
+### The Cloud Build trigger closes the loop
+
+```text
+trigger    refi-frontend-integration     created 2026-09-11T23:39:35Z
+repository refi-us-sec-ia                (GitHub, via connection refi-frontend-github)
+branch     ^integration/refinity-dev$
+filename   infra/cloudrun/cloudbuild.connected-cicd.yaml
+build SA   refi-frontend-build@refinity-dev.iam.gserviceaccount.com
+```
+
+The trigger points at **this repository**, at exactly the branch holding the
+source. Nothing is missing.
+
+### Classification
+
+**A — SOURCE RECOVERED.** No question to Daniel is required, and none should be
+asked. Per the directive, work stops here: importing, moving, merging or
+reconciling the branch is **Tier 2** and awaits founder review.
 
 ## 4. Next Lane D actions
 
-1. **Locate the connected-dev Terraform source** (blocker above).
+1. ~~Locate the connected-dev Terraform source~~ — **done**, see §3. Next is a
+   Tier 2 decision on how `integration/refinity-dev` relates to `main` and to
+   `daniel-handoff/integration`: it is 15 commits ahead with no open PR, so the
+   connected configuration currently lives only on an unmerged branch.
 2. Verify Cloud Logging / Monitoring coverage, the one required item not
    evidenced by the state.
 3. Then, as a Tier 2 PR: remove `create_sa_key`, its output, the

@@ -1,9 +1,17 @@
 # Durable store infra (Cloud Firestore)
 
 Provisions the Firestore database + app service account + least-privilege IAM
-that back the BFF's durable store. Portable HCL — runs on GCP now (the eventual
-home) and keeps the app host-agnostic (Vercel today via a key, Cloud Run later
-via workload identity).
+that back the BFF's durable store.
+
+> **Deployment authority.** The connected US product runs on **Google Cloud**,
+> deployed by Terraform to the shared `refinity-dev` environment
+> (`us-west1`), with `refinity-stg` / `refinity-prod` to follow. Vercel is
+> **not** production infrastructure — at most an optional PR preview.
+>
+> Credentials come from **service identity**: Workload Identity for CI, and
+> the attached service account via ADC on Cloud Run. **Never** a downloaded,
+> long-lived service-account key. Earlier revisions of this file documented
+> exporting a key JSON into Vercel; that guidance is withdrawn.
 
 ## What it creates
 
@@ -29,24 +37,22 @@ terraform apply -var project_id=<your-gcp-project>
 
 ## Wiring the app to the durable store
 
-### Vercel (current host — no workload identity)
+### Cloud Run — the deployment path
 
-1. `terraform apply -var project_id=<p> -var create_sa_key=true`
-2. `terraform output -raw gcp_service_account_key_json` → paste into the Vercel
-   **Production** env var `GCP_SERVICE_ACCOUNT_KEY` (mark as sensitive).
-3. Set `GCP_PROJECT_ID=<p>`.
-4. Flip the entities to durable:
-   `REFI_BACKING__ALPHA_APPLICATION=durable`,
-   `REFI_BACKING__ALPHA_HANDOFF_JTI=durable`.
-5. Redeploy. The BFF now persists alpha signups + the single-use jti guard in
-   Firestore (durable across cold starts/instances; atomic replay protection).
-
-### Cloud Run (eventual host — preferred, no key)
-
-1. `terraform apply -var project_id=<p>` (leave `create_sa_key=false`).
+1. `terraform apply -var project_id=<p>` (leave `create_sa_key = false`).
 2. Deploy Cloud Run with `--service-account=<service_account_email output>`.
 3. Set `GCP_PROJECT_ID` + the `REFI_BACKING__*=durable` vars. Credentials come
-   from the metadata server via ADC — no key handling.
+   from the metadata server via ADC — **no key handling**.
+
+The BFF then persists alpha signups + the single-use jti guard in Firestore,
+durable across cold starts and instances, with atomic replay protection.
+
+### `create_sa_key` — deprecated
+
+`create_sa_key` mints a long-lived key and writes the private key **into
+Terraform state**. It is off by default and should stay off. It exists only for
+a host with no workload identity; the connected environment has one, so there
+is no supported reason to enable it. Do not use it to wire Vercel.
 
 ## Local / CI testing (Firestore emulator)
 

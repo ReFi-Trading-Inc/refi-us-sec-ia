@@ -33,11 +33,15 @@ variable "app_service_account_id" {
 variable "create_sa_key" {
   type        = bool
   description = <<-EOT
-    Whether Terraform should mint a service-account key (needed by hosts without
-    workload identity, e.g. Vercel). WARNING: the private key is written to
-    Terraform state — only enable this with a remote, encrypted backend, and
-    prefer `gcloud iam service-accounts keys create` or workload identity where
-    possible. Cloud Run does NOT need this (it uses the attached SA via ADC).
+    DEPRECATED — do not enable.
+
+    Mints a long-lived service-account key. The private key is written into
+    Terraform state, and long-lived keys are not an accepted credential for the
+    connected environment: CI uses Workload Identity and Cloud Run uses the
+    attached service account via ADC.
+
+    Retained only so an existing state that set it does not break. There is no
+    supported reason to turn it on.
   EOT
   default     = false
 }

@@ -32,15 +32,122 @@ them, because each one changes what the entitlement state machine must express.
 | **F-G9**  | Promotional codes — supported at launch?                                                                | `OPEN` | Determines whether discount state must be projected                                                |
 | **F-G10** | Which plans permit Alpha participation?                                                                 | `OPEN` | Directly feeds `MAY_AUTOMATE_PAPER_TRADING` (D-A5). **Highest priority of this group.**            |
 
+### Locked decisions — 2026-09-13
+
+#### F-G10 · `ANSWERED`
+
+> Closed Alpha participation is free / invite-and-admission gated, not
+> commercial-plan gated. All admitted Alpha members may access paper trading.
+> Paper automation is a separate capability entitlement and must not be
+> inferred solely from plan.
+
+Alpha participation is **not subscription-plan gated**. Commercial plan
+selection must never stand in for admission, eligibility, consents, brokerage
+state or operational holds.
+
+```text
+MAY_PARTICIPATE_IN_ALPHA =
+    CLOSED_ALPHA_MEMBERSHIP_ACTIVE
+  + ADMISSION_STATE = ADMITTED
+  + REQUIRED_CONSENTS_CURRENT
+  + NO_BLOCKING_HOLD
+
+MAY_AUTOMATE_PAPER_TRADING =
+    MAY_PARTICIPATE_IN_ALPHA
+  + PAPER_AUTOMATION_ENTITLEMENT
+  + REQUIRED_TRADING_CONTROLS_SATISFIED
+```
+
+**`plan == PRO` (or similar) is never the authorization rule during Alpha.**
+Automation may become plan-sensitive once commercial plans go live — a
+recommendation-only product would not get automated execution where a Managed
+product would — but that is a commercial entitlement layered **on top of**
+regulatory and operational eligibility, never a substitute for it.
+
+#### F-G3 · `ANSWERED`
+
+> No commercial free trial. Closed Alpha is the free evaluation environment.
+> Do not implement `TRIALING` in the entitlement model.
+
+The Alpha **is** the evaluation period. A billing trial would create two
+overlapping clocks — Alpha membership/expiry and trial/expiry — for no gain in
+customer experience, and would drag in free-to-paid conversion mechanics that
+attract specific regulatory attention around material terms, informed consent
+and cancellation.
+
+Entitlement states distinguish:
+
+```text
+ALPHA_ACCESS
+ACTIVE_SUBSCRIPTION
+PAST_DUE
+CANCELED
+```
+
+and deliberately **not** `TRIALING`.
+
+#### F-G4 · `ANSWERED`
+
+> N/A. No trial exists. If introduced later, trial begins only on explicit
+> subscription activation/checkout; never on admission, KYC, or brokerage
+> connection.
+
+Do not create a dormant trial clock "just in case." Admission, KYC approval and
+brokerage connection are operational and compliance events — **billing owns the
+billing clock**. Any future trial runs:
+
+```text
+explicit checkout → subscription created → trial_start → trial_end
+→ explicit disclosed conversion/cancellation
+```
+
+never `ADMITTED → silently start billing trial`.
+
+---
+
+## Product access layers
+
+The three decisions above establish a layering in which **no layer may
+impersonate another**. This is the authority model the entitlement
+implementation must express.
+
+```text
+PUBLIC GAME                 no KYC · no subscription · anonymous permitted
+        ↓
+REFI COMMUNITY IDENTITY     handle · leaderboard · profile · challenges
+        ↓
+CLOSED ALPHA                membership + admission · still no paid plan
+        ↓
+PAPER AUTOMATION            separate capability entitlement
+                            + broker operational requirements
+        ↓
+COMMERCIAL REFI             subscription · formal product eligibility
+```
+
+Read as authority:
+
+```text
+MEMBERSHIP    Are you part of the closed Alpha?
+ADMISSION     Are you allowed into the product?
+CAPABILITIES  What may you do?
+BROKER STATE  What can actually operate?
+BILLING       What commercial product are you paying for?
+```
+
+The engineering consequence, and the reason this sits in the handoff package:
+**a Stripe state must never become a compliance authorization state.** Public
+game and community participation require neither subscription nor admission,
+so neither may be gated on billing.
+
 ### Standing correction
 
 `README.md` (lines 68–69) currently states _"trial duration is configurable with
 a three-month default for Paper and live"_ while also saying billing rules need
 finalization. That three-month default is **not** a recorded decision — it
-predates the confirmed lifecycle. Until **F-G3/F-G4** are answered the README
-should not assert a default. Correcting it is queued as a docs change and is
-deliberately **not** done unilaterally, because removing a stated default is
-itself a product statement.
+predates the confirmed lifecycle. **F-G3 is now answered: there is no trial.** The README's three-month default
+is therefore not merely unrecorded, it is **contradicted** by a locked
+decision, and must be removed. Queued as a separate docs change so the
+correction is reviewable on its own rather than buried here.
 
 ### Invariants already decided — do not re-open
 

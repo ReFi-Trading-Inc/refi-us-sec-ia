@@ -96,19 +96,54 @@ and state version already exists in alpha.3 and is **not** ours to invent.
 
 ## D-A5 — Canonical PAPER trading-eligibility policy
 
-**Status:** `OPEN` · **Blocks:** Lane I; depends on D-A2, D-A3, D-A4 and
-founder policy F-G1
+**Status:** `OPEN` · **Blocks:** Lane I · **Depends on:** D-A2, D-A3, D-A4
+**Founder policy: RESOLVED 2026-09-13** — no longer blocked on our side.
 
 There is no single authoritative `MAY_AUTOMATE_PAPER_TRADING` decision today —
-individual gates exist and independently approximate it, which is the failure
-mode to avoid.
+individual gates exist and independently approximate it, which is exactly the
+failure mode to avoid.
 
 **Needed:** one backend-owned policy operation returning allowed/denied,
 normalized denial reasons, the evaluated rule version and a timestamp.
 
-**Note:** its prerequisite list includes commercial entitlement, which is
-blocked on founder policy — so this cannot be finalized from the backend side
-alone.
+### The composition is now decided (founder, F-G10)
+
+Closed Alpha participation is **free, invite-and-admission gated, NOT
+commercial-plan gated**. This removes what would otherwise have been the
+blocking unknown, and it constrains the policy:
+
+```text
+MAY_PARTICIPATE_IN_ALPHA =
+    CLOSED_ALPHA_MEMBERSHIP_ACTIVE
+  + ADMISSION_STATE = ADMITTED
+  + REQUIRED_CONSENTS_CURRENT
+  + NO_BLOCKING_HOLD
+
+MAY_AUTOMATE_PAPER_TRADING =
+    MAY_PARTICIPATE_IN_ALPHA
+  + PAPER_AUTOMATION_ENTITLEMENT
+  + REQUIRED_TRADING_CONTROLS_SATISFIED
+```
+
+Two consequences for the backend policy:
+
+1. **A commercial plan must not appear in the Alpha eligibility rule.**
+   `plan == PRO` or similar is never the authorization condition during Alpha.
+   A paid subscription is not a prerequisite for paper automation.
+2. **`PAPER_AUTOMATION_ENTITLEMENT` is a separate capability**, not a
+   projection of billing state. It may become plan-sensitive after commercial
+   launch, but only as a layer **on top of** regulatory and operational
+   eligibility — never as a substitute for it.
+
+**Question for you:** does the backend already model a per-account capability
+of this shape, or is `PAPER_AUTOMATION_ENTITLEMENT` a new field? If new, we need
+its name, values and who writes it.
+
+### Also decided: no `TRIALING`
+
+Founder F-G3: there is no commercial free trial. Closed Alpha is the free
+evaluation environment. Please do not model a billing trial state in any
+eligibility input.
 
 ---
 

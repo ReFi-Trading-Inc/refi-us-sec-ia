@@ -269,9 +269,21 @@ the handoff branch; it prevents `terraform apply` of the trigger-source change.
 Exact enforcement options are recorded here only after they are configured and
 independently verified (founder-side GitHub setting).
 
-**Branch protection — verified fact, not a claim:** the GitHub API reports
-`daniel-handoff/integration` as **not protected** (`protected: false`,
-2026-09-13). Protected CI on every lane PR is enforced by the workflow's
+**Branch protection — verified fact, not a claim:** on 2026-09-13 the GitHub API
+reported `daniel-handoff/integration` as **not protected** (`protected: false`).
+**Configured and re-verified 2026-09-14 (after #156 merged, `ac11593`)** —
+independent `GET .../branches/daniel-handoff/integration/protection` returns:
+required status checks `Typecheck / Lint / Scan`, `Security scans`,
+`E2E (production artifact)`, `Build` with `strict: true` (a changed head must be
+up to date and re-checked); `enforce_admins: true`; pull request required
+(`required_approving_review_count: 0`, `dismiss_stale_reviews: true`);
+`allow_force_pushes: false`; `allow_deletions: false`; no push allowlist
+(`restrictions: null` — with PR review required, direct pushes are refused for
+everyone, administrators included). Classic branch protection was used because
+the repository has no rulesets and `main` is protected the same way. The
+**protection precondition of the apply gate is therefore met**; the gate now
+waits only on the credentialed `connected-dev.sh plan` and founder review of that
+plan. Protected CI on every lane PR is enforced by the workflow's
 `pull_request` filter and by our PR/CI merge policy, not by GitHub branch
 protection. Enabling protection is a founder-side GitHub setting and a separate
 follow-up.

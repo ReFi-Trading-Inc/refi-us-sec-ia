@@ -28,9 +28,29 @@ hashes and the package content digest recompute, and Daniel's
 `tools/conformance.py validate` + `self-test` pass (python3.11). The client is
 regenerated and pinned to alpha.4; alpha.3/alpha.2 stay vendored as history.
 
-`main` still pins alpha.3 (`5eca1200…`) until the handoff line is promoted.
-See [`alpha4-reconciliation.md`](alpha4-reconciliation.md) §6 for the audit of
-the rest of Daniel's branch.
+**Merge record (founder Tier 2 review complete, 2026-09-13):** PR #155,
+reviewed head `3611307` (`36113072896527cfad0e7e793a4f28f82be147bc`), CI run
+`34800004663` (Typecheck/Lint/Scan, Build, E2E production artifact, Security
+scans — all SUCCESS), merge commit `019a6bf`
+(`019a6bfa2de4238acebdf3a8107abc3a4a8385d8`) = new `daniel-handoff/integration`
+head. **From this point alpha.4 is the current contract authority for the
+handoff line.** Lanes F and H are never again certified against alpha.3.
+
+**Subsequent merges on the handoff line (2026-09-13/14):** #158 Lane H fixes
+(head `c4cdea6`, CI run 34802196817, merge `57680cf`); #156 Group A connected-dev
+infrastructure with the deployment source corrected to `daniel-handoff/integration`
+(reviewed head `915e77d`, CI run 34803445524, merge `ac11593`). GitHub branch
+protection was then applied to `daniel-handoff/integration` and verified via the
+API (required checks strict, admins enforced, PR required, no force push or
+deletion). `terraform apply` of the trigger change remains gated on a
+founder-reviewed credentialed plan. Then Tier 1: #159 Lane H detail-field
+removal (merge `342d533`) and #160 funding notice (merge `77220c4`). Lane F's
+paper-only read boundary is open as #161 (Tier 2, founder review).
+
+`main` still pins alpha.3 (`5eca1200…`) during the release freeze; that is
+expected and is not contract ambiguity. See
+[`alpha4-reconciliation.md`](alpha4-reconciliation.md) §6 for the audit of the
+rest of Daniel's branch.
 
 ### The ask is NOT "deliver alpha.4"
 
@@ -61,16 +81,35 @@ this merge … current backend membership/admission reads and normal disconnect
 recovery are implemented."** We have not seen that package; it is not vendored
 on any branch of this repository. If accurate, it is the answer to this row.
 
-**Needed (sharpened):** the **alpha.5 frontend handoff package** — same shape
-as the existing packages (`contract.json`, `schemas.json`, `openapi.json`,
-`examples.json`, `capabilities.json`, `MIGRATION.md`, `bundle.json` with a
-`package_content_sha256` we pin in `CURRENT.json`) — exposing the **D-A2** and
-**D-A3** projections as schema, delivered onto a branch of this repository or
-as a directory we can vendor byte-for-byte.
+**Classification of the alpha.5 statement (founder, 2026-09-13):**
+`EVIDENCE OF A POSSIBLE NEW CONTRACT — NOT YET FRONTEND AUTHORITY`. Nothing
+is implemented from the status prose.
 
-We will not transcribe either projection from prose. Adoption stays mechanical:
-verify digest → migration diff → regenerate client → rerun conformance —
-exactly as done for alpha.4.
+**The exact request to Daniel (founder-approved wording):**
+
+> Please issue/provide the immutable frontend integration package
+> corresponding to the backend alpha.5 membership/admission work, including
+> the package digest and complete machine-readable artifacts (`contract.json`,
+> `schemas.json`, `openapi.json`, `capabilities.json`, `examples.json`,
+> bundle/digest record, migration notes and conformance tooling as
+> applicable).
+>
+> We specifically need machine-readable operations/projections for:
+>
+> 1. `ClosedAlphaMembership`
+> 2. canonical admission
+>
+> If alpha.5 exists only internally and has not yet been issued as a frontend
+> package, please issue the successor package rather than sending field names
+> in chat.
+
+Delivery: onto a branch of this repository or as a directory we can vendor
+byte-for-byte. We will not transcribe either projection from prose. Adoption
+stays mechanical: verify digest → migration diff → regenerate client → rerun
+conformance — exactly as done for alpha.4 (#155).
+
+**D-A2 and D-A3 remain blocked until that package arrives. #149's admission
+proxy does not change before then.**
 
 ### Correction history
 
@@ -127,23 +166,35 @@ not a redefinition, and must be re-pointed the moment this lands.
 
 ---
 
-## D-A4 — Is the alpha.3 `AccountAuthorization` shape final?
+## D-A4 — `AccountAuthorization` reason-code vocabulary and `SUSPENDED` lifecycle
 
-**Status:** `OPEN` · **Blocks:** Lane F
+**Status:** `OPEN — NARROWED 2026-09-13` · **Blocks:** Lane F (F-2 shape only)
 
 `PENDING / AUTHORIZED / DENIED / SUSPENDED` with reason codes, policy version
-and state version already exists in alpha.3 and is **not** ours to invent.
+and state version exists in the contract and is **not** ours to invent.
 
-**Needed:**
+**Closed by the alpha.4 package (`lane-f-alpha4-audit.md` F4):**
 
-1. confirmation the shape is unchanged in alpha.4;
-2. the **enumerated** reason-code set — we currently key behaviour off
-   `BROKER_CONNECTION_MISSING` and need the complete list;
-3. confirmation that `DENIED` + `BROKER_CONNECTION_MISSING` is the expected
-   steady state for an admitted investor who has not yet connected a brokerage
-   (this underpins the Lane E separation of account access from economic
-   permission);
-4. what transitions `SUSPENDED` and who clears it.
+1. ~~confirmation the shape is unchanged in alpha.4~~ — `AccountAuthorization`
+   is byte-identical between alpha.3 and alpha.4 (`schemas.json` `$defs`
+   compared programmatically).
+2. ~~confirmation that `DENIED` + `BROKER_CONNECTION_MISSING` is the expected
+   pre-connection steady state~~ — alpha.4 `INTEGRATION.md` §6 states it
+   normatively ("An admitted account with no connection legitimately reports
+   `DENIED` with `BROKER_CONNECTION_MISSING` … do not relabel DENIED as
+   AUTHORIZED"); our code complies (first connection reads no authorization).
+
+**Still needed — exact ask:**
+
+> alpha.4 confirms the `AccountAuthorization` shape is unchanged, and
+> INTEGRATION.md §6 confirms `DENIED` + `BROKER_CONNECTION_MISSING` is the
+> legitimate pre-connection state — both closed. Residual: (a) `reason_codes`
+> is declared only as the open pattern `^[A-Z][A-Z0-9_]{1,63}$` with no enum
+> and no non-AUTHORIZED example (`examples.json` carries only
+> `{"status":"AUTHORIZED","reason_codes":[]}`); please supply the complete
+> enumerated reason-code vocabulary, or state that it is intentionally open and
+> clients must key behaviour only on `status`. (b) What transitions an account
+> into `SUSPENDED`, and who clears it?
 
 ---
 
@@ -221,11 +272,100 @@ prototype model.
 
 ## D-A7 — `brokerage_mutation` error profile
 
-**Status:** `ASKED` — see
+**Status:** `ASKED — RE-PINNED TO alpha.4 2026-09-13` — see
 `docs/releases/2026-09-signal/connected-dev/daniel-dependency-packet.md`
 
-Carried forward so it is not lost. We will not normalise either response until
-answered.
+alpha.4 `contract.json` `brokerage_mutation` is byte-identical to alpha.3: it
+still excludes `ACCOUNT_AUTHORIZATION_REQUIRED` and
+`ACKNOWLEDGMENT_BINDING_INVALID`, and `403` is absent from its status set
+(unlike `allocation_mutation` / `preference_mutation`). alpha.4 answers
+"unchanged", not "never emitted". Exact ask:
+
+> Is that a guarantee the backend never emits either code from brokerage
+> disconnect, or an omission to be corrected in the next package? Our
+> disconnect adapter fails closed on both as contract mismatches until you
+> answer.
+
+D-A6 note (same date): alpha.4 adds no attestation/profile schema and answers
+none of D-A6's four needs; they stand as written.
+
+---
+
+## D-A8 — Recommendation contract defects found on alpha.4 adoption
+
+**Status:** `OPEN` · **Blocks:** Lane H (H-PR1 shape; fan-out removal) ·
+Evidence: `lane-h-alpha4-audit.md`
+
+**D-A8a — attach or remove the orphaned `Freshness` schema.**
+
+> `v1.1.0-alpha.4/schemas.json` defines `$defs.Freshness` (`source_as_of`,
+> `last_evaluated_at`, `fresh_until`, `expires_at`, `freshness_status`,
+> `freshness_policy_version`, `freshness_reason_codes`, all required) and
+> `openapi.json` publishes it under `components.schemas`, but neither file
+> contains a single `$ref` to it. `Recommendation` and `RecommendationSummary`
+> carry flat `freshness_status` / `fresh_until` / `expires_at` and no
+> evaluation time or policy version. Please either (a) `$ref` `Freshness` from
+> the recommendation shapes or (b) delete it from the package. We render blanks
+> rather than fabricate, and will remove those fields on (b).
+
+**D-A8b — pin the `lifecycle_status` and `freshness_status` vocabularies.**
+
+> Both are `{"type": "string"}` with no `enum` on `Recommendation` and
+> `RecommendationSummary`, and alpha.4's own `examples.json` is inconsistent in
+> case (`RecommendationEnvelope.freshness_status = "fresh"` vs
+> `AccountPositionEnvelope` / `TemplateEnvelope` `= "FRESH"`). We need either
+> (a) an `enum` per field per shape, or (b) an explicit statement that both are
+> open, case-insensitive sets — in which case we normalise on read and never
+> key UI or test selectors off the raw value.
+
+**D-A8c — expose `template_id` on `RecommendationSummary`.**
+
+> `listAccountRecommendations` returns `RecommendationSummary`, which has no
+> `template_id` and no `lineage`. Template identity is recoverable only from
+> `funding_assessment.input_versions.template_id`, and FUNDING.md states
+> historical assessments are `null` and never recomputed — so for any list
+> containing history most rows have no template identity. Our BFF fills the
+> gap with bounded `getAccountRecommendation` calls: worst case 4 pages × 100
+> items = 400 detail fetches in 100 sequential rounds of 4 — 404 upstream calls
+> for one list request, with no cache layer. `RecommendationSummary` already
+> carries a lineage-derived field (`output_fingerprint`, required), so adding
+> `template_id` (required, same pattern as `lineage.template_id`) is consistent
+> with the shape's design. We will delete the fan-out the day it lands.
+
+**D-A8d (minor) — `allocation_percent` is a fraction.**
+
+> `allocation_percent` on `AllocationPreview`, `AllocationPreviewRequest`,
+> `AccountActionRequest.parameters` and `AccountMembership` uses
+> `^(?:0\.(?:0*[1-9][0-9]*)|1(?:\.0+)?)$`, i.e. (0, 1]. The name reads as
+> percentage points — a live unit hazard of exactly the kind alpha.3→alpha.4
+> already corrected for turnover. If renaming is off the table, a one-line
+> `description` stating "decimal fraction in (0, 1], not percentage points" on
+> each occurrence would close it.
+
+---
+
+## D-A9 — `Idempotency-Key` semantics
+
+**Status:** `OPEN` · **Blocks:** nothing today (we keep parameter-derived keys)
+· Evidence: `lane-f-alpha4-audit.md` F5
+
+> `IDEMPOTENCY_KEY_REUSED` appears in five error profiles but is defined
+> nowhere in `openapi.json` or `INTEGRATION.md`. Please state normatively:
+> (a) same key + different body — rejected with 409 `IDEMPOTENCY_KEY_REUSED`,
+> or replays the first result? (b) the key persistence window; (c) behaviour
+> for two concurrent in-flight requests with the same key. Until (a) is
+> explicit we keep idempotency keys derived from the economic parameters, not
+> a client-supplied operation id.
+
+---
+
+## D-A10 — Connected identity binding facts (step 4 / B1 / ATD-046)
+
+**Status:** `OPEN` · **Blocks:** Lane A · Exact wording and the six frontend
+facts we must transmit first: `lane-ab-dependency-audit.md` "Daniel asks" 1–6
+(identity-result `iss`/`aud` pair, upstream assertion binding, ALLOW_REMOTE
+addendum, `amr` retention, backend KYC expectations at attestation,
+attestation idempotency).
 
 ---
 

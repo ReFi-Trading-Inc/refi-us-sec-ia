@@ -193,14 +193,14 @@ policy.
 
 Status 2026-09-13 (founder approved steps 1 and 4 on 2026-09-13):
 
-| Step | Status                                                                                                       |
-| ---- | ------------------------------------------------------------------------------------------------------------ |
-| 1    | **DONE** — branch `daniel-handoff/lane-c-alpha4-adoption` (§6.1)                                             |
-| 2    | **DONE** — client regenerated; conformance validate + self-test; 402 client tests; all contract assertions   |
-| 3    | **DONE (audit)** — §6.2; the mechanical take-list landed in the same branch, the conflicts did not           |
-| 4    | **AUDITED, PR pending** — §6.3; Group A is coherent and #148-compatible; take by path, reject `infra/gcp/**` |
-| 5    | Next: Lanes F and H against alpha.4 (the turnover-units guard already landed as a test)                      |
-| 6    | Still blocked. Daniel's status record claims a backend **alpha.5** with membership/admission reads → D-A1    |
+| Step | Status                                                                                                                                                                                                                                      |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | **MERGED** — PR #155, head `3611307`, CI run 34800004663, merge `019a6bf` = `daniel-handoff/integration` (§6.1)                                                                                                                             |
+| 2    | **DONE** — client regenerated; conformance validate + self-test; 402 client tests; all contract assertions                                                                                                                                  |
+| 3    | **DONE (audit)** — §6.2; the mechanical take-list landed in the same branch, the conflicts did not                                                                                                                                          |
+| 4    | **MERGED** — PR #156, reviewed head `915e77d`, CI run 34803445524, merge `ac11593` = `daniel-handoff/integration`; deployment source corrected to `daniel-handoff/integration` (§6.3). Trigger apply still gated on a founder-reviewed plan |
+| 5    | Next: Lanes F and H against alpha.4 (the turnover-units guard already landed as a test)                                                                                                                                                     |
+| 6    | Still blocked. Daniel's status record claims a backend **alpha.5** with membership/admission reads → D-A1                                                                                                                                   |
 
 ---
 
@@ -243,6 +243,8 @@ Landed on `daniel-handoff/lane-c-alpha4-adoption` (from
   fabricated `last_evaluated_at` / policy version; `funding_assessment: null`
   is never "sufficient"; stale / superseded / null / incomplete evidence cannot
   clear an INSUFFICIENT funding notice.
+
+Lane H follow-up fixes (status casing, fan-out resilience, exact percent display) merged as #158: head `c4cdea6`, CI run 34802196817, merge `57680cf`.
 
 Gates on the branch: typecheck, lint, 402 client tests, contract assertions,
 tripwire (0 violations / 349 files), route manifest (51 routes), Playwright
@@ -359,7 +361,16 @@ genuine Sandbox delivery proof passes"; last set by `0733e80`, after
 `apps/web/src/lib/durable-store/store.ts` together with
 `scripts/connected-deployment-test.ts`. Reject `infra/gcp/**`,
 `infra/terraform/README.md`, `infra/terraform/variables.tf`, `README.md`.
-Record base-image digest pinning and the `allUsers` acceptance as follow-ups.
+Record base-image digest pinning as a follow-up. `allUsers` invoker: `FOUNDER
+ACCEPTED 2026-09-13 — PUBLIC FRONTEND NETWORK ENTRY, APPLICATION AUTH REQUIRED`.
+
+**Founder review finding on #156 (2026-09-13):** Daniel's trigger deployed from
+`^integration/refinity-dev$`, so the deployment source differed from the
+certification authority. Amended on the PR: trigger, release controller,
+operator script and Cloud Build header all name `daniel-handoff/integration`,
+pinned by `scripts/connected-deployment-test.ts`. The live trigger keeps the old
+branch until a reviewed plan/apply. `daniel-handoff/integration` is verified
+**not** GitHub-branch-protected; PR/CI policy is the enforcement.
 
 ### 6.4 Claims in Daniel's status record that need verification
 

@@ -15884,7 +15884,7 @@ await section(
       // Maintenance: refused before any mutation, with a distinct reason.
       const { client, posts } = upstreamBk({ connections: [live, paper] });
       assert.deepEqual(
-        await maint.assertConnectionInScope(client, OWNED, LIVE_CONN),
+        await maint.assertAlphaOperableConnection(client, OWNED, LIVE_CONN),
         { kind: "unsupported_environment" },
       );
       const r = await maint.rotateBrokerageCredentials(
@@ -16164,7 +16164,7 @@ await section(
       );
       const m = strip("apps/web/src/lib/investor-api/brokerage-maintenance.ts");
       assert.ok(
-        m.indexOf("assertConnectionInScope(client, accountId, connectionId)") <
+        m.indexOf("assertAlphaOperableConnection(") <
           m.indexOf('call("rotateBrokerageCredentials"'),
       );
       for (const f of ["rotate", "sync"] as const) {
@@ -16689,6 +16689,8 @@ await section(
       prefVersion?: number;
       connections?: Record<string, string[]>;
       disconnectedIds?: string[];
+      /** Ids reported by the backend as LIVE connections (F-F1 tests). */
+      liveIds?: string[];
       disconnectInitial?: Mode;
       disconnectConfirm?: Mode;
     } = {},
@@ -16832,6 +16834,9 @@ await section(
               connection_id: id,
               ...(opts.disconnectedIds?.includes(id)
                 ? { connection_status: "DISCONNECTED" }
+                : {}),
+              ...(opts.liveIds?.includes(id)
+                ? { account_environment: "live" }
                 : {}),
             })),
           );
@@ -17411,6 +17416,143 @@ await section(
   );
 
   await section(
+    "disengagement is never blocked by the paper-only rule (founder review of #161, 2026-09-13): an owned, non-terminal LIVE connection CAN be disconnected — initial DELETE reaches the backend, and the acknowledgment continuation (exact consent tuple, new key) still completes — while the ownership refusals (malformed, not owned, terminal) are unchanged",
+    async () => {
+      const dis = (
+        u: ReturnType<typeof upstream>,
+        acct: string,
+        conn: string,
+      ) => maintAck.disconnectBrokerageConnection(u.client, acct, conn, "c_d");
+
+      // LIVE + initial disconnect: accepted, one DELETE, canonical receipt.
+      await scenario({ liveIds: [A.conn] }, async (u) => {
+        const out = await dis(u, A.account, A.conn);
+        assert.equal(out.kind, "accepted", "a live connection is severable");
+        if (out.kind !== "accepted") return;
+        assert.equal(out.backendStatus, "DISCONNECTING");
+        assert.equal(out.upstreamStatus, 202);
+        assert.equal(u.deletes().length, 1);
+        assert.equal(u.deletes()[0]!.body, undefined);
+        assert.ok(
+          !/api_key|api_secret|secret/i.test(JSON.stringify(out)),
+          "no credential in the outcome",
+        );
+      });
+
+      // LIVE + acknowledgment-required disconnect: the continuation path is
+      // fully usable — consent recorded for the exact disclosure tuple, the
+      // binding sent, and a NEW idempotency key.
+      await scenario(
+        { liveIds: [A.conn], disconnectInitial: { kind: "challenge" } },
+        async (u, _a, ref) => {
+          const out = await dis(u, A.account, A.conn);
+          assert.equal(out.kind, "acknowledgment_required");
+          if (out.kind !== "acknowledgment_required") return;
+          assert.deepEqual(out.challenge.intent, {
+            kind: "disconnect",
+            connectionId: A.conn,
+          });
+          const initialKey = u.deletes()[0]!.headers.get("Idempotency-Key");
+          const conf = await maintAck.confirmBrokerageDisconnect(
+            u.client,
+            A.account,
+            A.conn,
+            ref,
+            "c_dc",
+          );
+          assert.equal(conf.kind, "accepted", "live confirmation completes");
+          assert.equal(
+            (u.consents()[0]!.body as Record<string, unknown>)[
+              "disclosure_hash"
+            ],
+            CONT.required_disclosure_hash,
+            "exact consent tuple, not weakened for live",
+          );
+          const d = u.deletes()[1]!;
+          assert.deepEqual(d.body, {
+            continuation_ref: ref,
+            consent_receipt_id: "consent_ack_00000001",
+          });
+          assert.notEqual(d.headers.get("Idempotency-Key"), initialKey);
+          assert.equal(
+            (await chal.getAcknowledgmentChallenge(A.account, ref))?.state,
+            "confirmed",
+          );
+        },
+      );
+
+      // Ownership refusals are unchanged for a live connection, and the
+      // environment is never the reason disengagement is refused.
+      await scenario({ liveIds: [A.conn] }, async (u) => {
+        assert.deepEqual(await dis(u, A.account, "x"), {
+          kind: "connection_out_of_scope",
+          reason: "malformed",
+        });
+        assert.deepEqual(await dis(u, A.account, B.conn), {
+          kind: "connection_out_of_scope",
+          reason: "not_owned",
+        });
+        assert.equal(u.deletes().length, 0);
+      });
+      await scenario(
+        { liveIds: [A.conn], disconnectedIds: [A.conn] },
+        async (u) => {
+          assert.deepEqual(await dis(u, A.account, A.conn), {
+            kind: "connection_out_of_scope",
+            reason: "terminal",
+          });
+          assert.equal(u.deletes().length, 0);
+        },
+      );
+
+      // The type model carries no impossible state: disengagement cannot
+      // produce `unsupported_environment`, and the two scopes stay distinct.
+      const bm = readFileSync(
+        join(
+          REPO_ROOT,
+          "apps/web/src/lib/investor-api/brokerage-maintenance.ts",
+        ),
+        "utf8",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      const outcomeUnion = bm.slice(
+        bm.indexOf("export type DisconnectOutcome"),
+        bm.indexOf("function partitionDisconnect"),
+      );
+      assert.ok(
+        outcomeUnion.length > 0 &&
+          !outcomeUnion.includes("unsupported_environment"),
+        "DisconnectOutcome carries no unsupported_environment member",
+      );
+      for (const fn of [
+        "export async function disconnectBrokerageConnection",
+        "export async function confirmBrokerageDisconnect",
+      ]) {
+        const body = bm.slice(bm.indexOf(fn), bm.indexOf(fn) + 400);
+        assert.ok(
+          body.includes(
+            "assertOwnedConnection(client, accountId, connectionId)",
+          ),
+          `${fn} uses the OWNERSHIP scope`,
+        );
+        assert.ok(
+          !body.includes("assertAlphaOperableConnection"),
+          `${fn} must not require paper operability`,
+        );
+      }
+      for (const fn of [
+        "export async function rotateBrokerageCredentials",
+        "export async function syncBrokerageConnection",
+      ]) {
+        const body = bm.slice(bm.indexOf(fn), bm.indexOf(fn) + 400);
+        assert.ok(
+          body.includes("assertAlphaOperableConnection"),
+          `${fn} uses the OPERATIONAL scope`,
+        );
+      }
+    },
+  );
+
+  await section(
     "brokerage disconnect: backend 404 / 409 VERSION_CONFLICT / 413 / 422 are terminal with their code; 403 and ACKNOWLEDGMENT_BINDING_INVALID are outside brokerage_mutation and fail closed as contract mismatches; 429 and 503 are retryable and never auto-retried; the confirmation refusal ends the challenge; no broker-write credential is ever stored in the challenge record",
     async () => {
       for (const [status, code] of [
@@ -17741,7 +17883,7 @@ await section(
       );
       assert.ok(
         bm.indexOf(
-          "assertConnectionInScope(client, accountId, connectionId)",
+          "assertOwnedConnection(client, accountId, connectionId)",
           bm.indexOf("export async function disconnectBrokerageConnection"),
         ) < bm.indexOf('call("disconnectBrokerageConnection"'),
         "scope before disconnect",

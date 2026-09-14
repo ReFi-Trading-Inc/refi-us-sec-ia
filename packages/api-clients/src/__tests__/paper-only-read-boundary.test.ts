@@ -20,7 +20,8 @@ import {
   type ContractBrokerageConnection,
 } from "../../../../apps/web/src/lib/investor-api/brokerage-connection";
 import {
-  assertConnectionInScope,
+  assertAlphaOperableConnection,
+  assertOwnedConnection,
   rotateBrokerageCredentials,
   syncBrokerageConnection,
 } from "../../../../apps/web/src/lib/investor-api/brokerage-maintenance";
@@ -121,10 +122,18 @@ describe("F-F1: a LIVE brokerage connection is held, never operable", () => {
   it("rotate and sync refuse a live connection before any mutation is built", async () => {
     const { client, calls } = fakeClient([LIVE, PAPER]);
     expect(
-      await assertConnectionInScope(client, ACCOUNT, "brokerconn_live_0001"),
+      await assertAlphaOperableConnection(
+        client,
+        ACCOUNT,
+        "brokerconn_live_0001",
+      ),
     ).toEqual({ kind: "unsupported_environment" });
     expect(
-      await assertConnectionInScope(client, ACCOUNT, "brokerconn_paper_0001"),
+      await assertAlphaOperableConnection(
+        client,
+        ACCOUNT,
+        "brokerconn_paper_0001",
+      ),
     ).toEqual({ kind: "owned" });
     const rotate = await rotateBrokerageCredentials(
       client,
@@ -147,5 +156,47 @@ describe("F-F1: a LIVE brokerage connection is held, never operable", () => {
     });
     // Only reads happened; no rotate/sync operation reached the fake upstream.
     expect(calls.every((op) => op === "listBrokerageConnections")).toBe(true);
+  });
+});
+
+describe("F-F1: unsupported must not mean impossible to disengage", () => {
+  it("the OWNERSHIP scope admits an owned live connection; only the OPERATIONAL scope refuses it", async () => {
+    const { client } = fakeClient([LIVE, PAPER]);
+    // Disengagement scope: environment is deliberately not considered.
+    expect(
+      await assertOwnedConnection(client, ACCOUNT, "brokerconn_live_0001"),
+    ).toEqual({ kind: "owned" });
+    // Operational scope: the same connection is not operable.
+    expect(
+      await assertAlphaOperableConnection(
+        client,
+        ACCOUNT,
+        "brokerconn_live_0001",
+      ),
+    ).toEqual({ kind: "unsupported_environment" });
+  });
+
+  it("ownership refusals are identical for live and paper connections", async () => {
+    const { client } = fakeClient([LIVE, PAPER]);
+    expect(await assertOwnedConnection(client, ACCOUNT, "x")).toEqual({
+      kind: "malformed",
+    });
+    expect(
+      await assertOwnedConnection(client, ACCOUNT, "brokerconn_other_0009"),
+    ).toEqual({ kind: "not_owned" });
+    const terminal = fakeClient([
+      conn({
+        connection_id: "brokerconn_live_dead",
+        account_environment: "live",
+        connection_status: "REVOKED",
+      }),
+    ]);
+    expect(
+      await assertOwnedConnection(
+        terminal.client,
+        ACCOUNT,
+        "brokerconn_live_dead",
+      ),
+    ).toEqual({ kind: "terminal" });
   });
 });

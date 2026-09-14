@@ -108,7 +108,7 @@ export const onboardingCopy = {
       "This connection needs attention. Generate a new paper key pair in Alpaca and connect again.",
     // F-F1 (2026-09-13): Closed Alpha is paper only. A live connection reported
     // by the broker record is shown as evidence and held; it is not usable here.
-    held: "This connection is to a live Alpaca account. Closed Alpha supports paper accounts only, so it is held: nothing is read from it, no action can use it, and the record is kept as-is. Connect a paper key pair to continue.",
+    held: "Closed Alpha supports paper accounts only. This live connection is held: ReFi will not sync holdings or order data from it or use it for Alpha activity. The connection record is retained as evidence. Disconnect it or connect a paper account to continue.",
     alreadyConnected: "An Alpaca connection already exists for this account.",
     holdingsHeading: "What we found at your broker",
     holdingsNote:

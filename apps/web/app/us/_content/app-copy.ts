@@ -211,7 +211,7 @@ export const appCopy = {
     brokerNote:
       "ReFi reads balances, holdings and order status from your paper account. It holds no withdrawal or transfer permission. To revoke access, delete the key pair in Alpaca.",
     brokerHeld:
-      "Held: this record is for a live Alpaca account. Closed Alpha supports paper accounts only. Nothing is read from it and no action can use it; the record is kept as evidence.",
+      "Held: Closed Alpha supports paper accounts only. ReFi will not sync holdings or order data from this live connection or use it for Alpha activity. The connection record is retained as evidence, and you can disconnect it at any time.",
     preferences: "Preferences",
     security: "Security",
     session: "Session",

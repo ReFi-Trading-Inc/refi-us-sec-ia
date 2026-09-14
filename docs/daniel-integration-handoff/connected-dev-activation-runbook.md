@@ -193,6 +193,115 @@ Cloud Run reconciliation** — it achieves the stated goal with the least
 privilege and no rollout risk, and leaves the durable question properly scoped
 instead of bundled into an unrelated change.
 
+### EXECUTED — trigger moved out of band (2026-09-14, founder-approved Option 2)
+
+Deployment authority for Connected Dev now points at the reviewed branch. Cloud
+Run was never in the graph. Full record:
+
+|               |                                          |
+| ------------- | ---------------------------------------- |
+| Trigger id    | `a5480318-871a-4cfd-b0ca-d49ccc64bad2`   |
+| Name / region | `refi-frontend-integration` · `us-west1` |
+| Inspected at  | `2026-09-14T16:45:38Z`                   |
+| Mutated at    | `2026-09-14T16:47:24Z`                   |
+| Read back at  | `2026-09-14T16:47:34Z`                   |
+
+**Pre-flight check passed.** Immediately before mutation the live branch was
+still `^integration/refinity-dev$`, and every other material attribute matched
+the reviewed Terraform: repository
+`connections/refi-frontend-github/repositories/refi-us-sec-ia`, service account
+`refi-frontend-build@refinity-dev`, filename
+`infra/cloudrun/cloudbuild.connected-cicd.yaml`, `ignoredFiles`
+`["**/*.md", "infra/terraform/**"]`, no substitutions, no approval config. No
+unexpected drift, so the mutation proceeded.
+
+**Command.** `gcloud builds triggers update` exposes only per-SCM subcommands
+(`github`, `gitlab`, …) that do not fit a second-generation
+`repositoryEventConfig` trigger, so the narrowest supported mechanism was a
+describe → single-field edit → import round trip:
+
+```bash
+gcloud builds triggers describe refi-frontend-integration \
+  --project refinity-dev --region us-west1 --format=yaml > trigger-before.yaml
+# edit ONLY push.branch and the reviewed description
+gcloud builds triggers import --source=trigger-after.yaml \
+  --project refinity-dev --region us-west1
+```
+
+The prepared diff was exactly two fields before it was sent:
+
+```text
+description: 'Frontend integration branch only: …'
+          → 'Reviewed handoff integration branch only: …'
+repositoryEventConfig.push.branch:
+   ^integration/refinity-dev$ → ^daniel-handoff/integration$
+```
+
+**Readback proof.** The post-mutation describe is byte-identical to the
+intended after-state, and differs from the before-state in exactly those two
+fields. Repository, service account, build config path, ignored files,
+substitutions, approval settings, region, id and create time are unchanged.
+Cloud Run and IAM were not touched.
+
+**Convergence evidence — fresh full plan, PLAN ONLY:**
+
+```text
+Plan: 0 to add, 1 to change, 0 to destroy      (was 2 to change)
+google_cloudbuild_trigger.frontend   → no longer in the plan
+google_cloud_run_v2_service.frontend → template.revision residual REMAINS
+```
+
+35 of 36 resources are no-ops. The out-of-band change converged live state
+toward the reviewed configuration, which is what the evidence was for. Both
+plan files were deleted afterwards; neither is an approved apply path.
+
+### Image provenance — CLASSIFICATION B, do NOT align `release.tfvars`
+
+Option 1 was deferred pending provenance. Traced:
+
+| Digest                                      | Built by                      | Branch                     | Source commit |
+| ------------------------------------------- | ----------------------------- | -------------------------- | ------------- |
+| **Live** `sha256:8fa6baa0…`                 | build `955e7516` (2026-09-13) | `integration/refinity-dev` | `6cd903e`     |
+| **`release.tfvars` pin** `sha256:62359b2e…` | build `28a8cfe8` (2026-09-11) | `integration/refinity-dev` | `6e5f1be`     |
+
+**Both digests are Classification B.** Neither source commit is an ancestor of
+`daniel-handoff/integration` — neither is on the reviewed line. No build has
+ever run from `daniel-handoff/integration`: of the last 40 builds, ten name
+`integration/refinity-dev` and the rest are manual storage-source submissions.
+
+Worse, `6cd903e` — the commit behind the **currently serving** image — is
+Daniel's branch tip, and `apps/web/src/lib/integration-dev/kyc-pass.ts` is
+present at that commit. The running artifact therefore contains the development
+KYC bypass, the emittable `eligible` trading claim, the `paper|live` widening
+and the client-supplied idempotency model that we explicitly rejected.
+
+Mitigating, and the reason this is a finding rather than an incident: the
+service runs with `REFI_AUTH_PROVIDER=unconfigured`,
+`REFI_KYC_PROVIDER=unconfigured` and `REFI_INVESTOR_API_ALLOW_REMOTE=0`, so it
+fails closed on every exchange, and the bypass additionally requires specific
+env, subject and account allowlists plus a matching runtime service-account
+identity. It is deployed code, not reachable behaviour. No investor traffic
+exists on this service.
+
+**Consequences.**
+
+1. Do **not** encode `8fa6baa0…` as desired state. Live is not a warrant.
+2. `release.tfvars` is also unreviewed provenance, so option 1 cannot simply be
+   "align config to live" — neither end of that comparison is certified.
+3. The remediation is now available for the first time: the trigger points at
+   the reviewed branch, so the next push to `daniel-handoff/integration` builds
+   and promotes reviewed code. That is a deliberate promotion, not a drift fix.
+
+### Follow-up — CLOUD RUN REVISION + IMAGE RECONCILIATION
+
+Tracked separately, not to be solved inside the trigger migration. It must
+answer permanently: how Terraform behaves when `template.revision` is unset;
+which image is carried into a new revision while image is ignored; how the
+release controller and Terraform ownership coexist; and whether
+`release.tfvars` should represent the serving digest, a bootstrap digest, or an
+explicit reviewed authority. The provenance finding above makes the last
+question the important one.
+
 ## 2. Stytch TEST binding
 
 **Sequencing constraint.** Do not add Stytch resources to

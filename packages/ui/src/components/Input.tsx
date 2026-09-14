@@ -42,7 +42,11 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
           {...props}
         />
         {error && (
-          <p id={errorId} role="alert" className="text-xs text-status-rejected">
+          <p
+            id={errorId}
+            role="alert"
+            className="text-xs text-status-rejected-text"
+          >
             {error}
           </p>
         )}

@@ -29,8 +29,7 @@ interface ToastState {
 }
 
 type ToastAction =
-  | { type: "ADD"; toast: Toast }
-  | { type: "REMOVE"; id: string };
+  { type: "ADD"; toast: Toast } | { type: "REMOVE"; id: string };
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 
@@ -133,7 +132,7 @@ const iconMap = {
 
 const iconColorMap = {
   success: "text-status-active",
-  error: "text-status-rejected",
+  error: "text-status-rejected-text",
   warning: "text-status-warning",
   info: "text-status-system",
 };

@@ -43,7 +43,9 @@ infrastructure with the deployment source corrected to `daniel-handoff/integrati
 protection was then applied to `daniel-handoff/integration` and verified via the
 API (required checks strict, admins enforced, PR required, no force push or
 deletion). `terraform apply` of the trigger change remains gated on a
-founder-reviewed credentialed plan.
+founder-reviewed credentialed plan. Then Tier 1: #159 Lane H detail-field
+removal (merge `342d533`) and #160 funding notice (merge `77220c4`). Lane F's
+paper-only read boundary is open as #161 (Tier 2, founder review).
 
 `main` still pins alpha.3 (`5eca1200…`) during the release freeze; that is
 expected and is not contract ambiguity. See

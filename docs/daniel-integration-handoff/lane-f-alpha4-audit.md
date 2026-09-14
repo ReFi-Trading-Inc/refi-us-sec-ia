@@ -42,15 +42,15 @@ Residual on F2-5: #149 predates #155 (it still carries alpha.3 pins) and must be
 
 ## F3 — PAPER ONLY
 
-| id   | class     | evidence                                                                                                                                                                                                                                             |
-| ---- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F3-1 | CERTIFIED | Connect: `PAPER_KEY_ID = /^PK[A-Z0-9]{18}$/`, `environment: z.literal("paper")`, `.strict()`; assertions "environment must be the literal paper" / "only PK (paper) key ids parse".                                                                  |
-| F3-2 | CERTIFIED | Rotate: identical schema.                                                                                                                                                                                                                            |
-| F3-3 | CERTIFIED | The wire value is the literal `"paper"` (`account_environment: "paper"`); the parsed input is never forwarded, so a schema loosening alone could not widen the wire.                                                                                 |
-| F3-4 | CERTIFIED | The contract permits `live` (`account_environment: enum [paper, live]` on `BrokerageConnection`, `BrokerageConnectionRequest`, `AllocationPreview`). Paper-only is **our** boundary (D-LAUNCH-07 open), documented at the route header.              |
-| F3-5 | DEBT      | If the backend returns `account_environment: "live"`, the BFF passes it through and the hook renders it. No refusal, flag or telemetry.                                                                                                              |
-| F3-6 | DEBT      | `getBrokerageConnection` picks the first non-terminal connection with no environment filter; `assertConnectionInScope` checks id/ownership/terminality only. A live connection created out-of-band would be adopted and rotate/sync would target it. |
-| F3-7 | CERTIFIED | Daniel's widening is absent on this line: no `z.enum(["paper","live"])`, no `(PK\|AK)`, no `account_environment: input.environment`, no `operation-identity.ts`. Matches `alpha4-reconciliation.md` §6.2.                                            |
+| id   | class                           | evidence                                                                                                                                                                                                                                                                                                        |
+| ---- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F3-1 | CERTIFIED                       | Connect: `PAPER_KEY_ID = /^PK[A-Z0-9]{18}$/`, `environment: z.literal("paper")`, `.strict()`; assertions "environment must be the literal paper" / "only PK (paper) key ids parse".                                                                                                                             |
+| F3-2 | CERTIFIED                       | Rotate: identical schema.                                                                                                                                                                                                                                                                                       |
+| F3-3 | CERTIFIED                       | The wire value is the literal `"paper"` (`account_environment: "paper"`); the parsed input is never forwarded, so a schema loosening alone could not widen the wire.                                                                                                                                            |
+| F3-4 | CERTIFIED                       | The contract permits `live` (`account_environment: enum [paper, live]` on `BrokerageConnection`, `BrokerageConnectionRequest`, `AllocationPreview`). Paper-only is **our** boundary (D-LAUNCH-07 open), documented at the route header.                                                                         |
+| F3-5 | FIXED in PR #161 (Tier 2, open) | A `live` connection is projected as **held**: `alphaOperable: false`, `heldReason: live_environment_unsupported`, environment word preserved verbatim; broker and account pages render the held state; the activation broker step is not satisfied by it.                                                       |
+| F3-6 | FIXED in PR #161 (Tier 2, open) | Selection prefers a non-terminal PAPER connection; `assertConnectionInScope` returns `unsupported_environment` for a non-paper connection, so rotate/sync refuse (409 `connection_environment_unsupported`) before any mutation. Pinned by `paper-only-read-boundary.test.ts` and a contract-assertion section. |
+| F3-7 | CERTIFIED                       | Daniel's widening is absent on this line: no `z.enum(["paper","live"])`, no `(PK\|AK)`, no `account_environment: input.environment`, no `operation-identity.ts`. Matches `alpha4-reconciliation.md` §6.2.                                                                                                       |
 
 ## F4 — D-A4: `DENIED + BROKER_CONNECTION_MISSING`
 
@@ -107,10 +107,10 @@ guarantee.
 1. **F-1 → no new PR.** The defect is fixed by held PR #149; action is to rebase
    #149 onto `019a6bf` (mechanical alpha.4 pin conflicts) and keep it held.
    F2-6 (`reason_codes` plumbing) waits for the D-A4 vocabulary.
-2. **F-2 (DEBT, paper-only read path)** — filter/flag a non-paper connection in
-   `getBrokerageConnection`; refuse rotate/sync against a `live` connection in
-   `assertConnectionInScope`; pin with an assertion. Shape depends on
-   D-LAUNCH-07 staying PAPER ONLY (founder).
+2. **F-2 — implemented in PR #161** (F-F1 answered PAPER ONLY): held projection,
+   paper-first selection, rotate/sync refusal, UI held state, activation step
+   guard; pinned by unit tests and a contract-assertion section. Awaits founder
+   review (Tier 2, runtime brokerage boundary).
 3. Optional, not Lane F: enforce the 8–128 `Idempotency-Key` length in the
    client.
 

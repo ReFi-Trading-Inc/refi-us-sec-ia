@@ -70,7 +70,7 @@ Constants: `RECOMMENDATION_LIST_MAX_PAGES = 4`, `CONTRACT_MAX_PAGE_SIZE = 100`, 
 
 H-PR2, H-PR3 and H-PR5 **merged as #158** (head `c4cdea6`, CI run 34802196817,
 merge `57680cf`). F-H1 and F-H3 were **answered 2026-09-13** (render the funding
-notice; delete the two unsupported fields, no relabelling), so H-PR1 (#159) and H-PR4 (#160) are open as Tier 1 PRs. F-H2 answered: alpha.4 BFF allocation operations are canonical.
+notice; delete the two unsupported fields, no relabelling), so H-PR1 and H-PR4 landed as Tier 1: #159 (head `385d2c4`, CI run 34804511343, merge `342d533`) and #160 (head `7040e68`, CI run 34804979466, merge `77220c4`). F-H2 answered: alpha.4 BFF allocation operations are canonical.
 
 ## Daniel asks (exact wording)
 

@@ -121,16 +121,8 @@ export default function RecommendationDetailPage({
               value={formatDateTime(rec.freshness.expiresAt)}
             />
             <Field
-              label={recommendations.detail.lastEvaluatedLabel}
-              value={formatDateTime(rec.freshness.lastEvaluatedAt)}
-            />
-            <Field
               label={recommendations.detail.sourceAsOfLabel}
               value={formatDateTime(rec.freshness.sourceAsOf)}
-            />
-            <Field
-              label={recommendations.detail.freshnessPolicyLabel}
-              value={rec.freshness.policyVersion}
             />
             <Field
               label={recommendations.executionEligibilityLabel}
@@ -141,10 +133,11 @@ export default function RecommendationDetailPage({
               }
               testId="recommendation-execution-eligibility"
             />
-            {rec.freshness.reasonCodes.length > 0 && (
+            {rec.reasonCodes.length > 0 && (
               <Field
-                label={recommendations.detail.freshnessReasonsLabel}
-                value={rec.freshness.reasonCodes.join(", ")}
+                label={recommendations.detail.reasonCodesLabel}
+                value={rec.reasonCodes.join(", ")}
+                testId="recommendation-reason-codes"
               />
             )}
           </dl>

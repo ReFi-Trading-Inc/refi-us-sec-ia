@@ -38,10 +38,8 @@ export interface FreshnessView {
   status: FreshnessStatus;
   freshUntil: string;
   expiresAt: string;
-  lastEvaluatedAt: string;
+  /** alpha.4 `as_of_time` — the source time the recommendation reflects. */
   sourceAsOf: string;
-  policyVersion: string;
-  reasonCodes: string[];
 }
 
 export interface RecommendationSummaryView {
@@ -122,12 +120,10 @@ export function projectRecommendation(
       status: r.freshness_status,
       freshUntil: r.fresh_until,
       expiresAt: r.expires_at,
-      // Alpha.4 does not supply these legacy freshness fields. Empty means
-      // unavailable to the existing display, NOT a fabricated time/policy.
-      lastEvaluatedAt: "",
+      // alpha.4 has no last_evaluated_at / freshness_policy_version /
+      // freshness_reason_codes on a recommendation (its `Freshness` schema is
+      // an orphan — D-A8a). Nothing is fabricated or relabelled (F-H3).
       sourceAsOf: r.as_of_time,
-      policyVersion: "",
-      reasonCodes: [],
     },
     estimatedTurnoverPercent: fractionToPercent(turnover),
     legCount: r.leg_count,

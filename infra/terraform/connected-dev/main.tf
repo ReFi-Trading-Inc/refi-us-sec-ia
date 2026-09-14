@@ -39,6 +39,17 @@ locals {
     ELIGIBILITY_JWT_SECRET = "refi-frontend-eligibility"
     IP_HASH_SECRET         = "refi-frontend-ip-hash"
   }
+  # Stytch TEST credentials. Terraform references these and grants the runtime
+  # read access, but deliberately does NOT own the containers: the values are
+  # provisioned out of band by a human holding them, so no secret material ever
+  # reaches this configuration, a plan, or the repository. Versions are pinned
+  # per secret rather than globally — the project id's clean value is version 2
+  # because version 1 arrived with paste newlines and was disabled, not
+  # destroyed.
+  stytch_secrets = {
+    STYTCH_PROJECT_ID = { secret = "refi-frontend-stytch-project-id", version = "2" }
+    STYTCH_SECRET     = { secret = "refi-frontend-stytch-secret", version = "1" }
+  }
 }
 
 resource "google_service_account" "runtime" {
@@ -142,6 +153,15 @@ resource "google_secret_manager_secret" "session" {
   }
 }
 
+# Read access to the out-of-band Stytch secrets. Least privilege: accessor only,
+# on exactly these two secrets, for the runtime service account only.
+resource "google_secret_manager_secret_iam_member" "stytch_runtime" {
+  for_each  = local.stytch_secrets
+  secret_id = each.value.secret
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.runtime.email}"
+}
+
 resource "google_secret_manager_secret_iam_member" "runtime" {
   for_each  = google_secret_manager_secret.session
   secret_id = each.value.id
@@ -224,6 +244,11 @@ resource "google_cloud_run_v2_service" "frontend" {
           IDENTITY_CCID_UPSTREAM_AUDIENCE        = "urn:refinity:identity-bridge:dev"
           IDENTITY_CCID_JWKS_URL                 = "https://identity-ccid-74kl57biwa-uw.a.run.app/.well-known/jwks.json"
           REFI_AUTH_CALLBACK_URL                 = "${local.origin}/us/auth/callback"
+          # Stytch TEST environment. REFI_AUTH_PROVIDER stays "unconfigured"
+          # above: binding the credentials and ACTIVATING the provider are
+          # deliberately separate acts, and env.ts refuses "stytch" unless both
+          # secrets and an https callback are present.
+          STYTCH_ENV = "test"
         }
         content {
           name  = env.key
@@ -242,9 +267,24 @@ resource "google_cloud_run_v2_service" "frontend" {
           }
         }
       }
+      dynamic "env" {
+        for_each = local.stytch_secrets
+        content {
+          name = env.key
+          value_source {
+            secret_key_ref {
+              secret  = env.value.secret
+              version = env.value.version
+            }
+          }
+        }
+      }
     }
   }
-  depends_on = [google_secret_manager_secret_iam_member.runtime]
+  depends_on = [
+    google_secret_manager_secret_iam_member.runtime,
+    google_secret_manager_secret_iam_member.stytch_runtime,
+  ]
   # CI owns releases; Terraform owns runtime configuration and IAM.
   # Do not ignore template.revision: a later config edit must not reuse an
   # immutable CLI revision. A post-CI plan can clear this generated-name field;

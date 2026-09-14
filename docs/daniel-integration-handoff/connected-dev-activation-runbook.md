@@ -328,6 +328,23 @@ gcloud secrets versions add refi-frontend-stytch-secret     --project refinity-d
 
 Use the **TEST** project's credentials. `STYTCH_ENV` stays `test`.
 
+### DONE — credentials provisioned 2026-09-14
+
+Both secrets exist with enabled versions, values provisioned out of band by a
+human holding them. Verified by shape only; no value was printed, logged or
+committed.
+
+| Secret                            | Version         | Bytes                      | Prefix          |
+| --------------------------------- | --------------- | -------------------------- | --------------- |
+| `refi-frontend-stytch-project-id` | **2** (enabled) | 49, no trailing whitespace | `project-test-` |
+| `refi-frontend-stytch-secret`     | 1 (enabled)     | 48, no trailing whitespace | `secret-test-`  |
+
+Version 1 of the project id carried two trailing newlines from the paste, which
+Stytch rejects. A whitespace-clean version 2 was added and version 1 was
+**disabled, not destroyed**, so the original remains recoverable. This is why
+the wiring pins version `2` for that secret and `1` for the other, rather than
+`1` globally like the four session secrets.
+
 ### 2b. Bind the runtime (separate Terraform PR, after step 1's plan)
 
 The existing pattern in `main.tf` is a `google_secret_manager_secret` map, a
@@ -347,6 +364,37 @@ REFI_AUTH_CALLBACK_URL                  (already set)
 secrets and an https callback URL, and forbids it on the demo tier — so
 flipping the provider is the deliberate, separate act that turns the login half
 of the chain on.
+
+### Stytch wiring plan — PLAN ONLY, and its apply is BLOCKED
+
+```text
+Plan: 2 to add, 1 to change, 0 to destroy      (35 of 38 resources no-op)
+```
+
+| Resource                                                                      | Action                                                         |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| `google_secret_manager_secret_iam_member.stytch_runtime["STYTCH_PROJECT_ID"]` | create — `secretAccessor` for the runtime SA                   |
+| `google_secret_manager_secret_iam_member.stytch_runtime["STYTCH_SECRET"]`     | create — same                                                  |
+| `google_cloud_run_v2_service.frontend`                                        | update — `template.containers.env` **and** `template.revision` |
+
+No credential material appears anywhere in the plan: neither `project-test-`
+nor `secret-test-` occurs in its JSON rendering, because the configuration
+carries only secret _names_ and version numbers. The plan file was deleted.
+
+**The apply is blocked, and not on approval.** Wiring env vars necessarily
+updates the Cloud Run service, and that update carries the same
+`template.revision` residual as every other service change. Applying it would
+create a new revision while the image question is still open — and the
+provenance finding showed both the live digest and the `release.tfvars` pin
+come from unreviewed branch builds.
+
+So the Stytch wiring sits behind the **CLOUD RUN REVISION + IMAGE
+RECONCILIATION** follow-up, exactly as the trigger migration did. The
+difference is that the trigger could be moved without touching Cloud Run;
+wiring env vars cannot. Terraform is not the only path — a promotion from the
+reviewed branch would rebuild and redeploy with these env vars once the
+configuration is merged — but either way the image question must be answered
+first.
 
 ## 3. What may not be claimed
 

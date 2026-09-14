@@ -63,14 +63,17 @@ resource "google_cloudbuildv2_repository" "frontend" {
 resource "google_cloudbuild_trigger" "frontend" {
   name            = "refi-frontend-integration"
   location        = local.region
-  description     = "Frontend integration branch only: test, build, verify candidate and promote in refinity-dev"
+  # Deployment source = the reviewed Daniel-handoff convergence line, never
+  # main, a PR head, integration/refinity-dev or an arbitrary branch
+  # (founder, 2026-09-13). scripts/connected-deployment-test.ts pins this.
+  description     = "Reviewed handoff integration branch only: test, build, verify candidate and promote in refinity-dev"
   service_account = google_service_account.build.id
   filename        = "infra/cloudrun/cloudbuild.connected-cicd.yaml"
   # Documentation-only commits do not rebuild/deploy. Runtime/config/test edits do.
   ignored_files = ["**/*.md", "infra/terraform/**"]
   repository_event_config {
     repository = google_cloudbuildv2_repository.frontend.id
-    push { branch = "^integration/refinity-dev$" }
+    push { branch = "^daniel-handoff/integration$" }
   }
   depends_on = [
     google_cloud_run_v2_service_iam_member.deploy,

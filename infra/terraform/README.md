@@ -17,8 +17,11 @@ that back the BFF's durable store.
 > `refinity-dev` frontend state (state serial 6, 27 resources) is
 > [`connected-dev/`](connected-dev/) with its deployment tooling and runbook in
 > [`../cloudrun/CONNECTED_DEV.md`](../cloudrun/CONNECTED_DEV.md). Reconciled by
-> path from `integration/refinity-dev` on 2026-09-13; that branch remains the
-> one Daniel's Cloud Build trigger deploys from.
+> path from `integration/refinity-dev` on 2026-09-13. The declared deployment
+> source is `^daniel-handoff/integration$` — certification authority and
+> deployment source are the same reviewed branch (founder, 2026-09-13). The
+> live trigger still names Daniel's branch until the amended configuration is
+> applied through a reviewed plan.
 
 ## What it creates
 

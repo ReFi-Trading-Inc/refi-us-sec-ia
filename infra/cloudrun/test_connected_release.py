@@ -15,7 +15,7 @@ class ReleaseTests(unittest.TestCase):
     def exercise_promotion(self, failure):
         build_id, sha = "a" * 36, "b" * 40
         revision = release.SERVICE + "-ci-" + build_id[:20]
-        env = {"CB_BUILD_ID": build_id, "CB_SOURCE_SHA": sha, "CB_BRANCH": "integration/refinity-dev"}
+        env = {"CB_BUILD_ID": build_id, "CB_SOURCE_SHA": sha, "CB_BRANCH": release.DEPLOY_BRANCH}
         build = {"substitutions": {"COMMIT_SHA": sha, "BRANCH_NAME": env["CB_BRANCH"]},
                  "createTime": "2026-09-11T11:00:00Z"}
         before = {"status": {"traffic": [{"revisionName": "prior", "percent": 100}]}}
@@ -56,12 +56,23 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(len(self.exercise_promotion(None)), 1)
 
     def test_only_exact_branch_and_full_sha(self):
-        release.validate_source("integration/refinity-dev", "a" * 40, "a" * 36)
-        for branch in ["main", "integration/refinity-dev-other", "feature/kyc", ""]:
+        # Connected Dev automated deployment may originate only from the
+        # reviewed Daniel-handoff integration branch (founder, 2026-09-13).
+        self.assertEqual(release.DEPLOY_BRANCH, "daniel-handoff/integration")
+        release.validate_source(release.DEPLOY_BRANCH, "a" * 40, "a" * 36)
+        for branch in [
+            "main",
+            "integration/refinity-dev",
+            "daniel-handoff/integration-other",
+            "daniel-handoff/lane-h-alpha4-fixes",
+            "refs/pull/156/head",
+            "feature/kyc",
+            "",
+        ]:
             with self.assertRaises(ValueError):
                 release.validate_source(branch, "a" * 40, "a" * 36)
         with self.assertRaises(ValueError):
-            release.validate_source("integration/refinity-dev", "a" * 7, "a" * 36)
+            release.validate_source(release.DEPLOY_BRANCH, "a" * 7, "a" * 36)
 
     def test_older_build_cannot_replace_newer_attempt(self):
         old = {"build_id": "old", "created_at": "2026-09-11T10:00:00Z"}

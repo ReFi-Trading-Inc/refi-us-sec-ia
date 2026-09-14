@@ -1,7 +1,11 @@
-# Connected Dev hosting — integration branch
+# Connected Dev hosting — reviewed handoff integration branch
 
-This is the deployment path for `integration/refinity-dev`, created from frontend
-`main` at `b3e7a1abd412fa4712ad68d7b76782241b1d6955`. Only this GitHub frontend
+This is the deployment path for `daniel-handoff/integration`, the reviewed
+Daniel-handoff convergence line (founder decision 2026-09-13: certification
+authority and deployment source must be the same branch). It was first built by
+Daniel for `integration/refinity-dev` from frontend `main` at
+`b3e7a1abd412fa4712ad68d7b76782241b1d6955` and reconciled onto the handoff line
+by path (see `docs/daniel-integration-handoff/connected-dev-inventory.md` §3). Only this GitHub frontend
 repository belongs in the build context. Backend source/state remains in GitLab.
 See [the shared working agreement](../../docs/integration-collaboration.md).
 
@@ -50,10 +54,14 @@ authorization completed. The GitHub App is not a personal SSH key and does not
 change main protection or existing GitHub Actions.
 
 Terraform defines trigger `refi-frontend-integration` in `us-west1`, matching
-**only `^integration/refinity-dev$` pushes**, using
+**only `^daniel-handoff/integration$` pushes**, using
 [`cloudbuild.connected-cicd.yaml`](cloudbuild.connected-cicd.yaml). Documentation
 and Terraform-only changes do not trigger application builds. Terraform changes
-still require an operator-reviewed plan/apply. There is no new main/PR trigger.
+still require an operator-reviewed plan/apply. There is no main/PR trigger, and
+`integration/refinity-dev` is not a deployment source. Until the amended
+Terraform is applied by a credentialed operator the **live** trigger still names
+the old branch; `connected-dev.sh plan` will show exactly that one change.
+`scripts/connected-deployment-test.ts` pins the declared source in CI.
 
 Each code push runs release-script unit tests, generated-client build, focused
 durable-store checks, contract assertions, investor boundary checks, and the
@@ -85,7 +93,7 @@ Operational commands:
 gcloud builds list --project refinity-dev --region us-west1 --limit=10
 # Retry current integration HEAD after an infrastructure/transient failure.
 gcloud builds triggers run refi-frontend-integration \
-  --branch=integration/refinity-dev --project refinity-dev --region us-west1
+  --branch=daniel-handoff/integration --project refinity-dev --region us-west1
 # Actual verified release, not the historical bootstrap image:
 gcloud storage cat gs://refinity-dev-frontend-releases/current.json
 ```
@@ -165,6 +173,10 @@ The initial hosting configuration is **not an admitted Alpha release**:
   It is separate from the remaining application/backend integration work.
 
 ## Verification record
+
+The record below is Daniel's, for the original `integration/refinity-dev`
+trigger. No build has yet run from `daniel-handoff/integration`; the first one
+follows the reviewed plan/apply of the amended trigger.
 
 September 11, 2026: 27 isolated Terraform resources plus the private state bucket
 created; zero existing backend resources changed/destroyed. The default database

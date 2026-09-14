@@ -62,9 +62,15 @@ def put_object(name, data, generation=None):
     )
 
 
+# The only branch that may deploy connected Dev: the reviewed Daniel-handoff
+# convergence line. Never main, a PR head, integration/refinity-dev or an
+# arbitrary branch (founder decision 2026-09-13).
+DEPLOY_BRANCH = "daniel-handoff/integration"
+
+
 def validate_source(branch, sha, build_id):
-    if branch != "integration/refinity-dev":
-        raise ValueError("Only integration/refinity-dev may deploy")
+    if branch != DEPLOY_BRANCH:
+        raise ValueError(f"Only {DEPLOY_BRANCH} may deploy")
     if not re.fullmatch(r"[a-f0-9]{40}", sha):
         raise ValueError("A full Git source SHA is required")
     if not re.fullmatch(r"[a-f0-9-]{36}", build_id):

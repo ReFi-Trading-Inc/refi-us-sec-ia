@@ -235,10 +235,42 @@ stay out — see `alpha4-reconciliation.md` §6.2.
 **Edited on take:** one bullet of `infra/cloudrun/CONNECTED_DEV.md` that pointed
 at the development KYC-pass roadmap now states that source is not adopted here.
 
+### Deployment source amendment (founder review of PR #156, 2026-09-13)
+
+Daniel's Terraform attached the Cloud Build push trigger to
+`^integration/refinity-dev$` — his unprotected parallel branch, which we
+deliberately refused to merge and which carries runtime changes we rejected.
+That made the deployment source differ from the certification authority
+(`daniel-handoff/integration`). **Amended on this PR:** the declared trigger,
+the release controller (`DEPLOY_BRANCH`), the operator script and the Cloud
+Build header all name `daniel-handoff/integration`, and
+`scripts/connected-deployment-test.ts` pins the invariant in CI:
+
+> connected Dev automated deployment may originate only from the reviewed
+> Daniel-handoff integration branch — never `main`, a PR head,
+> `integration/refinity-dev` or an arbitrary branch.
+
+No new branch was created for this. No `terraform apply` was run: the **live**
+trigger still names Daniel's branch until a credentialed operator applies the
+amended configuration through a reviewed plan, which will show exactly that one
+change. Daniel's builds recorded in `CONNECTED_DEV.md` came from the old source.
+
+**Branch protection — verified fact, not a claim:** the GitHub API reports
+`daniel-handoff/integration` as **not protected** (`protected: false`,
+2026-09-13). Protected CI on every lane PR is enforced by the workflow's
+`pull_request` filter and by our PR/CI merge policy, not by GitHub branch
+protection. Enabling protection is a founder-side GitHub setting and a separate
+follow-up.
+
+**`allUsers` invoker on `refi-frontend-integration`:**
+`FOUNDER ACCEPTED 2026-09-13 — PUBLIC FRONTEND NETWORK ENTRY, APPLICATION AUTH
+REQUIRED`. Acceptable only because application authentication remains
+authoritative and no backend service is made public by this rule; it authorizes
+neither backend invocation nor trading.
+
 **Follow-ups recorded, not done:** digest-pin `python:3.12-slim`,
 `gcr.io/cloud-builders/docker` and `node:22-alpine` (only the gcloud CLI image
-is digest-pinned); record the `allUsers` invoker on the integration service as
-an explicit acceptance; a credentialed `connected-dev.sh plan` is the only way
+is digest-pinned); apply the amended trigger through a reviewed plan; a credentialed `connected-dev.sh plan` is the only way
 to confirm attribute-level agreement with state serial 6 (no state or plan
 artifact exists in the repo, and `ignore_changes` covers the container image).
 

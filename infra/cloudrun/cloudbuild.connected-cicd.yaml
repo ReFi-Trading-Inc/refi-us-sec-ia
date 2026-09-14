@@ -1,4 +1,6 @@
-# Push trigger: exactly integration/refinity-dev; never main or a PR trigger.
+# Push trigger: exactly daniel-handoff/integration (the reviewed handoff
+# convergence line); never main, a PR trigger, integration/refinity-dev or an
+# arbitrary branch. connected-release.py re-validates CB_BRANCH.
 steps:
   - id: deployment-tests
     name: python:3.12-slim

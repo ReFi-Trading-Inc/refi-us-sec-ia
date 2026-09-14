@@ -5,8 +5,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 readonly project=refinity-dev
 readonly region=us-west1
 readonly tfdir=infra/terraform/connected-dev
-if [[ "$(git branch --show-current)" != integration/refinity-dev ]]; then
-  echo 'Switch to integration/refinity-dev before operating this deployment.' >&2
+if [[ "$(git branch --show-current)" != daniel-handoff/integration ]]; then
+  echo 'Switch to daniel-handoff/integration (the reviewed deployment source) before operating this deployment.' >&2
   exit 1
 fi
 case "${1:-}" in

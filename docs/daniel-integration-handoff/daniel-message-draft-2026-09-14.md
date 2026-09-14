@@ -6,8 +6,9 @@ four edits before it goes out:
 1. ~~**Brokerage section** — update after #161 merges.~~ **Done** — #161 merged
    2026-09-14 (head `6368277`, CI run 34853814934, merge `acff569`); the
    brokerage paragraph below now states the shipped behaviour.
-2. **Infrastructure section** — replace "planned change" language with the real
-   Terraform plan result. **Now available**; applied below.
+2. ~~**Infrastructure section** — replace "planned change" language with the real
+   Terraform plan result.~~ **Done** — it now states the executed migration as
+   final fact, without our internal Terraform mechanics.
 3. **Identity section** — update after Stytch TEST provisioning, so Daniel gets
    final facts once rather than provisional facts twice. **Still pending.**
 4. **No new questions** about strategy selection or frontend allocation bounds —
@@ -72,17 +73,19 @@ deployment source; they had drifted apart, which is not a state we can certify
 from. `daniel-handoff/integration` now has branch protection with four required
 checks, no direct pushes and no force pushes.
 
-**Planned and reviewed, not yet applied.** We ran the plan against the real
-state on 2026-09-14: `0 to add, 2 to change, 0 to destroy`, with 34 of 36
-resources untouched. The only changes are your trigger's branch and its
-description, plus the Cloud Run service clearing its generated
-`template.revision` — the metadata-only diff `main.tf` already anticipates in
-its own lifecycle comment. Nothing unexpected, nothing destroyed.
+**Done — as of 2026-09-14 this is live.** Connected Dev automated deployment
+authority was moved from `integration/refinity-dev` to
+`daniel-handoff/integration` through a narrow trigger-only administrative
+update. Only the branch pattern and the trigger description changed; the
+repository connection, build config, service account, ignored files and
+everything else are byte-identical to before.
 
-The live trigger still names your branch until the founder approves that
-inspected plan. When it is applied, pushes to `integration/refinity-dev` will
-stop deploying connected Dev. Say so now if that breaks a workflow of yours —
-we can sequence around it.
+**Pushes to `integration/refinity-dev` no longer deploy connected Dev.** If
+that breaks a workflow of yours, say so and we will sequence around it.
+
+Cloud Run was deliberately left untouched: we found separate image and
+revision drift on the service and isolated it for its own reconciliation
+rather than bundling it into a trigger change.
 
 ## 3. What we could not take from your branch
 

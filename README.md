@@ -97,14 +97,16 @@ since been superseded by the working agreement and decisions summarized here.
 
 ### Still to complete
 
-- **Contract adoption:** `main` imports/generates `v1.1.0-alpha.3` (digest
-  `5eca1200…`). The backend's currently issued package **is alpha.4** (digest
-  `a6db935b…`), vendored on the unmerged branch `integration/refinity-dev` and
-  independently verified there (all 11 artifacts hash-match). Adopting it is
-  Lane C work — see
+- **Contract adoption:** the handoff line (`daniel-handoff/integration`)
+  imports/generates `v1.1.0-alpha.4` (digest `a6db935b…`), vendored
+  byte-for-byte from `integration/refinity-dev` and re-verified on landing
+  (11/11 artifact hashes, package digest, conformance validate + self-test).
+  `main` still pins `v1.1.0-alpha.3` (digest `5eca1200…`) until the handoff
+  line is promoted. The audit of Daniel's branch is in
   [`docs/daniel-integration-handoff/alpha4-reconciliation.md`](docs/daniel-integration-handoff/alpha4-reconciliation.md).
   Membership and canonical admission are **not** in alpha.4's machine-readable
-  artifacts either; they remain prose-only, so D-A2/D-A3 stay open.
+  artifacts (its `listAccountMemberships` is portfolio allocation membership,
+  unchanged since alpha.3); D-A2/D-A3 stay open.
 - **Backend-owned membership/admission:** replace legacy onboarding/cohort
   ambiguity with independent canonical reads. The existing setup gate also
   needs frontend-owned adaptation for “connect Alpaca later.”

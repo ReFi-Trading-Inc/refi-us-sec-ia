@@ -18,35 +18,59 @@ Status vocabulary: `OPEN` · `ASKED` · `ANSWERED` · `SUPERSEDED`.
 **Status:** `OPEN` · **Blocks:** Lane C, and transitively A, E, F, H
 **Corrected twice — see history below.**
 
-### Current state of fact (verified 2026-09-13)
+### Current state of fact (verified 2026-09-13; adoption landed on the handoff line)
 
-**alpha.4 exists.** It is vendored on the unmerged branch
-`integration/refinity-dev` at digest
-`a6db935b6a398bff00a7ccee4cb268ee565249bbd75c23e36594c9f6b698e7c3`, and it is
-**authenticated**: `CURRENT.json` and `bundle.json` agree, and all 11 declared
-artifact hashes were recomputed and match.
+**alpha.4 exists and is now adopted on `daniel-handoff/integration`.** It was
+vendored byte-for-byte from `integration/refinity-dev` commit `09842e4` at
+digest `a6db935b6a398bff00a7ccee4cb268ee565249bbd75c23e36594c9f6b698e7c3` and
+re-verified on landing: `CURRENT.json` ↔ `bundle.json` agree, all 11 artifact
+hashes and the package content digest recompute, and Daniel's
+`tools/conformance.py validate` + `self-test` pass (python3.11). The client is
+regenerated and pinned to alpha.4; alpha.3/alpha.2 stay vendored as history.
 
-`main` still pins alpha.3 (`5eca1200…`). Adopting alpha.4 is Lane C work — see
-[`alpha4-reconciliation.md`](alpha4-reconciliation.md).
+`main` still pins alpha.3 (`5eca1200…`) until the handoff line is promoted.
+See [`alpha4-reconciliation.md`](alpha4-reconciliation.md) §6 for the audit of
+the rest of Daniel's branch.
 
 ### The ask is NOT "deliver alpha.4"
 
-**Membership and canonical admission are absent from alpha.4's
-machine-readable artifacts** — `schemas.json`, `openapi.json`,
-`capabilities.json` and `contract.json` contain neither. They appear only as
-prose in `INTEGRATION.md` (10 mentions), which describes backend admission as
-already existing and initializing account state transactionally.
+**Closed-Alpha cohort membership and canonical admission are absent from
+alpha.4's machine-readable artifacts.** Precisely:
+
+- `schemas.json` / `openapi.json` / `capabilities.json` / `contract.json`
+  contain **no admission** object or operation.
+- The word "membership" does appear in them — but only as
+  `listAccountMemberships` (`AccountMembership`: `account_id`, `portfolio_id`,
+  `template_id`, `allocation_percent`, `status ∈ ACTIVE | ENDED | PENDING`,
+  version/fingerprint fields) and as `lineage.membership_fingerprint` /
+  `membership_version` on a recommendation. That is the **portfolio
+  allocation** membership (the result of `join_template`), byte-identical to
+  alpha.3. It is **not** the closed-Alpha cohort membership of D-A2.
+- Cohort membership and admission appear only as prose in `INTEGRATION.md`
+  (10 mentions), which describes backend admission as already existing and
+  initializing account state transactionally.
 
 So the backend **has** admission; the frontend still has **no contracted way to
-read it**, exactly as with alpha.3.
+read it**, exactly as with alpha.3. #149's `OnboardingStatus === READY` proxy
+stands until a package supplies the projection.
 
-**Needed:** a successor package exposing the **D-A2** and **D-A3** projections
-as schema — same shape as the existing packages (`contract.json`,
-`schemas.json`, `openapi.json`, `examples.json`, `capabilities.json`,
-`MIGRATION.md`, and a `package_content_sha256` we pin in `CURRENT.json`).
+**Daniel's own status record on `integration/refinity-dev`
+(`docs/alpha4-integration-status.md`, 2026-09-12) states: "Backend alpha.5 is
+now issued/deployed in the separate GitLab repository, but is not adopted by
+this merge … current backend membership/admission reads and normal disconnect
+recovery are implemented."** We have not seen that package; it is not vendored
+on any branch of this repository. If accurate, it is the answer to this row.
+
+**Needed (sharpened):** the **alpha.5 frontend handoff package** — same shape
+as the existing packages (`contract.json`, `schemas.json`, `openapi.json`,
+`examples.json`, `capabilities.json`, `MIGRATION.md`, `bundle.json` with a
+`package_content_sha256` we pin in `CURRENT.json`) — exposing the **D-A2** and
+**D-A3** projections as schema, delivered onto a branch of this repository or
+as a directory we can vendor byte-for-byte.
 
 We will not transcribe either projection from prose. Adoption stays mechanical:
-verify digest → migration diff → regenerate client → rerun conformance.
+verify digest → migration diff → regenerate client → rerun conformance —
+exactly as done for alpha.4.
 
 ### Correction history
 
@@ -57,6 +81,9 @@ verify digest → migration diff → regenerate client → rerun conformance.
 3. Corrected again: alpha.4 exists and is authenticated, but **does not carry
    membership/admission**, so the underlying blocker never changed. Only its
    description did.
+4. 2026-09-13: alpha.4 adopted on the handoff line. Daniel's status record
+   claims a backend **alpha.5** with membership/admission reads; the ask is now
+   that package, not a hypothetical successor.
 
 ## D-A2 — ClosedAlphaMembership projection
 

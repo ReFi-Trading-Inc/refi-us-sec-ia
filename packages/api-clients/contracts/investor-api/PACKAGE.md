@@ -1,40 +1,56 @@
 # Vendored Investor API contract package
 
-| Field                                  | Value                                                                           |
-| -------------------------------------- | ------------------------------------------------------------------------------- |
-| Contract version                       | `v1.1.0-alpha.3` (supersedes `v1.1.0-alpha.2`)                                  |
-| `package_content_sha256` (bundle.json) | `5eca1200f6af807093ea0986f835235e2da478b69478e621fd54954ba1d77608`              |
-| Source contract SHA-256 (bundle.json)  | `3f5df829b1b74d1c95aa41ba4b9bc306d6b6242b25737373082b95d52d8e1cdb`              |
-| Issued / vendored                      | 2026-09-09 / 2026-09-10, from Daniel's `refinity-main` `contracts/frontend/`    |
-| Verified                               | `verify_current.py`, `tools/conformance.py validate` + `self-test` (python3.11) |
+| Field                                  | Value                                                                                                     |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Contract version                       | `v1.1.0-alpha.4` (supersedes `v1.1.0-alpha.3`)                                                            |
+| `package_content_sha256` (bundle.json) | `a6db935b6a398bff00a7ccee4cb268ee565249bbd75c23e36594c9f6b698e7c3`                                        |
+| Source contract SHA-256 (bundle.json)  | `47b670f366b09280fe90c0e01d53f7d616f8d145ca823c314f9dbae060a11be3`                                        |
+| Issued / vendored                      | 2026-09-11 / 2026-09-13, byte-for-byte from `integration/refinity-dev` commit `09842e4` (Daniel)          |
+| Verified                               | 11/11 artifact hashes + package digest recomputed; `tools/conformance.py validate` + `self-test` (py3.11) |
+| `connected_alpha_verified`             | `false` — a frontend-development contract, not a connected Alpha release                                  |
 
-`v1.1.0-alpha.3/` is a **byte-for-byte copy** of the package directory Daniel
-delivered (including `tools/`, `MIGRATION.md`, `INTEGRATION.md`). Nothing in
-it is edited here; a correction is a new version directory with its own
-`bundle.json`. `src/__tests__/investor-api-package.test.ts` fails if any
-vendored file's SHA-256 differs from `bundle.json.artifacts[]` or if the file
-set differs from the bundle's artifact list.
+`v1.1.0-alpha.4/` is a **byte-for-byte copy** of the package directory Daniel
+delivered (including `tools/`, `FUNDING.md`, `MIGRATION.md`, `INTEGRATION.md`).
+Nothing in it is edited here; a correction is a new version directory with its
+own `bundle.json`. `src/__tests__/investor-api-package.test.ts` and
+`src/__tests__/alpha4-adoption.test.ts` fail if any vendored file's SHA-256
+differs from `bundle.json.artifacts[]`, if the file set differs from the
+bundle's artifact list, or if the package content digest does not recompute
+from those records.
 
-`v1.1.0-alpha.2/` remains vendored as **issued history only** (its own
-bundle hash `c1b53c90…` is still asserted). Nothing under `src/` imports it
-(`investor-api-alpha3.test.ts`).
+`v1.1.0-alpha.3/` and `v1.1.0-alpha.2/` remain vendored as **issued history
+only** (their bundle hashes `5eca1200…` and `c1b53c90…` are still asserted).
+Nothing under `src/` imports them (`investor-api-alpha3.test.ts`). Daniel's
+handoff root moves superseded packages under `archive/`; this repository keeps
+them at their original paths so existing hash assertions and history stay
+byte-stable. `CURRENT.json` records `archive_status:
+superseded_reference_only` for them either way.
 
-## What alpha.3 changed (MIGRATION.md)
+## What alpha.4 changed (MIGRATION.md)
 
-- Same 41 operations, paths, request/response fields, JWT issuers/audiences
-  and allocation/credential semantics. No reset, re-onboarding or new
-  credentials.
-- `updateAccountPreferences` selects the new `preference_mutation` profile:
-  `ACKNOWLEDGMENT_REQUIRED`, `ACKNOWLEDGMENT_BINDING_INVALID`,
-  `ACKNOWLEDGMENT_NOT_REQUIRED`, `ACCOUNT_AUTHORIZATION_REQUIRED` (explicit
-  HTTP 403 denial). Allocation mutations also declare that denial.
-- Every profile declares 422 validation and 413 body-size rejection; paged
-  reads declare invalid/expired cursors. Preferences return `APPLIED`.
-- The client RETAINS the validated optional `error.continuation` on
-  `InvestorApiError` (`errors.ts`, forwarded in `client.ts
-failureFromResponse`) for the preference/disconnect confirmation flow.
-- `connection.dev.json` documents the native Cloud Run binding
-  (`frontend_runtime_service_account_email` / `_unique_id`) in place of WIF.
+- **`funding_assessment`** (nullable) on allocation previews and on
+  recommendation list/detail. Semantics in `FUNDING.md`: all amounts are USD
+  decimal strings; `INSUFFICIENT` is a persistent portfolio funding notice;
+  `null` is historical, unassessed evidence and is **never** "sufficient".
+- **Recommendation schemas corrected** to the backend's real projections. List
+  items are `RecommendationSummary`; detail is `Recommendation` with `lineage`,
+  `summary`, `content_status`, `lifecycle_status` and separate timestamps.
+  alpha.3 wrongly retained `status`, `freshness` and
+  `estimated_turnover_percent`. **Turnover is now a fraction**
+  (`turnover` / `summary.turnover`), not percentage points — the projection in
+  `apps/web/src/lib/investor-api/recommendations.ts` converts with exact
+  base-10 string math (`fractionToPercent`) for display only.
+  `execution_eligible` is `const: false` and describes the advisory
+  recommendation, not account automation.
+- Historical funding assessments stay null and are never recomputed; an
+  unconsumed legacy preview must be refreshed; a preference change invalidates
+  a new preview; completed action replay stays idempotent.
+- **Unchanged:** SSE event names/envelopes, consent naming, allocation fraction
+  request, broker environment selection, identity/Google/JWKS ownership.
+- Still **not** exposed: closed-Alpha cohort membership and canonical
+  admission (D-A2 / D-A3). `listAccountMemberships` (`AccountMembership`,
+  `ACTIVE | ENDED | PENDING`) is the portfolio **allocation** membership and is
+  unchanged since alpha.3 — it is not the cohort object.
 
 ## Why all files are vendored
 
@@ -48,8 +64,8 @@ rules hold instead:
 - `connection.dev.json` is **documentation only**. No runtime module imports
   it; the client never derives a base URL, audience, or service account from
   it. `investor-api-boundary.test.ts` asserts no `src/` file imports it.
-- `capabilities.json`, `README.md`, `MIGRATION.md`, `INTEGRATION.md` are
-  governance artifacts. Nothing reads them at runtime.
+- `capabilities.json`, `README.md`, `FUNDING.md`, `MIGRATION.md`,
+  `INTEGRATION.md` are governance artifacts. Nothing reads them at runtime.
 - `tools/conformance.py` is executed only by the test suite, against loopback.
 
 ## What reads what

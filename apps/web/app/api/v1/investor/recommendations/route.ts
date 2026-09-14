@@ -12,6 +12,7 @@
  * backend information, not a control (D-LAUNCH-06).
  */
 import { bffRead } from "@lib/bff/handler";
+import type { FundingNotice } from "@lib/investor-api/funding-notices";
 import { investorApiClientFor } from "@lib/investor-api/gateway";
 import { resolveAccountScope } from "@lib/investor-api/account-scope";
 import {
@@ -28,6 +29,9 @@ export interface RecommendationsListView {
   items: RecommendationSummaryView[];
   /** True when the bounded page cap stopped the read before the upstream did. */
   truncated: boolean;
+  nextCursor?: string | null;
+  fundingNotices?: FundingNotice[];
+  fundingComplete?: boolean;
   upstream: UpstreamState;
 }
 
@@ -44,8 +48,8 @@ export const GET = bffRead({
     try {
       const client = investorApiClientFor(ctx.auth);
       const accountId = await resolveAccountScope(client, ctx.auth);
-      const { items, truncated } = await listRecommendations(client, accountId);
-      return { items, truncated, upstream: UPSTREAM_OK };
+      const result = await listRecommendations(client, accountId);
+      return { ...result, upstream: UPSTREAM_OK };
     } catch (err) {
       return { items: [], truncated: false, upstream: classifyUpstream(err) };
     }

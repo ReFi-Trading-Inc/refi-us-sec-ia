@@ -36,10 +36,12 @@ import {
 import { problemsAgainst } from "../investor-api/validation";
 import {
   fractionToPercent,
+  listRecommendations,
   projectRecommendation,
   type ContractRecommendation,
   type ContractRecommendationSummary,
 } from "../../../../apps/web/src/lib/investor-api/recommendations";
+import type { InvestorApiReadClient } from "../../../../apps/web/src/lib/investor-api/demo-client";
 import { projectFundingNotices } from "../../../../apps/web/src/lib/investor-api/funding-notices";
 
 const PKG = join(__dirname, "../..", CONTRACT_PACKAGE_DIR);
@@ -267,5 +269,64 @@ describe("funding notices rebuilt from persisted recommendations", () => {
     expect(
       projectFundingNotices([sufficient, warning], now + 3600_000)[0]?.state,
     ).toBe("active");
+  });
+});
+
+describe("Lane H fixes: fan-out resilience and status-casing normalisation", () => {
+  it("one failed detail read leaves that row unresolved; the list survives (H2-3)", async () => {
+    const rows = [
+      { ...summary, recommendation_id: "rec_a", funding_assessment: null },
+      { ...summary, recommendation_id: "rec_b", funding_assessment: null },
+      { ...summary, recommendation_id: "rec_c", funding_assessment: null },
+    ];
+    const detailCalls: string[] = [];
+    const fake = {
+      call: (
+        op: string,
+        options?: { path?: { recommendation_id?: string } },
+      ) => {
+        if (op === "listAccountRecommendations") {
+          return Promise.resolve({
+            data: {
+              data: {
+                items: rows,
+                page: { has_more: false, next_cursor: null },
+              },
+            },
+          });
+        }
+        if (op === "getAccountRecommendation") {
+          const id = options?.path?.recommendation_id ?? "";
+          detailCalls.push(id);
+          if (id === "rec_b") return Promise.reject(new Error("upstream 503"));
+          return Promise.resolve({
+            data: { data: { ...detail, recommendation_id: id } },
+          });
+        }
+        throw new Error(`unexpected operation ${op}`);
+      },
+    } as unknown as InvestorApiReadClient;
+    const out = await listRecommendations(fake, "acct_test");
+    expect(detailCalls.sort()).toEqual(["rec_a", "rec_b", "rec_c"]);
+    expect(out.items.map((r) => r.recommendationId)).toEqual([
+      "rec_a",
+      "rec_b",
+      "rec_c",
+    ]);
+    expect(out.items[0]?.templateId).toBe(detail.lineage.template_id);
+    expect(out.items[1]?.templateId).toBeNull();
+    expect(out.items[2]?.templateId).toBe(detail.lineage.template_id);
+    expect(out.truncated).toBe(false);
+  });
+
+  // Status/freshness tone casing (H1-6, H1-7) is covered end to end: the demo
+  // world emits UPPERCASE lifecycle words and e2e/demo-tier.spec.ts asserts the
+  // lower-cased `data-rec-status`, while e2e/recommendations.spec.ts asserts
+  // the simulator's lowercase examples against the same attribute.
+
+  it("allocation display uses the exact converter, never float math (H4-2)", () => {
+    expect(fractionToPercent("0.125")).toBe("12.5");
+    expect(fractionToPercent("0.005")).toBe("0.5");
+    expect(fractionToPercent("0.1")).toBe("10");
   });
 });

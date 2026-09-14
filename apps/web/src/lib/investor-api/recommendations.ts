@@ -15,6 +15,9 @@
 import type { OperationResponse } from "@refi/api-clients/investor-api";
 import type { InvestorApiReadClient } from "./demo-client";
 import { projectFundingNotices, type FundingNotice } from "./funding-notices";
+import { fractionToPercent } from "./fraction-percent";
+
+export { fractionToPercent } from "./fraction-percent";
 import {
   collectPages,
   CONTRACT_MAX_PAGE_SIZE,
@@ -132,19 +135,6 @@ export function projectRecommendation(
   };
 }
 
-/** Exact base-10 display conversion. Never used for allocation decisions. */
-export function fractionToPercent(value: string): string {
-  if (!/^-?(0|[1-9][0-9]*)(\.[0-9]+)?$/.test(value))
-    throw new Error("Invalid decimal fraction");
-  const negative = value.startsWith("-");
-  const [whole = "0", fraction = ""] = value.replace(/^-/, "").split(".");
-  const digits = fraction.padEnd(2, "0");
-  const integer = (whole + digits.slice(0, 2)).replace(/^0+(?=\d)/, "");
-  const remainder = digits.slice(2).replace(/0+$/, "");
-  const result = integer + (remainder ? `.${remainder}` : "");
-  return negative && result !== "0" ? `-${result}` : result;
-}
-
 export function projectLeg(
   l: ContractRecommendationLeg,
 ): RecommendationLegView {
@@ -188,9 +178,12 @@ export async function listRecommendations(
   const items = collected.items.map(projectRecommendation);
   // Alpha.4 summary intentionally has no lineage. Resolve missing template
   // identity from canonical detail in bounded groups, never from a guessed ID.
+  // A failed detail read leaves THAT row's templateId null and the rest of the
+  // list intact: one transient upstream failure must never blank the list
+  // (Lane H H2-3). Nothing is retried here; the row simply stays unresolved.
   const missing = items.filter((row) => row.templateId === null);
   for (let offset = 0; offset < missing.length; offset += 4) {
-    await Promise.all(
+    await Promise.allSettled(
       missing.slice(offset, offset + 4).map(async (row) => {
         const detail = await client.call("getAccountRecommendation", {
           path: {

@@ -87,6 +87,19 @@ test.describe("Recommendations — Signal user", () => {
     await expect(
       page.getByTestId("recommendation-execution-eligibility"),
     ).toContainText(/per backend policy/i);
+    // F-H3: alpha.4 contracts no evaluation time or freshness policy on a
+    // recommendation. Neither label renders, and nothing is relabelled in
+    // their place (updated_at / lineage.policy_version stay unrendered).
+    await expect(page.locator("main")).not.toContainText(/Last evaluated/i);
+    await expect(page.locator("main")).not.toContainText(/Freshness policy/i);
+    await expect(page.locator("main")).not.toContainText(/Freshness notes/i);
+    await expect(page.locator("main")).not.toContainText(
+      "account-recommendation-v6-funding-evidence",
+    );
+    // The canonical alpha.4 reason_codes survive projection and render verbatim.
+    await expect(page.getByTestId("recommendation-reason-codes")).toHaveText(
+      "PORTFOLIO_CAPITAL_BELOW_MINIMUM",
+    );
     const leg = page.getByTestId("recommendation-leg").first();
     await expect(leg).toBeVisible();
     await expect(leg).toContainText("AAPL");

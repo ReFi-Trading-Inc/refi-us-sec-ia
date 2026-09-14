@@ -176,10 +176,17 @@ describe("alpha.4 canonical reads (summary and detail project to one view)", () 
       expect(view.freshness.status).toBe(input.freshness_status);
       // execution_eligible is `const: false` in alpha.4 — informational only.
       expect(view.executionEligible).toBe(false);
-      // alpha.4 has no last_evaluated_at / freshness_policy_version. The
-      // compatibility view leaves them EMPTY, never fabricated.
-      expect(view.freshness.lastEvaluatedAt).toBe("");
-      expect(view.freshness.policyVersion).toBe("");
+      // alpha.4 has no last_evaluated_at / freshness_policy_version /
+      // freshness_reason_codes on a recommendation. The view carries no such
+      // keys at all (F-H3: removed, not relabelled), and the real alpha.4
+      // reason_codes are preserved verbatim.
+      expect(Object.keys(view.freshness).sort()).toEqual([
+        "expiresAt",
+        "freshUntil",
+        "sourceAsOf",
+        "status",
+      ]);
+      expect(view.reasonCodes).toEqual(input.reason_codes);
       expect(view.freshness.sourceAsOf).toBe(input.as_of_time);
     }
     expect(projectRecommendation(detail).templateId).toBe(

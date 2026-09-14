@@ -114,10 +114,10 @@ export const appCopy = {
       unavailableHeading: "Recommendation",
       idLabel: "Recommendation",
       expiresLabel: "Expires",
-      lastEvaluatedLabel: "Last evaluated",
       sourceAsOfLabel: "Source as of",
-      freshnessPolicyLabel: "Freshness policy",
-      freshnessReasonsLabel: "Freshness notes",
+      // alpha.4 `reason_codes`, shown verbatim (backend vocabulary, e.g.
+      // PORTFOLIO_CAPITAL_BELOW_MINIMUM). Never interpreted as authority.
+      reasonCodesLabel: "Reason codes",
       legsHeading: "Constituent legs",
       // Signal-only label. ReFi Signal never submits orders. The panel points
       // the investor to act on this recommendation through their own broker

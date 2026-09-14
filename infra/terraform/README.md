@@ -12,6 +12,13 @@ that back the BFF's durable store.
 > the attached service account via ADC on Cloud Run. **Never** a downloaded,
 > long-lived service-account key. Earlier revisions of this file documented
 > exporting a key JSON into Vercel; that guidance is withdrawn.
+>
+> **Connected Dev source of record.** The configuration that matches the live
+> `refinity-dev` frontend state (state serial 6, 27 resources) is
+> [`connected-dev/`](connected-dev/) with its deployment tooling and runbook in
+> [`../cloudrun/CONNECTED_DEV.md`](../cloudrun/CONNECTED_DEV.md). Reconciled by
+> path from `integration/refinity-dev` on 2026-09-13; that branch remains the
+> one Daniel's Cloud Build trigger deploys from.
 
 ## What it creates
 

@@ -1,0 +1,19 @@
+# Dedicated frontend build. No Vercel, game/demo, backend, or production deploy.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - infra/cloudrun/Dockerfile.connected
+      - --build-arg
+      - APP_ORIGIN=https://refi-frontend-integration-182665799543.us-west1.run.app
+      - -t
+      - us-west1-docker.pkg.dev/refinity-dev/refi-frontend/web:${_SOURCE_SHA}
+      - .
+images:
+  - us-west1-docker.pkg.dev/refinity-dev/refi-frontend/web:${_SOURCE_SHA}
+serviceAccount: projects/refinity-dev/serviceAccounts/refi-frontend-build@refinity-dev.iam.gserviceaccount.com
+options:
+  machineType: E2_HIGHCPU_8
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1800s

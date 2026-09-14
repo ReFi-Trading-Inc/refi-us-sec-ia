@@ -204,21 +204,63 @@ source. Nothing is missing.
 ### Classification
 
 **A — SOURCE RECOVERED.** No question to Daniel is required, and none should be
-asked. Per the directive, work stops here: importing, moving, merging or
-reconciling the branch is **Tier 2** and awaits founder review.
+asked. Importing, moving, merging or reconciling the branch is **Tier 2**; the
+founder approved reconciliation on 2026-09-13.
+
+### Reconciled onto the handoff line (2026-09-13, Tier 2 approved)
+
+Taken **by path** from `origin/integration/refinity-dev` (tip `6cd903e`,
+2026-09-13), never by merge — a merge would revert #148 because Daniel's branch
+predates it:
+
+| Taken                                                                                                                                   | Why                                                                                                                                                                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `infra/terraform/connected-dev/{main.tf,cicd.tf,release.tfvars,.terraform.lock.hcl}`                                                    | Source of record for the live state (27 addresses ↔ 27 in §2; names, regions, SAs, KMS keys, trigger agree)                                                                                                       |
+| `infra/cloudrun/**` (9 files: runbook, Dockerfile, two Cloud Build configs, operator script, release controller + tests, runtime probe) | Deployment tooling for that state; no SA key, no WIF — Cloud Build runs as `refi-frontend-build@…`                                                                                                                |
+| `.gitignore`, `.gcloudignore`                                                                                                           | Terraform/Python working files; nothing tracked matches                                                                                                                                                           |
+| root and `apps/web/` `vercel.json`                                                                                                      | Only disable Vercel auto-deploys of `integration/refinity-dev`; `main` and the demo fallback are unaffected                                                                                                       |
+| `apps/web/src/lib/durable-store/store.ts` `firestoreSettings()`                                                                         | Under `native-cloud-run`, a SA key, `GOOGLE_APPLICATION_CREDENTIALS` or an emulator is a boot failure; validated `FIRESTORE_DATABASE_ID` (the named native database — `refinity-dev`'s default is Datastore mode) |
+| `apps/web/src/lib/investor-product/resolve-adapter.ts`, `apps/web/app/us/product/layout.tsx`, its test                                  | `REFI_DATA_ADAPTER=live` forces the transport adapter on every tier; fixture is a configuration error there. Strictly more fail-closed than `main`                                                                |
+| `scripts/connected-deployment-test.ts`                                                                                                  | Asserts the two rows above; the connected Dockerfile runs it before `contract-test`, `tripwire` and the web build                                                                                                 |
+
+**Rejected:** `infra/gcp/socure-*/service*.yaml` (the prod manifests flip
+`SOCURE_WEBHOOK_ENFORCE_SENDER_IP` `'0' → "1"` in a merge resolution under a
+comment claiming the opposite; `main` deliberately holds `0`),
+`infra/terraform/README.md` and `variables.tf` (would revert #148), `README.md`
+and Daniel's `docs/**` (assert unaudited Group B claims). Everything under
+`apps/web/src/lib/integration-dev/`, the paper|live broker widening, the
+client-header idempotency model and Daniel's `contract-assertions.ts` changes
+stay out — see `alpha4-reconciliation.md` §6.2.
+
+**Edited on take:** one bullet of `infra/cloudrun/CONNECTED_DEV.md` that pointed
+at the development KYC-pass roadmap now states that source is not adopted here.
+
+**Follow-ups recorded, not done:** digest-pin `python:3.12-slim`,
+`gcr.io/cloud-builders/docker` and `node:22-alpine` (only the gcloud CLI image
+is digest-pinned); record the `allUsers` invoker on the integration service as
+an explicit acceptance; a credentialed `connected-dev.sh plan` is the only way
+to confirm attribute-level agreement with state serial 6 (no state or plan
+artifact exists in the repo, and `ignore_changes` covers the container image).
 
 ## 4. Next Lane D actions
 
-1. ~~Locate the connected-dev Terraform source~~ — **done**, see §3. Next is a
-   Tier 2 decision on how `integration/refinity-dev` relates to `main` and to
-   `daniel-handoff/integration`: it is 15 commits ahead with no open PR, so the
-   connected configuration currently lives only on an unmerged branch.
+1. ~~Locate the connected-dev Terraform source~~ — **done**, see §3.
+   ~~Tier 2 decision on how `integration/refinity-dev` relates to the handoff
+   line~~ — **decided and executed 2026-09-13**: reconciled by path (§3,
+   "Reconciled onto the handoff line"); the branch itself stays unmerged and
+   unprotected, Daniel's build trigger still deploys from it.
 2. Verify Cloud Logging / Monitoring coverage, the one required item not
-   evidenced by the state.
+   evidenced by the state (equally absent from the config — only
+   `roles/logging.logWriter` for the build SA).
 3. Then, as a Tier 2 PR: remove `create_sa_key`, its output, the
    `google_service_account_key.app` resource and the `GCP_SERVICE_ACCOUNT_KEY`
-   branch in `store.ts` together.
+   branch in `store.ts` together. `firestoreSettings()` now refuses that branch
+   under `native-cloud-run`; the removal is still pending.
 4. Reconcile or retire `infra/terraform/environments/*` so there is one
-   connected configuration rather than two competing ones.
+   connected configuration rather than two competing ones —
+   `infra/terraform/connected-dev/` is now the one that matches live state.
+5. Founder/Daniel: run `bash infra/cloudrun/connected-dev.sh plan` from the
+   reconciled tree and confirm an empty plan (modulo the documented
+   `template.revision` churn).
 
 No `terraform apply` has been run, and none will be without Tier 2 review.

@@ -255,6 +255,20 @@ trigger still names Daniel's branch until a credentialed operator applies the
 amended configuration through a reviewed plan, which will show exactly that one
 change. Daniel's builds recorded in `CONNECTED_DEV.md` came from the old source.
 
+**GATE — `BLOCKED — DEPLOYMENT BRANCH PROTECTION REQUIRED BEFORE CONNECTED-DEV
+TRIGGER APPLY` (founder, 2026-09-13).** `protected: false` is acceptable for an
+engineering integration branch; it is not acceptable once pushes to that branch
+automatically deploy Connected Dev. Before the Terraform change that moves the
+live Cloud Build trigger is applied, GitHub must enforce the merge discipline
+mechanically on `daniel-handoff/integration`, at minimum: direct pushes blocked
+for normal contributors; changes enter only through pull requests; required
+GitHub Actions checks must pass before merge; stale approvals/checks do not
+survive a changed head where GitHub supports it; force pushes disabled; branch
+deletion disabled. This blocker does **not** prevent merging #156's source into
+the handoff branch; it prevents `terraform apply` of the trigger-source change.
+Exact enforcement options are recorded here only after they are configured and
+independently verified (founder-side GitHub setting).
+
 **Branch protection — verified fact, not a claim:** the GitHub API reports
 `daniel-handoff/integration` as **not protected** (`protected: false`,
 2026-09-13). Protected CI on every lane PR is enforced by the workflow's

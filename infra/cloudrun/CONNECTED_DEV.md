@@ -58,8 +58,12 @@ Terraform defines trigger `refi-frontend-integration` in `us-west1`, matching
 [`cloudbuild.connected-cicd.yaml`](cloudbuild.connected-cicd.yaml). Documentation
 and Terraform-only changes do not trigger application builds. Terraform changes
 still require an operator-reviewed plan/apply. There is no main/PR trigger, and
-`integration/refinity-dev` is not a deployment source. Until the amended
-Terraform is applied by a credentialed operator the **live** trigger still names
+`integration/refinity-dev` is not a deployment source. Applying the amended trigger is
+**gated**: `BLOCKED — DEPLOYMENT BRANCH PROTECTION REQUIRED BEFORE CONNECTED-DEV
+TRIGGER APPLY` — GitHub branch protection/ruleset on `daniel-handoff/integration`
+(PR-only, required checks, no force push or deletion) must be configured and
+verified first (see `docs/daniel-integration-handoff/connected-dev-inventory.md`
+§3). Until a credentialed operator applies it the **live** trigger still names
 the old branch; `connected-dev.sh plan` will show exactly that one change.
 `scripts/connected-deployment-test.ts` pins the declared source in CI.
 

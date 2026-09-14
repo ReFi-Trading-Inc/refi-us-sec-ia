@@ -91,7 +91,7 @@ export const appCopy = {
       body: "The most recent assessment for this portfolio found the allocated capital below the minimum needed to hold every included position at valid entry sizes. Amounts are reference-price estimates from the backend, not promises about fills, cash, fees or exact weights.",
       allocatedCapital: "Allocated capital",
       requiredPortfolioCapital: "Required portfolio capital",
-      capitalShortfall: "Additional allocated capital required",
+      capitalShortfall: "Additional allocated capital indicated",
       requiredAccountEquity: "Required account equity",
       userMinOrder: "Your minimum order floor",
       assessedAt: "Assessed",

@@ -13,6 +13,7 @@ import { Badge, Button, Card, CardContent, StatusBanner } from "@ui/components";
 import { useInvestorRecommendations } from "../../../_hooks/useInvestorRecommendations";
 import type { RecommendationSummaryView } from "@lib/investor-api/recommendations";
 import { appCopy } from "../../_content/app-copy";
+import { FundingNoticeBanner } from "./_components/FundingNoticeBanner";
 import {
   formatDateTime,
   freshnessTone,
@@ -53,6 +54,8 @@ export default function RecommendationsPage() {
           {upstreamMessage(upstream)}
         </StatusBanner>
       )}
+
+      <FundingNoticeBanner notices={data?.fundingNotices ?? []} />
 
       {isLoading ? (
         <div className="text-sm text-charcoal-500">Loading…</div>

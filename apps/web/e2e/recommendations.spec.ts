@@ -52,6 +52,22 @@ test.describe("Recommendations — Signal user", () => {
     await expect(
       page.getByTestId("recommendations-upstream-state"),
     ).toHaveCount(0);
+    // alpha.4 funding notice (F-H1): the simulator's example carries an
+    // INSUFFICIENT assessment (shortfall "900" USD, one limiting constituent).
+    // Rendered verbatim from contract fields; informational only.
+    const notice = page.getByTestId("funding-notice");
+    await expect(notice).toHaveCount(1);
+    await expect(notice).toHaveAttribute("data-state", "active");
+    await expect(notice).toHaveAttribute(
+      "data-template",
+      "template_alpha_0001",
+    );
+    await expect(notice.getByTestId("funding-notice-shortfall")).toHaveText(
+      "USD 900",
+    );
+    await expect(notice).toContainText("security_small");
+    await expect(notice).toContainText(/informational/i);
+    await expect(notice).not.toContainText(PER_TRADE_CONTROL);
 
     for (const url of browserRequests) {
       for (const forbidden of FORBIDDEN_BROWSER_TARGETS) {

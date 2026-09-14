@@ -17,7 +17,7 @@ import {
 import { AccountScopeError } from "./account-scope";
 import { PaginationError } from "./pagination";
 
-export const CONTRACT_VERSION = "v1.1.0-alpha.3" as const;
+export const CONTRACT_VERSION = "v1.1.0-alpha.4" as const;
 
 export type UpstreamState =
   | { state: "ok"; contractVersion: typeof CONTRACT_VERSION }

@@ -1,5 +1,5 @@
 /**
- * Server-only Investor API client for the vendored v1.1.0-alpha.3 contract.
+ * Server-only Investor API client for the vendored v1.1.0-alpha.4 contract.
  *
  * ─── Boundary ──────────────────────────────────────────────────────────────
  * This module runs in the BFF only. It must never be imported by browser code

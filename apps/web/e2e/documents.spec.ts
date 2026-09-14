@@ -3,7 +3,7 @@
  *
  * Proves the browser boundary: the page reads effective disclosures and
  * records consent ONLY via same-origin BFF routes; the BFF reaches Daniel's
- * deterministic v1.1.0-alpha.3 simulator (started by global-setup) through the
+ * deterministic v1.1.0-alpha.4 simulator (started by global-setup) through the
  * frozen Investor API client. No browser request may target the legacy
  * browser-direct `/v1/documents/acknowledge`, the simulator, or any
  * Investor API / identity-ccid path.
@@ -99,7 +99,7 @@ test.describe("Documents disclosure consent via the BFF", () => {
       };
     };
     expect(ackBody.data.ok).toBe(true);
-    expect(ackBody.data.contractVersion).toBe("v1.1.0-alpha.3");
+    expect(ackBody.data.contractVersion).toBe("v1.1.0-alpha.4");
     expect(ackBody.data.receipt.disclosure_key).toBe(first.disclosure_key);
     expect(ackBody.data.receipt.disclosure_version).toBe(
       first.disclosure_version,

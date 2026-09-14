@@ -105,7 +105,7 @@ describe("the admitted world is rich enough to demo", () => {
     const recs = await c.call("listAccountRecommendations", {
       path: { account_id: ACCT },
     });
-    expect(recs.data.data.items.map((r) => r.status).sort()).toEqual([
+    expect(recs.data.data.items.map((r) => r.lifecycle_status).sort()).toEqual([
       "BLOCKED",
       "CURRENT",
       "SUPERSEDED",
@@ -115,7 +115,9 @@ describe("the admitted world is rich enough to demo", () => {
       query: { page_size: 100 },
     });
     expect(legs.data.data.items).toHaveLength(24);
-    const cur = recs.data.data.items.find((r) => r.status === "CURRENT");
+    const cur = recs.data.data.items.find(
+      (r) => r.lifecycle_status === "CURRENT",
+    );
     expect(cur?.leg_count).toBe(24);
     const records = await c.call("listAccountRecords", {
       path: { account_id: ACCT },
@@ -239,7 +241,7 @@ describe("the only mutation: preferences → new advice, prior advice preserved"
       path: { account_id: ACCT },
     });
     const beforeCurrent = before.data.data.items.find(
-      (r) => r.status === "CURRENT",
+      (r) => r.lifecycle_status === "CURRENT",
     );
     if (!beforeCurrent)
       throw new Error("no CURRENT recommendation in the base world");
@@ -275,15 +277,15 @@ describe("the only mutation: preferences → new advice, prior advice preserved"
     });
     expect(after.data.data.items).toHaveLength(4);
     expect(
-      after.data.data.items.filter((r) => r.status === "CURRENT"),
+      after.data.data.items.filter((r) => r.lifecycle_status === "CURRENT"),
     ).toHaveLength(1);
     expect(
       after.data.data.items.find(
         (r) => r.recommendation_id === beforeCurrent.recommendation_id,
-      )?.status,
+      )?.lifecycle_status,
     ).toBe("SUPERSEDED");
     const newCurrent = after.data.data.items.find(
-      (r) => r.status === "CURRENT",
+      (r) => r.lifecycle_status === "CURRENT",
     );
     if (!newCurrent)
       throw new Error("no CURRENT recommendation after the patch");
@@ -591,7 +593,7 @@ describe("invited persona: admitted but not set up; the broker connection is the
     });
     expect(recs.data.data.items).toHaveLength(1);
     const rec = recs.data.data.items[0];
-    expect(rec?.status).toBe("CURRENT");
+    expect(rec?.lifecycle_status).toBe("CURRENT");
     expect(rec?.execution_eligible).toBe(false);
     expect(problemsAgainst("RecommendationPageEnvelope", recs.data)).toEqual(
       [],

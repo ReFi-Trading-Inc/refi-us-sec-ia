@@ -15478,6 +15478,8 @@ await section(
     await import("../apps/web/src/lib/investor-api/account-actions.ts");
   const maint =
     await import("../apps/web/src/lib/investor-api/brokerage-maintenance.ts");
+  const brokerageConn =
+    await import("../apps/web/src/lib/investor-api/brokerage-connection.ts");
   const {
     resetServerEnvCacheForTests: resetEnvBk,
     getServerEnv: getServerEnvBk,
@@ -15534,6 +15536,8 @@ await section(
       authorization?: string;
       actionError?: { status: number; code: string };
       previewError?: { status: number; code: string };
+      /** Override the listed brokerage connections (F-F1 paper-only tests). */
+      connections?: Record<string, unknown>[];
     } = {},
   ) {
     const seen: SeenBk[] = [];
@@ -15592,15 +15596,17 @@ await section(
         method === "GET"
       ) {
         const c = examplesBk.responses["BrokerageConnectionEnvelope"]!.data;
-        return page([
-          { ...c, account_id: OWNED, connection_id: CONN },
-          {
-            ...c,
-            account_id: OWNED,
-            connection_id: "brokerconn_alpha_dead",
-            connection_status: "DISCONNECTED",
-          },
-        ]);
+        return page(
+          opts.connections ?? [
+            { ...c, account_id: OWNED, connection_id: CONN },
+            {
+              ...c,
+              account_id: OWNED,
+              connection_id: "brokerconn_alpha_dead",
+              connection_status: "DISCONNECTED",
+            },
+          ],
+        );
       }
       if (
         path === `/api/v1/investor/accounts/${OWNED}/allocation-previews` &&
@@ -15825,6 +15831,99 @@ await section(
         );
         assert.equal(posts().length, 1, "mutation not retried");
       }
+    },
+  );
+
+  await section(
+    "paper-only read boundary (F-F1, 2026-09-13): a LIVE brokerage connection the backend reports is projected as HELD (environment word verbatim, alphaOperable false, heldReason live_environment_unsupported), never wins selection over a paper connection, is surfaced rather than hidden when it is the only one, and rotate/sync refuse it as unsupported_environment before any mutation path is built",
+    async () => {
+      const readSrc = (rel: string) =>
+        readFileSync(join(REPO_ROOT, rel), "utf8");
+      const c = examplesBk.responses["BrokerageConnectionEnvelope"]!.data;
+      const LIVE_CONN = "brokerconn_live_0001";
+      const live = {
+        ...c,
+        account_id: OWNED,
+        connection_id: LIVE_CONN,
+        account_environment: "live",
+        connection_status: "CONNECTED",
+      };
+      const paper = { ...c, account_id: OWNED, connection_id: CONN };
+
+      // Projection: evidence preserved, never relabelled, never operable.
+      const held = brokerageConn.projectBrokerageConnection(
+        live as Parameters<typeof brokerageConn.projectBrokerageConnection>[0],
+      );
+      assert.equal(held.environment, "live");
+      assert.equal(held.alphaOperable, false);
+      assert.equal(held.heldReason, "live_environment_unsupported");
+      const ok = brokerageConn.projectBrokerageConnection(
+        paper as Parameters<typeof brokerageConn.projectBrokerageConnection>[0],
+      );
+      assert.equal(ok.alphaOperable, true);
+      assert.equal(ok.heldReason, null);
+
+      // Selection: paper first regardless of order; only-live is surfaced held.
+      for (const connections of [
+        [live, paper],
+        [paper, live],
+      ]) {
+        const { client } = upstreamBk({ connections });
+        const view = await brokerageConn.getBrokerageConnection(client, OWNED);
+        assert.equal(view?.connectionId, CONN);
+        assert.equal(view?.alphaOperable, true);
+      }
+      {
+        const { client } = upstreamBk({ connections: [live] });
+        const view = await brokerageConn.getBrokerageConnection(client, OWNED);
+        assert.equal(view?.connectionId, LIVE_CONN);
+        assert.equal(view?.environment, "live");
+        assert.equal(view?.alphaOperable, false);
+      }
+
+      // Maintenance: refused before any mutation, with a distinct reason.
+      const { client, posts } = upstreamBk({ connections: [live, paper] });
+      assert.deepEqual(
+        await maint.assertConnectionInScope(client, OWNED, LIVE_CONN),
+        { kind: "unsupported_environment" },
+      );
+      const r = await maint.rotateBrokerageCredentials(
+        client,
+        OWNED,
+        LIVE_CONN,
+        {
+          apiKeyId: "PK" + "A".repeat(18),
+          apiSecretKey: "s".repeat(40),
+        },
+      );
+      assert.deepEqual(r, {
+        kind: "connection_out_of_scope",
+        reason: "unsupported_environment",
+      });
+      const sy = await maint.syncBrokerageConnection(client, OWNED, LIVE_CONN);
+      assert.deepEqual(sy, {
+        kind: "connection_out_of_scope",
+        reason: "unsupported_environment",
+      });
+      assert.equal(posts().length, 0, "no mutation reached the upstream");
+
+      // Routes: the refusal is a deterministic 409, not a missing-connection 404.
+      for (const route of [
+        readSrc(
+          "apps/web/app/api/v1/investor/broker/connection/[id]/rotate/route.ts",
+        ),
+        readSrc(
+          "apps/web/app/api/v1/investor/broker/connection/[id]/sync/route.ts",
+        ),
+      ]) {
+        assert.match(route, /connection_environment_unsupported/);
+        assert.match(route, /unsupported\s*\?\s*409\s*:\s*404/);
+      }
+      // Write path unchanged: the connect body is the literal "paper".
+      assert.match(
+        readSrc("apps/web/src/lib/investor-api/brokerage-connection.ts"),
+        /account_environment:\s*"paper"/,
+      );
     },
   );
 

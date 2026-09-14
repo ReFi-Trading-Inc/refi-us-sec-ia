@@ -89,7 +89,9 @@ export default function OnboardingBrokerPage() {
   const connect = useConnectBroker();
   const connection = read.data?.connection ?? null;
   const synced =
-    connection?.connectionStatus === "CONNECTED" && !!connection.lastSyncedAt;
+    connection?.connectionStatus === "CONNECTED" &&
+    connection.alphaOperable &&
+    !!connection.lastSyncedAt;
   const portfolio = useInvestorPortfolio({ enabled: synced });
 
   const [formOpen, setFormOpen] = useState(false);
@@ -160,9 +162,17 @@ export default function OnboardingBrokerPage() {
   }
 
   const stage = useMemo<
-    "none" | "validating" | "connected" | "syncing" | "synced" | "problem"
+    | "none"
+    | "validating"
+    | "connected"
+    | "syncing"
+    | "synced"
+    | "problem"
+    | "held"
   >(() => {
     if (!connection) return "none";
+    // F-F1: a non-paper connection is held — never validating/synced/usable.
+    if (connection.heldReason !== null) return "held";
     if (connection.connectionStatus === "PENDING_VALIDATION")
       return "validating";
     if (connection.connectionStatus === "CONNECTED")
@@ -187,21 +197,26 @@ export default function OnboardingBrokerPage() {
           <CardContent className="pt-4 flex flex-col gap-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-charcoal-100">
-                  Alpaca · paper
+                <p
+                  className="text-sm font-medium text-charcoal-100"
+                  data-testid="broker-connection-environment"
+                >
+                  Alpaca · {connection?.environment ?? "paper"}
+                  {stage === "held" && " · held"}
                 </p>
                 <p className="text-xs text-charcoal-500">
                   {stage === "validating" && brokerProgress.validating}
                   {stage === "syncing" && brokerProgress.syncing}
                   {stage === "synced" && brokerProgress.synced}
                   {stage === "problem" && brokerProgress.problem}
+                  {stage === "held" && brokerProgress.held}
                 </p>
               </div>
               <Badge
                 variant={
                   stage === "synced" || stage === "connected"
                     ? "active"
-                    : stage === "problem"
+                    : stage === "problem" || stage === "held"
                       ? "rejected"
                       : "warning"
                 }

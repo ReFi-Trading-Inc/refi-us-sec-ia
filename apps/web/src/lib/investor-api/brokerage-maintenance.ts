@@ -21,6 +21,7 @@ import type { InvestorApiReadClient } from "./demo-client";
 import {
   projectBrokerageConnection,
   type BrokerageConnectionView,
+  ALPHA_BROKER_ENVIRONMENT,
 } from "./brokerage-connection";
 
 export type BrokerageSyncReceipt =
@@ -28,9 +29,17 @@ export type BrokerageSyncReceipt =
 export const CONNECTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/;
 
 export type ConnectionScopeOutcome =
-  { kind: "owned" } | { kind: "not_owned" | "terminal" | "malformed" };
+  | { kind: "owned" }
+  | {
+      kind: "not_owned" | "terminal" | "malformed" | "unsupported_environment";
+    };
 
-/** The named connection must be one of THIS account's non-terminal connections. */
+/**
+ * The named connection must be one of THIS account's non-terminal PAPER
+ * connections. A LIVE connection is never in scope for rotate/sync during
+ * Closed Alpha (founder F-F1, 2026-09-13): refused before any mutation path
+ * is built, with the backend record left untouched.
+ */
 export async function assertConnectionInScope(
   client: InvestorApiReadClient,
   accountId: string,
@@ -50,6 +59,9 @@ export async function assertConnectionInScope(
     match.connection_status === "REVOKED"
   ) {
     return { kind: "terminal" };
+  }
+  if (match.account_environment !== ALPHA_BROKER_ENVIRONMENT) {
+    return { kind: "unsupported_environment" };
   }
   return { kind: "owned" };
 }
@@ -78,7 +90,8 @@ export type MaintenanceOutcome<T> =
   | { kind: "accepted"; result: T; upstreamStatus: number }
   | {
       kind: "connection_out_of_scope";
-      reason: "not_owned" | "terminal" | "malformed";
+      reason:
+        "not_owned" | "terminal" | "malformed" | "unsupported_environment";
     };
 
 export async function rotateBrokerageCredentials(
@@ -188,7 +201,8 @@ export type DisconnectOutcome =
     }
   | {
       kind: "connection_out_of_scope";
-      reason: "not_owned" | "terminal" | "malformed";
+      reason:
+        "not_owned" | "terminal" | "malformed" | "unsupported_environment";
     }
   | {
       kind: "refused";

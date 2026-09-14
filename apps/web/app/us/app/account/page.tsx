@@ -57,7 +57,8 @@ export default function AccountPage() {
   const { data: kycVerification } = useKycVerification();
   const { data: brokerRead } = useBrokerConnection();
   const connection = brokerRead?.connection ?? null;
-  const isConnected = connection?.connectionStatus === "CONNECTED";
+  const isConnected =
+    connection?.connectionStatus === "CONNECTED" && connection.alphaOperable;
   const { data: portfolio } = useInvestorPortfolio({ enabled: isConnected });
   // Canonical Investor Profile v2 via the same-origin BFF: assessment-derived
   // state only (no user-entered risk tolerance, no raw questionnaire answers).
@@ -149,9 +150,21 @@ export default function AccountPage() {
             <>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-charcoal-200">
+                  <p
+                    className="text-sm font-medium text-charcoal-200"
+                    data-testid="account-broker-environment"
+                  >
                     Alpaca · {connection.environment}
+                    {connection.heldReason !== null && " · held"}
                   </p>
+                  {connection.heldReason !== null && (
+                    <p
+                      className="text-xs text-status-rejected mt-0.5"
+                      data-testid="account-broker-held"
+                    >
+                      {account.brokerHeld}
+                    </p>
+                  )}
                   {portfolio?.portfolio && (
                     <p className="text-xs text-charcoal-500 mt-0.5">
                       Equity:{" "}

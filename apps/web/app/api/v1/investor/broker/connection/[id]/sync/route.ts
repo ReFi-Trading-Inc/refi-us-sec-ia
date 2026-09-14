@@ -34,15 +34,22 @@ export const POST = bffMutate<undefined>({
       return upstreamRefusal(err);
     }
     if (outcome.kind === "connection_out_of_scope") {
+      // F-F1: a LIVE connection is a deterministic held condition (409), not
+      // a missing one (404). Nothing upstream was called either way.
+      const unsupported = outcome.reason === "unsupported_environment";
       return {
         data: {
           ok: false,
-          reason: "connection_out_of_scope",
+          reason: unsupported
+            ? "connection_environment_unsupported"
+            : "connection_out_of_scope",
           detail: outcome.reason,
         },
         outcome: "blocked" as const,
-        reasonCode: "connection_out_of_scope",
-        status: 404,
+        reasonCode: unsupported
+          ? "connection_environment_unsupported"
+          : "connection_out_of_scope",
+        status: unsupported ? 409 : 404,
       };
     }
     return {

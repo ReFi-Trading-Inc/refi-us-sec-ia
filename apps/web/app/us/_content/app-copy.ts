@@ -83,6 +83,25 @@ export const appCopy = {
     version: "version",
   },
   recommendations: {
+    // Persistent portfolio funding notice (alpha.4 FUNDING.md §2; F-H1).
+    // Informational only: no admission, suitability, authorization or
+    // execution meaning may be read into it.
+    funding: {
+      title: "Portfolio funding below the minimum",
+      body: "The most recent assessment for this portfolio found the allocated capital below the minimum needed to hold every included position at valid entry sizes. Amounts are reference-price estimates from the backend, not promises about fills, cash, fees or exact weights.",
+      allocatedCapital: "Allocated capital",
+      requiredPortfolioCapital: "Required portfolio capital",
+      capitalShortfall: "Additional allocated capital indicated",
+      requiredAccountEquity: "Required account equity",
+      userMinOrder: "Your minimum order floor",
+      assessedAt: "Assessed",
+      staleSuffix: "no newer current assessment has cleared this",
+      limitingConstituents: "Limiting constituents",
+      targetWeight: "target weight",
+      effectiveMinimum: "effective minimum",
+      disclaimer:
+        "This notice is informational. It does not indicate account admission, suitability, authorization or any guarantee of execution, and it changes nothing about your account.",
+    },
     heading: "Recommendations",
     subheading:
       "Software-generated portfolio recommendations for your account. ReFi Signal is informational: it does not place orders.",

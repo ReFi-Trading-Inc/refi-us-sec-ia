@@ -255,6 +255,11 @@ trigger still names Daniel's branch until a credentialed operator applies the
 amended configuration through a reviewed plan, which will show exactly that one
 change. Daniel's builds recorded in `CONNECTED_DEV.md` came from the old source.
 
+**Gate status 2026-09-14:** the branch-protection precondition is **satisfied**
+and verified, and the plan has been **run and classified** (0 add / 2 change /
+0 destroy; see the activation runbook). Only founder approval of that plan
+remains before apply. Original gate text follows.
+
 **GATE — `BLOCKED — DEPLOYMENT BRANCH PROTECTION REQUIRED BEFORE CONNECTED-DEV
 TRIGGER APPLY` (founder, 2026-09-13).** `protected: false` is acceptable for an
 engineering integration branch; it is not acceptable once pushes to that branch

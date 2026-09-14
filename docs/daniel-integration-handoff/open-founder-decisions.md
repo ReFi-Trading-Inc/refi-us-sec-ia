@@ -183,6 +183,24 @@ by the founder on 2026-09-13; recorded verbatim.
 | **F-H2** | `F-H2 — ANSWERED 2026-09-13: alpha.4 BFF allocation/subscription operations are canonical; P1 product surfaces converge onto that transport and are not a separate authority.` One transaction model: alpha.4 Investor API → BFF allocation/subscription operations → backend authoritative state. `SubscriptionPanel` / `/us/product/*` is a temporary UX/adapter surface. Browser percentage presentation → exact base-10 conversion → canonical decimal fraction → alpha.4 request; never float `/100`; never two independently persisted allocation systems. | `ANSWERED` | The future transport adapter targets the alpha.4 allocation routes only.                                                                                                                                                                                                                                                  |
 | **F-H3** | `F-H3 — ANSWERED 2026-09-13: remove unsupported Last evaluated and Freshness policy fields; do not relabel other fields as substitutes.` `updated_at → "Last evaluated"` and `lineage.policy_version → "Freshness policy"` would be semantic inventions. `Updated` or policy provenance may be shown later under honest labels if product value warrants; evaluation/freshness-policy fields return only when contracted (D-A8a).                                                                                                                                | `ANSWERED` | H-PR1 unblocked.                                                                                                                                                                                                                                                                                                          |
 
+### F-H2 follow-up decisions — ANSWERED 2026-09-14
+
+Four items the convergence inventory could not settle as engineering choices.
+
+| Item                            | Decision                                                                                                                                                                                                                                       |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Strategy identity**           | Pin **one** backend-owned template id for Closed Alpha, sourced from configuration or backend authority; read its name and metadata through `getTemplate`. Do not hardcode `fixture-strategy-core`, and do not expose a strategy catalog yet.  |
+| **Allocation unit**             | The investor-facing control stays a **percentage**; the canonical value is a decimal **fraction string**, converted with exact base-10 string arithmetic (`25` → `"0.25"`). Matches the contract without making investors reason in fractions. |
+| **Allocation limits**           | alpha.4 exposes no usable min/max/step. Limits are backend-owned, so **delete** the invented 5% / 50% / 1% rules and rely on the backend preview and feasibility verdict. Ask Daniel to expose explicit bounds later if the UI needs them.     |
+| **`allocation_percent` naming** | Keep the field name for compatibility. Ask Daniel to **document** that it holds a decimal fraction in (0, 1], not percentage points. No breaking rename.                                                                                       |
+
+Consequence: the points↔fraction crossing is permanent, so exactness is a
+standing requirement rather than a migration concern. `percentToFraction` is
+the contract-asserted inverse of `fractionToPercent`, pinned by
+`allocation-units.test.ts`.
+
+---
+
 Also recorded 2026-09-13: **`allUsers` Cloud Run invoker on the connected-dev
 frontend** — `FOUNDER ACCEPTED — PUBLIC FRONTEND NETWORK ENTRY, APPLICATION AUTH
 REQUIRED`; authorizes neither backend invocation nor trading

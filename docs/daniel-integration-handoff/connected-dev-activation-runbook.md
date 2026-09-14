@@ -71,6 +71,47 @@ plan — a clean plan does not prove the served digest.
 **Apply stays gated** on founder review of the captured plan. Sanitize before
 sharing: the plan may echo environment variable values.
 
+### Plan result — RUN 2026-09-14, apply still gated
+
+Executed from `daniel-handoff/integration` at `f657e90` with a clean tree,
+Terraform 1.16.1 (above the 1.15.9 that wrote the state), against
+`gs://refinity-dev-frontend-tfstate/connected-dev`.
+
+```text
+Plan: 0 to add, 2 to change, 0 to destroy.
+```
+
+Of 36 tracked resources, 34 are no-ops. Every changed attribute, classified:
+
+| Resource                               | Attribute                                                                                           | Class             |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------- |
+| `google_cloudbuild_trigger.frontend`   | `repository_event_config.push.branch` `^integration/refinity-dev$` → `^daniel-handoff/integration$` | **EXPECTED**      |
+| `google_cloudbuild_trigger.frontend`   | `description` (same reviewed commit)                                                                | **EXPECTED**      |
+| `google_cloud_run_v2_service.frontend` | `template.revision` `refi-frontend-integration-00015-mez` → null                                    | **METADATA-ONLY** |
+
+Nothing classified `UNEXPECTED`. Nothing destroyed.
+
+The revision diff is the documented case, not a surprise: `main.tf` deliberately
+does **not** ignore `template.revision`, so that a later configuration edit
+cannot reuse an immutable CLI-generated revision name, and its comment warns
+that a post-CI plan clears the generated field as a metadata-only diff.
+
+**Secret hygiene of the plan.** It carries secret _references_, never values —
+e.g. `SESSION_SECRET` appears as an empty `value` with a `secret_key_ref`
+naming `refi-frontend-session` version `1`. The only long hex literals in the
+plan are container image digests. The JSON rendering used for classification
+was deleted afterwards; `deployment.tfplan` is gitignored (`*.tfplan`).
+
+**A clean plan does not prove the served image.** The service sets
+`ignore_changes` on the container image, so image drift cannot appear here.
+
+**Apply remains gated on founder approval.** When it is given, apply the
+already-inspected plan file rather than generating a fresh one:
+
+```bash
+bash infra/cloudrun/connected-dev.sh apply   # applies deployment.tfplan only
+```
+
 ## 2. Stytch TEST binding
 
 **Sequencing constraint.** Do not add Stytch resources to

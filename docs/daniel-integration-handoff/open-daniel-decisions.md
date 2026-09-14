@@ -36,6 +36,15 @@ scans — all SUCCESS), merge commit `019a6bf`
 head. **From this point alpha.4 is the current contract authority for the
 handoff line.** Lanes F and H are never again certified against alpha.3.
 
+**Subsequent merges on the handoff line (2026-09-13/14):** #158 Lane H fixes
+(head `c4cdea6`, CI run 34802196817, merge `57680cf`); #156 Group A connected-dev
+infrastructure with the deployment source corrected to `daniel-handoff/integration`
+(reviewed head `915e77d`, CI run 34803445524, merge `ac11593`). GitHub branch
+protection was then applied to `daniel-handoff/integration` and verified via the
+API (required checks strict, admins enforced, PR required, no force push or
+deletion). `terraform apply` of the trigger change remains gated on a
+founder-reviewed credentialed plan.
+
 `main` still pins alpha.3 (`5eca1200…`) during the release freeze; that is
 expected and is not contract ambiguity. See
 [`alpha4-reconciliation.md`](alpha4-reconciliation.md) §6 for the audit of the

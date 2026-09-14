@@ -193,14 +193,14 @@ policy.
 
 Status 2026-09-13 (founder approved steps 1 and 4 on 2026-09-13):
 
-| Step | Status                                                                                                                                                           |
-| ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | **MERGED** — PR #155, head `3611307`, CI run 34800004663, merge `019a6bf` = `daniel-handoff/integration` (§6.1)                                                  |
-| 2    | **DONE** — client regenerated; conformance validate + self-test; 402 client tests; all contract assertions                                                       |
-| 3    | **DONE (audit)** — §6.2; the mechanical take-list landed in the same branch, the conflicts did not                                                               |
-| 4    | **PR #156 — CHANGES REQUESTED then amended (head `f4f6b12`), back in TIER 2 FOUNDER REVIEW** — §6.3; deployment source corrected to `daniel-handoff/integration` |
-| 5    | Next: Lanes F and H against alpha.4 (the turnover-units guard already landed as a test)                                                                          |
-| 6    | Still blocked. Daniel's status record claims a backend **alpha.5** with membership/admission reads → D-A1                                                        |
+| Step | Status                                                                                                                                                                                                                                      |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | **MERGED** — PR #155, head `3611307`, CI run 34800004663, merge `019a6bf` = `daniel-handoff/integration` (§6.1)                                                                                                                             |
+| 2    | **DONE** — client regenerated; conformance validate + self-test; 402 client tests; all contract assertions                                                                                                                                  |
+| 3    | **DONE (audit)** — §6.2; the mechanical take-list landed in the same branch, the conflicts did not                                                                                                                                          |
+| 4    | **MERGED** — PR #156, reviewed head `915e77d`, CI run 34803445524, merge `ac11593` = `daniel-handoff/integration`; deployment source corrected to `daniel-handoff/integration` (§6.3). Trigger apply still gated on a founder-reviewed plan |
+| 5    | Next: Lanes F and H against alpha.4 (the turnover-units guard already landed as a test)                                                                                                                                                     |
+| 6    | Still blocked. Daniel's status record claims a backend **alpha.5** with membership/admission reads → D-A1                                                                                                                                   |
 
 ---
 

@@ -1,7 +1,23 @@
 # Message to Daniel — DRAFT, NOT SENT (awaiting founder approval)
 
-**Status:** draft. The founder has the packet on hold until the Terraform plan
-and Stytch provisioning narrow the ask list further. Do not send this as-is.
+**Status:** draft, held. Founder decision 2026-09-14 — keep holding and apply
+four edits before it goes out:
+
+1. **Brokerage section** — update after #161 actually merges (approved and
+   rebased; merging on green).
+2. **Infrastructure section** — replace "planned change" language with the real
+   Terraform plan result. **Now available**; applied below.
+3. **Identity section** — update after Stytch TEST provisioning, so Daniel gets
+   final facts once rather than provisional facts twice. **Still pending.**
+4. **No new questions** about strategy selection or frontend allocation bounds —
+   those are resolved product decisions on our side, not Daniel's to answer.
+   The `allocation_percent` documentation request stays. (The draft never asked
+   either question; recorded so it stays that way.)
+
+Also decided: do **not** ask Daniel which identity origin he prefers. Once our
+canonical origin is ready we give him the one we are standardising on and ask
+him to bind it, rather than delegating our own frontend-domain architecture
+back to him. Applied below.
 
 ---
 
@@ -55,11 +71,17 @@ deployment source; they had drifted apart, which is not a state we can certify
 from. `daniel-handoff/integration` now has branch protection with four required
 checks, no direct pushes and no force pushes.
 
-**This is not applied yet.** The live trigger still names your branch until a
-credentialed operator runs a reviewed `terraform plan` and the founder approves
-the apply. When it does land, pushes to `integration/refinity-dev` will stop
-deploying connected Dev. Say so now if that breaks a workflow of yours — we can
-sequence around it.
+**Planned and reviewed, not yet applied.** We ran the plan against the real
+state on 2026-09-14: `0 to add, 2 to change, 0 to destroy`, with 34 of 36
+resources untouched. The only changes are your trigger's branch and its
+description, plus the Cloud Run service clearing its generated
+`template.revision` — the metadata-only diff `main.tf` already anticipates in
+its own lifecycle comment. Nothing unexpected, nothing destroyed.
+
+The live trigger still names your branch until the founder approves that
+inspected plan. When it is applied, pushes to `integration/refinity-dev` will
+stop deploying connected Dev. Say so now if that breaks a workflow of yours —
+we can sequence around it.
 
 ## 3. What we could not take from your branch
 
@@ -230,9 +252,10 @@ actually emit. We will not infer them from the JWKS URL.
 the upstream `amr`, re-derive it, or omit it? If it is meant to be retained we
 will bind it too, but we will not assume it.
 
-Note we also have a domain mapping pending (`bff-dev.refi.trading`). If that
-lands, the issuer and JWKS URLs change. Tell us which origin you want to bind
-so it is bound once rather than twice.
+These are values for you to bind, not options to choose between — our frontend
+origin is ours to settle. A domain mapping is in flight, so we will send one
+final set of issuer and JWKS URLs rather than asking you to bind provisional
+ones now.
 
 ## 9. What is not blocked on you
 

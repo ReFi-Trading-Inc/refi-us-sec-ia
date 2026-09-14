@@ -83,18 +83,29 @@ Plan: 0 to add, 2 to change, 0 to destroy.
 
 Of 36 tracked resources, 34 are no-ops. Every changed attribute, classified:
 
-| Resource                               | Attribute                                                                                           | Class             |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------- |
-| `google_cloudbuild_trigger.frontend`   | `repository_event_config.push.branch` `^integration/refinity-dev$` → `^daniel-handoff/integration$` | **EXPECTED**      |
-| `google_cloudbuild_trigger.frontend`   | `description` (same reviewed commit)                                                                | **EXPECTED**      |
-| `google_cloud_run_v2_service.frontend` | `template.revision` `refi-frontend-integration-00015-mez` → null                                    | **METADATA-ONLY** |
+| Resource                               | Attribute                                                                                           | Class                                                       |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `google_cloudbuild_trigger.frontend`   | `repository_event_config.push.branch` `^integration/refinity-dev$` → `^daniel-handoff/integration$` | **EXPECTED**                                                |
+| `google_cloudbuild_trigger.frontend`   | `description` (same reviewed commit)                                                                | **EXPECTED**                                                |
+| `google_cloud_run_v2_service.frontend` | `template.revision` `refi-frontend-integration-00015-mez` → null                                    | **KNOWN RESIDUAL DRIFT — RUNTIME EFFECT NOT YET CERTIFIED** |
 
 Nothing classified `UNEXPECTED`. Nothing destroyed.
 
-The revision diff is the documented case, not a surprise: `main.tf` deliberately
-does **not** ignore `template.revision`, so that a later configuration edit
-cannot reuse an immutable CLI-generated revision name, and its comment warns
-that a post-CI plan clears the generated field as a metadata-only diff.
+**On the revision diff — corrected classification (founder, 2026-09-14).** An
+earlier revision of this document called it `METADATA-ONLY`. That claim was not
+proven and is withdrawn. `template` is Cloud Run's _revision template_, and an
+omitted revision name is **auto-generated** by Cloud Run. Terraform models the
+change as an in-place update, but we have not demonstrated that applying it
+cannot create a new revision or otherwise touch runtime deployment state.
+`main.tf` deliberately does not ignore the field so a later configuration edit
+cannot reuse an immutable CLI-generated revision name — that explains why the
+diff _appears_, not what applying it _does_.
+
+It is recorded as **`KNOWN RESIDUAL DRIFT — RUNTIME EFFECT NOT YET CERTIFIED`**
+and deliberately excluded from the trigger migration: there is no need to accept
+incidental Cloud Run rollout risk in order to move trigger authority. It will be
+resolved separately, when we actually intend a Cloud Run configuration and
+revision reconciliation.
 
 **Secret hygiene of the plan.** It carries secret _references_, never values —
 e.g. `SESSION_SECRET` appears as an empty `value` with a `secret_key_ref`
@@ -105,12 +116,82 @@ was deleted afterwards; `deployment.tfplan` is gitignored (`*.tfplan`).
 **A clean plan does not prove the served image.** The service sets
 `ignore_changes` on the container image, so image drift cannot appear here.
 
-**Apply remains gated on founder approval.** When it is given, apply the
-already-inspected plan file rather than generating a fresh one:
+**The full plan is retained as evidence, not as an apply path.** It proves the
+live state broadly matches configuration, that 34 of 36 resources are no-ops,
+that there are no destructive surprises, and that the residual revision-name
+drift exists.
+
+**`deployment.tfplan` must NOT be applied** — its scope includes the uncertified
+Cloud Run change. The trigger migration uses a separate, deliberately narrow
+plan whose only mutation is `google_cloudbuild_trigger.frontend`: an intentional
+one-time reconciliation, not our normal operating pattern, recorded as such
+because a targeted plan bypasses Terraform's usual whole-configuration
+guarantee. Apply of that narrow plan remains gated on founder approval.
+
+### Trigger-only plan — ATTEMPTED, DOES NOT ISOLATE (2026-09-14)
+
+Founder asked for a plan whose only mutation is
+`google_cloudbuild_trigger.frontend`. **`-target` cannot deliver that here**,
+and the attempt is recorded rather than quietly abandoned.
 
 ```bash
-bash infra/cloudrun/connected-dev.sh apply   # applies deployment.tfplan only
+terraform plan -var-file=release.tfvars \
+  -target=google_cloudbuild_trigger.frontend -out=trigger-only.tfplan
+# → Plan: 0 to add, 2 to change, 0 to destroy   ← still TWO
 ```
+
+`-target` includes the target **and everything it depends on**. The trigger
+declares `depends_on = [google_cloud_run_v2_service_iam_member.deploy, …]`, and
+that member reads `google_cloud_run_v2_service.frontend[0].name`. The Cloud Run
+service is therefore pulled in transitively, and its pending
+`template.revision` change rides along. The saved file was deleted so nothing
+named "trigger-only" can be applied while carrying a second resource.
+
+### Why the Cloud Run change is riskier than a name churn
+
+Read-only comparison of live state against configuration:
+
+|                           | Value                                                                       |
+| ------------------------- | --------------------------------------------------------------------------- |
+| Live serving revision     | `refi-frontend-integration-00015-mez`, 100% of traffic                      |
+| **Live image digest**     | `…@sha256:8fa6baa0c472947ff91e388d0de865514e5a7e92a495325e80b9abf38e3deb21` |
+| **`release.tfvars` pins** | `…@sha256:62359b2e009361ea1763da141fe7b2e3c1d61c15c307ea3d23a8f52c16e62500` |
+
+**The configuration pins a different image than the one actually serving.** The
+plan does not show it because `main.tf` sets
+`ignore_changes = [template[0].containers[0].image, …]`, which is precisely why
+"a clean plan does not prove the served digest".
+
+In Cloud Run v2 any service-spec update produces a new revision. `ignore_changes`
+should make Terraform carry the refreshed (live) image into that revision rather
+than the `release.tfvars` value — but _should_ is not _certified_, and if it
+carried the configured value instead the apply would roll the service back to an
+older build. That is a real rollback risk, not a cosmetic diff, and it justifies
+excluding Cloud Run from the trigger migration entirely.
+
+### Options for moving trigger authority without touching Cloud Run
+
+None has been executed; all need founder approval.
+
+1. **Align the configuration with reality first.** Update `release.tfvars` to
+   the live digest (`8fa6baa0…`) in a reviewed one-line PR, so configuration and
+   live agree. Removes the rollback risk, leaves only the revision-name question.
+   Does not by itself isolate the trigger.
+2. **Move the trigger out of band, then let Terraform converge.** The
+   configuration _already declares_ `^daniel-handoff/integration$`; only the live
+   resource lags. A single
+   `gcloud builds triggers update` on that one field makes reality match
+   configuration, after which the next refresh shows no trigger diff and Cloud
+   Run is never in the graph. This is convergence toward the reviewed
+   configuration, not drift away from it — the narrowest possible mutation.
+3. **Certify the Cloud Run revision behaviour, then apply normally.** Answers the
+   question permanently rather than routing around it, since any future apply on
+   this stack meets the same coupling. Slowest, most durable.
+
+Recommendation: **2 for the immediate migration, then 1 and 3 as a deliberate
+Cloud Run reconciliation** — it achieves the stated goal with the least
+privilege and no rollout risk, and leaves the durable question properly scoped
+instead of bundled into an unrelated change.
 
 ## 2. Stytch TEST binding
 

@@ -50,9 +50,10 @@ configs; `infra/cloudrun/` holds the demo deploy path.
 Versioned contract packages already exist, **including Daniel-side conformance
 tooling**. Extend these; do not build a competing system.
 
-- `packages/api-clients/contracts/investor-api/{v1.1.0-alpha.2,v1.1.0-alpha.3}/`
+- `packages/api-clients/contracts/investor-api/{v1.1.0-alpha.2,v1.1.0-alpha.3,v1.1.0-alpha.4}/`
+  (alpha.4 vendored and pinned on the handoff line 2026-09-13, #155)
 - `packages/api-clients/contracts/investor-api/CURRENT.json`
-- `.../v1.1.0-alpha.3/tools/conformance.py` — the conformance validator
+- `.../v1.1.0-alpha.4/tools/conformance.py` — the conformance validator (alpha.3's copy is history)
 - `packages/api-clients/src/__tests__/investor-api-conformance.test.ts`
 - `packages/api-clients/openapi/refi-api.yaml`
 

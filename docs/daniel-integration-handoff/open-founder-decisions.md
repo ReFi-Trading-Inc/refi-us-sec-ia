@@ -171,6 +171,19 @@ These are settled and constrain any answer above:
 
 ---
 
+## Contract and product surface (Lanes F, H) — raised 2026-09-13
+
+Evidence: `lane-f-alpha4-audit.md`, `lane-h-alpha4-audit.md`.
+
+| ID       | Question                                                                                                                                                                                                                                                                          | Status | Why it blocks                                                                                                                                                                                                                 |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **F-F1** | D-LAUNCH-07: confirm Alpha stays **PAPER ONLY**. alpha.4 permits `account_environment: live` at the contract level; our paper-only boundary is enforced on the write path but a `live` connection returned by the backend is passed through and would be adopted for rotate/sync. | `OPEN` | Decides whether Lane F's F-2 refuses `live` outright on the read/maintenance path or merely displays it. Daniel's `paper\|live` widening stays rejected either way.                                                           |
+| **F-H1** | Ship the funding-notice UI or defer explicitly? FUNDING.md §2 requires a persistent portfolio funding notice (amounts, limiting constituents) on `INSUFFICIENT`. Projection, route and hook fields exist and are test-pinned; no component renders them.                          | `OPEN` | (a) build H-PR4 — new investor-facing copy about capital shortfall, compliance-relevant wording; or (b) a written, dated deferral so the gap is known debt, not a silent contract miss. The notice gates nothing in our code. |
+| **F-H2** | Which subscription surface is real? alpha.4 allocation routes (fraction strings, zero UI callers, automated-Alpha only) vs the P1C `SubscriptionPanel` (percentage-point numbers, fixture-only, transport not implemented). Neither transacts today.                              | `OPEN` | Must be decided before anyone writes the transport adapter; building both is how the points-vs-fraction mismatch becomes a live money bug. Hard requirement either way: exact base-10 conversion, never float `/100`.         |
+| **F-H3** | Recommendation detail page: delete `Last evaluated` / `Freshness policy` (alpha.4 supplies neither; we render blanks) or remap to `updated_at` / `lineage.policy_version` under new labels?                                                                                       | `OPEN` | Recommendation: **delete** (smaller, reversible); re-add only against a `$ref`'d contract field once D-A8a is answered.                                                                                                       |
+
+---
+
 ## Production activation (separate from handoff readiness)
 
 Recorded so it is not confused with certification. Successful Daniel handoff

@@ -193,14 +193,14 @@ policy.
 
 Status 2026-09-13 (founder approved steps 1 and 4 on 2026-09-13):
 
-| Step | Status                                                                                                       |
-| ---- | ------------------------------------------------------------------------------------------------------------ |
-| 1    | **DONE** — branch `daniel-handoff/lane-c-alpha4-adoption` (§6.1)                                             |
-| 2    | **DONE** — client regenerated; conformance validate + self-test; 402 client tests; all contract assertions   |
-| 3    | **DONE (audit)** — §6.2; the mechanical take-list landed in the same branch, the conflicts did not           |
-| 4    | **AUDITED, PR pending** — §6.3; Group A is coherent and #148-compatible; take by path, reject `infra/gcp/**` |
-| 5    | Next: Lanes F and H against alpha.4 (the turnover-units guard already landed as a test)                      |
-| 6    | Still blocked. Daniel's status record claims a backend **alpha.5** with membership/admission reads → D-A1    |
+| Step | Status                                                                                                           |
+| ---- | ---------------------------------------------------------------------------------------------------------------- |
+| 1    | **MERGED** — PR #155, head `3611307`, CI run 34800004663, merge `019a6bf` = `daniel-handoff/integration` (§6.1)  |
+| 2    | **DONE** — client regenerated; conformance validate + self-test; 402 client tests; all contract assertions       |
+| 3    | **DONE (audit)** — §6.2; the mechanical take-list landed in the same branch, the conflicts did not               |
+| 4    | **PR #156 open — TIER 2 FOUNDER REVIEW REQUIRED** — §6.3; by-path take, `infra/gcp/**` rejected; not self-merged |
+| 5    | Next: Lanes F and H against alpha.4 (the turnover-units guard already landed as a test)                          |
+| 6    | Still blocked. Daniel's status record claims a backend **alpha.5** with membership/admission reads → D-A1        |
 
 ---
 

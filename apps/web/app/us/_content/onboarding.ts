@@ -176,6 +176,10 @@ export const onboardingCopy = {
     dashboardNote: "Your holdings, advice and records are live now.",
     finishFirst: "Finish the pending items to open your dashboard.",
     gate: {
+      identity_or_profile_incomplete:
+        "Finish the identity check and your investor profile to open your account.",
+      no_account_access:
+        "Your account is not open yet, so strategy actions are unavailable.",
       onboarding_not_ready:
         "Your application is not marked ready yet. The dashboard opens when the backend reports onboarding READY.",
       authorization_pending:
@@ -187,6 +191,12 @@ export const onboardingCopy = {
       authorization_unknown:
         "Account authorization is not available yet for this application.",
     },
+    // Shown once the account is open but strategy actions are still gated —
+    // most commonly because the brokerage account has not been connected yet,
+    // which is a permitted place to pause.
+    economicPendingNote:
+      "Your account is open. Connecting a brokerage account is the next step before you can subscribe to a strategy.",
+    connectBrokerCta: "Connect a brokerage account",
     disclosuresNote:
       "Form CRS, ADV Part 2A and the Investment Advisory Agreement are acknowledged in the app under Documents.",
   },

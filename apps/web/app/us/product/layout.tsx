@@ -16,6 +16,7 @@
  */
 import type { ReactNode } from "react";
 import { getServerEnv } from "@lib/config/env";
+import { resolveAdapterMode } from "@lib/investor-product/resolve-adapter";
 import { InvestorProductProvider } from "../../_components/product/adapter-context";
 import { ProductAuthGate } from "../../_components/product/ProductAuthGate";
 
@@ -23,6 +24,13 @@ export const dynamic = "force-dynamic";
 
 export default function ProductLayout({ children }: { children: ReactNode }) {
   const serverEnv = getServerEnv();
+  // Connected Dev uses the staging security tier but real backend data.
+  // Never let the new fixture-first screens silently substitute fake accounts.
+  const configuredMode = resolveAdapterMode({
+    refiEnv: serverEnv.REFI_ENV,
+    dataAdapter: serverEnv.REFI_DATA_ADAPTER,
+    configured: process.env["INVESTOR_PRODUCT_ADAPTER"],
+  });
 
   return (
     <div className="min-h-screen bg-charcoal-900 font-sans text-charcoal-100">
@@ -34,7 +42,7 @@ export default function ProductLayout({ children }: { children: ReactNode }) {
       </a>
       <InvestorProductProvider
         refiEnv={serverEnv.REFI_ENV}
-        configuredMode={process.env["INVESTOR_PRODUCT_ADAPTER"]}
+        configuredMode={configuredMode}
       >
         <main
           id="product-main"

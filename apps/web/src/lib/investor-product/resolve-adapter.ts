@@ -1,10 +1,10 @@
 /**
  * Adapter-mode resolution — fail closed.
  *
- * The fixture adapter must be IMPOSSIBLE in Production. Two rules:
+ * The fixture adapter must be IMPOSSIBLE in Production and connected live-data runtimes. Two rules:
  *
  *   1. The decision is made from EXPLICIT runtime configuration
- *      (`NEXT_PUBLIC_REFI_ENV` + `NEXT_PUBLIC_INVESTOR_PRODUCT_ADAPTER`),
+ *      (server `REFI_ENV`, `REFI_DATA_ADAPTER` and `INVESTOR_PRODUCT_ADAPTER`),
  *      never from a hostname, a URL, a port, or a `NODE_ENV` guess. Hostname
  *      heuristics are how a demo build ends up serving fixtures on a
  *      production domain.
@@ -25,8 +25,8 @@ export type AdapterMode = "fixture" | "transport";
 export class FixtureAdapterForbiddenError extends Error {
   constructor(readonly env: RefiEnv) {
     super(
-      `investor-product fixture adapter is forbidden when REFI_ENV=${env}: ` +
-        `set NEXT_PUBLIC_INVESTOR_PRODUCT_ADAPTER=transport`,
+      `investor-product fixture adapter is forbidden for production or live data (REFI_ENV=${env}): ` +
+        `set INVESTOR_PRODUCT_ADAPTER=transport`,
     );
     this.name = "FixtureAdapterForbiddenError";
   }
@@ -36,7 +36,7 @@ export class FixtureAdapterForbiddenError extends Error {
 export class AdapterModeInvalidError extends Error {
   constructor(readonly raw: string) {
     super(
-      `NEXT_PUBLIC_INVESTOR_PRODUCT_ADAPTER must be "fixture" or ` +
+      `INVESTOR_PRODUCT_ADAPTER must be "fixture" or ` +
         `"transport", received "${raw}"`,
     );
     this.name = "AdapterModeInvalidError";
@@ -45,6 +45,8 @@ export class AdapterModeInvalidError extends Error {
 
 export interface AdapterModeConfig {
   readonly refiEnv: RefiEnv;
+  /** Server-owned data mode: connected Dev is live even on the staging tier. */
+  readonly dataAdapter?: "mock" | "live";
   /** Raw configured value; undefined when unset. */
   readonly configured: string | undefined;
 }
@@ -52,11 +54,11 @@ export interface AdapterModeConfig {
 /**
  * Resolve the adapter mode.
  *
- * - `prod`: always `transport`. An explicit `fixture` throws; an unset value
+ * - `prod` or server data adapter `live`: always `transport`. An explicit `fixture` throws; an unset value
  *   resolves to `transport` (fail closed — the absence of configuration must
  *   never enable fixtures).
- * - `dev` / `staging` / `demo`: honour the configured value; default
- *   `fixture`, which is the point of those tiers.
+ * - Other non-live `dev` / `staging` / `demo` runtimes: honour the configured
+ *   value; default `fixture` for isolated demo/testing work.
  */
 export function resolveAdapterMode(config: AdapterModeConfig): AdapterMode {
   const { refiEnv, configured } = config;
@@ -66,7 +68,7 @@ export function resolveAdapterMode(config: AdapterModeConfig): AdapterMode {
       ? null
       : normalizeMode(configured);
 
-  if (refiEnv === "prod") {
+  if (refiEnv === "prod" || config.dataAdapter === "live") {
     if (requested === "fixture")
       throw new FixtureAdapterForbiddenError(refiEnv);
     return "transport";

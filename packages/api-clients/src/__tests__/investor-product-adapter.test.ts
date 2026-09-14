@@ -44,6 +44,34 @@ import {
 const FAKE_KEY = `PK${"0".repeat(18)}`;
 const FAKE_SECRET = "s".padEnd(40, "0");
 
+describe("connected runtime cannot substitute product fixtures", () => {
+  for (const refiEnv of ["dev", "staging", "prod"] as const) {
+    test(`${refiEnv} with live data requires transport`, () => {
+      for (const configured of [undefined, "", "transport"]) {
+        expect(
+          resolveAdapterMode({ refiEnv, dataAdapter: "live", configured }),
+        ).toBe("transport");
+      }
+      expect(() =>
+        resolveAdapterMode({
+          refiEnv,
+          dataAdapter: "live",
+          configured: "fixture",
+        }),
+      ).toThrow(FixtureAdapterForbiddenError);
+    });
+  }
+  test("demo keeps its existing fixture workflow", () => {
+    expect(
+      resolveAdapterMode({
+        refiEnv: "demo",
+        dataAdapter: "mock",
+        configured: undefined,
+      }),
+    ).toBe("fixture");
+  });
+});
+
 const PAPER_INTENT = {
   broker: "alpaca" as const,
   environment: "paper" as const,

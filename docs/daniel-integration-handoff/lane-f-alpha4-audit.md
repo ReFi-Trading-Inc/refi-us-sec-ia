@@ -140,7 +140,8 @@ guarantee.
 
 ## Founder decisions
 
-- **D-LAUNCH-07 (paper vs live) — OPEN.** The contract permits `live`; paper-only
-  is enforced only on the write path today (F3-1..3), not the read/maintenance
-  path (F3-5, F3-6). Confirm PAPER ONLY remains the Alpha stance so F-2 refuses
-  `live` outright rather than merely displaying it.
+- **D-LAUNCH-07 — CLOSED by F-F1 (2026-09-13): Closed Alpha is PAPER ONLY; LIVE
+  is disabled and unrepresentable at the Alpha frontend boundary.** F-2 is
+  therefore required: a LIVE connection returned by the backend is not an
+  operable Alpha connection (safe unsupported/held state, no LIVE economic
+  actions, evidence preserved, history never deleted).

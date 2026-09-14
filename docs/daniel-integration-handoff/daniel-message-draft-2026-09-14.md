@@ -3,8 +3,9 @@
 **Status:** draft, held. Founder decision 2026-09-14 — keep holding and apply
 four edits before it goes out:
 
-1. **Brokerage section** — update after #161 actually merges (approved and
-   rebased; merging on green).
+1. ~~**Brokerage section** — update after #161 merges.~~ **Done** — #161 merged
+   2026-09-14 (head `6368277`, CI run 34853814934, merge `acff569`); the
+   brokerage paragraph below now states the shipped behaviour.
 2. **Infrastructure section** — replace "planned change" language with the real
    Terraform plan result. **Now available**; applied below.
 3. **Identity section** — update after Stytch TEST provisioning, so Daniel gets
@@ -95,6 +96,21 @@ moved underneath it.
 | `trading_eligibility: "eligible"` becoming emittable      | We type that value out of existence on purpose. Economic authority is the backend's, read from `AccountAuthorization`.                                                                                                                                                                                             |
 | `paper \| live` environment and `(PK\|AK)` key ids        | Closed Alpha is paper only by founder decision. Your contract can represent `live`; that is not product permission on our side yet.                                                                                                                                                                                |
 | Client-supplied `Idempotency-Key` as operation identity   | See item 7 — the guarantee it depends on is not stated anywhere in the package.                                                                                                                                                                                                                                    |
+
+**What we shipped instead (merged 2026-09-14).** Paper-only is now enforced on
+the read and maintenance paths too, not just at connect. If your backend
+reports a `live` connection we keep it verbatim as evidence — we never relabel
+it paper and never delete it — but it is marked not operable: it never wins
+selection over a paper connection, it does not satisfy the broker onboarding
+step, and credential rotation and sync refuse it before any request is built,
+with a deterministic 409.
+
+One thing we deliberately did **not** do: block disconnect. Operating a live
+connection is forbidden; severing one is always permitted, including through
+the `ACKNOWLEDGMENT_REQUIRED` continuation with its exact consent tuple and a
+new idempotency key. A safety boundary must never trap someone inside the
+unsupported state. So if you see a disconnect arrive for a live connection,
+that is intended.
 
 One more, worth flagging because it was not in any of your infra commits: the
 merge resolutions in `d592c10` and `6cd903e` flipped

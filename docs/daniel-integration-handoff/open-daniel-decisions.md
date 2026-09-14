@@ -332,7 +332,9 @@ Evidence: `lane-h-alpha4-audit.md`
 > `template_id` (required, same pattern as `lineage.template_id`) is consistent
 > with the shape's design. We will delete the fan-out the day it lands.
 
-**D-A8d (minor) — `allocation_percent` is a fraction.**
+**D-A8d (minor) — `allocation_percent` is a fraction.** Founder decided
+2026-09-14: **document, do not rename** — a rename would break your existing
+integrators for a naming preference. The ask is the one-line description only.
 
 > `allocation_percent` on `AllocationPreview`, `AllocationPreviewRequest`,
 > `AccountActionRequest.parameters` and `AccountMembership` uses

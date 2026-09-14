@@ -29,8 +29,10 @@ export default function OnboardingSetupPage() {
   const steps = {
     identity: s?.identity.state === "passed",
     profile: !!s?.profile?.assessment,
+    // F-F1: a held (non-paper) connection never satisfies the broker step.
     broker:
       s?.connection?.connectionStatus === "CONNECTED" &&
+      s.connection.alphaOperable &&
       !!s.connection.lastSyncedAt,
   };
   const onboardingState = s?.onboarding.state ?? null;

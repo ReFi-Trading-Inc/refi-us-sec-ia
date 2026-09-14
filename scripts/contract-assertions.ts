@@ -15478,6 +15478,8 @@ await section(
     await import("../apps/web/src/lib/investor-api/account-actions.ts");
   const maint =
     await import("../apps/web/src/lib/investor-api/brokerage-maintenance.ts");
+  const brokerageConn =
+    await import("../apps/web/src/lib/investor-api/brokerage-connection.ts");
   const {
     resetServerEnvCacheForTests: resetEnvBk,
     getServerEnv: getServerEnvBk,
@@ -15534,6 +15536,8 @@ await section(
       authorization?: string;
       actionError?: { status: number; code: string };
       previewError?: { status: number; code: string };
+      /** Override the listed brokerage connections (F-F1 paper-only tests). */
+      connections?: Record<string, unknown>[];
     } = {},
   ) {
     const seen: SeenBk[] = [];
@@ -15592,15 +15596,17 @@ await section(
         method === "GET"
       ) {
         const c = examplesBk.responses["BrokerageConnectionEnvelope"]!.data;
-        return page([
-          { ...c, account_id: OWNED, connection_id: CONN },
-          {
-            ...c,
-            account_id: OWNED,
-            connection_id: "brokerconn_alpha_dead",
-            connection_status: "DISCONNECTED",
-          },
-        ]);
+        return page(
+          opts.connections ?? [
+            { ...c, account_id: OWNED, connection_id: CONN },
+            {
+              ...c,
+              account_id: OWNED,
+              connection_id: "brokerconn_alpha_dead",
+              connection_status: "DISCONNECTED",
+            },
+          ],
+        );
       }
       if (
         path === `/api/v1/investor/accounts/${OWNED}/allocation-previews` &&
@@ -15825,6 +15831,99 @@ await section(
         );
         assert.equal(posts().length, 1, "mutation not retried");
       }
+    },
+  );
+
+  await section(
+    "paper-only read boundary (F-F1, 2026-09-13): a LIVE brokerage connection the backend reports is projected as HELD (environment word verbatim, alphaOperable false, heldReason live_environment_unsupported), never wins selection over a paper connection, is surfaced rather than hidden when it is the only one, and rotate/sync refuse it as unsupported_environment before any mutation path is built",
+    async () => {
+      const readSrc = (rel: string) =>
+        readFileSync(join(REPO_ROOT, rel), "utf8");
+      const c = examplesBk.responses["BrokerageConnectionEnvelope"]!.data;
+      const LIVE_CONN = "brokerconn_live_0001";
+      const live = {
+        ...c,
+        account_id: OWNED,
+        connection_id: LIVE_CONN,
+        account_environment: "live",
+        connection_status: "CONNECTED",
+      };
+      const paper = { ...c, account_id: OWNED, connection_id: CONN };
+
+      // Projection: evidence preserved, never relabelled, never operable.
+      const held = brokerageConn.projectBrokerageConnection(
+        live as Parameters<typeof brokerageConn.projectBrokerageConnection>[0],
+      );
+      assert.equal(held.environment, "live");
+      assert.equal(held.alphaOperable, false);
+      assert.equal(held.heldReason, "live_environment_unsupported");
+      const ok = brokerageConn.projectBrokerageConnection(
+        paper as Parameters<typeof brokerageConn.projectBrokerageConnection>[0],
+      );
+      assert.equal(ok.alphaOperable, true);
+      assert.equal(ok.heldReason, null);
+
+      // Selection: paper first regardless of order; only-live is surfaced held.
+      for (const connections of [
+        [live, paper],
+        [paper, live],
+      ]) {
+        const { client } = upstreamBk({ connections });
+        const view = await brokerageConn.getBrokerageConnection(client, OWNED);
+        assert.equal(view?.connectionId, CONN);
+        assert.equal(view?.alphaOperable, true);
+      }
+      {
+        const { client } = upstreamBk({ connections: [live] });
+        const view = await brokerageConn.getBrokerageConnection(client, OWNED);
+        assert.equal(view?.connectionId, LIVE_CONN);
+        assert.equal(view?.environment, "live");
+        assert.equal(view?.alphaOperable, false);
+      }
+
+      // Maintenance: refused before any mutation, with a distinct reason.
+      const { client, posts } = upstreamBk({ connections: [live, paper] });
+      assert.deepEqual(
+        await maint.assertAlphaOperableConnection(client, OWNED, LIVE_CONN),
+        { kind: "unsupported_environment" },
+      );
+      const r = await maint.rotateBrokerageCredentials(
+        client,
+        OWNED,
+        LIVE_CONN,
+        {
+          apiKeyId: "PK" + "A".repeat(18),
+          apiSecretKey: "s".repeat(40),
+        },
+      );
+      assert.deepEqual(r, {
+        kind: "connection_out_of_scope",
+        reason: "unsupported_environment",
+      });
+      const sy = await maint.syncBrokerageConnection(client, OWNED, LIVE_CONN);
+      assert.deepEqual(sy, {
+        kind: "connection_out_of_scope",
+        reason: "unsupported_environment",
+      });
+      assert.equal(posts().length, 0, "no mutation reached the upstream");
+
+      // Routes: the refusal is a deterministic 409, not a missing-connection 404.
+      for (const route of [
+        readSrc(
+          "apps/web/app/api/v1/investor/broker/connection/[id]/rotate/route.ts",
+        ),
+        readSrc(
+          "apps/web/app/api/v1/investor/broker/connection/[id]/sync/route.ts",
+        ),
+      ]) {
+        assert.match(route, /connection_environment_unsupported/);
+        assert.match(route, /unsupported\s*\?\s*409\s*:\s*404/);
+      }
+      // Write path unchanged: the connect body is the literal "paper".
+      assert.match(
+        readSrc("apps/web/src/lib/investor-api/brokerage-connection.ts"),
+        /account_environment:\s*"paper"/,
+      );
     },
   );
 
@@ -16065,7 +16164,7 @@ await section(
       );
       const m = strip("apps/web/src/lib/investor-api/brokerage-maintenance.ts");
       assert.ok(
-        m.indexOf("assertConnectionInScope(client, accountId, connectionId)") <
+        m.indexOf("assertAlphaOperableConnection(") <
           m.indexOf('call("rotateBrokerageCredentials"'),
       );
       for (const f of ["rotate", "sync"] as const) {
@@ -16590,6 +16689,8 @@ await section(
       prefVersion?: number;
       connections?: Record<string, string[]>;
       disconnectedIds?: string[];
+      /** Ids reported by the backend as LIVE connections (F-F1 tests). */
+      liveIds?: string[];
       disconnectInitial?: Mode;
       disconnectConfirm?: Mode;
     } = {},
@@ -16733,6 +16834,9 @@ await section(
               connection_id: id,
               ...(opts.disconnectedIds?.includes(id)
                 ? { connection_status: "DISCONNECTED" }
+                : {}),
+              ...(opts.liveIds?.includes(id)
+                ? { account_environment: "live" }
                 : {}),
             })),
           );
@@ -17312,6 +17416,143 @@ await section(
   );
 
   await section(
+    "disengagement is never blocked by the paper-only rule (founder review of #161, 2026-09-13): an owned, non-terminal LIVE connection CAN be disconnected — initial DELETE reaches the backend, and the acknowledgment continuation (exact consent tuple, new key) still completes — while the ownership refusals (malformed, not owned, terminal) are unchanged",
+    async () => {
+      const dis = (
+        u: ReturnType<typeof upstream>,
+        acct: string,
+        conn: string,
+      ) => maintAck.disconnectBrokerageConnection(u.client, acct, conn, "c_d");
+
+      // LIVE + initial disconnect: accepted, one DELETE, canonical receipt.
+      await scenario({ liveIds: [A.conn] }, async (u) => {
+        const out = await dis(u, A.account, A.conn);
+        assert.equal(out.kind, "accepted", "a live connection is severable");
+        if (out.kind !== "accepted") return;
+        assert.equal(out.backendStatus, "DISCONNECTING");
+        assert.equal(out.upstreamStatus, 202);
+        assert.equal(u.deletes().length, 1);
+        assert.equal(u.deletes()[0]!.body, undefined);
+        assert.ok(
+          !/api_key|api_secret|secret/i.test(JSON.stringify(out)),
+          "no credential in the outcome",
+        );
+      });
+
+      // LIVE + acknowledgment-required disconnect: the continuation path is
+      // fully usable — consent recorded for the exact disclosure tuple, the
+      // binding sent, and a NEW idempotency key.
+      await scenario(
+        { liveIds: [A.conn], disconnectInitial: { kind: "challenge" } },
+        async (u, _a, ref) => {
+          const out = await dis(u, A.account, A.conn);
+          assert.equal(out.kind, "acknowledgment_required");
+          if (out.kind !== "acknowledgment_required") return;
+          assert.deepEqual(out.challenge.intent, {
+            kind: "disconnect",
+            connectionId: A.conn,
+          });
+          const initialKey = u.deletes()[0]!.headers.get("Idempotency-Key");
+          const conf = await maintAck.confirmBrokerageDisconnect(
+            u.client,
+            A.account,
+            A.conn,
+            ref,
+            "c_dc",
+          );
+          assert.equal(conf.kind, "accepted", "live confirmation completes");
+          assert.equal(
+            (u.consents()[0]!.body as Record<string, unknown>)[
+              "disclosure_hash"
+            ],
+            CONT.required_disclosure_hash,
+            "exact consent tuple, not weakened for live",
+          );
+          const d = u.deletes()[1]!;
+          assert.deepEqual(d.body, {
+            continuation_ref: ref,
+            consent_receipt_id: "consent_ack_00000001",
+          });
+          assert.notEqual(d.headers.get("Idempotency-Key"), initialKey);
+          assert.equal(
+            (await chal.getAcknowledgmentChallenge(A.account, ref))?.state,
+            "confirmed",
+          );
+        },
+      );
+
+      // Ownership refusals are unchanged for a live connection, and the
+      // environment is never the reason disengagement is refused.
+      await scenario({ liveIds: [A.conn] }, async (u) => {
+        assert.deepEqual(await dis(u, A.account, "x"), {
+          kind: "connection_out_of_scope",
+          reason: "malformed",
+        });
+        assert.deepEqual(await dis(u, A.account, B.conn), {
+          kind: "connection_out_of_scope",
+          reason: "not_owned",
+        });
+        assert.equal(u.deletes().length, 0);
+      });
+      await scenario(
+        { liveIds: [A.conn], disconnectedIds: [A.conn] },
+        async (u) => {
+          assert.deepEqual(await dis(u, A.account, A.conn), {
+            kind: "connection_out_of_scope",
+            reason: "terminal",
+          });
+          assert.equal(u.deletes().length, 0);
+        },
+      );
+
+      // The type model carries no impossible state: disengagement cannot
+      // produce `unsupported_environment`, and the two scopes stay distinct.
+      const bm = readFileSync(
+        join(
+          REPO_ROOT,
+          "apps/web/src/lib/investor-api/brokerage-maintenance.ts",
+        ),
+        "utf8",
+      ).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, "");
+      const outcomeUnion = bm.slice(
+        bm.indexOf("export type DisconnectOutcome"),
+        bm.indexOf("function partitionDisconnect"),
+      );
+      assert.ok(
+        outcomeUnion.length > 0 &&
+          !outcomeUnion.includes("unsupported_environment"),
+        "DisconnectOutcome carries no unsupported_environment member",
+      );
+      for (const fn of [
+        "export async function disconnectBrokerageConnection",
+        "export async function confirmBrokerageDisconnect",
+      ]) {
+        const body = bm.slice(bm.indexOf(fn), bm.indexOf(fn) + 400);
+        assert.ok(
+          body.includes(
+            "assertOwnedConnection(client, accountId, connectionId)",
+          ),
+          `${fn} uses the OWNERSHIP scope`,
+        );
+        assert.ok(
+          !body.includes("assertAlphaOperableConnection"),
+          `${fn} must not require paper operability`,
+        );
+      }
+      for (const fn of [
+        "export async function rotateBrokerageCredentials",
+        "export async function syncBrokerageConnection",
+      ]) {
+        const body = bm.slice(bm.indexOf(fn), bm.indexOf(fn) + 400);
+        assert.ok(
+          body.includes("assertAlphaOperableConnection"),
+          `${fn} uses the OPERATIONAL scope`,
+        );
+      }
+    },
+  );
+
+  await section(
     "brokerage disconnect: backend 404 / 409 VERSION_CONFLICT / 413 / 422 are terminal with their code; 403 and ACKNOWLEDGMENT_BINDING_INVALID are outside brokerage_mutation and fail closed as contract mismatches; 429 and 503 are retryable and never auto-retried; the confirmation refusal ends the challenge; no broker-write credential is ever stored in the challenge record",
     async () => {
       for (const [status, code] of [
@@ -17642,7 +17883,7 @@ await section(
       );
       assert.ok(
         bm.indexOf(
-          "assertConnectionInScope(client, accountId, connectionId)",
+          "assertOwnedConnection(client, accountId, connectionId)",
           bm.indexOf("export async function disconnectBrokerageConnection"),
         ) < bm.indexOf('call("disconnectBrokerageConnection"'),
         "scope before disconnect",

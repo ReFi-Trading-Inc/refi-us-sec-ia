@@ -21,21 +21,44 @@ import type { InvestorApiReadClient } from "./demo-client";
 import {
   projectBrokerageConnection,
   type BrokerageConnectionView,
+  ALPHA_BROKER_ENVIRONMENT,
+  type ContractBrokerageConnection,
 } from "./brokerage-connection";
 
 export type BrokerageSyncReceipt =
   OperationResponse<"syncBrokerageConnection">["data"];
 export const CONNECTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$/;
 
-export type ConnectionScopeOutcome =
+/**
+ * Two DIFFERENT questions, deliberately answered by two helpers (founder
+ * review of PR #161, 2026-09-13):
+ *
+ *   OWNERSHIP  — "is this the caller's own, still-live connection?"
+ *                Governs DISENGAGEMENT (disconnect / confirm disconnect).
+ *   OPERABILITY — ownership PLUS "may Closed Alpha operate it?"
+ *                Governs OPERATIONAL use (credential rotation, sync).
+ *
+ * A safety boundary must never trap a user inside the unsupported state:
+ * operating a LIVE connection is forbidden, severing one is always permitted.
+ */
+export type ConnectionOwnershipOutcome =
   { kind: "owned" } | { kind: "not_owned" | "terminal" | "malformed" };
 
-/** The named connection must be one of THIS account's non-terminal connections. */
-export async function assertConnectionInScope(
+export type ConnectionScopeOutcome =
+  ConnectionOwnershipOutcome | { kind: "unsupported_environment" };
+
+/**
+ * One upstream read, shared by both scopes: the caller's own, non-terminal
+ * connection record, or the reason it is out of scope.
+ */
+async function findOwnedConnection(
   client: InvestorApiReadClient,
   accountId: string,
   connectionId: string,
-): Promise<ConnectionScopeOutcome> {
+): Promise<
+  | { kind: "owned"; connection: ContractBrokerageConnection }
+  | { kind: "not_owned" | "terminal" | "malformed" }
+> {
   if (!CONNECTION_ID_PATTERN.test(connectionId)) return { kind: "malformed" };
   const res = await client.call("listBrokerageConnections", {
     path: { account_id: accountId },
@@ -50,6 +73,39 @@ export async function assertConnectionInScope(
     match.connection_status === "REVOKED"
   ) {
     return { kind: "terminal" };
+  }
+  return { kind: "owned", connection: match };
+}
+
+/**
+ * DISENGAGEMENT scope: the named connection must be one of THIS account's
+ * non-terminal connections. The broker environment is deliberately NOT
+ * considered — an owned LIVE connection can always be disconnected.
+ */
+export async function assertOwnedConnection(
+  client: InvestorApiReadClient,
+  accountId: string,
+  connectionId: string,
+): Promise<ConnectionOwnershipOutcome> {
+  const found = await findOwnedConnection(client, accountId, connectionId);
+  return found.kind === "owned" ? { kind: "owned" } : found;
+}
+
+/**
+ * OPERATIONAL scope: everything ownership requires, PLUS the Closed Alpha
+ * paper-only rule (founder F-F1). A LIVE connection is never operable, so
+ * rotate/sync refuse it before any mutation path is built, with the backend
+ * record left untouched. Never use this for disengagement.
+ */
+export async function assertAlphaOperableConnection(
+  client: InvestorApiReadClient,
+  accountId: string,
+  connectionId: string,
+): Promise<ConnectionScopeOutcome> {
+  const found = await findOwnedConnection(client, accountId, connectionId);
+  if (found.kind !== "owned") return found;
+  if (found.connection.account_environment !== ALPHA_BROKER_ENVIRONMENT) {
+    return { kind: "unsupported_environment" };
   }
   return { kind: "owned" };
 }
@@ -78,7 +134,8 @@ export type MaintenanceOutcome<T> =
   | { kind: "accepted"; result: T; upstreamStatus: number }
   | {
       kind: "connection_out_of_scope";
-      reason: "not_owned" | "terminal" | "malformed";
+      reason:
+        "not_owned" | "terminal" | "malformed" | "unsupported_environment";
     };
 
 export async function rotateBrokerageCredentials(
@@ -87,7 +144,11 @@ export async function rotateBrokerageCredentials(
   connectionId: string,
   input: RotateCredentialsInput,
 ): Promise<MaintenanceOutcome<BrokerageConnectionView>> {
-  const scope = await assertConnectionInScope(client, accountId, connectionId);
+  const scope = await assertAlphaOperableConnection(
+    client,
+    accountId,
+    connectionId,
+  );
   if (scope.kind !== "owned") {
     return { kind: "connection_out_of_scope", reason: scope.kind };
   }
@@ -132,7 +193,11 @@ export async function syncBrokerageConnection(
   connectionId: string,
   now: () => number = Date.now,
 ): Promise<MaintenanceOutcome<BrokerageSyncReceipt>> {
-  const scope = await assertConnectionInScope(client, accountId, connectionId);
+  const scope = await assertAlphaOperableConnection(
+    client,
+    accountId,
+    connectionId,
+  );
   if (scope.kind !== "owned") {
     return { kind: "connection_out_of_scope", reason: scope.kind };
   }
@@ -187,6 +252,8 @@ export type DisconnectOutcome =
       challenge: AcknowledgmentChallengeRecord;
     }
   | {
+      // Disengagement never refuses on environment, so the operational
+      // `unsupported_environment` is deliberately not part of this union.
       kind: "connection_out_of_scope";
       reason: "not_owned" | "terminal" | "malformed";
     }
@@ -239,7 +306,8 @@ export async function disconnectBrokerageConnection(
   connectionId: string,
   correlationId: string,
 ): Promise<DisconnectOutcome> {
-  const scope = await assertConnectionInScope(client, accountId, connectionId);
+  // OWNERSHIP only: a held LIVE connection must still be severable (F-F1).
+  const scope = await assertOwnedConnection(client, accountId, connectionId);
   if (scope.kind !== "owned")
     return { kind: "connection_out_of_scope", reason: scope.kind };
   const initialKey = deterministicKey({
@@ -295,7 +363,8 @@ export async function confirmBrokerageDisconnect(
   continuationRef: string,
   correlationId: string,
 ): Promise<DisconnectOutcome> {
-  const scope = await assertConnectionInScope(client, accountId, connectionId);
+  // OWNERSHIP only, exactly as the initial disconnect (F-F1).
+  const scope = await assertOwnedConnection(client, accountId, connectionId);
   if (scope.kind !== "owned")
     return { kind: "connection_out_of_scope", reason: scope.kind };
   let challenge = await getAcknowledgmentChallenge(accountId, continuationRef);

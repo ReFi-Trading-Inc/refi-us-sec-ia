@@ -14,10 +14,25 @@ import type { InvestorApiReadClient } from "./demo-client";
 export type ContractBrokerageConnection =
   OperationResponse<"getBrokerageConnection">["data"];
 
+/**
+ * Closed Alpha is PAPER ONLY (founder F-F1, 2026-09-13; D-LAUNCH-07 closed).
+ * A LIVE connection the backend reports is evidence to preserve and display,
+ * never an operable Alpha connection: `alphaOperable` is false, `heldReason`
+ * names why, the environment word is kept verbatim (never relabelled), and no
+ * economic or maintenance action may target it.
+ */
+export type ConnectionHeldReason = "live_environment_unsupported";
+
+export const ALPHA_BROKER_ENVIRONMENT = "paper" as const;
+
 export interface BrokerageConnectionView {
   connectionId: string;
   broker: "alpaca";
+  /** Backend word, verbatim. `live` renders as held, never as paper. */
   environment: "paper" | "live";
+  /** Usable as the Alpha brokerage connection (paper AND non-terminal). */
+  alphaOperable: boolean;
+  heldReason: ConnectionHeldReason | null;
   connectionStatus: ContractBrokerageConnection["connection_status"];
   credentialStatus: ContractBrokerageConnection["credential_status"];
   stateVersion: number;
@@ -32,10 +47,18 @@ export interface BrokerageConnectionView {
 export function projectBrokerageConnection(
   c: ContractBrokerageConnection,
 ): BrokerageConnectionView {
+  const terminal =
+    c.connection_status === "DISCONNECTED" || c.connection_status === "REVOKED";
+  const heldReason: ConnectionHeldReason | null =
+    c.account_environment === ALPHA_BROKER_ENVIRONMENT
+      ? null
+      : "live_environment_unsupported";
   return {
     connectionId: c.connection_id,
     broker: c.broker,
     environment: c.account_environment,
+    alphaOperable: heldReason === null && !terminal,
+    heldReason,
     connectionStatus: c.connection_status,
     credentialStatus: c.credential_status,
     stateVersion: c.state_version,
@@ -48,7 +71,11 @@ export function projectBrokerageConnection(
   };
 }
 
-/** The account's current connection (first non-terminal one), or null. */
+/**
+ * The account's current connection, or null. Preference order: a non-terminal
+ * PAPER connection (operable) → a non-terminal non-paper connection (held,
+ * F-F1: surfaced as evidence, never operable) → the first listed one.
+ */
 export async function getBrokerageConnection(
   client: InvestorApiReadClient,
   accountId: string,
@@ -58,13 +85,16 @@ export async function getBrokerageConnection(
     query: { page_size: 20 },
   });
   const items = res.data.data.items;
-  const live =
-    items.find(
-      (c) =>
-        c.connection_status !== "DISCONNECTED" &&
-        c.connection_status !== "REVOKED",
-    ) ?? items[0];
-  return live ? projectBrokerageConnection(live) : null;
+  const active = items.filter(
+    (c) =>
+      c.connection_status !== "DISCONNECTED" &&
+      c.connection_status !== "REVOKED",
+  );
+  const chosen =
+    active.find((c) => c.account_environment === ALPHA_BROKER_ENVIRONMENT) ??
+    active[0] ??
+    items[0];
+  return chosen ? projectBrokerageConnection(chosen) : null;
 }
 
 // ─── The canonical connection mutation ──────────────────────────────────────

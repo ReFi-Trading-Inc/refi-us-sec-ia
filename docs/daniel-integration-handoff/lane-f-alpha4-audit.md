@@ -107,11 +107,19 @@ guarantee.
 1. **F-1 → no new PR.** The defect is fixed by held PR #149; action is to rebase
    #149 onto `019a6bf` (mechanical alpha.4 pin conflicts) and keep it held.
    F2-6 (`reason_codes` plumbing) waits for the D-A4 vocabulary.
-2. **F-2 — implemented in PR #161** (F-F1 answered PAPER ONLY): held projection,
+2. **Disengagement is never blocked by operability** (founder review of #161,
+   2026-09-13). The scope model is two helpers, not one: `assertOwnedConnection`
+   (valid id, owned, non-terminal) governs disconnect and confirm-disconnect;
+   `assertAlphaOperableConnection` adds the paper-only rule and governs rotate
+   and sync. An owned LIVE connection can always be severed —
+   `DisconnectOutcome` carries no `unsupported_environment` member — while
+   ownership, malformed-id, terminal-state, continuation binding, consent tuple
+   and idempotency controls are unchanged.
+3. **F-2 — implemented in PR #161** (F-F1 answered PAPER ONLY): held projection,
    paper-first selection, rotate/sync refusal, UI held state, activation step
    guard; pinned by unit tests and a contract-assertion section. Awaits founder
    review (Tier 2, runtime brokerage boundary).
-3. Optional, not Lane F: enforce the 8–128 `Idempotency-Key` length in the
+4. Optional, not Lane F: enforce the 8–128 `Idempotency-Key` length in the
    client.
 
 ## Daniel asks (exact wording)

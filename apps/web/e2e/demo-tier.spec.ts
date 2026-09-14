@@ -354,7 +354,9 @@ test.describe("Demo tier — persona sign-in", () => {
     await expect(page.getByTestId("recommendation-card")).toHaveCount(3, {
       timeout: 30_000,
     });
-    for (const status of ["CURRENT", "SUPERSEDED", "BLOCKED"]) {
+    // `data-rec-status` is normalised to lower case regardless of the backend's
+    // casing (alpha.4 leaves lifecycle_status an open string; D-A8b).
+    for (const status of ["current", "superseded", "blocked"]) {
       await expect(page.locator(`[data-rec-status="${status}"]`)).toHaveCount(
         1,
       );

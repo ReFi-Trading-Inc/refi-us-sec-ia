@@ -33,7 +33,9 @@ export function statusTone(status: RecommendationStatus): BadgeTone {
 }
 
 export function freshnessTone(status: FreshnessStatus): BadgeTone {
-  switch (status) {
+  // alpha.4 leaves freshness_status an open string and its own examples mix
+  // "fresh" and "FRESH"; normalise like statusTone does (D-A8b).
+  switch (status.toLowerCase()) {
     case "fresh":
       return "active";
     case "stale":

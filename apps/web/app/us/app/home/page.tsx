@@ -12,6 +12,7 @@ import { useInvestorPortfolio } from "../../../_hooks/useInvestorPortfolio";
 import { useInvestorActivity } from "../../../_hooks/useInvestorActivity";
 import { EquityChart, formatCurrency } from "../_components/EquityChart";
 import { TickerTape } from "../_components/TickerTape";
+import { fractionToPercent } from "@lib/investor-api/fraction-percent";
 
 const { home, activity: activityCopy } = appCopy;
 
@@ -124,7 +125,7 @@ export default function HomePage() {
                   <p className="text-xs text-charcoal-500">{home.allocation}</p>
                   <p className="text-sm font-mono tabular-nums text-charcoal-50">
                     {membership.allocationPercent !== null
-                      ? `${(Number(membership.allocationPercent) * 100).toFixed(0)}%`
+                      ? `${fractionToPercent(membership.allocationPercent)}%`
                       : "—"}{" "}
                     <Badge
                       variant={

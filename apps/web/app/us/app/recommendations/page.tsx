@@ -84,7 +84,7 @@ function RecommendationListCard({ rec }: { rec: RecommendationSummaryView }) {
     <Card
       data-testid="recommendation-card"
       data-mode="signal"
-      data-rec-status={rec.status}
+      data-rec-status={rec.status.toLowerCase()}
     >
       <CardContent className="pt-4 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-3">

@@ -10054,7 +10054,7 @@ await section(
         );
         const copy = read("apps/web/app/us/_content/onboarding.ts");
         assert.ok(
-          /setupGate\(/.test(page) && /gate\.dashboard \?/.test(page),
+          /setupGate\(/.test(page) && /gate\.accountAccess \?/.test(page),
           "dashboard continuation is decided by setupGate only",
         );
         assert.ok(
@@ -10078,10 +10078,31 @@ await section(
         const gate = stripComments(
           read("apps/web/app/us/onboarding/_lib/setup-gate.ts"),
         );
+        // The lifecycle is ADMISSION → GENERAL ACCOUNT ACCESS → BROKERAGE
+        // (may be later) → SYNC → ACCOUNT AUTHORIZATION → ECONOMIC ACTIONS.
+        // AccountAuthorization therefore sits AFTER brokerage, and an admitted
+        // investor who defers it legitimately reports DENIED /
+        // BROKER_CONNECTION_MISSING. Requiring AUTHORIZED for the dashboard
+        // inverted that and stranded them permanently, so these assertions pin
+        // the SEPARATION rather than the old conflation.
         assert.ok(
-          /authz !== AUTHORIZED_STATUS/.test(gate) &&
-            /input\.onboardingState !== READY_ONBOARDING_STATE/.test(gate),
-          "gate requires AUTHORIZED and READY",
+          /input\.onboardingState !== READY_ONBOARDING_STATE/.test(gate),
+          "general account access still requires the backend to say READY",
+        );
+        assert.ok(
+          /const identityAndProfileDone =\s*input\.steps\.identity && input\.steps\.profile/.test(
+            gate,
+          ),
+          "general account access depends on identity + profile only",
+        );
+        assert.ok(
+          !/steps\.broker/.test(gate),
+          "the gate never reads the brokerage step — brokerage may be connected later",
+        );
+        assert.ok(
+          /input\.authorizationStatus !== AUTHORIZED_STATUS/.test(gate) &&
+            /economicActionsReason = authorizationReason\(/.test(gate),
+          "economic actions — and only economic actions — require AUTHORIZED",
         );
         assert.ok(
           !/fetch\(|useMutation|onClick/.test(page),

@@ -20,6 +20,12 @@
 | Production workflow verified? | **VERIFY BEFORE GO-LIVE** | — |
 | API version pinned (`X-API-Version: 2025-01-01.orion`)? | **NO** | hardening PR pending review |
 
+## Socure case #15457 update — 2026-09-27
+
+Socure answered ReFi's Sandbox certification questions. The Test Cases tab under-reporting is a Socure-side defect with a "Run in Postman" workaround (Consumer Onboarding collection); Sandbox cannot simulate a DocV failure and Socure gives permission — not a requirement — to test that in Production; and Socure support stated that our lean retention approach (evaluation identity/decision/provenance, no scores or reason codes) "should satisfy certification."
+
+Effects: **B1** (REVIEW → DocV → ACCEPT, Sandbox) and **C** (REJECT, Sandbox) are executable now and NOT RUN. **B2** (DocV failure) stays fixture-proven with no Sandbox live coverage; its Production exercise is optional and founder-gated pending Socure's answer on whether it is required, and it is **not** a go-live blocker. **N2 is reverted**: the certification-only score/reason-code persistence (`providerDetail`) is removed in a separate TIER 2 security/data-retention PR. **Q5** (final routing via `evaluation_completed`) stays open pending written provider confirmation. Production RiskOS traffic remains NOT AUTHORIZED. Record: `docs/security/socure-review/socure-case-15457-resolution-2026-09-27.md`.
+
 ## Production gate update — 2026-09-12 (certification hardening)
 
 Production RiskOS traffic requires ALL of: A PASS · B PASS · C PASS · D–L accepted · M PASS (missed-webhook reconciliation; fixture PASS, live repeat with B) · workflow DocV path verified (N1: done) · Capture App Sandbox flow verified (OPEN: dashboard check) · scores/reasonCodes retained (done, Restricted `providerDetail`) · response nullability hardened (done) · DocV callbacks hardened (done; live proof with B) · Production monitoring ready (done; human CRITICAL channel pending) · separate founder Production activation. See `docs/security/socure-review/socure-certification-hardening-2026-09-12.md`.

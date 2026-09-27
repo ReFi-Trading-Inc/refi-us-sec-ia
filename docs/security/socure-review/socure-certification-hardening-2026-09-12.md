@@ -19,7 +19,9 @@ Source: `list_usecases`, `list_workflows`, `list_testcases`, `integration_checkl
 | Capture App Sandbox flow            | **NOT VERIFIED BY THIS SESSION** — the Capture App configuration (flow exists, published, Sandbox, SDK path not Hosted Flow, SDK key valid for the flow) is a dashboard-only surface not exposed by the MCP tools and requires a logged-in RiskOS session (founder / Socure session). Recorded as an open verification item; Production needs its own verification later.                  |
 | Sandbox SDK key                     | `fcb67dc3-…` (public) is the Environment Variables SDK key of the Sandbox account; DI SDK sessions succeeded live in Scenario A with it; DocV SDK use is unproven until B.                                                                                                                                                                                                                 |
 
-## N2 — Certification retention (scores / reason codes)
+## N2 — Certification retention (scores / reason codes) — SUPERSEDED 2026-09-27
+
+> **Superseded and reverted.** Socure support confirmed on 2026-09-27 (case #15457) that the lean retention approach should satisfy certification, so the premise for this section is gone and the implementation described below is removed. Kept for provenance only — see the 2026-09-27 addendum.
 
 Implemented as `providerDetail` on the evaluation record (`apps/web/src/lib/kyc/socure/certification-detail.ts`, schema `refi.socure.certification-detail.v1`): eval_id, workflow, workflow_id, workflow_version, decision, status, sub_status, evaluation status, eval_at, decision_at, top-level score, reason_codes, decision_tags, tags, review_queues, and per-enrichment `{enrichmentName, enrichmentProvider, failed, scores[{name, version, value}], reasonCodes[]}`; captured from the evaluation response, from every finalizing webhook, and from GET reconciliation (`source`). Never the request or raw response. **Restricted**: server-side only; the session view is built field by field; the evidence record, attestation evidence, evaluate/reconcile/webhook responses and logs never carry it (asserted). Daniel's attestation is unchanged (provider, normalized state, evidence reference). Retention period: policy/contract question, not invented.
 
@@ -48,3 +50,20 @@ A PASS · B PASS · C PASS · D–L accepted · M PASS (live repeat with B) · w
 ## Daniel's review
 
 Recorded as an architecture/security review contribution (integration notes). No backend contract change follows; membership/admission ownership unchanged.
+
+## Addendum — 2026-09-27 (Socure support case #15457)
+
+Socure's reply resolves three items above. Full record: `socure-case-15457-resolution-2026-09-27.md`.
+
+- **N1 test cases** — the single exposed test case was a Socure-side dashboard defect, not an account limitation. Socure's engineering is investigating; the full set is reachable through "Run in Postman" on the Test Cases tab (Consumer Onboarding collection). The N1 conclusion stands unchanged: the workflow definition, not the test-case list, is what proves the DocV path exists.
+- **N2 retention — REVERTED.** On 2026-09-27, Socure support stated that ReFi's described evidence-retention approach — retaining evaluation identity/decision/provenance while not retaining scores or reason codes — "should satisfy certification." The premise for N2 is therefore gone. **N2 RESOLVED: ReFi returns to the intended minimised evidence model and removes the certification-only score/reason-code persistence introduced during hardening.** The `providerDetail` field, `SocureCertificationDetail`, and the enrichment score/reason-code extraction are removed; the evidence record keeps only eval_id, provider/workflow identity, final decision, normalized state, lifecycle timestamps and evidence reference/provenance. This also resolves the contradiction with `docs/integrations/socure/pii-inventory.md`, which already documented these fields as "parsed and discarded" — the implementation is corrected, the inventory is not widened. Delivered as a separate `TIER 2 — FOUNDER REVIEW REQUIRED` security/data-retention PR, not self-merged. Founder decision 2026-09-27.
+- **DocV failure** — Socure has no Sandbox simulation and gives permission, not a requirement, to test in Production. Scenario B splits: **B1** (REVIEW → DocV → ACCEPT) is a Sandbox run, executable now; **B2** (DocV failure → final negative outcome) keeps implementation coverage PASS via fixtures, has no live provider coverage available in Sandbox, and its Production exercise is **optional and founder-gated pending Socure confirmation that it is required at all**. It is not a go-live blocker.
+- **Q5 still open (normative)** — written provider confirmation that, for this workflow, the resumed evaluation delivers final routing through `evaluation_completed`. B1 may observe the behaviour; observation does not settle the contract. Both are recorded when available.
+
+### Production gates — as of 2026-09-27
+
+A PASS · **B1 NOT RUN** (input source now available) · **C NOT RUN** (input source now available) · D–L accepted · M PASS (live repeat with B1) · workflow DocV path verified (done, N1) · Capture App flow verified (open) · nullability hardened (done) · DocV callbacks hardened (done; live proof with B1) · Production monitoring ready (done; human CRITICAL channel pending) · separate founder Production activation.
+
+Not gates: **B2 live provider coverage** (optional, founder-gated, pending Socure's answer on whether it is required) and **score/reasonCode retention** (withdrawn — not required by certification, and now removed as a retention liability).
+
+Production RiskOS traffic remains NOT AUTHORIZED.

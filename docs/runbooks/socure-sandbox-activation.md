@@ -25,9 +25,9 @@ Preconditions: `main` at or after `2051e80`; deployment target = the dedicated *
 Use the approved synthetic test session: mint the standard session cookie for a synthetic `authId` with this environment's `SESSION_JWT_SECRET` exactly as `apps/web/e2e/session.ts` does (no Stytch, no dev fallback, no demo persona) and **synthetic** identity data only (no real SSN, DOB, address, documents).
 
 11. **ACCEPT** — submit the identity form; expect `result: "evaluated"`, state `passed`; record `eval_id`, request id, workflow; verify the evidence record (`kyc-evaluations`) has `providerDecision=accept`, `providerDecisionFinal=true`, `decisionProvenance=provider_evaluation`, no PII/score fields; verify the attestation evidence module yields trusted `passed` (route `profile/v2/attestation` GET shows the chain no longer blocked on `KYC_EVIDENCE_MISSING`).
-12. **REVIEW → DocV** — submit a synthetic identity the Sandbox routes to REVIEW; expect `stepUpRequired: true`, state `additional_info_required`, `GET /kyc/step-up` returns a token for this user only; launch capture (Sandbox test documents only); on completion expect `under_review`.
+12. **B1 REVIEW → DocV → ACCEPT** — submit the REVIEW-with-step-up input from the Socure Postman **Consumer Onboarding** collection (Test Cases tab → "Run in Postman"; the tab itself under-reports test cases, Socure case #15457). Expect `stepUpRequired: true`, state `additional_info_required`, `GET /kyc/step-up` returns a token for this user only; launch capture (Sandbox test documents only); on completion expect `under_review`. Sandbox DocV auto-completes (workflow CONDITION "10sec for Sandbox"), so this is the ACCEPT branch only — the DocV **failure** branch is not simulatable in Sandbox (§C4). Capture, all eleven items, and **snapshot the exact test case into the evidence record** so certification stays reproducible if Socure changes the collection: exact test-case/persona name · the non-secret synthetic inputs used · initial `eval_id` · REVIEW / `ON_HOLD` / `evaluation_paused` as returned · `SocureDocRequest` enrichment presence · `docvTransactionToken` presence · Capture App completion · resumed evaluation · final ACCEPT · webhook event sequence · GET reconciliation result. "Run in Postman" is not an acceptable record of the input. Never store the synthetic SSN, document images or the selfie.
 13. **Final webhook** — expect `evaluation_completed` delivery → state `passed` or `failed`; record `event_id`; verify the delivery was acknowledged 2xx after the durable record.
-14. **REJECT** — synthetic reject identity → state `failed`; UI shows "We could not verify your identity"; no admission evaluation (F/G held).
+14. **C REJECT** — the provider-supported REJECT persona from the same Postman Consumer Onboarding collection (pre-DocV reject: SSN mismatch R911 / R947 / R901, or a watchlist hit) → state `failed`; UI shows "We could not verify your identity"; no admission evaluation (F/G held). Capture and snapshot: persona/test-case name · `eval_id` · workflow and version · final decision · timestamps · webhook delivery · reconciliation. No scores or reason codes are persisted.
 15. **Replay** — resend the same webhook (dashboard re-send or curl with the Bearer credential) → 200 `duplicate_event`, no state or history change.
 16. **Unknown eval_id** — send a well-formed event with an unknown `eval_id` → 200 `unknown_evaluation`, nothing created.
 17. **Invalid credential** — send without / with a wrong Bearer → 401; no audit record.
@@ -52,6 +52,45 @@ Use the approved synthetic test session: mint the standard session cookie for a 
 ## C3. Multi-instance acceptance (correctness must not depend on one instance)
 
 With `max-instances=2`: run Scenario B so the Evaluation request (instance A) and the webhook delivery (instance B, force by delivering during concurrent load or after a scale event) hit different instances; verify the webhook correlates to the same Firestore-backed record (`data.id` request id + `eval_id`) and the state transition is exactly once. Fire two concurrent replays of one webhook → one `applied`, one `duplicate_event`.
+
+## C4. Production DocV-failure exercise (Scenario B2) — OPTIONAL, FOUNDER-GATED, NOT EXECUTED
+
+Socure confirmed (case #15457) that Sandbox cannot simulate a DocV failure and invited a Production test against the free monthly credits. **That is permission, not a requirement.** B2's failure path is already covered by fixtures and deterministic tests, and this exercise is **not** a certification or go-live blocker. Do not schedule it on Socure's invitation alone.
+
+**First, ask Socure** (founder, on the call they offered):
+
+1. Is a Production DocV-failure run required for our certification/go-live, or is fixture coverage of the failure path plus a successful Sandbox REVIEW → DocV → ACCEPT (B1) sufficient?
+2. Does a synthetic Production evaluation enter any persistent fraud/identity graph?
+3. Does it affect future risk decisions?
+4. Can it be tagged as test?
+5. Can it, or should it, be purged afterwards?
+
+Do not assume answers to 2–5. If the answer to 1 is "not required", defer live-provider validation of B2 to the normal Production-readiness exercise and stop here.
+
+If it is required, or the founder elects to run it during Production readiness, **all** of the following must hold first, each recorded in the acceptance packet:
+
+- explicit founder approval (distinct from general Production activation)
+- Socure Production TPS enabled
+- Production `consumer_onboarding` workflow id / version verified (`PUBLISHED`, DocV steps present)
+- Production Capture App flow verified
+- Production webhook endpoint + credential verified, `evaluation_completed` subscription confirmed
+- sender-IP policy deliberately set and tested
+- monitoring / CRITICAL notification path live
+- synthetic identity only; no real customer identity
+- no production brokerage / trading dependency
+- `refi-socure-prod` holds its own API key, SDK key and webhook credential in Secret Manager — never a Sandbox value, never the reverse
+
+Protocol, once all of the above hold:
+
+1. Confirm the target is `refi-socure-prod` and the revision pins the Production environment; the environment-mismatch refusal stays armed and is never relaxed for this test.
+2. One synthetic test user, minted exactly as §C (no Stytch, no demo persona). Synthetic identity data only — Production is not an excuse to use a real identity.
+3. Run one evaluation that routes to REVIEW with a DocV step-up, then **fail** the capture using the Production DocV reject input confirmed with Socure beforehand.
+4. Expect: CONDITION "DocV Reject?" → REJECT with tag "DocV Reject" → final `evaluation_completed` → ReFi state `failed` (KYC_REJECTED), support path shown, nothing economic, no admission evaluation (F/G held).
+5. Confirm no operational failure was mapped to a rejection: any capture launch/upload/interrupt error must leave the record non-terminal with `lastProviderError`, never `failed`.
+6. Record per the acceptance matrix: request id, `eval_id`, workflow name/version, provider decision, ReFi state, `event_id`, timestamps, log-redaction sweep. **Never** store the synthetic SSN, the document images or the selfie. No scores or reason codes are persisted.
+7. Close out per Socure's answers to questions 4–5: purge the test user's `kyc-evaluations`, `kyc-evaluation-index` and `kyc-webhook-events` documents in `refi-socure-prod`, and note the credit consumption.
+
+A failed or aborted run leaves B2 fixture-proven. It never downgrades an existing PASS, and it never becomes a gate that was not already one.
 
 ## D. Rollback
 

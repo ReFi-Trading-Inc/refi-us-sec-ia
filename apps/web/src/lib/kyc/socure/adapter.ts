@@ -15,10 +15,6 @@
  * `REFI_KYC_PROVIDER=socure` with complete configuration; tests use
  * `FakeSocureClient`.
  */
-import {
-  extractSocureCertificationDetail,
-  type SocureCertificationDetail,
-} from "./certification-detail";
 import { emitKycSignal } from "../../observability/kyc-signals";
 import {
   applyFinalProviderDecision,
@@ -298,11 +294,6 @@ export class SocureKycProvider implements KycProviderAdapter {
     );
     next = {
       ...next,
-      providerDetail: extractSocureCertificationDetail(
-        response,
-        "provider_evaluation",
-        at,
-      ),
       submission: { key: submissionKey, phase: "answered", at },
       docv:
         outcome.docvTransactionToken !== null
@@ -520,17 +511,11 @@ export class SocureKycProvider implements KycProviderAdapter {
     }
     const mapped = mapSocureWebhookDecision(completed.data);
     const applied = await this.finalizeProviderResult({
-      source: "provider_webhook",
       eventId: completed.data.event_id,
       providerRequestId: completed.data.data.id,
       providerEvaluationId: completed.data.data.eval_id,
       providerDecision: mapped.providerDecision,
       mapped: { refiState: mapped.refiState, final: mapped.final },
-      detail: extractSocureCertificationDetail(
-        completed.data.data,
-        "provider_webhook",
-        new Date().toISOString(),
-      ),
       correlationId,
     });
     return { handled: true, ...applied };
@@ -543,13 +528,11 @@ export class SocureKycProvider implements KycProviderAdapter {
    * audit) is identical for both sources.
    */
   private finalizeProviderResult(args: {
-    source: "provider_webhook" | "provider_reconciliation";
     eventId: string;
     providerRequestId: string;
     providerEvaluationId: string;
     providerDecision: KycProviderDecision;
     mapped: { refiState: KycLifecycleState; final: boolean };
-    detail: SocureCertificationDetail;
     correlationId: string;
   }): Promise<WebhookApplication> {
     return applyFinalProviderDecision({
@@ -559,7 +542,6 @@ export class SocureKycProvider implements KycProviderAdapter {
       providerDecision: args.providerDecision,
       mapped: args.mapped,
       correlationId: args.correlationId,
-      detail: args.detail,
     });
   }
 
@@ -670,19 +652,12 @@ export class SocureKycProvider implements KycProviderAdapter {
       const rec = await note("still_pending", backoff);
       return { session: view(rec), outcome: "still_pending" };
     }
-    const at = new Date().toISOString();
     const applied = await this.finalizeProviderResult({
-      source: "provider_reconciliation",
       eventId: `reconcile:${evalId}:${outcome.providerDecision}`,
       providerRequestId: requestId,
       providerEvaluationId: evalId,
       providerDecision: outcome.providerDecision,
       mapped: { refiState: outcome.refiState, final: true },
-      detail: extractSocureCertificationDetail(
-        response,
-        "provider_reconciliation",
-        at,
-      ),
       correlationId,
     });
     const rec = await note(`finalized:${applied.outcome}`, 0);

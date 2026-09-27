@@ -5608,10 +5608,11 @@ await section(
     fx.FIXTURE_INDIVIDUAL.di_session_token,
   ];
   const noPii = (value: unknown, label: string) => {
-    // Applicant PII is forbidden EVERYWHERE, including the Restricted
-    // providerDetail. Provider risk keys (score/tags/reason codes) are
-    // forbidden everywhere EXCEPT the Restricted providerDetail (certification
-    // retention, founder 2026-09-12), which stays server-side by construction.
+    // Applicant PII and provider risk keys (score / tags / reason codes) are
+    // forbidden EVERYWHERE, with no exemption. Founder decision 2026-09-27
+    // (Socure case #15457): Socure confirmed the lean evidence record
+    // satisfies certification, so the Restricted `providerDetail` exemption
+    // that held scores and reason codes is removed — nothing retains them.
     const text = JSON.stringify(value);
     for (const v of PII_VALUES) {
       assert.ok(
@@ -5619,17 +5620,57 @@ await section(
         `${label} must not contain applicant PII (${v.slice(0, 4)}…)`,
       );
     }
-    const withoutDetail =
-      typeof value === "object" && value !== null && "providerDetail" in value
-        ? JSON.stringify({ ...(value as object), providerDetail: undefined })
-        : text;
     for (const k of evidence.KYC_EVIDENCE_FORBIDDEN_KEYS) {
       assert.ok(
-        !new RegExp(`"${k}"\\s*:`).test(withoutDetail),
+        !new RegExp(`"${k}"\\s*:`).test(text),
         `${label} must not carry key ${k}`,
       );
     }
   };
+  /**
+   * Provider risk data must not exist in ANY durable KYC surface. Founder
+   * decision 2026-09-27 (Socure case #15457): Socure confirmed the lean
+   * evidence model satisfies certification, so scores, reason codes, raw tags,
+   * review/routing metadata and enrichment outputs are not persisted at all —
+   * there is no Restricted side channel and no second storage path.
+   */
+  const RISK_KEYS = [
+    "providerDetail",
+    "reasonCodes",
+    "decisionTags",
+    "reviewQueues",
+    "enrichments",
+    "data_enrichments",
+    "review_queues",
+    "subStatus",
+    "sub_status",
+  ];
+  const RISK_VALUES = [
+    "fixture_reason_not_for_users",
+    "fixture_tag_not_for_users",
+  ];
+  const noProviderRiskData = (value: unknown, label: string) => {
+    const text = JSON.stringify(value);
+    for (const k of RISK_KEYS) {
+      assert.ok(
+        !new RegExp(`"${k}"\\s*:`).test(text),
+        `${label} must not carry provider risk key ${k}`,
+      );
+    }
+    for (const v of RISK_VALUES) {
+      assert.ok(
+        !text.includes(v),
+        `${label} must not carry provider risk value ${v}`,
+      );
+    }
+    assert.ok(
+      !/"score"\s*:/.test(text) && !/"scores"\s*:/.test(text),
+      `${label} must not carry provider scores`,
+    );
+    // PII is forbidden too: minimisation never trades one leak for another.
+    noPii(value, label);
+  };
+
   const SAVED_KEYS = [
     "REFI_KYC_PROVIDER",
     "REFI_KYC_MOCK_CONTROLS",
@@ -6336,28 +6377,12 @@ await section(
           fake.requests[0]!.request.id,
         );
         assert.equal(recA.evidence.providerWorkflowVersion, "1.0.0");
-        // Certification retention (founder 2026-09-12): scores / reason codes are
-        // retained ONLY as the Restricted normalized providerDetail; the evidence
-        // record, session view and attestation never carry them.
-        assert.ok(
-          !JSON.stringify(recA.evidence).includes(
-            "fixture_reason_not_for_users",
-          ) && !/"score"/.test(JSON.stringify(recA.evidence)),
-          "evidence record never carries score/reason codes",
-        );
-        assert.equal(recA.providerDetail?.evalId, fx.FIXTURE_EVAL_ID_ACCEPT);
-        assert.ok(
-          recA.providerDetail?.reasonCodes.includes(
-            "fixture_reason_not_for_users",
-          ),
-          "providerDetail retains reason codes (Restricted, server-side)",
-        );
-        assert.equal(
-          typeof recA.providerDetail?.score,
-          "number",
-          "providerDetail retains the top-level score",
-        );
-        assert.equal(recA.providerDetail?.source, "provider_evaluation");
+        // Retention minimisation (founder 2026-09-27, Socure case #15457):
+        // scores and reason codes are retained NOWHERE in the durable record —
+        // not on the evidence, not under a Restricted side channel. The record
+        // answers "which evaluation produced which ReFi state, when, under
+        // which workflow" and nothing more.
+        noProviderRiskData(recA, "evaluation record (ACCEPT)");
         assert.equal(recA.evidence.providerDecision, "accept");
         assert.equal(recA.evidence.providerDecisionFinal, true);
         assert.equal(recA.evidence.decisionProvenance, "provider_evaluation");
@@ -6397,14 +6422,7 @@ await section(
         });
         assert.equal(rej.ok && rej.session.state, "failed");
         const recB = (await entity.getKycEvaluation(subjectB.authId))!;
-        assert.ok(
-          !JSON.stringify(recB.evidence).includes("fixture_tag_not_for_users"),
-          "provider tags never reach the evidence record (Restricted providerDetail only)",
-        );
-        assert.ok(
-          recB.providerDetail?.tags.includes("fixture_tag_not_for_users"),
-          "providerDetail retains routing tags for certification",
-        );
+        noProviderRiskData(recB, "evaluation record (REJECT)");
         noPii(recB, "evaluation record (REJECT)");
         // failed is retryable with a NEW evaluation → REVIEW with DocV
         fake = new client.FakeSocureClient(fx.SCRIPT_REVIEW_DOCV);
@@ -6750,24 +6768,17 @@ await section(
           `${label} is still rejected`,
         );
       }
-      const cert =
-        await import("../apps/web/src/lib/kyc/socure/certification-detail.ts");
-      const detail = cert.extractSocureCertificationDetail(
-        ok.success ? ok.data : (base as never),
-        "provider_evaluation",
-        "2026-09-12T00:00:00.000Z",
-      );
-      assert.equal(detail.score, null);
-      assert.deepEqual(detail.reasonCodes, []);
-      assert.equal(detail.enrichments.length, 3);
+      // N3 nullability stands on the schema alone: a failed (null) enrichment
+      // output parses and is carried as `response: null` rather than aborting
+      // the evaluation. Nothing extracts scores or reason codes out of it —
+      // the certification-detail extractor is removed (founder 2026-09-27).
+      const enrichments = ok.success ? ok.data.data_enrichments : undefined;
+      assert.equal(enrichments?.length, 3);
       assert.equal(
-        detail.enrichments[0]?.failed,
-        true,
-        "null enrichment output recorded as failed, not fatal",
+        enrichments?.[0]?.response,
+        null,
+        "null enrichment output parses as null, not fatal",
       );
-      assert.deepEqual(detail.enrichments[1]?.reasonCodes, ["R123"]);
-      assert.equal(detail.enrichments[1]?.scores[0]?.value, 0.42);
-      assert.equal(detail.enrichments[1]?.scores[0]?.name, "data.kyc.score");
       // Webhook: informational fields null/absent still parse; authority stays strict.
       const wh = fx.dashboardVerificationPing("evaluation_completed") as Record<
         string,
@@ -6814,7 +6825,7 @@ await section(
   );
 
   await section(
-    "socure: certification retention boundary — providerDetail (scores/reason codes/tags) is Restricted: on the record only; never in the session view, the evidence record, the attestation evidence, or the reconcile/webhook responses; never applicant PII",
+    "socure: retention minimisation — provider scores, reason codes, raw tags, routing/review metadata and enrichment outputs are persisted NOWHERE: not on the durable record, not in the session view, the evidence record, the attestation evidence, or the reconcile/webhook responses; no Restricted side channel and no second storage path; never applicant PII",
     async () => {
       await withEnv({ ...SOCURE_OK }, async () => {
         await entity.resetKycEvaluationForTests(subjectA.authId);
@@ -6830,7 +6841,9 @@ await section(
         });
         assert.ok(out.ok);
         const rec = (await entity.getKycEvaluation(subjectA.authId))!;
-        assert.equal(rec.providerDetail?.score, 12);
+        // The provider returned score 12 and a reason code (fixtures); neither
+        // may survive anywhere in the durable record.
+        noProviderRiskData(rec, "durable evaluation record");
         const outText = JSON.stringify(out);
         const viewText = JSON.stringify(await p.getSession(subjectA));
         const evText = JSON.stringify(await p.evidenceRecord!(subjectA));
@@ -6849,14 +6862,32 @@ await section(
             !/providerDetail|reasonCodes|fixture_reason_not_for_users|"score"/.test(
               text,
             ),
-            `${label} never carries Restricted provider detail`,
+            `${label} never carries provider risk data`,
           );
         }
-        for (const v of PII_VALUES)
+        // The removed module must not come back: no source file may import or
+        // re-create a certification-detail extraction path.
+        for (const rel of [
+          "apps/web/src/lib/kyc/socure/adapter.ts",
+          "apps/web/src/lib/prototype-store/entities/kyc-evaluation.ts",
+        ]) {
+          const text = read(rel);
           assert.ok(
-            !JSON.stringify(rec.providerDetail).includes(v),
-            "providerDetail never carries applicant PII",
+            !/certification-detail|SocureCertificationDetail|providerDetail/.test(
+              text,
+            ),
+            `${rel} must not reference the removed certification-detail retention path`,
           );
+        }
+        assert.ok(
+          !existsSync(
+            join(
+              REPO_ROOT,
+              "apps/web/src/lib/kyc/socure/certification-detail.ts",
+            ),
+          ),
+          "certification-detail.ts is deleted, not orphaned",
+        );
         const src = read("apps/web/src/lib/kyc/socure/adapter.ts");
         assert.ok(
           /function view\(record: KycEvaluationRecord\)[\s\S]*?referenceId: record\.referenceId/.test(
@@ -6935,7 +6966,7 @@ await section(
           "provider_webhook",
           "reconciliation finalizes through the webhook finalization path",
         );
-        assert.equal(after.providerDetail?.source, "provider_reconciliation");
+        noProviderRiskData(after, "reconciled record (ACCEPT)");
         assert.equal(
           after.history.filter((h) => h.state === "passed").length,
           1,
@@ -7066,7 +7097,7 @@ await section(
         const rej = (await entity.getKycEvaluation(subjectA.authId))!;
         assert.equal(rej.state, "failed");
         assert.equal(rej.evidence.providerDecision, "reject");
-        assert.equal(rej.providerDetail?.tags[0], "fixture_tag_not_for_users");
+        noProviderRiskData(rej, "reconciled record (REJECT)");
         // No evaluation yet → nothing_to_reconcile, no provider call.
         await reset();
         const fake3 = new client.FakeSocureClient();

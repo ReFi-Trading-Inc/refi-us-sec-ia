@@ -3,7 +3,7 @@ packages:
   - "packages/*"
 
 # Security floor for transitive deps (Dependabot burn-down; refreshed
-# 2026-08-24 against the live registry audit — see compliance/CONTROL_MATRIX.md
+# 2026-08-24, sharp floor raised 2026-09-27 for GHSA-rgj7-g3m4-5g8c — see compliance/CONTROL_MATRIX.md
 # CM-02). Each entry pins the minimum patched version within the parent's own
 # major line; parents' ranges stay intact. Deliberately NOT floored here:
 # uuid (patched line starts at v11; forcing it under the v8/v9 wallet-connector
@@ -12,7 +12,7 @@ packages:
 overrides:
   ws: ">=8.21.1 <9"
   axios: ">=1.18.0"
-  sharp: ">=0.35.0"
+  sharp: ">=0.35.4"
   postcss: ">=8.5.23 <9"
   "brace-expansion@1": ">=1.1.18 <2"
   "brace-expansion@2": ">=2.1.4 <3"

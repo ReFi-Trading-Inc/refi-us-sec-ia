@@ -20,6 +20,14 @@
 | Production workflow verified? | **VERIFY BEFORE GO-LIVE** | — |
 | API version pinned (`X-API-Version: 2025-01-01.orion`)? | **NO** | hardening PR pending review |
 
+## Socure answers — 2026-09-29
+
+**Q5 CLOSED — provider confirmed.** Socure answered "Yes" to whether the resumed `consumer_onboarding` v1.0.0 evaluation delivers its final outcome through the `evaluation_completed` webhook. Provider contract: CONFIRMED. Runtime observation: pending B1 — separate evidence classes.
+
+**Certification.** Socure confirmed that its certification process is not a prerequisite to Launch; the amount of testing/certification evidence is left to the customer based on the confidence they require in their end-user experience. Therefore: **Socure external certification gate — NONE. ReFi internal KYC acceptance standard — REMAINS IN FORCE.** No B1, C, Capture App, webhook, reconciliation or Production-readiness control is weakened by this; the gates are ReFi's own and must never be described as Socure-imposed.
+
+**B2 — WILL NOT RUN (founder decision 2026-09-29).** Deterministic coverage PASS; Sandbox provider execution unavailable by Socure; Production provider execution will not run, because it is not required for Launch and synthetic Production data "would be stored and theoretically could impact future risk decisions". Runbook §C4 is retained as a dormant procedure, not an open gate. Record: `docs/security/socure-review/socure-case-15457-resolution-2026-09-27.md` (2026-09-29 addendum).
+
 ## Socure case #15457 update — 2026-09-27
 
 Socure answered ReFi's Sandbox certification questions. The Test Cases tab under-reporting is a Socure-side defect with a "Run in Postman" workaround (Consumer Onboarding collection); Sandbox cannot simulate a DocV failure and Socure gives permission — not a requirement — to test that in Production; and Socure support stated that our lean retention approach (evaluation identity/decision/provenance, no scores or reason codes) "should satisfy certification."

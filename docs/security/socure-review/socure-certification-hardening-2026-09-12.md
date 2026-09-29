@@ -67,3 +67,9 @@ A PASS · **B1 NOT RUN** (input source now available) · **C NOT RUN** (input so
 Not gates: **B2 live provider coverage** (optional, founder-gated, pending Socure's answer on whether it is required) and **score/reasonCode retention** (withdrawn — not required by certification, and now removed as a retention liability).
 
 Production RiskOS traffic remains NOT AUTHORIZED.
+
+## Addendum — 2026-09-29 (Q5 closed; B2 will not run; certification authority corrected)
+
+- **Q5 — CLOSED / PROVIDER CONFIRMED.** Socure answered "Yes" to the question asking whether the resumed `consumer_onboarding` v1.0.0 evaluation delivers the final outcome through `evaluation_completed`. Provider contract: CONFIRMED. Runtime observation: pending B1. Separate evidence classes; neither substitutes for the other.
+- **Certification authority.** Socure confirmed that its certification process is not a prerequisite to Launch; the amount of testing/certification evidence is left to the customer based on the confidence they require in their end-user experience. So: **Socure external certification gate — NONE; ReFi internal KYC acceptance standard — REMAINS IN FORCE.** The gate list above is not relaxed by this; it is ReFi's own release standard and must not be presented as Socure-imposed. N2's reversal (PR #171) is unaffected — the retention it removed was never compelled.
+- **B2 — WILL NOT RUN (founder decision 2026-09-29).** Deterministic coverage PASS; Sandbox provider execution unavailable by Socure; Production provider execution will not run. Socure confirmed a synthetic Production evaluation's data "would be stored and theoretically could impact future risk decisions"; whether it can be marked as a test or purged is unanswered. ReFi will not contaminate Socure's Production identity/risk data to exercise a path already covered deterministically. §C4 is retained as a dormant procedure, not an open gate.

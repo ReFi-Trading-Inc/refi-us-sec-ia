@@ -150,3 +150,117 @@ Retained verbatim, as provider evidence. Socure support reply, 2026-09-27, Nate 
 > Please feel free to grab time here to discuss in more detail. We want to ensure you are set up for success.
 
 Quoted as received, including typographical errors; the referenced screenshot is not reproduced here. ReFi's originating request is case #15457, "Sandbox test inputs for consumer_onboarding v1.0.0 (REVIEW/DocV step-up and REJECT)", six numbered questions, synthetic test data only, no credentials in the thread.
+
+---
+
+## Addendum — Socure's follow-up answers (2026-09-29)
+
+ReFi sent the approved clarification. Socure replied 2026-09-29, opening with "Yes." and answering in the order the questions were asked:
+
+> **Yes.**
+>
+> **We do not require certification in Launch. This is up to the customer and what they feel is required for them to be confident in the experience they deliver to their end users.**
+>
+> **The data would be stored and theoretically could impact future risk decisions.**
+
+The questions, in the order sent, were (1) final routing through `evaluation_completed`, (2) whether a Production DocV-failure run is required, (3) if required, what becomes of synthetic Production data. The three answers correspond in order.
+
+### 1. Q5 — CLOSED / PROVIDER CONFIRMED
+
+Socure answered **"Yes"** to the question asking whether the resumed `consumer_onboarding` v1.0.0 evaluation delivers the final outcome through the `evaluation_completed` webhook.
+
+Provider-confirmed contract:
+
+```text
+consumer_onboarding v1.0.0
+DocV completes
+→ evaluation resumes
+→ final routing through evaluation_completed
+```
+
+Q5 is **no longer open**. B1 must still verify the behaviour at runtime, but these are two separate evidence classes and neither substitutes for the other:
+
+| Evidence class      | State                              |
+| ------------------- | ---------------------------------- |
+| provider contract   | **CONFIRMED** (Socure, 2026-09-29) |
+| runtime observation | **PENDING B1**                     |
+
+### 2. Certification — precise wording
+
+> Socure confirmed that its certification process is not a prerequisite to Launch. The amount of testing/certification evidence is left to the customer based on the confidence they require in their end-user experience.
+
+State it that way, and not as the broader "certification is not required". The distinction that matters:
+
+```text
+Socure external certification gate:   NONE
+ReFi internal KYC acceptance standard: REMAINS IN FORCE
+```
+
+Nothing in ReFi's release standard is weakened because Socure imposes no gate. B1, C, the Capture App check, webhook handling, reconciliation and the Production-readiness controls all stand exactly as written. What changes is only the authority we cite for them: they are ours, and must never be described — internally or in audit — as Socure-imposed.
+
+### 3. B2 — FOUNDER DECISION: WILL NOT RUN
+
+Socure confirmed that a synthetic Production evaluation's data "would be stored and theoretically could impact future risk decisions". Two of the four sub-questions are answered, both unfavourably:
+
+| Sub-question                                | Socure answer                      |
+| ------------------------------------------- | ---------------------------------- |
+| Enters a persistent fraud/identity graph?   | **Yes — the data would be stored** |
+| Can affect future risk decisions?           | **Yes, theoretically**             |
+| Can it be marked as a test?                 | NOT ANSWERED                       |
+| Can it, or should it, be removed afterward? | NOT ANSWERED                       |
+
+Final classification, founder decision 2026-09-29:
+
+```text
+B2 — DocV failure → final negative outcome
+
+deterministic implementation coverage:  PASS
+Sandbox provider execution:             UNAVAILABLE BY SOCURE
+Production provider execution:          WILL NOT RUN
+
+reason: not required by Socure for Launch, and synthetic Production
+evaluation data would be stored and could theoretically affect future
+risk decisions
+```
+
+ReFi will not contaminate Socure's Production identity/risk data solely to exercise a failure path already covered deterministically. This is **not** an open gate and is no longer "optional / founder-gated" — the decision has been made. The §C4 Production procedure remains documented as a **dormant procedure** should circumstances materially change.
+
+### 4. Socure status after this reply
+
+```text
+A   PASS
+
+B1  REVIEW → DocV → ACCEPT
+    Sandbox
+    NOT RUN
+    provider routing semantics CONFIRMED
+    live observation pending
+
+B2  DocV failure
+    deterministic PASS
+    Sandbox provider run unavailable
+    Production run WILL NOT RUN
+
+C   final REJECT
+    Sandbox
+    NOT RUN
+
+D–L accepted
+
+M   fixture PASS
+    live repeat with B1 pending
+
+Q5  CLOSED — Socure confirmed evaluation_completed
+```
+
+Remaining real Socure work:
+
+1. Obtain the Consumer Onboarding Postman collection.
+2. Complete the Sandbox Capture App dashboard check.
+3. Run B1.
+4. Run C.
+5. Repeat M against B1.
+
+Still worth obtaining, but blocking nothing: whether a Production evaluation can be marked as a test or purged, the booking link for the Postman walkthrough, and confirmation when the Test Cases tab defect is fixed.
+
+Production RiskOS traffic remains NOT AUTHORIZED.

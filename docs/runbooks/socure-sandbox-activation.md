@@ -53,9 +53,13 @@ Use the approved synthetic test session: mint the standard session cookie for a 
 
 With `max-instances=2`: run Scenario B so the Evaluation request (instance A) and the webhook delivery (instance B, force by delivering during concurrent load or after a scale event) hit different instances; verify the webhook correlates to the same Firestore-backed record (`data.id` request id + `eval_id`) and the state transition is exactly once. Fire two concurrent replays of one webhook → one `applied`, one `duplicate_event`.
 
-## C4. Production DocV-failure exercise (Scenario B2) — OPTIONAL, FOUNDER-GATED, NOT EXECUTED
+## C4. Production DocV-failure exercise (Scenario B2) — DORMANT PROCEDURE; FOUNDER DECISION 2026-09-29: WILL NOT RUN
 
-Socure confirmed (case #15457) that Sandbox cannot simulate a DocV failure and invited a Production test against the free monthly credits. **That is permission, not a requirement.** B2's failure path is already covered by fixtures and deterministic tests, and this exercise is **not** a certification or go-live blocker. Do not schedule it on Socure's invitation alone.
+**This procedure is dormant. Do not execute it.** Founder decision 2026-09-29: B2's Production provider execution **WILL NOT RUN**.
+
+Socure confirmed (case #15457) that Sandbox cannot simulate a DocV failure and invited a Production test; on 2026-09-29 Socure further confirmed that its certification process is not a prerequisite to Launch, and that a synthetic Production evaluation's data "would be stored and theoretically could impact future risk decisions". ReFi will not contaminate Socure's Production identity/risk data to exercise a failure path already covered by fixtures and deterministic tests. This is not an open gate.
+
+The steps below are retained only so the procedure exists should circumstances materially change — for example if Socure later confirms a test-marking or purge mechanism. Reopening it requires a new founder decision, not merely the conditions below.
 
 **First, ask Socure** (founder, on the call they offered):
 

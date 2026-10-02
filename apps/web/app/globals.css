@@ -9,6 +9,25 @@
 
   body {
     @apply bg-charcoal-900 text-charcoal-50 font-sans antialiased;
+    font-feature-settings: "kern", "liga", "calt";
+  }
+
+  /* Design system: every interactive element shows a 2px mint focus ring. */
+  :focus-visible {
+    outline: 2px solid theme("colors.mint.400");
+    outline-offset: 2px;
+  }
+
+  /* Design system + WCAG 2.3.3: honour the user's motion preference. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 
   /* Numeric values always use mono */

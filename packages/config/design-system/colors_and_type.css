@@ -1,0 +1,250 @@
+/* =========================================================================
+   ReFi.Trading — Colors & Type Foundations
+   Shared across both surfaces (Marketing Website + Trading Application).
+   The two surfaces share PALETTE + FONT FAMILIES but differ in spacing,
+   density, radius and motion — those overrides live in each ui_kit.
+   ========================================================================= */
+
+/* JetBrains Mono — shared voice with the Man vs Machine game property.
+   DM Mono remains the local fallback if this fails to load. */
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&display=swap");
+
+/* ----------------------------- FONT FACES ------------------------------- */
+/* Primary UI sans — DM Sans (replaces the v1.0 "Inter" spec; the wordmark
+   and current product use DM Sans). */
+@font-face { font-family:"DM Sans"; font-weight:400; font-style:normal; font-display:swap;
+  src:url("fonts/DMSans-Regular.ttf") format("truetype"); }
+@font-face { font-family:"DM Sans"; font-weight:500; font-style:normal; font-display:swap;
+  src:url("fonts/DMSans-Medium.ttf") format("truetype"); }
+@font-face { font-family:"DM Sans"; font-weight:600; font-style:normal; font-display:swap;
+  src:url("fonts/DMSans-SemiBold.ttf") format("truetype"); }
+@font-face { font-family:"DM Sans"; font-weight:700; font-style:normal; font-display:swap;
+  src:url("fonts/DMSans-Bold.ttf") format("truetype"); }
+@font-face { font-family:"DM Sans"; font-weight:800; font-style:normal; font-display:swap;
+  src:url("fonts/DMSans-ExtraBold.ttf") format("truetype"); }
+
+/* Monospace — DM Mono (replaces the v1.0 "JetBrains Mono" spec).
+   Used for ALL money / quantity / price / percentage / hash / timestamp values. */
+@font-face { font-family:"DM Mono"; font-weight:300; font-style:normal; font-display:swap;
+  src:url("fonts/DMMono-Light.ttf") format("truetype"); }
+@font-face { font-family:"DM Mono"; font-weight:400; font-style:normal; font-display:swap;
+  src:url("fonts/DMMono-Regular.ttf") format("truetype"); }
+@font-face { font-family:"DM Mono"; font-weight:500; font-style:normal; font-display:swap;
+  src:url("fonts/DMMono-Medium.ttf") format("truetype"); }
+
+/* Editorial serif — DM Serif Display. Marketing site only: large pull quotes,
+   the occasional editorial headline accent. Never used in the trading app. */
+@font-face { font-family:"DM Serif Display"; font-weight:400; font-style:normal; font-display:swap;
+  src:url("fonts/DMSerifDisplay-Regular.ttf") format("truetype"); }
+@font-face { font-family:"DM Serif Display"; font-weight:400; font-style:italic; font-display:swap;
+  src:url("fonts/DMSerifDisplay-Italic.ttf") format("truetype"); }
+@font-face { font-family:"DM Serif Text"; font-weight:400; font-style:normal; font-display:swap;
+  src:url("fonts/DMSerifText-Regular.ttf") format("truetype"); }
+
+/* Friz Quadrata — legacy/specialty brand serif (provided in brand kit).
+   Reserve for rare brand-mark / certificate contexts. Not a core UI face. */
+@font-face { font-family:"Friz Quadrata"; font-weight:400; font-style:normal; font-display:swap;
+  src:url("fonts/FrizQuadrata-Regular.ttf") format("truetype"); }
+@font-face { font-family:"Friz Quadrata"; font-weight:700; font-style:italic; font-display:swap;
+  src:url("fonts/FrizQuadrata-BoldItalic.ttf") format("truetype"); }
+
+:root {
+  /* ===================================================================
+     COLOR — PRIMITIVES
+     =================================================================== */
+
+  /* Terminal ladder — backgrounds & surfaces (never text/foreground).
+     Green-tinted, shared with the Man vs Machine game property. */
+  --color-charcoal:         #08110D;  /* page bg, sidebar bg */
+  --color-charcoal-deep:    #050806;  /* deepest bg, modal overlays, sidebar active */
+  --color-charcoal-light:   #0C1712;  /* hover rows/cards, zebra stripe, table header */
+  --color-charcoal-lighter: #12211A;  /* card / panel / elevated surface */
+  --color-charcoal-border:  #1C3A2E;  /* panel border */
+
+  /* Explicit terminal aliases (game-side names, same values) */
+  --color-terminal-black: #050806;
+  --color-terminal-deep:  #08110D;
+  --color-terminal-panel: #0C1712;
+  --color-terminal-white: #D8EEE5;  /* primary text on dark */
+
+  /* Phosphor — the brand accent, as a five-step luminance ladder.
+     Carries surface depth in the app and state progression in the game. */
+  --color-phosphor-dim: #27634E;  /* locked / inert state, ASCII art */
+  --color-phosphor-mid: #0A8F68;  /* available state, data labels */
+  --color-phosphor:     #0CD4A0;  /* primary CTA, active nav, links, BUY/positive */
+  --color-phosphor-hot: #79FFD7;  /* passed state, emphasised data values */
+  --color-paper-green:  #B8FFD9;  /* highest emphasis, machine-beaten state */
+
+  /* Mint — retained aliases; mint IS phosphor */
+  --color-mint:        #0CD4A0;  /* primary CTA, active nav, links, BUY/positive */
+  --color-mint-dark:   #0AB889;  /* hover on mint elements only */
+  --color-mint-light:  #4EEDC4;  /* sparkline up-trend, 10% chart fills (not text) */
+  --color-mint-logo:   #43D4A0;  /* the exact tint baked into the logo artwork */
+
+  /* Status — softened to sit on green-black without glaring */
+  --color-success: #10B981;  /* positive P&L, approved, BUY */
+  --color-warning: #D6A647;  /* risk 50-80%, approaching limits, expiring */
+  --color-error:   #D94C4C;  /* negative P&L, rejected, SELL, safe-mode, breaches */
+
+  /* Neutral ramp — green-tinted, NOT a stock grey scale.
+     Token names kept for compatibility; every value is brand-owned. */
+  --color-gray-50:  #EFFAF5;
+  --color-gray-100: #DCEFE7;
+  --color-gray-200: #BFDCD0;
+  --color-gray-300: #A8C7BA;  /* secondary body text, labels */
+  --color-gray-400: #7FA595;  /* tertiary text, timestamps, metadata */
+  --color-gray-500: #5C8474;  /* muted / disabled text, placeholders */
+  --color-gray-600: #3E6153;  /* very muted text, input borders */
+  --color-gray-700: #24463A;  /* default card/table borders, dividers (never text) */
+  --color-gray-800: #172A22;  /* dark borders, table-row borders */
+  --color-gray-900: #0C1712;
+  --color-white:    #D8EEE5;  /* primary text on dark (never a background) */
+
+  /* Common translucent accents (badges, fills, rings) */
+  --mint-10:    rgba(12,212,160,0.10);
+  --mint-15:    rgba(12,212,160,0.15);
+  --mint-20:    rgba(12,212,160,0.20);
+  --mint-30:    rgba(12,212,160,0.30);
+  --success-10: rgba(16,185,129,0.10);
+  --success-20: rgba(16,185,129,0.20);
+  --warning-10: rgba(214,166,71,0.10);
+  --warning-20: rgba(214,166,71,0.20);
+  --error-10:   rgba(217,76,76,0.10);
+  --error-20:   rgba(217,76,76,0.20);
+  --error-30:   rgba(217,76,76,0.30);
+
+  /* Hairline rules — mint at low alpha replaces grey borders on dark */
+  --hairline:      rgba(12,212,160,0.22);
+  --hairline-soft: rgba(12,212,160,0.12);
+
+  /* ===================================================================
+     SEMANTIC COLOR
+     =================================================================== */
+  --bg-page:        var(--color-charcoal);
+  --bg-deep:        var(--color-charcoal-deep);
+  --bg-surface:     var(--color-charcoal-lighter);  /* cards, panels */
+  --bg-hover:       var(--color-charcoal-light);     /* row / card hover */
+  --bg-input:       var(--color-charcoal);
+  --border-default: var(--color-gray-700);
+  --border-row:     var(--color-gray-800);
+  --border-input:   var(--color-gray-600);
+
+  --fg-primary:   var(--color-white);      /* headings, data values */
+  --fg-secondary: var(--color-gray-300);   /* body, labels */
+  --fg-tertiary:  var(--color-gray-400);   /* metadata, timestamps */
+  --fg-muted:     var(--color-gray-500);   /* disabled, placeholder */
+  --accent:       var(--color-mint);
+  --accent-hover: var(--color-mint-dark);
+
+  --pos: var(--color-success);
+  --neg: var(--color-error);
+  --warn: var(--color-warning);
+
+  /* ===================================================================
+     TYPE — FAMILIES
+     =================================================================== */
+  --font-sans:  "DM Sans", system-ui, -apple-system, sans-serif;   /* @kind font */
+  --font-mono:  "JetBrains Mono", "DM Mono", ui-monospace, monospace; /* @kind font */
+  --font-serif: "DM Serif Display", Georgia, serif;                /* @kind font */
+
+  /* ===================================================================
+     TYPE — MARKETING WEBSITE SCALE (fluid, generous)
+     =================================================================== */
+  --web-h1: 700 3.5rem/1.1 var(--font-sans);    /* 56px page titles */
+  --web-h2: 700 2.25rem/1.2 var(--font-sans);   /* 36px section titles */
+  --web-h3: 600 1.875rem/1.3 var(--font-sans);  /* 30px subsection */
+  --web-h4: 600 1.25rem/1.3 var(--font-sans);   /* 20px card titles */
+  --web-lead: 400 1.25rem/1.6 var(--font-sans); /* 20px hero subtitle */
+  --web-body: 400 1rem/1.5 var(--font-sans);    /* 16px body */
+  --web-small: 400 0.875rem/1.5 var(--font-sans); /* 14px caption */
+
+  /* ===================================================================
+     TYPE — TRADING APP SCALE (tight, dense)
+     =================================================================== */
+  --app-status-value: 700 24px/1.2 var(--font-mono); /* status-bar portfolio value */
+  --app-h1: 700 20px/1.3 var(--font-sans);   /* section headings */
+  --app-h2: 600 16px/1.3 var(--font-sans);   /* card titles */
+  --app-h3: 600 14px/1.4 var(--font-sans);   /* minor headings, table groups */
+  --app-body: 400 14px/1.5 var(--font-sans); /* prose */
+  --app-body-sm: 400 13px/1.5 var(--font-sans); /* table body */
+  --app-caption: 400 12px/1.4 var(--font-sans); /* timestamps, badges */
+  --app-micro: 400 11px/1.3 var(--font-sans);   /* fine print */
+
+  /* ===================================================================
+     SPACING
+     Website: 8px grid (8/16/24/32/48/64/96/128)
+     Trading app: tighter (4/8/12/16/20/24)
+     =================================================================== */
+  --web-space-2: 8px;  --web-space-4: 16px; --web-space-6: 24px;
+  --web-space-8: 32px; --web-space-12: 48px; --web-space-16: 64px;
+  --web-space-24: 96px; --web-space-32: 128px;
+
+  --app-1: 4px;  --app-2: 8px;  --app-3: 12px;
+  --app-4: 16px; --app-5: 20px; --app-6: 24px;
+
+  /* ===================================================================
+     RADIUS
+     Terminal-sharp. Nothing in either surface exceeds 4px.
+     =================================================================== */
+  --radius-sm: 2px;   /* inputs, small badges, table-row alerts */
+  --radius:    2px;   /* buttons, dropdowns */
+  --radius-md: 3px;   /* cards, panels, modals (app ceiling) */
+  --radius-lg: 4px;   /* website cards / landing only */
+  --radius-xl: 4px;   /* website hero cards only */
+
+  /* ===================================================================
+     SHADOW (charcoal-on-black; cards rest flat, elevate on hover only)
+     =================================================================== */
+  --shadow-card:     0 1px 3px rgba(0,0,0,0.30);
+  --shadow-modal:    0 4px 16px rgba(0,0,0,0.50);
+  --shadow-dropdown: 0 2px 8px rgba(0,0,0,0.40);
+
+  /* Phosphor glow — game surfaces freely; investor surfaces at hero moments only */
+  --glow-phosphor:        0 0 4px rgba(12,212,160,0.22), 0 0 12px rgba(12,212,160,0.08); /* @kind shadow */
+  --glow-phosphor-strong: 0 0 6px rgba(121,255,215,0.40), 0 0 18px rgba(121,255,215,0.18); /* @kind shadow */
+
+  /* CRT scanline texture. Layer over a background colour; 4px pitch. */
+  --texture-scanline: linear-gradient(rgba(18,255,170,0.018) 50%, rgba(0,0,0,0.035) 50%); /* @kind other */
+  --texture-scanline-size: 100% 4px; /* @kind other */
+
+  /* ===================================================================
+     MOTION
+     =================================================================== */
+  /* --dur-state: hover/active/focus color changes; --dur-panel: sidebar / panel / row slide */
+  --dur-state: 150ms; /* @kind other */
+  --dur-panel: 200ms; /* @kind other */
+  --dur-toast-in: 300ms;  /* @kind other */
+  --dur-toast-out: 200ms; /* @kind other */
+  --ease-out: cubic-bezier(0.16,1,0.3,1); /* @kind other */
+  --ease: ease; /* @kind other */
+
+  --ring-focus: 0 0 0 2px rgba(12,212,160,0.30); /* 2px mint focus ring */
+}
+
+/* ----------------------------- SEMANTIC ELEMENT DEFAULTS ----------------- */
+/* Opt-in base: apply to a root container of any ReFi surface. */
+.refi {
+  background: var(--bg-page);
+  color: var(--fg-secondary);
+  font: var(--app-body);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "kern","liga","calt";
+}
+.refi h1 { font: var(--app-h1); color: var(--fg-primary); margin: 0; }
+.refi h2 { font: var(--app-h2); color: var(--fg-primary); margin: 0; }
+.refi h3 { font: var(--app-h3); color: var(--fg-primary); margin: 0; }
+.refi p  { margin: 0; }
+.refi a  { color: var(--accent); text-decoration: none; transition: color var(--dur-state) var(--ease); }
+.refi a:hover { color: var(--accent-hover); }
+
+/* Mono helper — every money/quantity/price/percent/hash/timestamp */
+.mono, .refi .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* P&L semantic helpers */
+.pos { color: var(--pos); }
+.neg { color: var(--neg); }
+.warn { color: var(--warn); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
+}

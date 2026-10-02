@@ -13,7 +13,7 @@ const bannerVariants = cva(
         warning:
           "border-status-warning/30 bg-status-warning/10 text-status-warning",
         error:
-          "border-status-rejected/30 bg-status-rejected/10 text-status-rejected",
+          "border-status-rejected/30 bg-status-rejected/10 text-status-rejected-text",
       },
     },
     defaultVariants: { variant: "info" },
